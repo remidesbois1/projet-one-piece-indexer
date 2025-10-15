@@ -5,6 +5,8 @@ const app = express();
 
 const PORT = process.env.PORT || 3001;
 
+const tomeRoutes = require('./routes/tomeRoutes');
+
 app.use(express.json());
 
 app.get('/', (req, res) => {
@@ -14,7 +16,8 @@ app.get('/', (req, res) => {
   });
 });
 
-// Démarrer le serveur
+app.use('/api/tomes', tomeRoutes);
+
 app.listen(PORT, () => {
   console.log(`Serveur démarré et à l'écoute sur le port ${PORT}`);
 });
