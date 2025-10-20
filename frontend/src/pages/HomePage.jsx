@@ -39,10 +39,10 @@ const HomePage = () => {
     await signOut();
     navigate('/login');
   };
-  
-  const goToPage = () => {
+
+    const goToPage = () => {
     if(selectedPage) {
-        alert(`Navigation vers la page d'annotation pour la page ID: ${selectedPage}`);
+        navigate(`/annotate/${selectedPage}`);
     }
   }
 
