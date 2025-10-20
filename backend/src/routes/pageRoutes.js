@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const supabase = require('../config/supabaseClient');
 
+// Liste des pages d'un chapitre
 router.get('/', async (req, res) => {
   const { id_chapitre } = req.query;
   if (!id_chapitre) return res.status(400).json({ error: "id_chapitre manquant" });
@@ -14,6 +15,20 @@ router.get('/', async (req, res) => {
 
   if (error) return res.status(500).json({ error: "Erreur serveur" });
   res.json(data);
+});
+
+// Récupération d'une page unique (C'est ce que ce commit essayait d'ajouter)
+router.get('/:id', async (req, res) => {
+    const { data, error } = await supabase
+        .from('pages')
+        .select('id, numero_page, url_image')
+        .eq('id', req.params.id)
+        .single();
+
+    if (error) return res.status(500).json({ error: "Erreur serveur" });
+    if (!data) return res.status(404).json({ error: "Page non trouvée" });
+    
+    res.json(data);
 });
 
 module.exports = router;
