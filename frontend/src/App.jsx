@@ -3,6 +3,7 @@ import { Routes, Route } from 'react-router-dom';
 import LoginPage from './pages/LoginPage';
 import HomePage from './pages/HomePage';
 import ProtectedRoute from './components/ProtectedRoute';
+import AnnotatePage from './pages/AnnotatePage';
 
 function App() {
   return (
@@ -15,6 +16,10 @@ function App() {
             <HomePage />
           </ProtectedRoute>
         } 
+      />
+      <Route 
+        path="/annotate/:pageId" 
+        element={<ProtectedRoute><AnnotatePage /></ProtectedRoute>} 
       />
     </Routes>
   );

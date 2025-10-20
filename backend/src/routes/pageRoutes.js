@@ -32,4 +32,33 @@ router.get('/', async (req, res) => {
   }
 });
 
+/**
+ * @route   GET /api/pages/:id
+ * @desc    Récupérer une page spécifique par son ID
+ * @access  Public
+ */
+router.get('/:id', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const { data, error } = await supabase
+      .from('pages')
+      .select('*')
+      .eq('id', id)
+      .single(); // .single() pour ne retourner qu'un seul objet
+
+    if (error) throw error;
+    
+    if (!data) {
+        return res.status(404).json({ error: "Page non trouvée." });
+    }
+
+    res.status(200).json(data);
+
+  } catch (error) {
+    console.error(`Erreur lors de la récupération de la page ${id}:`, error.message);
+    res.status(500).json({ error: "Une erreur est survenue sur le serveur." });
+  }
+});
+
 module.exports = router;
