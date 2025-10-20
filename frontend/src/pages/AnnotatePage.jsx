@@ -1,25 +1,49 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getPageById } from '../services/api';
+import { getPageById, createBubble } from '../services/api';
+import ValidationForm from '../components/ValidationForm';
 
 const AnnotatePage = () => {
   const { pageId } = useParams();
   const [page, setPage] = useState(null);
   const [error, setError] = useState(null);
-  
-  // Réf pour le conteneur de l'image
   const containerRef = useRef(null);
-
+  
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPoint, setStartPoint] = useState(null);
   const [endPoint, setEndPoint] = useState(null);
   const [rectangle, setRectangle] = useState(null);
+  
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [pendingBubble, setPendingBubble] = useState(null);
 
   useEffect(() => {
     getPageById(pageId)
       .then(response => setPage(response.data))
       .catch(error => setError("Impossible de charger les données de la page."));
   }, [pageId]);
+
+  useEffect(() => {
+    if (rectangle) {
+      setIsSubmitting(true);
+      setPendingBubble(null);
+      const bubbleData = {
+        id_page: parseInt(pageId, 10),
+        ...rectangle,
+      };
+      createBubble(bubbleData)
+        .then(response => {
+          setPendingBubble(response.data);
+        })
+        .catch(error => {
+          console.error("Erreur lors de la création de la bulle:", error);
+          setError("L'envoi de la bulle a échoué.");
+        })
+        .finally(() => {
+          setIsSubmitting(false);
+        });
+    }
+  }, [rectangle, pageId]);
 
   const getContainerCoords = (event) => {
     const container = containerRef.current;
@@ -50,28 +74,23 @@ const AnnotatePage = () => {
     if (!isDrawing) return;
     event.preventDefault();
     setIsDrawing(false);
-
     const finalRect = {
       x: Math.round(Math.min(startPoint.x, endPoint.x)),
       y: Math.round(Math.min(startPoint.y, endPoint.y)),
       w: Math.round(Math.abs(startPoint.x - endPoint.x)),
       h: Math.round(Math.abs(startPoint.y - endPoint.y)),
     };
-    
     if (finalRect.w > 5 && finalRect.h > 5) {
       setRectangle(finalRect);
-      console.log("Rectangle final :", finalRect);
     }
   };
 
   const getRectangleStyle = () => {
     if (!startPoint || !endPoint) return { display: 'none' };
-
     const left = Math.min(startPoint.x, endPoint.x);
     const top = Math.min(startPoint.y, endPoint.y);
     const width = Math.abs(startPoint.x - endPoint.x);
     const height = Math.abs(startPoint.y - endPoint.y);
-
     return {
       position: 'absolute',
       left: `${left}px`,
@@ -93,37 +112,32 @@ const AnnotatePage = () => {
         <Link to="/">Retour à la sélection</Link>
       </div>
       
-      {/* Le conteneur qui écoutera les événements de la souris */}
       <div 
         ref={containerRef}
         style={{ 
           position: 'relative', 
-          display: 'inline-block', // Pour que le conteneur prenne la taille de l'image
+          display: 'inline-block',
           cursor: 'crosshair',
           marginTop: '20px',
         }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp} // Si la souris sort du cadre, on arrête le dessin
+        onMouseLeave={handleMouseUp}
       >
         <img 
           src={page.url_image} 
           alt={`Page ${page.numero_page}`} 
-          style={{ maxWidth: '800px', display: 'block' }} // 'display: block' pour éviter un petit espace sous l'image
-          draggable="false" // Empêche de "glisser-déposer" l'image
+          style={{ maxWidth: '800px', display: 'block' }}
+          draggable="false"
         />
         
-        {/* Le div qui représente le rectangle en cours de dessin */}
         {isDrawing && <div style={getRectangleStyle()} />}
       </div>
       
-      {rectangle && (
-        <div style={{ textAlign: 'center', marginTop: '10px', background: 'lightgreen', padding: '10px' }}>
-          <h3>Rectangle Dessiné !</h3>
-          <pre>{JSON.stringify(rectangle, null, 2)}</pre>
-        </div>
-      )}
+      {isSubmitting && <div style={{textAlign: 'center', padding: '10px'}}>Analyse OCR en cours...</div>}
+      
+      <ValidationForm bubble={pendingBubble} />
     </div>
   );
 };
