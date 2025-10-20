@@ -1,41 +1,48 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getPageById } from '../services/api';
+import * as fabric from 'fabric';
 
 const AnnotatePage = () => {
   const { pageId } = useParams();
-  
   const [page, setPage] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  
+  const canvasRef = useRef(null);
+  const fabricRef = useRef(null);
 
   useEffect(() => {
-    setLoading(true);
     getPageById(pageId)
-      .then(response => {
-        setPage(response.data);
-      })
+      .then(response => setPage(response.data))
       .catch(error => {
         console.error("Erreur de chargement de la page", error);
         setError("Impossible de charger la page.");
-      })
-      .finally(() => {
-        setLoading(false);
       });
   }, [pageId]);
 
-  if (loading) {
-    return <div>Chargement de la page...</div>;
-  }
+  useEffect(() => {
+    if (page && canvasRef.current) {
+      const canvas = new fabric.Canvas(canvasRef.current, {
+        width: 800,
+        height: 1200,
+      });
+      fabricRef.current = canvas;
 
-  if (error) {
-    return (
-      <div>
-        <p style={{color: 'red'}}>{error}</p>
-        <Link to="/">Retour à l'accueil</Link>
-      </div>
-    );
-  }
+      fabric.Image.fromURL(page.url_image, (img) => {
+        canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas), {
+          scaleX: canvas.width / img.width,
+          scaleY: canvas.height / img.height,
+        });
+      }, { crossOrigin: 'anonymous' });
+      
+      return () => {
+        canvas.dispose();
+      };
+    }
+  }, [page]);
+
+  if (error) return <div><p style={{color: 'red'}}>{error}</p><Link to="/">Retour à l'accueil</Link></div>;
+  if (!page) return <div>Chargement de la page...</div>;
 
   return (
     <div>
@@ -45,12 +52,8 @@ const AnnotatePage = () => {
       </div>
       
       <div style={{ textAlign: 'center', marginTop: '20px' }}>
-        {/* L'élément img affiche l'image de la page du manga */}
-        <img 
-          src={page.url_image} 
-          alt={`Page ${page.numero_page}`} 
-          style={{ maxWidth: '90%', maxHeight: '80vh', border: '1px solid black' }}
-        />
+        {/* Le canvas qui remplacera notre balise <img> */}
+        <canvas ref={canvasRef} style={{ border: '1px solid black' }} />
       </div>
     </div>
   );
