@@ -9,9 +9,10 @@ const supabase = require('../config/supabaseClient');
  */
 router.get('/', async (req, res) => {
   try {
+    // On ajoute 'cover_url' à la sélection
     const { data, error } = await supabase
       .from('tomes')
-      .select('id, numero, titre')
+      .select('id, numero, titre, cover_url')
       .order('numero', { ascending: true });
 
     if (error) {
