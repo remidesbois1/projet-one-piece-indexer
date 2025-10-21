@@ -1,56 +1,66 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
+import { useUserProfile } from '../hooks/useUserProfile';
+import { Link, useNavigate } from 'react-router-dom';
 import { getTomes, getChapitres, getPages } from '../services/api';
 
 const HomePage = () => {
-  const { user, signOut } = useAuth();
+  const { user, session, signOut } = useAuth();
+  const { profile, loading: profileLoading } = useUserProfile();
   const navigate = useNavigate();
 
   const [tomes, setTomes] = useState([]);
   const [chapitres, setChapitres] = useState([]);
   const [pages, setPages] = useState([]);
-
   const [selectedTome, setSelectedTome] = useState('');
   const [selectedChapitre, setSelectedChapitre] = useState('');
   const [selectedPage, setSelectedPage] = useState('');
 
-  useEffect(() => {
-    getTomes().then(response => setTomes(response.data)).catch(console.error);
-  }, []);
+  const token = session?.access_token;
 
   useEffect(() => {
-    if (selectedTome) {
+    if (token) {
+      getTomes(token).then(response => setTomes(response.data)).catch(console.error);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    if (selectedTome && token) {
       setChapitres([]);
       setPages([]);
       setSelectedChapitre('');
-      getChapitres(selectedTome).then(response => setChapitres(response.data)).catch(console.error);
+      getChapitres(selectedTome, token).then(response => setChapitres(response.data)).catch(console.error);
     }
-  }, [selectedTome]);
+  }, [selectedTome, token]);
 
   useEffect(() => {
-    if (selectedChapitre) {
+    if (selectedChapitre && token) {
       setPages([]);
-      getPages(selectedChapitre).then(response => setPages(response.data)).catch(console.error);
+      getPages(selectedChapitre, token).then(response => setPages(response.data)).catch(console.error);
     }
-  }, [selectedChapitre]);
+  }, [selectedChapitre, token]);
 
   const handleLogout = async () => {
     await signOut();
     navigate('/login');
   };
-
-    const goToPage = () => {
+  
+  const goToPage = () => {
     if(selectedPage) {
-        navigate(`/annotate/${selectedPage}`);
+      navigate(`/annotate/${selectedPage}`);
     }
   }
+
+  if (profileLoading) return <div>Chargement du profil...</div>;
 
   return (
     <div style={{ padding: '20px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h1>Interface de Saisie</h1>
         <div>
+          {(profile?.role === 'Admin' || profile?.role === 'Modo') && (
+            <Link to="/moderation" style={{ marginRight: '15px' }}>MODÉRATION</Link>
+          )}
           <span>{user?.email}</span>
           <button onClick={handleLogout} style={{ marginLeft: '10px' }}>Se déconnecter</button>
         </div>
