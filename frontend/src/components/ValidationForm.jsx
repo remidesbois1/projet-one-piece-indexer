@@ -1,8 +1,12 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { updateBubbleText } from '../services/api';
 
-const ValidationForm = ({ bubble, onValidate }) => {
+const ValidationForm = ({ bubble, onValidationSuccess }) => {
+  const { session } = useAuth();
   const [text, setText] = useState('');
   const [isAiFailure, setIsAiFailure] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (bubble) {
@@ -16,14 +20,23 @@ const ValidationForm = ({ bubble, onValidate }) => {
     }
   }, [bubble]);
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     if (text.trim() === '') {
-        alert("Le texte ne peut pas être vide.");
-        return;
+      alert("Le texte ne peut pas être vide.");
+      return;
     }
-    console.log("Validation soumise avec le texte :", text);
-    alert("Soumission finale à implémenter !");
+    setIsSubmitting(true);
+    try {
+      await updateBubbleText(bubble.id, text, session.access_token);
+      alert("Annotation envoyée pour validation !");
+      onValidationSuccess();
+    } catch (error) {
+      console.error("Erreur lors de la soumission", error);
+      alert("Une erreur est survenue lors de la soumission.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (!bubble) return null;
@@ -43,9 +56,9 @@ const ValidationForm = ({ bubble, onValidate }) => {
           placeholder="Saisir le texte de la bulle ici..."
           style={{ width: '80%', minHeight: '80px' }}
         />
-        <div style={{ marginTop: '10px' }}>
-          <button type="submit">Valider la bulle</button>
-        </div>
+        <button type="submit" disabled={isSubmitting}>
+        {isSubmitting ? 'Envoi...' : 'Envoyer pour validation'}
+      </button>
       </form>
     </div>
   );

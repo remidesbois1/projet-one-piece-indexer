@@ -2,36 +2,37 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getPageById, createBubble } from '../services/api';
 import ValidationForm from '../components/ValidationForm';
+import { useAuth } from '../context/AuthContext';
 
 const AnnotatePage = () => {
+  const { session } = useAuth();
   const { pageId } = useParams();
   const [page, setPage] = useState(null);
   const [error, setError] = useState(null);
   const containerRef = useRef(null);
-  
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPoint, setStartPoint] = useState(null);
   const [endPoint, setEndPoint] = useState(null);
   const [rectangle, setRectangle] = useState(null);
-  
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pendingBubble, setPendingBubble] = useState(null);
 
   useEffect(() => {
-    getPageById(pageId)
+    getPageById(pageId, session?.access_token)
       .then(response => setPage(response.data))
       .catch(error => setError("Impossible de charger les données de la page."));
-  }, [pageId]);
+  }, [pageId, session]);
 
   useEffect(() => {
-    if (rectangle) {
+    const token = session?.access_token;
+    if (rectangle && token) {
       setIsSubmitting(true);
       setPendingBubble(null);
       const bubbleData = {
         id_page: parseInt(pageId, 10),
         ...rectangle,
       };
-      createBubble(bubbleData)
+      createBubble(bubbleData, token)
         .then(response => {
           setPendingBubble(response.data);
         })
@@ -43,7 +44,7 @@ const AnnotatePage = () => {
           setIsSubmitting(false);
         });
     }
-  }, [rectangle, pageId]);
+  }, [rectangle, pageId, session]);
 
   const getContainerCoords = (event) => {
     const container = containerRef.current;
@@ -102,6 +103,11 @@ const AnnotatePage = () => {
     };
   };
 
+  const handleSuccess = () => {
+    setPendingBubble(null);
+    setRectangle(null);
+  };
+
   if (error) return <div><p style={{color: 'red'}}>{error}</p><Link to="/">Retour à l'accueil</Link></div>;
   if (!page) return <div>Chargement des données de la page...</div>;
 
@@ -137,7 +143,7 @@ const AnnotatePage = () => {
       
       {isSubmitting && <div style={{textAlign: 'center', padding: '10px'}}>Analyse OCR en cours...</div>}
       
-      <ValidationForm bubble={pendingBubble} />
+      <ValidationForm bubble={pendingBubble} onValidationSuccess={handleSuccess} />
     </div>
   );
 };

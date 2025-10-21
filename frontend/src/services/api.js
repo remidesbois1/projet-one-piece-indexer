@@ -19,6 +19,7 @@ export const searchBubbles = (query) => apiClient.get(`/search?q=${query}`);
 export const getPendingBubbles = (token) => apiClient.get('/bulles/pending', getAuthHeaders(token));
 export const validateBubble = (id, token) => apiClient.put(`/bulles/${id}/validate`, {}, getAuthHeaders(token));
 export const rejectBubble = (id, token) => apiClient.put(`/bulles/${id}/reject`, {}, getAuthHeaders(token));
+export const updateBubbleText = (id, text, token) => apiClient.put(`/bulles/${id}`, { texte_propose: text }, getAuthHeaders(token));
 export const getBubbleCrop = (id, token) => apiClient.get(`/bulles/${id}/crop`, {
   ...getAuthHeaders(token),
   responseType: 'blob',
