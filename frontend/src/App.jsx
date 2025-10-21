@@ -6,6 +6,7 @@ import AnnotatePage from './pages/AnnotatePage';
 import SearchPage from './pages/SearchPage';
 import ModerationPage from './pages/ModerationPage';
 import ProtectedRoute from './components/ProtectedRoute';
+import AdminDashboard from './pages/AdminDashboard';
 
 function App() {
   return (
@@ -19,6 +20,14 @@ function App() {
       <Route 
         path="/annotate/:pageId" 
         element={<ProtectedRoute><AnnotatePage /></ProtectedRoute>} 
+      />
+      <Route 
+        path="/admin" 
+        element={
+          <ProtectedRoute allowedRoles={['Admin']}>
+            <AdminDashboard />
+          </ProtectedRoute>
+        } 
       />
       <Route 
         path="/moderation" 
