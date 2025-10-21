@@ -4,11 +4,12 @@ const supabase = require('../config/supabaseClient');
 const authMiddleware = require('../middleware/auth');
 
 const callAiMicroservice = async (pageId, coords) => {
-  console.log(`Appel simulé au microservice IA pour la page ${pageId} aux coordonnées ${JSON.stringify(coords)}`);
-  await new Promise(resolve => setTimeout(resolve, 1500)); 
+  console.log(`(SIMULATION ÉCHEC) Appel au microservice IA pour la page ${pageId}`);
+  await new Promise(resolve => setTimeout(resolve, 1000));
+  
   return {
-    texteOcrBrut: "CECI EST UN-TEXTE BRUT DE L'OCR!",
-    textePropose: "Ceci est un texte brut de l'OCR !"
+    texteOcrBrut: "",
+    textePropose: "<REJET>"
   };
 };
 
