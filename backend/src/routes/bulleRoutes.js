@@ -174,4 +174,45 @@ router.get('/:id/crop', authMiddleware, async (req, res) => {
   }
 });
 
+/**
+ * @route   PUT /api/bulles/:id
+ * @desc    Mettre à jour le texte d'une bulle proposée
+ * @access  Privé (créateur de la bulle)
+ */
+router.put('/:id', authMiddleware, async (req, res) => {
+    const { id } = req.params;
+    const { texte_propose } = req.body;
+    const userId = req.user.id;
+
+    if (!texte_propose) {
+        return res.status(400).json({ error: "Le champ 'texte_propose' est manquant." });
+    }
+
+    try {
+        const { data: existingBubble, error: findError } = await supabase
+            .from('bulles')
+            .select('id, id_user_createur')
+            .eq('id', id)
+            .single();
+
+        if (findError || !existingBubble) {
+            return res.status(404).json({ error: "Bulle non trouvée." });
+        }
+        if (existingBubble.id_user_createur !== userId) {
+            return res.status(403).json({ error: "Accès refusé. Vous n'êtes pas le créateur de cette bulle." });
+        }
+
+        const { data, error } = await supabase
+            .from('bulles')
+            .update({ texte_propose: texte_propose })
+            .eq('id', id)
+            .select();
+        
+        if (error) throw error;
+        res.status(200).json(data);
+    } catch (error) {
+        res.status(500).json({ error: "Erreur lors de la mise à jour de la bulle." });
+    }
+});
+
 module.exports = router;
