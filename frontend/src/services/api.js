@@ -1,23 +1,25 @@
 import axios from 'axios';
-import { supabase } from '../supabaseClient';
 
 const apiClient = axios.create({
   baseURL: 'http://localhost:3001/api',
 });
 
-apiClient.interceptors.request.use(async (config) => {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (session?.access_token) {
-    config.headers.Authorization = `Bearer ${session.access_token}`;
-  }
-  return config;
+const getAuthHeaders = (token) => ({
+  headers: {
+    Authorization: `Bearer ${token}`,
+  },
 });
 
-export const getTomes = () => apiClient.get('/tomes');
-export const getChapitres = (id_tome) => apiClient.get(`/chapitres?id_tome=${id_tome}`);
-export const getPages = (id_chapitre) => apiClient.get(`/pages?id_chapitre=${id_chapitre}`);
-export const getPageById = (id) => apiClient.get(`/pages/${id}`);
-export const createBubble = (bubbleData) => apiClient.post('/bulles', bubbleData);
+export const getTomes = (token) => apiClient.get('/tomes', getAuthHeaders(token));
+export const getChapitres = (id_tome, token) => apiClient.get(`/chapitres?id_tome=${id_tome}`, getAuthHeaders(token));
+export const getPages = (id_chapitre, token) => apiClient.get(`/pages?id_chapitre=${id_chapitre}`, getAuthHeaders(token));
+export const getPageById = (id, token) => apiClient.get(`/pages/${id}`, getAuthHeaders(token));
+export const createBubble = (bubbleData, token) => apiClient.post('/bulles', bubbleData, getAuthHeaders(token));
 export const searchBubbles = (query) => apiClient.get(`/search?q=${query}`);
-
-export default apiClient;
+export const getPendingBubbles = (token) => apiClient.get('/bulles/pending', getAuthHeaders(token));
+export const validateBubble = (id, token) => apiClient.put(`/bulles/${id}/validate`, {}, getAuthHeaders(token));
+export const rejectBubble = (id, token) => apiClient.put(`/bulles/${id}/reject`, {}, getAuthHeaders(token));
+export const getBubbleCrop = (id, token) => apiClient.get(`/bulles/${id}/crop`, {
+  ...getAuthHeaders(token),
+  responseType: 'blob',
+});
