@@ -1,0 +1,74 @@
+.libraryContainer {
+    padding: 2rem;
+}
+
+.tomeGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 1.5rem;
+    margin-top: 2rem;
+}
+
+.tomeItem {
+    cursor: pointer;
+    text-align: center;
+    transition: transform 0.2s ease-in-out;
+}
+
+.tomeItem:hover {
+    transform: scale(1.05);
+}
+
+.tomeCover {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 2 / 3;
+    object-fit: cover;
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    margin-bottom: 0.5rem;
+}
+
+.tomeTitle {
+    font-weight: bold;
+    font-size: 0.9rem;
+}
+
+.chapterList {
+    list-style: none;
+    padding: 0;
+}
+
+.chapterList li {
+    padding: 10px;
+    cursor: pointer;
+    border-radius: 5px;
+    transition: background-color 0.2s;
+}
+
+.chapterList li:hover {
+    background-color: #f0f0f0;
+}
+
+.pageGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(50px, 1fr));
+    gap: 10px;
+    margin-top: 1rem;
+}
+
+.pageItem {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border: 1px solid #ccc;
+    padding: 10px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.pageItem:hover {
+    background-color: #e9e9e9;
+    border-color: #999;
+}
