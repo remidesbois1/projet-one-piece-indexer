@@ -58,6 +58,11 @@ const HomePage = () => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h1>Interface de Saisie</h1>
         <div>
+          {/* Lien ADMIN */}
+          {profile?.role === 'Admin' && (
+            <Link to="/admin" style={{ marginRight: '15px', fontWeight: 'bold', color: 'red' }}>ADMINISTRATION</Link>
+          )}
+          {/* Lien MODO */}
           {(profile?.role === 'Admin' || profile?.role === 'Modo') && (
             <Link to="/moderation" style={{ marginRight: '15px' }}>MODÉRATION</Link>
           )}
