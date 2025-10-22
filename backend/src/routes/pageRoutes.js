@@ -67,8 +67,9 @@ router.get('/:id/bulles', authMiddleware, async (req, res) => {
     try {
         const { data, error } = await supabase
             .from('bulles')
-            .select('id, x, y, w, h, texte_propose, statut, id_user_createur') // On ajoute statut et id_user_createur
-            .eq('id_page', id);
+            .select('id, x, y, w, h, texte_propose, statut, id_user_createur')
+            .eq('id_page', id)
+            .neq('statut', 'Rejeté'); // ON EXCLUT LES BULLES REJETÉES
 
         if (error) throw error;
         res.status(200).json(data);
