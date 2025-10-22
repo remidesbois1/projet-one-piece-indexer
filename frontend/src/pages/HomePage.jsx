@@ -31,9 +31,7 @@ const HomePage = () => {
     setSelectedTome(tome);
     setIsLoadingChapters(true);
     getChapitres(tome.id, token)
-      .then(response => {
-        setChapters(response.data);
-      })
+      .then(response => setChapters(response.data))
       .catch(console.error)
       .finally(() => setIsLoadingChapters(false));
   };
@@ -42,9 +40,7 @@ const HomePage = () => {
     setSelectedChapter(chapter);
     setIsLoadingPages(true);
     getPages(chapter.id, token)
-      .then(response => {
-        setPages(response.data);
-      })
+      .then(response => setPages(response.data))
       .catch(console.error)
       .finally(() => setIsLoadingPages(false));
   };
@@ -64,6 +60,17 @@ const HomePage = () => {
   const handleLogout = async () => {
     await signOut();
     navigate('/login');
+  };
+
+  const getPageItemClass = (status) => {
+    switch (status) {
+      case 'pending_review':
+        return styles.pageItemPending;
+      case 'completed':
+        return styles.pageItemCompleted;
+      default:
+        return '';
+    }
   };
 
   if (profileLoading) return <div>Chargement du profil...</div>;
@@ -111,7 +118,11 @@ const HomePage = () => {
                 {isLoadingPages ? <p>Chargement...</p> : (
                   <div className={styles.pageGrid}>
                     {pages.map(page => (
-                      <div key={page.id} className={styles.pageItem} onClick={() => navigate(`/annotate/${page.id}`)}>
+                      <div 
+                        key={page.id} 
+                        className={`${styles.pageItem} ${getPageItemClass(page.statut)}`} 
+                        onClick={() => navigate(`/annotate/${page.id}`)}
+                      >
                         {page.numero_page}
                       </div>
                     ))}
