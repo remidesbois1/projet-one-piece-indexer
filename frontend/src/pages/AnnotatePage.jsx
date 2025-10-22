@@ -10,7 +10,9 @@ const AnnotatePage = () => {
   const { pageId } = useParams();
   const [page, setPage] = useState(null);
   const [error, setError] = useState(null);
+  
   const containerRef = useRef(null);
+  const imageRef = useRef(null);
 
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPoint, setStartPoint] = useState(null);
@@ -78,13 +80,28 @@ const AnnotatePage = () => {
     if (!isDrawing) return;
     event.preventDefault();
     setIsDrawing(false);
-    const finalRect = {
-      x: Math.round(Math.min(startPoint.x, endPoint.x)),
-      y: Math.round(Math.min(startPoint.y, endPoint.y)),
-      w: Math.round(Math.abs(startPoint.x - endPoint.x)),
-      h: Math.round(Math.abs(startPoint.y - endPoint.y)),
+
+    const imageEl = imageRef.current;
+    if (!imageEl) return;
+
+    const originalWidth = imageEl.naturalWidth;
+    const displayedWidth = imageEl.offsetWidth;
+    const scale = originalWidth / displayedWidth;
+
+    const unscaledRect = {
+      x: Math.min(startPoint.x, endPoint.x),
+      y: Math.min(startPoint.y, endPoint.y),
+      w: Math.abs(startPoint.x - endPoint.x),
+      h: Math.abs(startPoint.y - endPoint.y),
     };
-    if (finalRect.w > 5 && finalRect.h > 5) {
+
+    if (unscaledRect.w > 5 && unscaledRect.h > 5) {
+      const finalRect = {
+        x: Math.round(unscaledRect.x * scale),
+        y: Math.round(unscaledRect.y * scale),
+        w: Math.round(unscaledRect.w * scale),
+        h: Math.round(unscaledRect.h * scale),
+      };
       setRectangle(finalRect);
     }
   };
@@ -123,6 +140,7 @@ const AnnotatePage = () => {
           onMouseLeave={handleMouseUp}
         >
           <img 
+            ref={imageRef}
             src={page.url_image} 
             alt={`Page ${page.numero_page}`} 
             className={styles.mangaImage}
