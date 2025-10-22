@@ -1,0 +1,59 @@
+.itemContainer {
+    display: flex;
+    flex-direction: column;
+    flex-direction: row;
+    align-items: center;
+    gap: 1.5rem;
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.imageContainer {
+    border: 1px solid #ccc;
+    padding: 5px;
+    background-color: #f8f9fa;
+    min-width: 200px;
+    text-align: center;
+}
+
+.cropImage {
+    max-width: 300px;
+    max-height: 150px;
+}
+
+.content {
+    flex-grow: 1;
+    font-family: serif;
+    font-size: 1.1rem;
+}
+
+.actions {
+    display: flex;
+    gap: 10px;
+}
+
+.actionButton {
+    padding: 8px 16px;
+    border: none;
+    color: white;
+    font-weight: bold;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+
+.actionButton:hover {
+    opacity: 0.8;
+}
+
+.validate {
+    background-color: #28a745;
+}
+
+.reject {
+    background-color: #dc3545;
+}
