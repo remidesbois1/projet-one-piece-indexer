@@ -1,0 +1,43 @@
+.container {
+    padding: 0;
+    margin: 0 auto;
+    max-width: 100%;
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 2rem;
+    background-color: white;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.imageContainer {
+    position: relative; 
+    display: inline-block;
+    cursor: crosshair;
+    margin-top: 2rem;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+}
+
+.mangaImage {
+    max-width: 800px;
+    display: block;
+}
+
+.drawingRectangle {
+    position: absolute;
+    border: 2px solid red;
+    box-sizing: border-box;
+}
+
+.centerContainer {
+    text-align: center;
+}
+
+.loadingMessage {
+    text-align: center;
+    padding: 20px;
+    font-weight: bold;
+}
