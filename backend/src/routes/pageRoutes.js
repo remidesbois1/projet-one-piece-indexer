@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const supabase = require('../config/supabaseClient');
+const { authMiddleware } = require('../middleware/auth');
 
 /**
  * @route   GET /api/pages
@@ -59,6 +60,26 @@ router.get('/:id', async (req, res) => {
     console.error(`Erreur lors de la récupération de la page ${id}:`, error.message);
     res.status(500).json({ error: "Une erreur est survenue sur le serveur." });
   }
+});
+
+/**
+ * @route   GET /api/pages/:id/bulles
+ * @desc    Récupérer toutes les bulles validées pour une page donnée
+ * @access  Privé
+ */
+router.get('/:id/bulles', authMiddleware, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const { data, error } = await supabase
+            .from('bulles')
+            .select('id, x, y, w, h, texte_propose, statut, id_user_createur') // On ajoute statut et id_user_createur
+            .eq('id_page', id);
+
+        if (error) throw error;
+        res.status(200).json(data);
+    } catch (error) {
+        res.status(500).json({ error: "Erreur lors de la récupération des bulles de la page." });
+    }
 });
 
 module.exports = router;

@@ -41,3 +41,80 @@
     padding: 20px;
     font-weight: bold;
 }
+
+.existingRectangle {
+    position: absolute;
+    border: 2px solid #007bff;
+    box-sizing: border-box;
+    pointer-events: none;
+}
+
+.bubbleNumber {
+    position: absolute;
+    top: -20px;
+    left: 0;
+    background-color: #007bff;
+    color: white;
+    padding: 2px 6px;
+    border-radius: 5px;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.pageLayout {
+    display: flex;
+    gap: 2rem;
+    padding: 2rem;
+}
+
+.mainContent {
+    flex-grow: 1;
+    text-align: center;
+}
+
+.sidebar {
+    width: 300px;
+    flex-shrink: 0;
+    background: #f8f9fa;
+    padding: 1rem;
+    border-radius: 8px;
+    border: 1px solid #e0e0e0;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.bubbleListItem {
+    padding: 10px;
+    border-bottom: 1px solid #ccc;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.deleteButton {
+    background: none;
+    border: none;
+    color: red;
+    cursor: pointer;
+    font-size: 1rem;
+}
+
+.proposedRectangle {
+    border: 2px dashed #ff9800;
+}
+
+.validatedRectangle {
+    border: 2px solid #007bff;
+}
+
+.tooltip {
+    position: absolute;
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 14px;
+    pointer-events: none;
+    white-space: pre-wrap;
+    max-width: 300px;
+}

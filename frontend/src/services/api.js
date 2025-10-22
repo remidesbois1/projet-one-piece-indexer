@@ -32,3 +32,6 @@ export const uploadChapter = (formData, token) => apiClient.post('/admin/chapitr
         Authorization: `Bearer ${token}`
     }
 });
+
+export const getBubblesForPage = (pageId, token) => apiClient.get(`/pages/${pageId}/bulles`, getAuthHeaders(token));
+export const deleteBubble = (id, token) => apiClient.delete(`/bulles/${id}`, getAuthHeaders(token));
