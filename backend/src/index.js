@@ -12,6 +12,7 @@ const pageRoutes = require('./routes/pageRoutes');
 const bulleRoutes = require('./routes/bulleRoutes');
 const searchRoutes = require('./routes/searchRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const moderationRoutes = require('./routes/moderationRoutes');
 
 app.use(cors());
 app.use(express.json());
@@ -29,6 +30,7 @@ app.use('/api/pages', pageRoutes);
 app.use('/api/bulles', bulleRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/moderation', moderationRoutes);
 
 app.listen(PORT, () => {
   console.log(`Serveur démarré et à l'écoute sur le port ${PORT}`);

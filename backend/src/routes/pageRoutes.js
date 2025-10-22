@@ -3,14 +3,14 @@ const router = express.Router();
 const supabase = require('../config/supabaseClient');
 const { authMiddleware } = require('../middleware/auth');
 
-// Liste des pages
+// Liste des pages (Ajout du champ 'statut' ici)
 router.get('/', async (req, res) => {
   const { id_chapitre } = req.query;
   if (!id_chapitre) return res.status(400).json({ error: "id_chapitre manquant" });
 
   const { data, error } = await supabase
     .from('pages')
-    .select('id, numero_page, url_image')
+    .select('id, numero_page, url_image, statut') // <-- Ajouté par ce commit
     .eq('id_chapitre', id_chapitre)
     .order('numero_page', { ascending: true });
 
@@ -32,7 +32,7 @@ router.get('/:id', async (req, res) => {
     res.json(data);
 });
 
-// Récupération des bulles pour la sidebar (Nouvelle route de ce commit)
+// Sidebar Bulles
 router.get('/:id/bulles', authMiddleware, async (req, res) => {
     const { data, error } = await supabase
         .from('bulles')

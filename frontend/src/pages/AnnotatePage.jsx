@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getPageById, createBubble, getBubblesForPage, deleteBubble } from '../services/api';
+import { getPageById, createBubble, getBubblesForPage, deleteBubble, submitPageForReview } from '../services/api';
 import ValidationForm from '../components/ValidationForm';
 import { useAuth } from '../context/AuthContext';
 import styles from './AnnotatePage.module.css';
+
 
 const AnnotatePage = () => {
     const { user, session } = useAuth();
@@ -89,6 +90,19 @@ const AnnotatePage = () => {
         return '';
     };
 
+    const handleSubmitPage = async () => {
+    if (window.confirm("Êtes-vous sûr de vouloir soumettre cette page pour validation ? Vous ne pourrez plus y ajouter de bulles.")) {
+        try {
+            const response = await submitPageForReview(pageId, session.access_token);
+            setPage(response.data);
+            alert("Page soumise pour validation !");
+        } catch (error) {
+            alert("Erreur lors de la soumission de la page.");
+            console.error(error);
+        }
+    }
+};
+
     const getContainerCoords = (event) => {
         const container = containerRef.current;
         if (!container) return null;
@@ -162,7 +176,12 @@ const AnnotatePage = () => {
             <header className={styles.header}>
                 <h2>Annotation - Page {page.numero_page} (Statut: {page.statut})</h2>
                 <div>
-                    <button>Soumettre la page pour vérification</button>
+                    <button 
+                        onClick={handleSubmitPage}
+                        disabled={page.statut !== 'not_started' && page.statut !== 'in_progress'}
+                    >
+                        Soumettre la page pour vérification
+                    </button>
                     <Link to="/" style={{ marginLeft: '1rem' }}>Retour</Link>
                 </div>
             </header>

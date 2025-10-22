@@ -35,3 +35,7 @@ export const uploadChapter = (formData, token) => apiClient.post('/admin/chapitr
 
 export const getBubblesForPage = (pageId, token) => apiClient.get(`/pages/${pageId}/bulles`, getAuthHeaders(token));
 export const deleteBubble = (id, token) => apiClient.delete(`/bulles/${id}`, getAuthHeaders(token));
+export const submitPageForReview = (pageId, token) => apiClient.put(`/pages/${pageId}/submit-review`, {}, getAuthHeaders(token));
+export const getPagesForReview = (token) => apiClient.get('/moderation/pages', getAuthHeaders(token));
+export const approvePage = (pageId, token) => apiClient.put(`/moderation/pages/${pageId}/approve`, {}, getAuthHeaders(token));
+export const rejectPage = (pageId, token) => apiClient.put(`/moderation/pages/${pageId}/reject`, {}, getAuthHeaders(token));
