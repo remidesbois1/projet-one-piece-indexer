@@ -4,7 +4,7 @@ import { getPageById, createBubble, getBubblesForPage, deleteBubble, submitPageF
 import ValidationForm from '../components/ValidationForm';
 import { useAuth } from '../context/AuthContext';
 import styles from './AnnotatePage.module.css';
-
+import Modal from '../components/Modal';
 
 const AnnotatePage = () => {
     const { user, session } = useAuth();
@@ -91,17 +91,17 @@ const AnnotatePage = () => {
     };
 
     const handleSubmitPage = async () => {
-    if (window.confirm("Êtes-vous sûr de vouloir soumettre cette page pour validation ? Vous ne pourrez plus y ajouter de bulles.")) {
-        try {
-            const response = await submitPageForReview(pageId, session.access_token);
-            setPage(response.data);
-            alert("Page soumise pour validation !");
-        } catch (error) {
-            alert("Erreur lors de la soumission de la page.");
-            console.error(error);
+        if (window.confirm("Êtes-vous sûr de vouloir soumettre cette page pour validation ? Vous ne pourrez plus y ajouter de bulles.")) {
+            try {
+                const response = await submitPageForReview(pageId, session.access_token);
+                setPage(response.data);
+                alert("Page soumise pour validation !");
+            } catch (error) {
+                alert("Erreur lors de la soumission de la page.");
+                console.error(error);
+            }
         }
-    }
-};
+    };
 
     const getContainerCoords = (event) => {
         const container = containerRef.current;
@@ -136,18 +136,15 @@ const AnnotatePage = () => {
         setIsDrawing(false);
         const imageEl = imageRef.current;
         if (!imageEl) return;
-
         const originalWidth = imageEl.naturalWidth;
         const displayedWidth = imageEl.offsetWidth;
         const scale = originalWidth > 0 ? originalWidth / displayedWidth : 1;
-
         const unscaledRect = {
             x: Math.min(startPoint.x, endPoint.x),
             y: Math.min(startPoint.y, endPoint.y),
             w: Math.abs(startPoint.x - endPoint.x),
             h: Math.abs(startPoint.y - endPoint.y),
         };
-
         if (unscaledRect.w > 5 && unscaledRect.h > 5) {
             const finalRect = {
                 x: Math.round(unscaledRect.x * scale),
@@ -176,7 +173,7 @@ const AnnotatePage = () => {
             <header className={styles.header}>
                 <h2>Annotation - Page {page.numero_page} (Statut: {page.statut})</h2>
                 <div>
-                    <button 
+                    <button
                         onClick={handleSubmitPage}
                         disabled={page.statut !== 'not_started' && page.statut !== 'in_progress'}
                     >
@@ -230,7 +227,11 @@ const AnnotatePage = () => {
                         )}
                     </div>
                     {isSubmitting && <div className={styles.loadingMessage}>Analyse OCR en cours...</div>}
-                    <ValidationForm bubble={pendingBubble} onValidationSuccess={handleSuccess} />
+
+                    <Modal isOpen={!!pendingBubble} onClose={() => setPendingBubble(null)}>
+                        <ValidationForm bubble={pendingBubble} onValidationSuccess={handleSuccess} />
+                    </Modal>
+
                 </main>
 
                 <aside className={styles.sidebar}>

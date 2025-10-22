@@ -1,28 +1,13 @@
-.formContainer {
-    max-width: 800px;
-    margin: 1.5rem auto 0 auto;
-    border: 1px solid #e0e0e0;
-    border-radius: 8px;
-    padding: 1.5rem;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+.title {
+    margin-top: 0;
 }
 
 .success {
-    background-color: #e7f3ff;
-    border-color: #b3d7ff;
+    background-color: transparent;
 }
 
 .failure {
-    background-color: #fff4e5;
-    border-color: #ffe0b3;
-}
-
-.formGroup {
-    margin-bottom: 1rem;
-}
-
-.formGroup h3 {
-    margin-top: 0;
+    background-color: transparent;
 }
 
 .textarea {
@@ -45,6 +30,7 @@
     border-radius: 8px;
     cursor: pointer;
     transition: background-color 0.2s;
+    margin-top: 1rem;
 }
 
 .submitButton:disabled {

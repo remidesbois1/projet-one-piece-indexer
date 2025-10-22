@@ -42,30 +42,24 @@ const ValidationForm = ({ bubble, onValidationSuccess }) => {
 
   if (!bubble) return null;
 
-  const containerClasses = `${styles.formContainer} ${isAiFailure ? styles.failure : styles.success}`;
-
   return (
-    <div className={containerClasses}>
-      <form onSubmit={handleSubmit}>
-        <div className={styles.formGroup}>
-          <h3>
-            {isAiFailure 
-              ? "L'analyse a échoué, veuillez saisir le texte manuellement" 
-              : "Vérifier le texte et valider"
-            }
-          </h3>
-          <textarea 
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="Saisir le texte de la bulle ici..."
-            className={styles.textarea}
-          />
-        </div>
-        <button type="submit" disabled={isSubmitting} className={styles.submitButton}>
-          {isSubmitting ? 'Envoi...' : 'Envoyer pour validation'}
-        </button>
-      </form>
-    </div>
+    <form onSubmit={handleSubmit} className={styles.form}>
+      <h3 className={styles.title}>
+        {isAiFailure 
+          ? "L'analyse a échoué, veuillez saisir le texte manuellement" 
+          : "Vérifier le texte et valider"
+        }
+      </h3>
+      <textarea 
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="Saisir le texte de la bulle ici..."
+        className={styles.textarea}
+      />
+      <button type="submit" disabled={isSubmitting} className={styles.submitButton}>
+        {isSubmitting ? 'Envoi...' : 'Envoyer pour validation'}
+      </button>
+    </form>
   );
 };
 
