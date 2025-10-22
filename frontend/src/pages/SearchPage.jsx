@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { searchBubbles } from '../services/api';
+import styles from './SearchPage.module.css';
 
 const SearchPage = () => {
   const [query, setQuery] = useState('');
@@ -30,24 +31,27 @@ const SearchPage = () => {
   };
 
   return (
-    <div style={{ padding: '20px' }}>
-      <h1>Recherche dans l'œuvre</h1>
-      <form onSubmit={handleSearch}>
+    <div className={styles.container}>
+      <header className={styles.header}>
+        <h1>Recherche dans l'œuvre</h1>
+      </header>
+
+      <form onSubmit={handleSearch} className={styles.searchForm}>
         <input 
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Ex: chapeau de paille"
-          style={{ width: '300px', padding: '8px' }}
+          className={styles.searchInput}
         />
-        <button type="submit" style={{ padding: '8px' }} disabled={isLoading}>
+        <button type="submit" className={styles.searchButton} disabled={isLoading}>
           {isLoading ? 'Recherche...' : 'Rechercher'}
         </button>
       </form>
 
       {error && <p style={{ color: 'red' }}>{error}</p>}
 
-      <div style={{ marginTop: '20px' }}>
+      <div>
         {isLoading ? (
           <p>Chargement...</p>
         ) : (
@@ -55,11 +59,11 @@ const SearchPage = () => {
             <p>Aucun résultat trouvé pour "{query}".</p>
           ) : (
             results.map((bubble) => (
-              <div key={bubble.id} style={{ border: '1px solid #ccc', padding: '10px', marginBottom: '10px' }}>
-                <p><strong>"{bubble.texte_propose}"</strong></p>
-                <small>
-                  Source: Tome {bubble.numero_tome} - Chapitre {bubble.numero_chapitre}, Page {bubble.numero_page}
-                </small>
+              <div key={bubble.id} className={styles.resultItem}>
+                <p className={styles.resultText}>"{bubble.texte_propose}"</p>
+                <p className={styles.resultSource}>
+                  Tome {bubble.numero_tome} - Chapitre {bubble.numero_chapitre}, Page {bubble.numero_page}
+                </p>
               </div>
             ))
           )

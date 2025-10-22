@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getPageById, createBubble } from '../services/api';
 import ValidationForm from '../components/ValidationForm';
 import { useAuth } from '../context/AuthContext';
+import styles from './AnnotatePage.module.css';
 
 const AnnotatePage = () => {
   const { session } = useAuth();
@@ -10,10 +11,12 @@ const AnnotatePage = () => {
   const [page, setPage] = useState(null);
   const [error, setError] = useState(null);
   const containerRef = useRef(null);
+
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPoint, setStartPoint] = useState(null);
   const [endPoint, setEndPoint] = useState(null);
   const [rectangle, setRectangle] = useState(null);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pendingBubble, setPendingBubble] = useState(null);
 
@@ -92,15 +95,7 @@ const AnnotatePage = () => {
     const top = Math.min(startPoint.y, endPoint.y);
     const width = Math.abs(startPoint.x - endPoint.x);
     const height = Math.abs(startPoint.y - endPoint.y);
-    return {
-      position: 'absolute',
-      left: `${left}px`,
-      top: `${top}px`,
-      width: `${width}px`,
-      height: `${height}px`,
-      border: '2px solid red',
-      boxSizing: 'border-box',
-    };
+    return { left, top, width, height };
   };
 
   const handleSuccess = () => {
@@ -108,42 +103,39 @@ const AnnotatePage = () => {
     setRectangle(null);
   };
 
-  if (error) return <div><p style={{color: 'red'}}>{error}</p><Link to="/">Retour à l'accueil</Link></div>;
-  if (!page) return <div>Chargement des données de la page...</div>;
+  if (error) return <div><p style={{color: 'red'}}>{error}</p><Link to="/">Retour</Link></div>;
+  if (!page) return <div>Chargement...</div>;
 
   return (
-    <div>
-      <div style={{ padding: '10px', background: '#f0f0f0' }}>
+    <div className={styles.container}>
+      <header className={styles.header}>
         <h2>Annotation - Page {page.numero_page}</h2>
-        <Link to="/">Retour à la sélection</Link>
-      </div>
+        <Link to="/">Retour à la bibliothèque</Link>
+      </header>
       
-      <div 
-        ref={containerRef}
-        style={{ 
-          position: 'relative', 
-          display: 'inline-block',
-          cursor: 'crosshair',
-          marginTop: '20px',
-        }}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-      >
-        <img 
-          src={page.url_image} 
-          alt={`Page ${page.numero_page}`} 
-          style={{ maxWidth: '800px', display: 'block' }}
-          draggable="false"
-        />
+      <div className={styles.centerContainer}>
+        <div 
+          ref={containerRef}
+          className={styles.imageContainer}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+        >
+          <img 
+            src={page.url_image} 
+            alt={`Page ${page.numero_page}`} 
+            className={styles.mangaImage}
+            draggable="false"
+          />
+          
+          {isDrawing && <div style={getRectangleStyle()} className={styles.drawingRectangle} />}
+        </div>
         
-        {isDrawing && <div style={getRectangleStyle()} />}
+        {isSubmitting && <div className={styles.loadingMessage}>Analyse OCR en cours...</div>}
+        
+        <ValidationForm bubble={pendingBubble} onValidationSuccess={handleSuccess} />
       </div>
-      
-      {isSubmitting && <div style={{textAlign: 'center', padding: '10px'}}>Analyse OCR en cours...</div>}
-      
-      <ValidationForm bubble={pendingBubble} onValidationSuccess={handleSuccess} />
     </div>
   );
 };

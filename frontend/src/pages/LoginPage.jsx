@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { supabase } from '../supabaseClient';
+import { useNavigate } from 'react-router-dom';
+import styles from './LoginPage.module.css';
 
 function LoginPage() {
+  const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -20,47 +23,51 @@ function LoginPage() {
 
       if (error) throw error;
       
-      alert('Connexion réussie !');
+      navigate('/'); 
       
     } catch (error) {
       setError(error.message);
-      alert('Erreur: ' + error.message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div>
-      <h1>Connexion</h1>
-      <form onSubmit={handleLogin}>
-        <div>
-          <label htmlFor="email">Email</label>
-          <input
-            id="email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-        </div>
-        <div>
-          <label htmlFor="password">Mot de passe</label>
-          <input
-            id="password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-        </div>
-        <div>
-          <button type="submit" disabled={loading}>
-            {loading ? 'Chargement...' : 'Se connecter'}
+    <div className={styles.container}>
+      <div className={styles.loginCard}>
+        <header className={styles.header}>
+          <h2>Connexion</h2>
+          <p>Accès à la plateforme d'indexation</p>
+        </header>
+        <form onSubmit={handleLogin}>
+          <div className={styles.formGroup}>
+            <label htmlFor="email">Email</label>
+            <input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className={styles.formInput}
+            />
+          </div>
+          <div className={styles.formGroup}>
+            <label htmlFor="password">Mot de passe</label>
+            <input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className={styles.formInput}
+            />
+          </div>
+          <button type="submit" disabled={loading} className={styles.submitButton}>
+            {loading ? 'Connexion...' : 'Se connecter'}
           </button>
-        </div>
-        {error && <p style={{ color: 'red' }}>{error}</p>}
-      </form>
+          {error && <p className={styles.errorMessage}>{error}</p>}
+        </form>
+      </div>
     </div>
   );
 }

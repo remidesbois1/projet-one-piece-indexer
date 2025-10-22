@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { getTomes, uploadChapter } from '../services/api';
+import styles from './AddChapterForm.module.css';
 
 const AddChapterForm = () => {
   const { session } = useAuth();
@@ -38,33 +39,33 @@ const AddChapterForm = () => {
   };
 
   return (
-    <div style={{ border: '1px solid #ccc', padding: '20px', marginTop: '20px' }}>
+    <div className={styles.formContainer}>
       <h3>2. Ajouter un Chapitre (via .cbz)</h3>
       <form onSubmit={handleSubmit}>
-        <div style={{ marginBottom: '10px' }}>
-          <label>Appartient au Tome : </label>
-          <select name="tome_id" required>
+        <div className={styles.formGroup}>
+          <label htmlFor="chap-tome">Appartient au Tome :</label>
+          <select id="chap-tome" name="tome_id" required className={styles.formInput}>
             <option value="">-- Sélectionner un tome --</option>
             {tomes.map(tome => (
               <option key={tome.id} value={tome.id}>Tome {tome.numero} - {tome.titre}</option>
             ))}
           </select>
         </div>
-        <div style={{ marginBottom: '10px' }}>
-          <label>Numéro du chapitre : </label>
-          <input type="number" name="numero" required />
+        <div className={styles.formGroup}>
+          <label htmlFor="chap-numero">Numéro du chapitre :</label>
+          <input id="chap-numero" type="number" name="numero" required className={styles.formInput} />
         </div>
-        <div style={{ marginBottom: '10px' }}>
-          <label>Titre du chapitre : </label>
-          <input type="text" name="titre" required style={{ width: '300px' }} />
+        <div className={styles.formGroup}>
+          <label htmlFor="chap-titre">Titre du chapitre :</label>
+          <input id="chap-titre" type="text" name="titre" required className={styles.formInput} />
         </div>
-        <div style={{ marginBottom: '10px' }}>
-          <label>Fichier .cbz : </label>
-          <input type="file" name="cbzFile" accept=".cbz,.zip" required />
+        <div className={styles.formGroup}>
+          <label htmlFor="chap-file">Fichier .cbz :</label>
+          <input id="chap-file" type="file" name="cbzFile" accept=".cbz,.zip" required className={styles.formInput} />
         </div>
-        <button type="submit">Ajouter le Chapitre</button>
+        <button type="submit" className={styles.submitButton}>Ajouter le Chapitre</button>
       </form>
-      {message && <p>{message}</p>}
+      {message && <p className={styles.message}>{message}</p>}
     </div>
   );
 };

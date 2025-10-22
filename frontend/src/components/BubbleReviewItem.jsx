@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { getBubbleCrop } from '../services/api';
-
-const API_BASE_URL = 'http://localhost:3001';
+import styles from './BubbleReviewItem.module.css';
 
 const BubbleReviewItem = ({ bubble, onAction }) => {
   const { session } = useAuth();
@@ -30,25 +29,24 @@ const BubbleReviewItem = ({ bubble, onAction }) => {
   }, [bubble.id, session]);
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #ccc', padding: '10px', marginBottom: '10px' }}>
-      {isLoading ? (
-        <div style={{ width: '150px', height: '100px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid black', marginRight: '15px' }}>
+    <div className={styles.itemContainer}>
+      <div className={styles.imageContainer}>
+        {isLoading ? (
           <small>Chargement...</small>
-        </div>
-      ) : (
-        <img 
-          src={imageSrc} 
-          alt="Aperçu de la bulle" 
-          style={{ border: '1px solid black', marginRight: '15px', maxWidth: '300px' }} 
-        />
-      )}
-      <div style={{ flexGrow: 1 }}>
-        <p><strong>Texte proposé :</strong></p>
+        ) : (
+          <img 
+            src={imageSrc} 
+            alt="Aperçu de la bulle" 
+            className={styles.cropImage} 
+          />
+        )}
+      </div>
+      <div className={styles.content}>
         <p>"{bubble.texte_propose}"</p>
       </div>
-      <div>
-        <button onClick={() => onAction('validate', bubble.id)} style={{ background: 'lightgreen', marginRight: '5px' }}>Valider</button>
-        <button onClick={() => onAction('reject', bubble.id)} style={{ background: 'lightcoral' }}>Rejeter</button>
+      <div className={styles.actions}>
+        <button onClick={() => onAction('validate', bubble.id)} className={`${styles.actionButton} ${styles.validate}`}>Valider</button>
+        <button onClick={() => onAction('reject', bubble.id)} className={`${styles.actionButton} ${styles.reject}`}>Rejeter</button>
       </div>
     </div>
   );

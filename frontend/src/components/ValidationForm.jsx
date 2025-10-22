@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { updateBubbleText } from '../services/api';
+import styles from './ValidationForm.module.css';
 
 const ValidationForm = ({ bubble, onValidationSuccess }) => {
   const { session } = useAuth();
@@ -23,8 +24,8 @@ const ValidationForm = ({ bubble, onValidationSuccess }) => {
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (text.trim() === '') {
-      alert("Le texte ne peut pas être vide.");
-      return;
+        alert("Le texte ne peut pas être vide.");
+        return;
     }
     setIsSubmitting(true);
     try {
@@ -41,24 +42,28 @@ const ValidationForm = ({ bubble, onValidationSuccess }) => {
 
   if (!bubble) return null;
 
+  const containerClasses = `${styles.formContainer} ${isAiFailure ? styles.failure : styles.success}`;
+
   return (
-    <div style={{ textAlign: 'center', marginTop: '10px', background: isAiFailure ? '#FFDDC1' : 'lightblue', padding: '10px' }}>
-      <h3>
-        {isAiFailure 
-          ? "L'analyse a échoué, veuillez saisir le texte manuellement" 
-          : "Vérifier le texte et valider"
-        }
-      </h3>
+    <div className={containerClasses}>
       <form onSubmit={handleSubmit}>
-        <textarea 
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Saisir le texte de la bulle ici..."
-          style={{ width: '80%', minHeight: '80px' }}
-        />
-        <button type="submit" disabled={isSubmitting}>
-        {isSubmitting ? 'Envoi...' : 'Envoyer pour validation'}
-      </button>
+        <div className={styles.formGroup}>
+          <h3>
+            {isAiFailure 
+              ? "L'analyse a échoué, veuillez saisir le texte manuellement" 
+              : "Vérifier le texte et valider"
+            }
+          </h3>
+          <textarea 
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Saisir le texte de la bulle ici..."
+            className={styles.textarea}
+          />
+        </div>
+        <button type="submit" disabled={isSubmitting} className={styles.submitButton}>
+          {isSubmitting ? 'Envoi...' : 'Envoyer pour validation'}
+        </button>
       </form>
     </div>
   );

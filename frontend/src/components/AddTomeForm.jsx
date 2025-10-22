@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import { createTome } from '../services/api';
+import styles from './AddTomeForm.module.css';
 
 const AddTomeForm = ({ onTomeAdded }) => {
   const { session } = useAuth();
@@ -16,7 +17,7 @@ const AddTomeForm = ({ onTomeAdded }) => {
       await createTome({ numero, titre }, token);
       alert(`Le tome ${numero} a été créé !`);
       event.target.reset();
-      if (onTomeAdded) onTomeAdded(); // Pour rafraîchir la liste des tomes dans le futur
+      if (onTomeAdded) onTomeAdded();
     } catch (error) {
       const errorMessage = error.response?.data?.error || "Une erreur est survenue.";
       alert(errorMessage);
@@ -24,18 +25,18 @@ const AddTomeForm = ({ onTomeAdded }) => {
   };
 
   return (
-    <div style={{ border: '1px solid #ccc', padding: '20px', marginTop: '20px' }}>
+    <div className={styles.formContainer}>
       <h3>1. Créer un Nouveau Tome</h3>
       <form onSubmit={handleSubmit}>
-        <div style={{ marginBottom: '10px' }}>
-          <label>Numéro : </label>
-          <input type="number" name="numero" required />
+        <div className={styles.formGroup}>
+          <label htmlFor="tome-numero">Numéro :</label>
+          <input id="tome-numero" type="number" name="numero" required className={styles.formInput} />
         </div>
-        <div style={{ marginBottom: '10px' }}>
-          <label>Titre : </label>
-          <input type="text" name="titre" required style={{ width: '300px' }}/>
+        <div className={styles.formGroup}>
+          <label htmlFor="tome-titre">Titre :</label>
+          <input id="tome-titre" type="text" name="titre" required className={styles.formInput} />
         </div>
-        <button type="submit">Créer le Tome</button>
+        <button type="submit" className={styles.submitButton}>Créer le Tome</button>
       </form>
     </div>
   );
