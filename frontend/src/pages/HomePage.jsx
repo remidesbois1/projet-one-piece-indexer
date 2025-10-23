@@ -80,6 +80,7 @@ const HomePage = () => {
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h1>Bibliothèque One Piece</h1>
         <div>
+          <Link to="/my-submissions" style={{ marginRight: '15px' }}>Mes Soumissions</Link>
           {profile?.role === 'Admin' && (
             <Link to="/admin" style={{ marginRight: '15px', fontWeight: 'bold', color: 'red' }}>ADMINISTRATION</Link>
           )}

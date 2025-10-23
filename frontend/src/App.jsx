@@ -8,6 +8,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import ModerationPage from './pages/ModerationPage';
 import PageReview from './pages/PageReview';
 import ProtectedRoute from './components/ProtectedRoute';
+import MySubmissionsPage from './pages/MySubmissionsPage';
 
 function App() {
   return (
@@ -24,6 +25,10 @@ function App() {
       <Route 
         path="/annotate/:pageId" 
         element={<ProtectedRoute><AnnotatePage /></ProtectedRoute>} 
+      />
+      <Route
+        path="/my-submissions"
+        element={<ProtectedRoute><MySubmissionsPage /></ProtectedRoute>}
       />
       
       {/* Routes Admin */}
