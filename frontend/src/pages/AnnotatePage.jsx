@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getPageById, createBubble, getBubblesForPage, deleteBubble, submitPageForReview, reorderBubbles } from '../services/api';
+import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, reorderBubbles, analyseBubble } from '../services/api';
 import ValidationForm from '../components/ValidationForm';
 import { useAuth } from '../context/AuthContext';
 import styles from './AnnotatePage.module.css';
@@ -27,7 +27,7 @@ const AnnotatePage = () => {
     const [rectangle, setRectangle] = useState(null);
 
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [pendingBubble, setPendingBubble] = useState(null);
+    const [pendingAnnotation, setPendingAnnotation] = useState(null);
 
     const fetchBubbles = useCallback(() => {
         if (pageId && session?.access_token) {
@@ -53,18 +53,21 @@ const AnnotatePage = () => {
         const token = session?.access_token;
         if (rectangle && token) {
             setIsSubmitting(true);
-            setPendingBubble(null);
-            const bubbleData = {
+            setPendingAnnotation(null);
+            const analysisData = {
                 id_page: parseInt(pageId, 10),
                 ...rectangle,
             };
-            createBubble(bubbleData, token)
+            analyseBubble(analysisData, token)
                 .then(response => {
-                    setPendingBubble(response.data);
+                    setPendingAnnotation({
+                        ...analysisData,
+                        texte_propose: response.data.texte_propose
+                    });
                 })
                 .catch(error => {
-                    console.error("Erreur lors de la création de la bulle:", error);
-                    setError("L'envoi de la bulle a échoué.");
+                    console.error("Erreur lors de l'analyse de la bulle:", error);
+                    setError("L'analyse de la bulle a échoué.");
                 })
                 .finally(() => {
                     setIsSubmitting(false);
@@ -85,7 +88,7 @@ const AnnotatePage = () => {
     };
 
     const handleSuccess = () => {
-        setPendingBubble(null);
+        setPendingAnnotation(null);
         setRectangle(null);
         fetchBubbles();
     };
@@ -252,8 +255,8 @@ const AnnotatePage = () => {
                     </div>
                     {isSubmitting && <div className={styles.loadingMessage}>Analyse OCR en cours...</div>}
 
-                    <Modal isOpen={!!pendingBubble} onClose={() => setPendingBubble(null)}>
-                        <ValidationForm bubble={pendingBubble} onValidationSuccess={handleSuccess} />
+                    <Modal isOpen={!!pendingAnnotation} onClose={() => setPendingAnnotation(null)}>
+                        <ValidationForm annotationData={pendingAnnotation} onValidationSuccess={handleSuccess} />
                     </Modal>
 
                 </main>
@@ -268,7 +271,7 @@ const AnnotatePage = () => {
                             items={existingBubbles.map(b => b.id)}
                             strategy={verticalListSortingStrategy}
                         >
-                            <ul>
+                            <ul className={styles.bubbleList}>
                                 {existingBubbles.map((bubble, index) => (
                                     <SortableBubbleItem 
                                         key={bubble.id}
