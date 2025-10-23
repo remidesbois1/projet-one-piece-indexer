@@ -173,3 +173,17 @@
 .deleteButton:hover {
     opacity: 1;
 }
+
+.editButton {
+    background: none;
+    border: none;
+    color: #007bff;
+    cursor: pointer;
+    font-size: 1.2rem;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+    margin-right: 5px;
+}
+.editButton:hover {
+    opacity: 1;
+}
