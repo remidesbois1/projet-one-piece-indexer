@@ -1,25 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { updateBubbleText } from '../services/api';
+import { createBubble } from '../services/api';
 import styles from './ValidationForm.module.css';
 
-const ValidationForm = ({ bubble, onValidationSuccess }) => {
+const ValidationForm = ({ annotationData, onValidationSuccess }) => {
   const { session } = useAuth();
   const [text, setText] = useState('');
   const [isAiFailure, setIsAiFailure] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    if (bubble) {
-      if (bubble.texte_propose === '<REJET>') {
+    if (annotationData) {
+      if (annotationData.texte_propose === '<REJET>') {
         setText('');
         setIsAiFailure(true);
       } else {
-        setText(bubble.texte_propose || '');
+        setText(annotationData.texte_propose || '');
         setIsAiFailure(false);
       }
     }
-  }, [bubble]);
+  }, [annotationData]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -29,7 +29,15 @@ const ValidationForm = ({ bubble, onValidationSuccess }) => {
     }
     setIsSubmitting(true);
     try {
-      await updateBubbleText(bubble.id, text, session.access_token);
+        const finalBubbleData = {
+            id_page: annotationData.id_page,
+            x: annotationData.x,
+            y: annotationData.y,
+            w: annotationData.w,
+            h: annotationData.h,
+            texte_propose: text,
+        };
+      await createBubble(finalBubbleData, session.access_token);
       alert("Annotation envoyée pour validation !");
       onValidationSuccess();
     } catch (error) {
@@ -40,7 +48,7 @@ const ValidationForm = ({ bubble, onValidationSuccess }) => {
     }
   };
 
-  if (!bubble) return null;
+  if (!annotationData) return null;
 
   return (
     <form onSubmit={handleSubmit} className={styles.form}>
