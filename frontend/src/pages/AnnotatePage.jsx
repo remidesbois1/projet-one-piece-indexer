@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getPageById, createBubble, getBubblesForPage, deleteBubble, submitPageForReview } from '../services/api';
+import { getPageById, createBubble, getBubblesForPage, deleteBubble, submitPageForReview, reorderBubbles } from '../services/api';
 import ValidationForm from '../components/ValidationForm';
 import { useAuth } from '../context/AuthContext';
 import styles from './AnnotatePage.module.css';
 import Modal from '../components/Modal';
+import { DndContext, closestCenter } from '@dnd-kit/core';
+import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
+import { SortableBubbleItem } from '../components/SortableBubbleItem';
 
 const AnnotatePage = () => {
     const { user, session } = useAuth();
@@ -29,7 +32,10 @@ const AnnotatePage = () => {
     const fetchBubbles = useCallback(() => {
         if (pageId && session?.access_token) {
             getBubblesForPage(pageId, session.access_token)
-                .then(response => setExistingBubbles(response.data))
+                .then(response => {
+                    const sortedBubbles = response.data.sort((a, b) => a.order - b.order);
+                    setExistingBubbles(sortedBubbles);
+                })
                 .catch(error => console.error("Erreur de chargement des bulles existantes", error));
         }
     }, [pageId, session]);
@@ -165,6 +171,24 @@ const AnnotatePage = () => {
         return { left, top, width, height };
     };
 
+    const handleDragEnd = (event) => {
+        const { active, over } = event;
+        if (active.id !== over.id) {
+            setExistingBubbles((bubbles) => {
+                const oldIndex = bubbles.findIndex(b => b.id === active.id);
+                const newIndex = bubbles.findIndex(b => b.id === over.id);
+                const newOrder = arrayMove(bubbles, oldIndex, newIndex);
+
+                const orderedBubblesForApi = newOrder.map((b, index) => ({ id: b.id, order: index + 1 }));
+                reorderBubbles(orderedBubblesForApi, session.access_token).catch(err => {
+                    console.error("Failed to save new order:", err);
+                });
+                
+                return newOrder;
+            });
+        }
+    };
+
     if (error) return <div><p style={{ color: 'red' }}>{error}</p><Link to="/">Retour</Link></div>;
     if (!page) return <div>Chargement...</div>;
 
@@ -236,16 +260,28 @@ const AnnotatePage = () => {
 
                 <aside className={styles.sidebar}>
                     <h3>Bulles sur cette page ({existingBubbles.length})</h3>
-                    <ul>
-                        {existingBubbles.map((bubble, index) => (
-                            <li key={bubble.id} className={styles.bubbleListItem}>
-                                <span>{index + 1}. {(bubble.texte_propose || '').substring(0, 20)}...</span>
-                                {bubble.statut === 'Proposé' && user && bubble.id_user_createur === user.id && (
-                                    <button onClick={() => handleDeleteBubble(bubble.id)} className={styles.deleteButton}>🗑️</button>
-                                )}
-                            </li>
-                        ))}
-                    </ul>
+                    <DndContext
+                        collisionDetection={closestCenter}
+                        onDragEnd={handleDragEnd}
+                    >
+                        <SortableContext
+                            items={existingBubbles.map(b => b.id)}
+                            strategy={verticalListSortingStrategy}
+                        >
+                            <ul>
+                                {existingBubbles.map((bubble, index) => (
+                                    <SortableBubbleItem 
+                                        key={bubble.id}
+                                        id={bubble.id}
+                                        bubble={bubble}
+                                        index={index}
+                                        user={user}
+                                        onDelete={handleDeleteBubble}
+                                    />
+                                ))}
+                            </ul>
+                        </SortableContext>
+                    </DndContext>
                 </aside>
             </div>
         </div>

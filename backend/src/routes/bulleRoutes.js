@@ -250,4 +250,27 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     }
 });
 
+/**
+ * @route   PUT /api/bulles/reorder
+ * @desc    Réorganiser l'ordre des bulles pour une page donnée
+ * @access  Privé
+ */
+router.put('/reorder', authMiddleware, async (req, res) => {
+    const { orderedBubbles } = req.body; // ex: [{id: 1, order: 1}, {id: 3, order: 2}, {id: 2, order: 3}]
+
+    if (!orderedBubbles || !Array.isArray(orderedBubbles)) {
+        return res.status(400).json({ error: "Un tableau de bulles ordonnées est requis." });
+    }
+
+    try {
+        const { error } = await supabaseAdmin.rpc('reorder_bubbles', { bubbles_data: orderedBubbles });
+
+        if (error) throw error;
+
+        res.status(200).json({ message: "Ordre mis à jour." });
+    } catch (error) {
+        res.status(500).json({ error: "Erreur lors de la mise à jour de l'ordre." });
+    }
+});
+
 module.exports = router;
