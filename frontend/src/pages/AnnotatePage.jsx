@@ -10,6 +10,9 @@ import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-ki
 import { SortableBubbleItem } from '../components/SortableBubbleItem';
 
 const AnnotatePage = () => {
+    const handleEditBubble = (bubble) => {
+        setPendingAnnotation(bubble);
+    };
     const { user, session } = useAuth();
     const { pageId } = useParams();
     const [page, setPage] = useState(null);
@@ -271,7 +274,7 @@ const AnnotatePage = () => {
                             items={existingBubbles.map(b => b.id)}
                             strategy={verticalListSortingStrategy}
                         >
-                            <ul className={styles.bubbleList}>
+                            <ul>
                                 {existingBubbles.map((bubble, index) => (
                                     <SortableBubbleItem 
                                         key={bubble.id}
@@ -279,6 +282,8 @@ const AnnotatePage = () => {
                                         bubble={bubble}
                                         index={index}
                                         user={user}
+                                        // On passe la nouvelle fonction au composant
+                                        onEdit={handleEditBubble} 
                                         onDelete={handleDeleteBubble}
                                     />
                                 ))}

@@ -3,7 +3,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import styles from '../pages/AnnotatePage.module.css';
 
-export const SortableBubbleItem = ({ bubble, index, user, onDelete }) => {
+export const SortableBubbleItem = ({ bubble, index, user, onEdit, onDelete }) => {
     const { 
         attributes, 
         listeners, 
@@ -28,7 +28,10 @@ export const SortableBubbleItem = ({ bubble, index, user, onDelete }) => {
                 <span className={styles.bubbleItemText}>{(bubble.texte_propose || '').substring(0, 25)}...</span>
             </div>
             {bubble.statut === 'Proposé' && user && bubble.id_user_createur === user.id && (
-                <button onClick={() => onDelete(bubble.id)} className={styles.deleteButton}>🗑️</button>
+                <div>
+                    <button onClick={() => onEdit(bubble)} className={styles.editButton}>✏️</button>
+                    <button onClick={() => onDelete(bubble.id)} className={styles.deleteButton}>🗑️</button>
+                </div>
             )}
         </li>
     );
