@@ -40,3 +40,4 @@ export const submitPageForReview = (pageId, token) => apiClient.put(`/pages/${pa
 export const getPagesForReview = (token) => apiClient.get('/moderation/pages', getAuthHeaders(token));
 export const approvePage = (pageId, token) => apiClient.put(`/moderation/pages/${pageId}/approve`, {}, getAuthHeaders(token));
 export const rejectPage = (pageId, token) => apiClient.put(`/moderation/pages/${pageId}/reject`, {}, getAuthHeaders(token));
+export const analyseBubble = (bubbleData, token) => apiClient.post('/analyse/bubble', bubbleData, getAuthHeaders(token));
