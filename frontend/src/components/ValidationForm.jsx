@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { createBubble } from '../services/api';
+import { createBubble, updateBubbleText } from '../services/api';
 import styles from './ValidationForm.module.css';
 
 const ValidationForm = ({ annotationData, onValidationSuccess }) => {
@@ -8,6 +8,8 @@ const ValidationForm = ({ annotationData, onValidationSuccess }) => {
   const [text, setText] = useState('');
   const [isAiFailure, setIsAiFailure] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  const isEditing = annotationData && annotationData.id; // On détermine si on est en mode édition
 
   useEffect(() => {
     if (annotationData) {
@@ -29,16 +31,21 @@ const ValidationForm = ({ annotationData, onValidationSuccess }) => {
     }
     setIsSubmitting(true);
     try {
+      if (isEditing) {
+        // Mode MISE À JOUR
+        await updateBubbleText(annotationData.id, text, session.access_token);
+        alert("Annotation mise à jour !");
+      } else {
+        // Mode CRÉATION
         const finalBubbleData = {
             id_page: annotationData.id_page,
-            x: annotationData.x,
-            y: annotationData.y,
-            w: annotationData.w,
-            h: annotationData.h,
+            x: annotationData.x, y: annotationData.y,
+            w: annotationData.w, h: annotationData.h,
             texte_propose: text,
         };
-      await createBubble(finalBubbleData, session.access_token);
-      alert("Annotation envoyée pour validation !");
+        await createBubble(finalBubbleData, session.access_token);
+        alert("Annotation envoyée pour validation !");
+      }
       onValidationSuccess();
     } catch (error) {
       console.error("Erreur lors de la soumission", error);
@@ -53,9 +60,11 @@ const ValidationForm = ({ annotationData, onValidationSuccess }) => {
   return (
     <form onSubmit={handleSubmit} className={styles.form}>
       <h3 className={styles.title}>
-        {isAiFailure 
-          ? "L'analyse a échoué, veuillez saisir le texte manuellement" 
-          : "Vérifier le texte et valider"
+        {isEditing 
+            ? "Éditer le texte de la bulle" 
+            : isAiFailure 
+                ? "L'analyse a échoué, veuillez saisir le texte" 
+                : "Vérifier le texte et valider"
         }
       </h3>
       <textarea 
@@ -65,7 +74,7 @@ const ValidationForm = ({ annotationData, onValidationSuccess }) => {
         className={styles.textarea}
       />
       <button type="submit" disabled={isSubmitting} className={styles.submitButton}>
-        {isSubmitting ? 'Envoi...' : 'Envoyer pour validation'}
+        {isSubmitting ? 'Envoi...' : (isEditing ? 'Sauvegarder les changements' : 'Envoyer pour validation')}
       </button>
     </form>
   );
