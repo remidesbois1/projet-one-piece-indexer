@@ -9,6 +9,7 @@ import ModerationPage from './pages/ModerationPage';
 import PageReview from './pages/PageReview';
 import ProtectedRoute from './components/ProtectedRoute';
 import MySubmissionsPage from './pages/MySubmissionsPage';
+import BountyBoardPage from './pages/BountyBoardPage';
 
 function App() {
   return (
@@ -16,6 +17,7 @@ function App() {
       {/* Routes Publiques */}
       <Route path="/login" element={<LoginPage />} />
       <Route path="/search" element={<SearchPage />} />
+      <Route path="/bounties" element={<BountyBoardPage />} />
 
       {/* Routes Privées */}
       <Route 
