@@ -81,6 +81,7 @@ const HomePage = () => {
         <h1>Bibliothèque One Piece</h1>
         <div>
           <Link to="/my-submissions" style={{ marginRight: '15px' }}>Mes Soumissions</Link>
+          <Link to="/bounties" style={{ marginRight: '15px' }}>Primes</Link>
           {profile?.role === 'Admin' && (
             <Link to="/admin" style={{ marginRight: '15px', fontWeight: 'bold', color: 'red' }}>ADMINISTRATION</Link>
           )}

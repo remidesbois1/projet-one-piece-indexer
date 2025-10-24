@@ -1,0 +1,75 @@
+.board {
+    padding: 2rem;
+    background-color: #d2b48c;
+    background-image: url('https://www.transparenttextures.com/patterns/wood-pattern.png');
+    min-height: 100vh;
+}
+
+.header {
+    text-align: center;
+    color: #4a2c2a;
+    font-family: 'Times New Roman', Times, serif;
+    margin-bottom: 2rem;
+}
+
+.header h1 {
+    font-size: 3rem;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+}
+
+.summary {
+    display: flex;
+    justify-content: space-around;
+    background: #fdf5e6;
+    padding: 1rem;
+    border: 2px solid #8B4513;
+    border-radius: 4px;
+    margin-bottom: 3rem;
+}
+
+.statItem {
+    text-align: center;
+}
+
+.statValue {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #005c99;
+}
+
+.statLabel {
+    color: #5a3a3a;
+}
+
+.postersGrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 2rem;
+}
+
+.wantedPoster {
+    background-color: #f5e4c3;
+    border: 10px solid #8B4513;
+    padding: 1rem;
+    text-align: center;
+    font-family: 'Times New Roman', Times, serif;
+    box-shadow: 5px 5px 15px rgba(0,0,0,0.3);
+}
+
+.posterImage {
+    border: 2px solid #4a2c2a;
+    padding: 5px;
+    background: white;
+    margin-bottom: 1rem;
+}
+
+.pirateName {
+    font-size: 1.5rem;
+    font-weight: bold;
+    word-break: break-all;
+}
+
+.bountyAmount {
+    font-size: 1.2rem;
+    margin-top: 0.5rem;
+}
