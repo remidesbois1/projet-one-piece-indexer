@@ -41,4 +41,4 @@ export const getPagesForReview = (token) => apiClient.get('/moderation/pages', g
 export const approvePage = (pageId, token) => apiClient.put(`/moderation/pages/${pageId}/approve`, {}, getAuthHeaders(token));
 export const rejectPage = (pageId, token) => apiClient.put(`/moderation/pages/${pageId}/reject`, {}, getAuthHeaders(token));
 export const analyseBubble = (bubbleData, token) => apiClient.post('/analyse/bubble', bubbleData, getAuthHeaders(token));
-export const getMySubmissions = (token) => apiClient.get('/user/bulles', getAuthHeaders(token));
+export const getMySubmissions = (token, page = 1, limit = 10) => apiClient.get(`/user/bulles?page=${page}&limit=${limit}`, getAuthHeaders(token));
