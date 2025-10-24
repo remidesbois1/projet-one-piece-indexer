@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const apiClient = axios.create({
-  baseURL: 'http://localhost:3001/api',
+  baseURL: 'https://projet-one-piece-indexer.onrender.com/api',
 });
 
 const getAuthHeaders = (token) => ({
