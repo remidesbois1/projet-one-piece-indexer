@@ -26,14 +26,32 @@ router.post('/', authMiddleware, async (req, res) => {
 });
 
 router.get('/pending', authMiddleware, roleCheck(['Admin', 'Modo']), async (req, res) => {
-    try {
-        const { data, error } = await supabaseAdmin.from('bulles').select('id, texte_propose').eq('statut', 'Proposé').order('created_at', { ascending: true });
-        if (error) throw error;
-        const results = data.map(bubble => ({ ...bubble, crop_url: `/api/bulles/${bubble.id}/crop` }));
-        res.status(200).json(results);
-    } catch (error) {
-        res.status(500).json({ error: "Erreur lors de la récupération des bulles en attente."});
-    }
+  const { page = 1, limit = 5 } = req.query; // On met une limite par défaut plus basse
+  const pageInt = parseInt(page);
+  const limitInt = parseInt(limit);
+  const offset = (pageInt - 1) * limitInt;
+
+  try {
+    const { data, error } = await supabaseAdmin.rpc('get_pending_bubbles', {
+      page_limit: limitInt,
+      page_offset: offset
+    });
+
+    if (error) throw error;
+    
+    const results = data.map(bubble => ({
+      ...bubble,
+      crop_url: `/api/bulles/${bubble.id}/crop`
+    }));
+
+    res.status(200).json({
+      results: results,
+      totalCount: data.length > 0 ? data[0].total_count : 0
+    });
+  } catch (error) {
+    console.error("Erreur backend sur /pending:", error);
+    res.status(500).json({ error: "Erreur lors de la récupération des bulles en attente."});
+  }
 });
 
 router.put('/reorder', authMiddleware, async (req, res) => {
