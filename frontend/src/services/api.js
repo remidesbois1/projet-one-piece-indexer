@@ -17,7 +17,7 @@ export const getPageById = (id, token) => apiClient.get(`/pages/${id}`, getAuthH
 export const createBubble = (bubbleData, token) => apiClient.post('/bulles', bubbleData, getAuthHeaders(token));
 export const updateBubbleText = (id, text, token) => apiClient.put(`/bulles/${id}`, { texte_propose: text }, getAuthHeaders(token));
 export const searchBubbles = (query, page = 1) => apiClient.get(`/search?q=${query}&page=${page}`);
-export const getPendingBubbles = (token) => apiClient.get('/bulles/pending', getAuthHeaders(token));
+export const getPendingBubbles = (token, page = 1, limit = 5) => apiClient.get(`/bulles/pending?page=${page}&limit=${limit}`, getAuthHeaders(token));
 export const validateBubble = (id, token) => apiClient.put(`/bulles/${id}/validate`, {}, getAuthHeaders(token));
 export const rejectBubble = (id, token) => apiClient.put(`/bulles/${id}/reject`, {}, getAuthHeaders(token));
 export const getBubbleCrop = (id, token) => apiClient.get(`/bulles/${id}/crop`, {
