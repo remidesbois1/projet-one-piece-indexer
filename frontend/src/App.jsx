@@ -10,56 +10,49 @@ import PageReview from './pages/PageReview';
 import ProtectedRoute from './components/ProtectedRoute';
 import MySubmissionsPage from './pages/MySubmissionsPage';
 import BountyBoardPage from './pages/BountyBoardPage';
+import Layout from './components/Layout';
 
 function App() {
   return (
     <Routes>
-      {/* Routes Publiques */}
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/search" element={<SearchPage />} />
-      <Route path="/bounties" element={<BountyBoardPage />} />
 
-      {/* Routes Privées */}
-      <Route 
-        path="/" 
-        element={<ProtectedRoute><HomePage /></ProtectedRoute>} 
-      />
-      <Route 
-        path="/annotate/:pageId" 
-        element={<ProtectedRoute><AnnotatePage /></ProtectedRoute>} 
-      />
-      <Route
-        path="/my-submissions"
-        element={<ProtectedRoute><MySubmissionsPage /></ProtectedRoute>}
-      />
+      <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/search" element={<SearchPage />} />
+        <Route path="/bounties" element={<BountyBoardPage />} />
+        <Route path="/annotate/:pageId" element={<AnnotatePage />} />
+        <Route path="/my-submissions" element={<MySubmissionsPage />} />
+        
+        <Route 
+          path="/admin" 
+          element={
+            <ProtectedRoute allowedRoles={['Admin']}>
+              <AdminDashboard />
+            </ProtectedRoute>
+          } 
+        />
+        
+        <Route 
+          path="/moderation" 
+          element={
+            <ProtectedRoute allowedRoles={['Admin', 'Modo']}>
+              <ModerationPage />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/moderation/page/:pageId" 
+          element={
+            <ProtectedRoute allowedRoles={['Admin', 'Modo']}>
+              <PageReview />
+            </ProtectedRoute>
+          } 
+        />
+      </Route>
+
+      {/* Define routes outside the Layout if they shouldn't have the header, like LoginPage */}
       
-      {/* Routes Admin */}
-      <Route 
-        path="/admin" 
-        element={
-          <ProtectedRoute allowedRoles={['Admin']}>
-            <AdminDashboard />
-          </ProtectedRoute>
-        } 
-      />
-      
-      {/* Routes Modération */}
-      <Route 
-        path="/moderation" 
-        element={
-          <ProtectedRoute allowedRoles={['Admin', 'Modo']}>
-            <ModerationPage />
-          </ProtectedRoute>
-        } 
-      />
-      <Route 
-        path="/moderation/page/:pageId" 
-        element={
-          <ProtectedRoute allowedRoles={['Admin', 'Modo']}>
-            <PageReview />
-          </ProtectedRoute>
-        } 
-      />
     </Routes>
   );
 }

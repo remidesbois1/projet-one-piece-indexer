@@ -1,22 +1,33 @@
 .libraryContainer {
-    padding: 2rem;
+    padding: 0; /* Padding is now handled by the Layout component */
+}
+
+.header { /* Style moved to the global Header component */
+    /* Remove styles related to the header here */
+    margin-bottom: 2rem; /* Keep spacing if needed below the global header */
 }
 
 .tomeGrid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 1.5rem;
-    margin-top: 2rem;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); /* Slightly larger min size */
+    gap: 2rem;
+    margin-top: 1rem;
 }
 
 .tomeItem {
     cursor: pointer;
     text-align: center;
     transition: transform 0.2s ease-in-out;
+    border-radius: 8px;
+    overflow: hidden; /* Ensure cover radius is respected */
+    background-color: #fff; /* Add a light background for contrast */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    padding-bottom: 0.5rem;
 }
 
 .tomeItem:hover {
-    transform: scale(1.05);
+    transform: translateY(-5px) scale(1.03);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
 }
 
 .tomeCover {
@@ -24,37 +35,75 @@
     height: auto;
     aspect-ratio: 2 / 3;
     object-fit: cover;
-    border-radius: 8px;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-    margin-bottom: 0.5rem;
+    display: block; /* Remove margin issues */
+    margin-bottom: 0.5rem; /* Space between image and title */
 }
 
 .tomeTitle {
     font-weight: bold;
-    font-size: 0.9rem;
+    font-size: 1rem; /* Slightly larger font */
+    color: var(--color-navy); /* Use theme color */
+    padding: 0 0.5rem; /* Add horizontal padding */
+}
+
+/* Modal Content Styles (Chapters/Pages) */
+.modalHeader {
+    font-family: var(--font-title);
+    color: var(--color-wood);
+    border-bottom: 2px solid var(--color-wood);
+    padding-bottom: 0.5rem;
+    margin-bottom: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modalHeader button { /* Back button style */
+    background: none;
+    border: none;
+    color: var(--color-navy);
+    cursor: pointer;
+    font-size: 1.5rem;
+    padding: 0 0.5rem;
+}
+.modalHeader button:hover {
+    color: var(--color-accent);
 }
 
 .chapterList {
     list-style: none;
     padding: 0;
+    max-height: 60vh;
+    overflow-y: auto;
 }
 
 .chapterList li {
-    padding: 10px;
+    padding: 12px 15px;
     cursor: pointer;
-    border-radius: 5px;
+    border-radius: 4px;
     transition: background-color 0.2s;
+    border-bottom: 1px solid #eee; /* Separator */
+    font-size: 1rem;
+}
+
+.chapterList li:last-child {
+    border-bottom: none;
 }
 
 .chapterList li:hover {
-    background-color: #f0f0f0;
+    background-color: var(--color-parchment);
+    color: var(--color-wood);
+    font-weight: bold;
 }
 
 .pageGrid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(50px, 1fr));
-    gap: 10px;
+    grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); /* Slightly larger page numbers */
+    gap: 12px;
     margin-top: 1rem;
+    max-height: 55vh;
+    overflow-y: auto;
+    padding: 5px; /* Add padding for scrollbar */
 }
 
 .pageItem {
@@ -62,29 +111,35 @@
     justify-content: center;
     align-items: center;
     border: 1px solid #ccc;
-    padding: 10px;
-    border-radius: 5px;
+    padding: 12px;
+    border-radius: 4px;
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: background-color 0.2s, border-color 0.2s, transform 0.1s;
+    font-weight: bold;
+    background-color: #fff;
 }
 
 .pageItem:hover {
-    background-color: #e9e9e9;
-    border-color: #999;
+    background-color: var(--color-parchment);
+    border-color: var(--color-wood);
+    transform: scale(1.05);
 }
 
+/* Status colors using theme variables */
 .pageItemPending {
-    background-color: #ffe0b3;
-    border-color: #ff9800;
+    background-color: #ffe0b3; /* Light orange */
+    border-color: var(--color-status-pending);
+    color: var(--color-status-pending);
 }
 .pageItemPending:hover {
-    background-color: #ffca80;
+    background-color: #ffca80; /* Darker orange */
 }
 
 .pageItemCompleted {
-    background-color: #c8e6c9;
-    border-color: #4CAF50;
+    background-color: #c8e6c9; /* Light green */
+    border-color: var(--color-status-valid);
+    color: var(--color-status-valid);
 }
 .pageItemCompleted:hover {
-    background-color: #a5d6a7;
+    background-color: #a5d6a7; /* Darker green */
 }

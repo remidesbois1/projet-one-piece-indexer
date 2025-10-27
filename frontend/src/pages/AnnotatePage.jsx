@@ -106,7 +106,7 @@ const AnnotatePage = () => {
         if (window.confirm("Êtes-vous sûr de vouloir soumettre cette page pour validation ? Vous ne pourrez plus y ajouter de bulles.")) {
             try {
                 const response = await submitPageForReview(pageId, session.access_token);
-                setPage(response.data);
+                setPage(response.data); // Mettre à jour le statut de la page affiché
                 alert("Page soumise pour validation !");
             } catch (error) {
                 alert("Erreur lors de la soumission de la page.");
@@ -126,17 +126,23 @@ const AnnotatePage = () => {
     };
 
     const handleMouseDown = (event) => {
+        // Prevent drawing if the page is not in a modifiable state
+        if (page?.statut !== 'not_started' && page?.statut !== 'in_progress') return;
         event.preventDefault();
         setIsDrawing(true);
         const coords = getContainerCoords(event);
         setStartPoint(coords);
         setEndPoint(coords);
-        setRectangle(null);
+        setRectangle(null); // Clear previous rectangle data
+        setPendingAnnotation(null); // Close modal if open
     };
 
     const handleMouseMove = (event) => {
-        const rect = event.currentTarget.getBoundingClientRect();
-        setMousePos({ x: event.clientX - rect.left, y: event.clientY - rect.top });
+        const container = containerRef.current;
+        if (container) {
+            const rect = container.getBoundingClientRect();
+            setMousePos({ x: event.clientX - rect.left, y: event.clientY - rect.top });
+        }
         if (!isDrawing) return;
         event.preventDefault();
         setEndPoint(getContainerCoords(event));
@@ -147,16 +153,32 @@ const AnnotatePage = () => {
         event.preventDefault();
         setIsDrawing(false);
         const imageEl = imageRef.current;
-        if (!imageEl) return;
+        if (!imageEl || !startPoint || !endPoint) return; // Check startPoint & endPoint too
+
+        // Ensure naturalWidth is loaded and valid
+        if (imageEl.naturalWidth === 0 || imageEl.naturalHeight === 0) {
+            console.warn("Image natural dimensions not available yet.");
+            return;
+        }
+
         const originalWidth = imageEl.naturalWidth;
         const displayedWidth = imageEl.offsetWidth;
-        const scale = originalWidth > 0 ? originalWidth / displayedWidth : 1;
+        // Check for displayedWidth being zero if image hasn't rendered fully
+        if (displayedWidth === 0) return;
+
+        const scale = originalWidth / displayedWidth;
+
+        // Ensure startPoint and endPoint are valid
+        const currentEndPoint = getContainerCoords(event) || endPoint; // Use last known if event coords are null
+
         const unscaledRect = {
-            x: Math.min(startPoint.x, endPoint.x),
-            y: Math.min(startPoint.y, endPoint.y),
-            w: Math.abs(startPoint.x - endPoint.x),
-            h: Math.abs(startPoint.y - endPoint.y),
+            x: Math.min(startPoint.x, currentEndPoint.x),
+            y: Math.min(startPoint.y, currentEndPoint.y),
+            w: Math.abs(startPoint.x - currentEndPoint.x),
+            h: Math.abs(startPoint.y - currentEndPoint.y),
         };
+
+        // Only process if the rectangle is reasonably sized
         if (unscaledRect.w > 5 && unscaledRect.h > 5) {
             const finalRect = {
                 x: Math.round(unscaledRect.x * scale),
@@ -165,32 +187,43 @@ const AnnotatePage = () => {
                 h: Math.round(unscaledRect.h * scale),
             };
             setRectangle(finalRect);
+        } else {
+            // Reset points if rectangle is too small to avoid accidental single clicks
+            setStartPoint(null);
+            setEndPoint(null);
         }
     };
 
+
     const getRectangleStyle = () => {
-        if (!startPoint || !endPoint) return { display: 'none' };
+        if (!isDrawing || !startPoint || !endPoint) return { display: 'none' };
         const left = Math.min(startPoint.x, endPoint.x);
         const top = Math.min(startPoint.y, endPoint.y);
         const width = Math.abs(startPoint.x - endPoint.x);
         const height = Math.abs(startPoint.y - endPoint.y);
-        return { left, top, width, height };
+        return { left: `${left}px`, top: `${top}px`, width: `${width}px`, height: `${height}px` };
     };
 
     const handleDragEnd = (event) => {
         const { active, over } = event;
-        if (active.id !== over.id) {
+        if (active && over && active.id !== over.id) {
             setExistingBubbles((bubbles) => {
                 const oldIndex = bubbles.findIndex(b => b.id === active.id);
                 const newIndex = bubbles.findIndex(b => b.id === over.id);
+                if (oldIndex === -1 || newIndex === -1) return bubbles; // Safety check
+
                 const newOrder = arrayMove(bubbles, oldIndex, newIndex);
 
+                // Update API with new order
                 const orderedBubblesForApi = newOrder.map((b, index) => ({ id: b.id, order: index + 1 }));
                 reorderBubbles(orderedBubblesForApi, session.access_token).catch(err => {
                     console.error("Failed to save new order:", err);
+                    // Optionally revert state or show error message
+                    alert("Erreur lors de la sauvegarde du nouvel ordre.");
+                    return bubbles; // Revert to previous state on error
                 });
-                
-                return newOrder;
+
+                return newOrder; // Optimistic UI update
             });
         }
     };
@@ -198,10 +231,14 @@ const AnnotatePage = () => {
     if (error) return <div><p style={{ color: 'red' }}>{error}</p><Link to="/">Retour</Link></div>;
     if (!page) return <div>Chargement...</div>;
 
+    // Determine Tome/Chapter number safely
+    const tomeNumber = page.chapitres?.tomes?.numero || '?';
+    const chapterNumber = page.chapitres?.numero || '?';
+
     return (
         <div className={styles.container}>
-            <header className={styles.header}>
-                <h2>Annotation - Page {page.numero_page} (Statut: {page.statut})</h2>
+            <div className={styles.subHeader}>
+                <h2>Annotation - T{tomeNumber} C{chapterNumber} P{page.numero_page} (Statut: {page.statut})</h2>
                 <div>
                     <button
                         onClick={handleSubmitPage}
@@ -209,27 +246,28 @@ const AnnotatePage = () => {
                     >
                         Soumettre la page pour vérification
                     </button>
-                    <Link to="/" style={{ marginLeft: '1rem' }}>Retour</Link>
+                    <Link to="/">Retour Bibliothèque</Link>
                 </div>
-            </header>
-            
+            </div>
+
             <div className={styles.pageLayout}>
                 <main className={styles.mainContent}>
-                    <div
+                     <div
                         ref={containerRef}
                         className={styles.imageContainer}
                         onMouseDown={handleMouseDown}
                         onMouseMove={handleMouseMove}
                         onMouseUp={handleMouseUp}
-                        onMouseLeave={handleMouseUp}
+                        onMouseLeave={handleMouseUp} // Keep MouseLeave for robustness
                     >
                         <img ref={imageRef} src={page.url_image} alt={`Page ${page.numero_page}`} className={styles.mangaImage} draggable="false" />
-                        
+
                         {isDrawing && <div style={getRectangleStyle()} className={styles.drawingRectangle} />}
 
                         {existingBubbles.map((bubble, index) => {
                             const imageEl = imageRef.current;
-                            if (!imageEl || !imageEl.naturalWidth) return null;
+                             // Check naturalWidth validity
+                            if (!imageEl || !imageEl.naturalWidth || imageEl.naturalWidth === 0) return null;
                             const scale = imageEl.offsetWidth / imageEl.naturalWidth;
                             const style = {
                                 left: `${bubble.x * scale}px`,
@@ -238,9 +276,9 @@ const AnnotatePage = () => {
                                 height: `${bubble.h * scale}px`,
                             };
                             return (
-                                <div 
-                                    key={bubble.id} 
-                                    style={style} 
+                                <div
+                                    key={bubble.id}
+                                    style={style}
                                     className={`${styles.existingRectangle} ${getBubbleColorClass(bubble.statut)}`}
                                     onMouseEnter={() => setHoveredBubble(bubble)}
                                     onMouseLeave={() => setHoveredBubble(null)}
@@ -261,11 +299,10 @@ const AnnotatePage = () => {
                     <Modal isOpen={!!pendingAnnotation} onClose={() => setPendingAnnotation(null)}>
                         <ValidationForm annotationData={pendingAnnotation} onValidationSuccess={handleSuccess} />
                     </Modal>
-
                 </main>
 
                 <aside className={styles.sidebar}>
-                    <h3>Bulles sur cette page ({existingBubbles.length})</h3>
+                    <h3>Bulles ({existingBubbles.length})</h3>
                     <DndContext
                         collisionDetection={closestCenter}
                         onDragEnd={handleDragEnd}
@@ -274,17 +311,18 @@ const AnnotatePage = () => {
                             items={existingBubbles.map(b => b.id)}
                             strategy={verticalListSortingStrategy}
                         >
-                            <ul>
+                            <ul className={styles.bubbleList}>
                                 {existingBubbles.map((bubble, index) => (
-                                    <SortableBubbleItem 
+                                    <SortableBubbleItem
                                         key={bubble.id}
-                                        id={bubble.id}
+                                        id={bubble.id} // Ensure id is passed for dnd-kit
                                         bubble={bubble}
                                         index={index}
                                         user={user}
-                                        // On passe la nouvelle fonction au composant
-                                        onEdit={handleEditBubble} 
+                                        onEdit={handleEditBubble}
                                         onDelete={handleDeleteBubble}
+                                        // Disable drag if page is not modifiable
+                                        disabled={page.statut !== 'not_started' && page.statut !== 'in_progress'}
                                     />
                                 ))}
                             </ul>

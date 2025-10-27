@@ -28,11 +28,13 @@ const BountyBoardPage = () => {
 
     return (
         <div className={styles.board}>
-            <Link to="/">Retour à l'accueil</Link>
-            <header className={styles.header}>
-                <h1>TABLEAU DES PRIMES</h1>
-                <p>Récompenses pour les plus grands contributeurs à la connaissance mondiale.</p>
-            </header>
+            <div className={styles.headerContainer}>
+                <Link to="/" className={styles.backLink}>&larr; Retour à la Bibliothèque</Link>
+                <header className={styles.header}>
+                    <h1>TABLEAU DES PRIMES</h1>
+                    <p>Récompenses pour les plus grands contributeurs à la connaissance mondiale.</p>
+                </header>
+            </div>
 
             {summary && (
                 <div className={styles.summary}>
@@ -58,7 +60,7 @@ const BountyBoardPage = () => {
                             <img src={`https://api.dicebear.com/7.x/pixel-art/svg?seed=${pirate.username}`} alt="avatar" width="200" height="200" />
                         </div>
                         <p className={styles.pirateName}>{pirate.username}</p>
-                        <p className={styles.bountyAmount}>{(pirate.bounty || 0).toLocaleString()} ฿</p>
+                        <p className={styles.bountyAmount}>{(pirate.bounty || 0).toLocaleString()}</p>
                     </div>
                 ))}
             </div>
