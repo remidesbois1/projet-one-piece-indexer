@@ -1,14 +1,28 @@
 .container {
-    padding: 2rem;
+    padding: 0; /* Handled by Layout */
     max-width: 900px;
-    margin: 0 auto;
+    margin: 0 auto; /* Center content */
 }
 
-.header {
+.subHeader { /* Renamed from header */
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 1rem;
-    border-bottom: 1px solid #e0e0e0;
+    margin-bottom: 2rem;
+    border-bottom: 2px solid var(--color-wood);
     padding-bottom: 1rem;
+}
+.subHeader h1 {
+    margin: 0;
+    font-size: 2.5rem;
+    color: var(--color-navy);
+}
+.subHeader a {
+    color: var(--color-navy);
+    font-weight: bold;
+}
+
+/* Styles below can be moved to component-specific CSS files */
+.formSection { /* Added wrapper for forms */
+    margin-bottom: 3rem;
 }

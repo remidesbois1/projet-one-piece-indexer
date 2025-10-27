@@ -77,21 +77,6 @@ const HomePage = () => {
 
   return (
     <div className={styles.libraryContainer}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1>Bibliothèque One Piece</h1>
-        <div>
-          <Link to="/my-submissions" style={{ marginRight: '15px' }}>Mes Soumissions</Link>
-          <Link to="/bounties" style={{ marginRight: '15px' }}>Primes</Link>
-          {profile?.role === 'Admin' && (
-            <Link to="/admin" style={{ marginRight: '15px', fontWeight: 'bold', color: 'red' }}>ADMINISTRATION</Link>
-          )}
-          {(profile?.role === 'Admin' || profile?.role === 'Modo') && (
-            <Link to="/moderation" style={{ marginRight: '15px' }}>MODÉRATION</Link>
-          )}
-          <span>{user?.email}</span>
-          <button onClick={handleLogout} style={{ marginLeft: '10px' }}>Se déconnecter</button>
-        </div>
-      </header>
       
       <main>
         <h2>Tomes</h2>

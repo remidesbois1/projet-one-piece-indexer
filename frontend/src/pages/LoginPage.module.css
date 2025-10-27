@@ -3,67 +3,97 @@
     justify-content: center;
     align-items: center;
     min-height: 100vh;
-    background-color: #f4f4f4;
+    /* Add a thematic background */
+    background-color: var(--color-parchment);
+    /* Optional: Add a subtle texture or image */
+    background-image: url('https://www.transparenttextures.com/patterns/old-map.png');
 }
 
 .loginCard {
-    background: white;
-    padding: 2rem 2.5rem;
+    background: rgba(255, 255, 255, 0.9); /* Slightly transparent white */
+    padding: 2.5rem 3rem;
     border-radius: 8px;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    box-shadow: 0 5px 20px rgba(0,0,0,0.2);
     width: 100%;
-    max-width: 400px;
+    max-width: 420px;
     text-align: center;
+    border: 3px solid var(--color-wood); /* Wood border */
 }
 
 .header {
-    margin-bottom: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.header h2 {
+    font-family: var(--font-title);
+    color: var(--color-navy);
+    font-size: 2.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.header p {
+    color: var(--color-text-dark);
+    font-size: 1rem;
 }
 
 .formGroup {
     text-align: left;
-    margin-bottom: 1rem;
+    margin-bottom: 1.2rem;
 }
 
 .formGroup label {
     display: block;
     font-weight: bold;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.6rem;
+    color: var(--color-navy);
 }
 
 .formInput {
     width: 100%;
-    padding: 10px 15px;
+    padding: 12px 18px;
     border: 1px solid #ccc;
-    border-radius: 8px;
+    border-radius: 4px;
     font-size: 1rem;
     box-sizing: border-box;
+    background-color: #fff;
+    color: var(--color-text-dark);
+}
+
+.formInput:focus {
+    outline: none;
+    border-color: var(--color-gold);
+    box-shadow: 0 0 0 2px rgba(218, 165, 32, 0.3); /* Gold focus ring */
 }
 
 .submitButton {
     width: 100%;
-    padding: 12px 20px;
+    padding: 14px 20px;
     border: none;
-    background-color: #005c99;
+    background-color: var(--color-accent); /* Use accent color */
     color: white;
     font-weight: bold;
-    border-radius: 8px;
+    border-radius: 4px;
     cursor: pointer;
-    transition: background-color 0.2s;
-    font-size: 1rem;
-    margin-top: 1rem;
+    transition: background-color 0.2s, transform 0.1s;
+    font-size: 1.1rem;
+    margin-top: 1.5rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
 }
 
 .submitButton:disabled {
     background-color: #a0a0a0;
     cursor: not-allowed;
+    transform: none;
 }
 
 .submitButton:hover:not(:disabled) {
-    background-color: #004471;
+    background-color: #a8031f; /* Darker accent */
+    transform: translateY(-2px);
 }
 
 .errorMessage {
-    color: red;
+    color: var(--color-status-rejected);
     margin-top: 1rem;
+    font-weight: bold;
 }

@@ -1,22 +1,47 @@
 .container {
-    padding: 0;
-    margin: 0 auto;
+    padding: 0; /* Handled by Layout */
+    margin: 0;
     max-width: 100%;
+    /* Ensure container takes full height if needed */
 }
 
-.header {
+.subHeader { /* Renamed from header to avoid conflict */
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 1rem 2rem;
-    background-color: white;
+    background-color: #fff; /* White background for contrast */
     border-bottom: 1px solid #e0e0e0;
+    margin-bottom: 2rem; /* Space below header */
+}
+.subHeader h2 {
+    margin: 0;
+    font-size: 1.8rem;
+    color: var(--color-navy);
+}
+.subHeader button,
+.subHeader a {
+    font-size: 0.9rem;
+    margin-left: 1rem;
+}
+.subHeader button {
+    background-color: var(--color-navy);
+}
+.subHeader button:hover {
+    background-color: var(--color-wood);
+}
+.subHeader button:disabled {
+    background-color: #a0a0a0;
+}
+.subHeader a {
+    color: var(--color-navy);
+    font-weight: bold;
 }
 
 .pageLayout {
     display: flex;
     gap: 2rem;
-    padding: 2rem;
+    padding: 0 2rem 2rem 2rem; /* Padding only horizontal and bottom */
 }
 
 .mainContent {
@@ -25,93 +50,102 @@
 }
 
 .imageContainer {
-    position: relative; 
+    position: relative;
     display: inline-block;
     cursor: crosshair;
     box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    border: 3px solid var(--color-wood); /* Thematic border */
+    background-color: white; /* Ensure background is white */
 }
 
 .mangaImage {
-    max-width: 800px;
+    max-width: 100%; /* Make image responsive */
+    height: auto;
     display: block;
 }
 
 .drawingRectangle {
     position: absolute;
-    border: 2px solid red;
+    border: 3px dashed var(--color-accent); /* Use accent color for drawing */
     box-sizing: border-box;
-}
-
-.centerContainer {
-    text-align: center;
+    background-color: rgba(217, 4, 41, 0.1); /* Light accent fill */
 }
 
 .loadingMessage {
     text-align: center;
     padding: 20px;
     font-weight: bold;
+    color: var(--color-navy);
+    font-size: 1.1rem;
 }
 
 .existingRectangle {
     position: absolute;
     box-sizing: border-box;
-    pointer-events: none;
+    pointer-events: none; /* Make sure it doesn't interfere with drawing */
 }
 
 .bubbleNumber {
     position: absolute;
-    top: -20px;
-    left: 0;
+    top: -22px; /* Adjust position */
+    left: -2px;
     color: white;
-    padding: 2px 6px;
-    border-radius: 5px;
-    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.8rem;
     font-weight: bold;
+    font-family: var(--font-text);
 }
 
+/* Use theme status colors */
 .proposedRectangle {
-    border: 2px dashed #ff9800;
+    border: 2px dashed var(--color-status-pending);
 }
 .proposedRectangle .bubbleNumber {
-    background-color: #ff9800;
+    background-color: var(--color-status-pending);
 }
 
 .validatedRectangle {
-    border: 2px solid #007bff;
+    border: 2px solid var(--color-status-valid);
 }
 .validatedRectangle .bubbleNumber {
-    background-color: #007bff;
+    background-color: var(--color-status-valid);
 }
 
 .tooltip {
     position: absolute;
-    background: rgba(0, 0, 0, 0.8);
-    color: white;
-    padding: 5px 10px;
+    background: var(--color-navy);
+    color: var(--color-text-light);
+    padding: 8px 12px;
     border-radius: 4px;
-    font-size: 14px;
+    font-size: 0.9rem;
+    font-family: var(--font-text);
     pointer-events: none;
     white-space: pre-wrap;
     max-width: 300px;
     z-index: 10;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
 }
 
 .sidebar {
     width: 350px;
     flex-shrink: 0;
-    background: #f4f7f9;
-    padding: 1rem;
+    background: #fdf5e6; /* Lighter parchment */
+    padding: 1.5rem;
     border-radius: 8px;
-    border: 1px solid #e0e0e0;
+    border: 1px solid var(--color-wood);
     display: flex;
     flex-direction: column;
-    max-height: 85vh;
+    max-height: calc(100vh - 120px); /* Adjust based on header+subheader */
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
 
 .sidebar h3 {
     margin-top: 0;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid #ddd;
+    padding-bottom: 0.8rem;
+    border-bottom: 2px solid var(--color-wood);
+    font-size: 1.5rem;
+    color: var(--color-navy);
 }
 
 .bubbleList {
@@ -119,6 +153,7 @@
     padding: 0;
     margin: 0;
     overflow-y: auto;
+    flex-grow: 1; /* Make list take available space */
 }
 
 .bubbleListItem {
@@ -126,12 +161,12 @@
     border-radius: 6px;
     border: 1px solid #e0e0e0;
     padding: 10px 15px;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     cursor: grab;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
     transition: box-shadow 0.2s, background-color 0.2s;
 }
 
@@ -141,49 +176,61 @@
 
 .bubbleListItemDragging {
     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    background-color: #f0f8ff;
+    background-color: #f0f8ff; /* Light blue when dragging */
 }
 
 .bubbleItemContent {
     display: flex;
     align-items: center;
     gap: 15px;
+    flex-grow: 1; /* Allow text to take space */
+    overflow: hidden; /* Prevent text overflow */
 }
 
 .bubbleItemNumber {
     font-weight: bold;
-    color: #007bff;
-    font-size: 1.1rem;
+    color: var(--color-navy);
+    font-size: 1.2rem;
+    min-width: 25px; /* Ensure numbers align */
+    text-align: right;
 }
 
 .bubbleItemText {
     font-size: 0.9rem;
+    color: var(--color-text-dark);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
+.bubbleActions { /* Container for buttons */
+    display: flex;
+    gap: 5px;
+}
+
+.editButton,
 .deleteButton {
     background: none;
     border: none;
-    color: #dc3545;
     cursor: pointer;
-    font-size: 1.2rem;
-    opacity: 0.5;
-    transition: opacity 0.2s;
-}
-
-.deleteButton:hover {
-    opacity: 1;
+    font-size: 1.2rem; /* Make icons slightly larger */
+    padding: 2px; /* Add padding for easier clicking */
+    opacity: 0.6;
+    transition: opacity 0.2s, color 0.2s;
 }
 
 .editButton {
-    background: none;
-    border: none;
-    color: #007bff;
-    cursor: pointer;
-    font-size: 1.2rem;
-    opacity: 0.6;
-    transition: opacity 0.2s;
-    margin-right: 5px;
+    color: var(--color-navy);
 }
 .editButton:hover {
     opacity: 1;
+    color: var(--color-gold);
+}
+
+.deleteButton {
+    color: var(--color-accent);
+}
+.deleteButton:hover {
+    opacity: 1;
+    color: #a8031f; /* Darker accent */
 }

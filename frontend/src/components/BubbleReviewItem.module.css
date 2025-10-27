@@ -1,13 +1,13 @@
 .itemContainer {
     display: flex;
-    flex-direction: column;
-    flex-direction: row;
+    flex-direction: row; /* Keep horizontal layout */
     align-items: center;
     gap: 1.5rem;
-    background: white;
+    background: #fff; /* Ensure white background */
     border: 1px solid #e0e0e0;
-    border-radius: 8px;
-    padding: 1rem;
+    border-left: 5px solid var(--color-status-pending); /* Pending color accent */
+    border-radius: 4px;
+    padding: 1rem 1.5rem;
     margin-bottom: 1rem;
     box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 }
@@ -16,24 +16,32 @@
     border: 1px solid #ccc;
     padding: 5px;
     background-color: #f8f9fa;
-    min-width: 200px;
+    min-width: 150px; /* Slightly smaller min-width */
+    max-width: 250px; /* Max width */
     text-align: center;
+    border-radius: 4px;
 }
 
 .cropImage {
-    max-width: 300px;
-    max-height: 150px;
+    max-width: 100%; /* Make image responsive within container */
+    max-height: 100px; /* Adjust max height */
+    display: block; /* Remove extra space */
 }
 
 .content {
     flex-grow: 1;
-    font-family: serif;
+    font-family: var(--font-text);
     font-size: 1.1rem;
+    line-height: 1.6;
+}
+.content p {
+    margin: 0;
 }
 
 .actions {
     display: flex;
-    gap: 10px;
+    flex-direction: column; /* Stack buttons vertically */
+    gap: 8px; /* Space between buttons */
 }
 
 .actionButton {
@@ -41,19 +49,26 @@
     border: none;
     color: white;
     font-weight: bold;
-    border-radius: 5px;
+    border-radius: 4px;
     cursor: pointer;
-    transition: opacity 0.2s;
+    transition: opacity 0.2s, transform 0.1s;
+    font-family: var(--font-text);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-size: 0.9rem;
+    min-width: 100px; /* Ensure buttons have same width */
+    text-align: center;
 }
 
 .actionButton:hover {
-    opacity: 0.8;
+    opacity: 0.85;
+    transform: scale(1.02);
 }
 
 .validate {
-    background-color: #28a745;
+    background-color: var(--color-status-valid);
 }
 
 .reject {
-    background-color: #dc3545;
+    background-color: var(--color-status-rejected);
 }
