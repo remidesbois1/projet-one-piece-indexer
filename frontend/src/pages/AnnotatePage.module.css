@@ -62,6 +62,7 @@
     max-width: 100%; /* Make image responsive */
     height: auto;
     display: block;
+    max-height: 75vh;
 }
 
 .drawingRectangle {
@@ -82,34 +83,32 @@
 .existingRectangle {
     position: absolute;
     box-sizing: border-box;
-    pointer-events: none; /* Make sure it doesn't interfere with drawing */
+    pointer-events: none;
 }
 
 .bubbleNumber {
     position: absolute;
-    top: -22px; /* Adjust position */
-    left: -2px;
+    top: -20px;
+    left: 0;
     color: white;
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 0.8rem;
+    padding: 2px 6px;
+    border-radius: 5px;
+    font-size: 12px;
     font-weight: bold;
-    font-family: var(--font-text);
 }
 
-/* Use theme status colors */
 .proposedRectangle {
-    border: 2px dashed var(--color-status-pending);
+    border: 2px dashed #ff9800;
 }
 .proposedRectangle .bubbleNumber {
-    background-color: var(--color-status-pending);
+    background-color: #ff9800;
 }
 
 .validatedRectangle {
-    border: 2px solid var(--color-status-valid);
+    border: 2px solid #007bff;
 }
 .validatedRectangle .bubbleNumber {
-    background-color: var(--color-status-valid);
+    background-color: #007bff;
 }
 
 .tooltip {

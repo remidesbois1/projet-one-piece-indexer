@@ -25,7 +25,6 @@ const Header = () => {
       <nav className={styles.nav}>
         <Link to="/">Bibliothèque</Link>
         <Link to="/search">Recherche</Link>
-        <Link to="/bounties">Primes</Link>
         <Link to="/my-submissions">Mes Soumissions</Link>
         {(isAdmin || isModo) && <Link to="/moderation">Modération</Link>}
         {isAdmin && <Link to="/admin">Administration</Link>}

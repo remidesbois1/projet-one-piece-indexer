@@ -70,7 +70,7 @@ router.post('/chapitres/upload', authMiddleware, roleCheck(['Admin']), upload.si
             const fileName = entry.path;
             const fileType = entry.type;
             
-            if (fileType === 'File' && /\.(webp|jpg|jpeg|png)$/i.test(fileName)) {
+            if (fileType === 'File' && /\.(webp|jpg|avif|jpeg|png)$/i.test(fileName)) {
                 const fileBuffer = await entry.buffer();
                 const storagePath = `tome-${tome_id}/chapitre-${numero}/${pageCounter}-${fileName}`;
 

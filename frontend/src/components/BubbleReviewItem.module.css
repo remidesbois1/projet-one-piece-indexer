@@ -1,31 +1,42 @@
 .itemContainer {
     display: flex;
-    flex-direction: row; /* Keep horizontal layout */
+    flex-direction: row;
     align-items: center;
     gap: 1.5rem;
-    background: #fff; /* Ensure white background */
+    background: #fff;
     border: 1px solid #e0e0e0;
-    border-left: 5px solid var(--color-status-pending); /* Pending color accent */
+    border-left: 5px solid var(--color-status-pending); /* Garde l'accent */
     border-radius: 4px;
     padding: 1rem 1.5rem;
     margin-bottom: 1rem;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    box-shadow: 0 2px 5px rgba(0,0,0,0.07); 
 }
 
 .imageContainer {
-    border: 1px solid #ccc;
-    padding: 5px;
+    border: 1px solid #eee; 
     background-color: #f8f9fa;
-    min-width: 150px; /* Slightly smaller min-width */
-    max-width: 250px; /* Max width */
+    width: 180px; 
+    height: 100px; 
     text-align: center;
     border-radius: 4px;
+    display: flex; 
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0; 
+    overflow: hidden; 
 }
 
 .cropImage {
-    max-width: 100%; /* Make image responsive within container */
-    max-height: 100px; /* Adjust max height */
-    display: block; /* Remove extra space */
+    width: 100%;
+    height: 100%;
+    object-fit: contain; /* Garantit que l'image est entièrement visible */
+    display: block;
+}
+
+.loadingText {
+    font-size: 0.9rem;
+    color: #888;
+    font-style: italic;
 }
 
 .content {
@@ -36,39 +47,45 @@
 }
 .content p {
     margin: 0;
+    font-style: italic; 
+    color: #333; 
 }
 
 .actions {
     display: flex;
-    flex-direction: column; /* Stack buttons vertically */
-    gap: 8px; /* Space between buttons */
+    flex-direction: column; 
+    gap: 8px;
 }
 
+/* Style de base des boutons */
 .actionButton {
     padding: 8px 16px;
-    border: none;
-    color: white;
+    border: none; 
+    color: white; /* Texte blanc */
     font-weight: bold;
     border-radius: 4px;
     cursor: pointer;
-    transition: opacity 0.2s, transform 0.1s;
+    transition: opacity 0.2s, transform 0.1s; 
     font-family: var(--font-text);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     font-size: 0.9rem;
-    min-width: 100px; /* Ensure buttons have same width */
+    min-width: 100px;
     text-align: center;
 }
 
 .actionButton:hover {
-    opacity: 0.85;
+    opacity: 0.85; 
     transform: scale(1.02);
 }
 
+/* Bouton Valider (CORRIGÉ AVEC CODE COULEUR) */
 .validate {
-    background-color: var(--color-status-valid);
+    background-color: #28a745; /* FOND VERT DIRECT */
 }
 
+
+/* Bouton Rejeter (CORRIGÉ AVEC CODE COULEUR) */
 .reject {
-    background-color: var(--color-status-rejected);
+    background-color: #dc3545; /* FOND ROUGE DIRECT */
 }

@@ -9,7 +9,6 @@ import ModerationPage from './pages/ModerationPage';
 import PageReview from './pages/PageReview';
 import ProtectedRoute from './components/ProtectedRoute';
 import MySubmissionsPage from './pages/MySubmissionsPage';
-import BountyBoardPage from './pages/BountyBoardPage';
 import Layout from './components/Layout';
 
 function App() {
@@ -20,7 +19,6 @@ function App() {
       <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route path="/" element={<HomePage />} />
         <Route path="/search" element={<SearchPage />} />
-        <Route path="/bounties" element={<BountyBoardPage />} />
         <Route path="/annotate/:pageId" element={<AnnotatePage />} />
         <Route path="/my-submissions" element={<MySubmissionsPage />} />
         

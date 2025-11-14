@@ -32,7 +32,7 @@ const BubbleReviewItem = ({ bubble, onAction }) => {
     <div className={styles.itemContainer}>
       <div className={styles.imageContainer}>
         {isLoading ? (
-          <small>Chargement...</small>
+          <small className={styles.loadingText}>Chargement...</small>
         ) : (
           <img 
             src={imageSrc} 
