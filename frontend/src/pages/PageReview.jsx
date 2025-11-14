@@ -20,7 +20,6 @@ const PageReview = () => {
                 .catch(err => console.error("Error fetching page:", err));
             getBubblesForPage(pageId, token)
                 .then(res => {
-                     // Ensure bubbles are sorted by order if available
                     const sortedBubbles = res.data.sort((a, b) => a.order - b.order);
                     setBubbles(sortedBubbles);
                 })
@@ -54,22 +53,18 @@ const PageReview = () => {
 
     if (!page) return <div>Chargement de la page de vérification...</div>;
 
-    // Determine Tome/Chapter number safely
     const tomeNumber = page.chapitres?.tomes?.numero || '?';
     const chapterNumber = page.chapitres?.numero || '?';
 
     return (
         <div className={styles.container}>
-             {/* Changed header to subHeader */}
             <div className={styles.subHeader}>
                 <h2>Vérification - T{tomeNumber} C{chapterNumber} P{page.numero_page}</h2>
-                <div>
-                     <div className={styles.actions}>
-                        <button onClick={handleApprove} className={styles.approveButton}>Approuver</button>
-                        <button onClick={handleReject} className={styles.rejectButton}>Rejeter</button>
-                    </div>
-                    <Link to="/moderation">Retour Modération</Link>
-                 </div>
+                <div className={styles.actions}>
+                    <Link to="/moderation" className={styles.backLink}>Retour Modération</Link>
+                    <button onClick={handleApprove} className={styles.approveButton}>Approuver</button>
+                    <button onClick={handleReject} className={styles.rejectButton}>Rejeter</button>
+                </div>
             </div>
 
             <div className={styles.pageLayout}>
@@ -97,7 +92,6 @@ const PageReview = () => {
 
                 <aside className={styles.sidebar}>
                     <h3>Bulles Validées ({bubbles.length})</h3>
-                    {/* Added className */}
                     <ul className={styles.bubbleList}>
                         {bubbles.map((bubble, index) => (
                             <li key={bubble.id} className={styles.bubbleListItem}>

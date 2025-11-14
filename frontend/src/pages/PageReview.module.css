@@ -1,54 +1,80 @@
 .container {
-    padding: 0; /* Handled by Layout */
+    padding: 0 0 2rem 0;
     margin: 0 auto;
     max-width: 100%;
+    /* La ligne de fond gris a bien été supprimée */
+    min-height: 100vh;
 }
 
-.subHeader { /* Renamed from header */
+.subHeader {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 1rem 2rem;
-    background-color: #fff;
+    background-color: #fff; 
     border-bottom: 1px solid #e0e0e0;
-    margin-bottom: 2rem;
+    margin-bottom: 2rem; 
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05); 
 }
 .subHeader h2 {
     margin: 0;
     font-size: 1.8rem;
     color: var(--color-navy);
 }
-.subHeader a {
+
+.backLink {
     color: var(--color-navy);
-    font-weight: bold;
-    margin-left: 1rem;
+    font-weight: 600;
+    text-decoration: none;
+    padding: 8px 16px;
+    border-radius: 5px;
+    transition: background-color 0.2s;
+    margin-right: 1rem; 
+}
+.backLink:hover {
+    background-color: #f0f0f0;
 }
 
+.actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* Style de base des boutons */
 .actions button {
-    margin-left: 1rem;
+    margin-left: 0;
     padding: 8px 16px;
-    border: none;
-    color: white;
+    border: none; 
+    color: white; /* Texte blanc */
     font-weight: bold;
     border-radius: 5px;
     cursor: pointer;
     font-family: var(--font-text);
     text-transform: uppercase;
     font-size: 0.9rem;
-    transition: opacity 0.2s, transform 0.1s;
-}
-.actions button:hover {
-    opacity: 0.85;
-    transform: scale(1.02);
+    transition: opacity 0.2s, transform 0.1s; 
 }
 
-.approveButton { background-color: var(--color-status-valid); }
-.rejectButton { background-color: var(--color-status-rejected); }
+.actions button:hover {
+    transform: scale(1.02);
+    opacity: 0.85;
+}
+
+/* Bouton Approuver (CORRIGÉ AVEC CODE COULEUR) */
+.approveButton { 
+    background-color: #28a745; /* FOND VERT DIRECT */
+}
+
+/* Bouton Rejeter (CORRIGÉ AVEC CODE COULEUR) */
+.rejectButton { 
+    background-color: #dc3545; /* FOND ROUGE DIRECT */
+}
 
 .pageLayout {
     display: flex;
     gap: 2rem;
-    padding: 0 2rem 2rem 2rem;
+    padding: 0 2rem 2rem 2rem; 
 }
 
 .mainContent {
@@ -59,9 +85,11 @@
 .imageContainer {
     position: relative;
     display: inline-block;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-    border: 3px solid var(--color-wood);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1); 
+    border: 1px solid #ddd; 
     background-color: white;
+    border-radius: 8px; 
+    overflow: hidden; 
 }
 
 .mangaImage {
@@ -73,31 +101,31 @@
 .sidebar {
     width: 350px;
     flex-shrink: 0;
-    background: #fdf5e6; /* Lighter parchment */
+    background: #fff; 
     padding: 1.5rem;
     border-radius: 8px;
-    border: 1px solid var(--color-wood);
-    max-height: calc(100vh - 120px); /* Adjust */
+    border: 1px solid #ddd; 
+    max-height: calc(100vh - 160px); 
     overflow-y: auto;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
 }
 .sidebar h3 {
     margin-top: 0;
     padding-bottom: 0.8rem;
-    border-bottom: 2px solid var(--color-wood);
+    border-bottom: 2px solid var(--color-navy); 
     font-size: 1.5rem;
     color: var(--color-navy);
 }
 
-.bubbleList { /* Added class for consistency */
+.bubbleList { 
     list-style: none;
     padding: 0;
     margin-top: 1rem;
 }
 
 .bubbleListItem {
-    padding: 10px 0; /* Vertical padding only */
-    border-bottom: 1px solid #ddd;
+    padding: 10px 0; 
+    border-bottom: 1px solid #eee; 
     font-family: var(--font-text);
     line-height: 1.5;
 }
@@ -105,7 +133,7 @@
     border-bottom: none;
 }
 
-.bubbleListItem span { /* For the number */
+.bubbleListItem span { 
     font-weight: bold;
     margin-right: 10px;
     color: var(--color-navy);
@@ -114,10 +142,9 @@
     text-align: right;
 }
 
-/* Use validated style for rectangles on this page */
 .existingRectangle {
     position: absolute;
-    border: 2px solid var(--color-status-valid);
+    border: 2px solid #28a745; /* Code couleur direct */
     box-sizing: border-box;
     pointer-events: none;
 }
@@ -126,7 +153,7 @@
     position: absolute;
     top: -22px;
     left: -2px;
-    background-color: var(--color-status-valid);
+    background-color: #28a745; /* Code couleur direct */
     color: white;
     padding: 2px 8px;
     border-radius: 4px;
