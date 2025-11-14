@@ -1,12 +1,23 @@
 .container {
-    padding: 0; /* Handled by Layout */
+    padding: 2rem 1rem;
     max-width: 900px;
-    margin: 0 auto; /* Center content */
+    margin: 0 auto;
+    position: relative; /* Ajouté pour le positionnement absolu */
 }
 
-.subHeader { /* Renamed from header */
+/* Nouveau style pour le lien vers l'accueil */
+.homeLink {
+    position: absolute;
+    top: 2rem; /* Aligné sur le padding du conteneur */
+    right: 1rem; /* Aligné sur le padding du conteneur */
+    color: var(--color-navy);
+    font-weight: bold;
+    font-family: var(--font-text);
+}
+
+.subHeader {
     display: flex;
-    justify-content: space-between;
+    /* justify-content: space-between; Supprimé, le lien n'est plus là */
     align-items: center;
     margin-bottom: 2rem;
     border-bottom: 2px solid var(--color-wood);
@@ -17,20 +28,17 @@
     font-size: 2.5rem;
     color: var(--color-navy);
 }
-.subHeader a {
-    color: var(--color-navy);
-    font-weight: bold;
-}
+/* Le style .subHeader a {} a été supprimé car géré par .homeLink */
 
 .tabs {
-    margin-bottom: 2rem;
+    margin-bottom: 0; 
     border-bottom: 1px solid #ccc;
 }
 
 .tabs button {
     padding: 10px 20px;
     margin-right: 5px;
-    margin-bottom: -1px; /* Overlap border */
+    margin-bottom: -1px;
     border: 1px solid transparent;
     border-bottom: none;
     background-color: transparent;
@@ -42,11 +50,11 @@
 }
 
 .tabs button:hover {
-    background-color: var(--color-parchment);
+    background-color: #fdf5e6; /* Parchemin plus clair */
 }
 
 .tabs button.activeTab {
-    background-color: white;
+    background-color: white; 
     border-color: #ccc;
     font-weight: bold;
     color: var(--color-wood);
@@ -55,8 +63,8 @@
 .tabContent {
     background-color: #fff;
     padding: 1.5rem;
-    border-radius: 0 8px 8px 8px; /* Match tab rounding */
+    border-radius: 0 0 8px 8px; 
     border: 1px solid #ccc;
-    border-top: none; /* Connect with tabs */
-    box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+    border-top: none; 
+    box-shadow: 0 4px 10px rgba(0,0,0,0.08); 
 }

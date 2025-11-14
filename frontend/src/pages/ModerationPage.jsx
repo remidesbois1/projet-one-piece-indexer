@@ -9,9 +9,9 @@ const ModerationPage = () => {
 
   return (
     <div className={styles.container}>
-      <header className={styles.header}>
+      
+      <header className={styles.subHeader}>
         <h1>Page de Modération</h1>
-        <Link to="/">Retour à l'accueil</Link>
       </header>
       
       <div className={styles.tabs}>

@@ -22,7 +22,7 @@ const AnnotatePage = () => {
     const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
     const containerRef = useRef(null);
-    const imageRef = useRef(null);
+    const imageRef = useRef(null); // On garde imageRef pour le handleMouseUp
 
     const [isDrawing, setIsDrawing] = useState(false);
     const [startPoint, setStartPoint] = useState(null);
@@ -31,6 +31,9 @@ const AnnotatePage = () => {
 
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [pendingAnnotation, setPendingAnnotation] = useState(null);
+    
+    // --- CORRECTION 1.A : Remplacer imageLoaded par les dimensions ---
+    const [imageDimensions, setImageDimensions] = useState(null); 
 
     const fetchBubbles = useCallback(() => {
         if (pageId && session?.access_token) {
@@ -126,15 +129,14 @@ const AnnotatePage = () => {
     };
 
     const handleMouseDown = (event) => {
-        // Prevent drawing if the page is not in a modifiable state
         if (page?.statut !== 'not_started' && page?.statut !== 'in_progress') return;
         event.preventDefault();
         setIsDrawing(true);
         const coords = getContainerCoords(event);
         setStartPoint(coords);
         setEndPoint(coords);
-        setRectangle(null); // Clear previous rectangle data
-        setPendingAnnotation(null); // Close modal if open
+        setRectangle(null); 
+        setPendingAnnotation(null);
     };
 
     const handleMouseMove = (event) => {
@@ -153,9 +155,8 @@ const AnnotatePage = () => {
         event.preventDefault();
         setIsDrawing(false);
         const imageEl = imageRef.current;
-        if (!imageEl || !startPoint || !endPoint) return; // Check startPoint & endPoint too
+        if (!imageEl || !startPoint || !endPoint) return;
 
-        // Ensure naturalWidth is loaded and valid
         if (imageEl.naturalWidth === 0 || imageEl.naturalHeight === 0) {
             console.warn("Image natural dimensions not available yet.");
             return;
@@ -163,13 +164,10 @@ const AnnotatePage = () => {
 
         const originalWidth = imageEl.naturalWidth;
         const displayedWidth = imageEl.offsetWidth;
-        // Check for displayedWidth being zero if image hasn't rendered fully
         if (displayedWidth === 0) return;
 
         const scale = originalWidth / displayedWidth;
-
-        // Ensure startPoint and endPoint are valid
-        const currentEndPoint = getContainerCoords(event) || endPoint; // Use last known if event coords are null
+        const currentEndPoint = getContainerCoords(event) || endPoint; 
 
         const unscaledRect = {
             x: Math.min(startPoint.x, currentEndPoint.x),
@@ -178,7 +176,6 @@ const AnnotatePage = () => {
             h: Math.abs(startPoint.y - currentEndPoint.y),
         };
 
-        // Only process if the rectangle is reasonably sized
         if (unscaledRect.w > 5 && unscaledRect.h > 5) {
             const finalRect = {
                 x: Math.round(unscaledRect.x * scale),
@@ -188,7 +185,6 @@ const AnnotatePage = () => {
             };
             setRectangle(finalRect);
         } else {
-            // Reset points if rectangle is too small to avoid accidental single clicks
             setStartPoint(null);
             setEndPoint(null);
         }
@@ -210,20 +206,18 @@ const AnnotatePage = () => {
             setExistingBubbles((bubbles) => {
                 const oldIndex = bubbles.findIndex(b => b.id === active.id);
                 const newIndex = bubbles.findIndex(b => b.id === over.id);
-                if (oldIndex === -1 || newIndex === -1) return bubbles; // Safety check
+                if (oldIndex === -1 || newIndex === -1) return bubbles; 
 
                 const newOrder = arrayMove(bubbles, oldIndex, newIndex);
-
-                // Update API with new order
+                
                 const orderedBubblesForApi = newOrder.map((b, index) => ({ id: b.id, order: index + 1 }));
                 reorderBubbles(orderedBubblesForApi, session.access_token).catch(err => {
                     console.error("Failed to save new order:", err);
-                    // Optionally revert state or show error message
                     alert("Erreur lors de la sauvegarde du nouvel ordre.");
-                    return bubbles; // Revert to previous state on error
+                    return bubbles; 
                 });
 
-                return newOrder; // Optimistic UI update
+                return newOrder; 
             });
         }
     };
@@ -231,7 +225,6 @@ const AnnotatePage = () => {
     if (error) return <div><p style={{ color: 'red' }}>{error}</p><Link to="/">Retour</Link></div>;
     if (!page) return <div>Chargement...</div>;
 
-    // Determine Tome/Chapter number safely
     const tomeNumber = page.chapitres?.tomes?.numero || '?';
     const chapterNumber = page.chapitres?.numero || '?';
 
@@ -258,17 +251,31 @@ const AnnotatePage = () => {
                         onMouseDown={handleMouseDown}
                         onMouseMove={handleMouseMove}
                         onMouseUp={handleMouseUp}
-                        onMouseLeave={handleMouseUp} // Keep MouseLeave for robustness
+                        onMouseLeave={handleMouseUp} 
                     >
-                        <img ref={imageRef} src={page.url_image} alt={`Page ${page.numero_page}`} className={styles.mangaImage} draggable="false" />
+                        <img 
+                            ref={imageRef} 
+                            src={page.url_image} 
+                            alt={`Page ${page.numero_page}`} 
+                            className={styles.mangaImage} 
+                            draggable="false"
+                            // --- CORRECTION 1.B : Stocker les dimensions réelles ---
+                            onLoad={(e) => setImageDimensions({
+                                width: e.target.offsetWidth,
+                                naturalWidth: e.target.naturalWidth
+                            })}
+                        />
 
                         {isDrawing && <div style={getRectangleStyle()} className={styles.drawingRectangle} />}
 
-                        {existingBubbles.map((bubble, index) => {
-                            const imageEl = imageRef.current;
-                             // Check naturalWidth validity
-                            if (!imageEl || !imageEl.naturalWidth || imageEl.naturalWidth === 0) return null;
-                            const scale = imageEl.offsetWidth / imageEl.naturalWidth;
+                        {/* --- CORRECTION 1.C : Utiliser l'état des dimensions --- */}
+                        {imageDimensions && existingBubbles.map((bubble, index) => {
+                            // Plus besoin de ref ni de 'if' : on utilise l'état.
+                            const scale = imageDimensions.width / imageDimensions.naturalWidth;
+                            
+                            // Sécurité au cas où naturalWidth serait 0
+                            if (isNaN(scale) || scale === 0) return null; 
+
                             const style = {
                                 left: `${bubble.x * scale}px`,
                                 top: `${bubble.y * scale}px`,
@@ -315,13 +322,12 @@ const AnnotatePage = () => {
                                 {existingBubbles.map((bubble, index) => (
                                     <SortableBubbleItem
                                         key={bubble.id}
-                                        id={bubble.id} // Ensure id is passed for dnd-kit
+                                        id={bubble.id} 
                                         bubble={bubble}
                                         index={index}
                                         user={user}
                                         onEdit={handleEditBubble}
                                         onDelete={handleDeleteBubble}
-                                        // Disable drag if page is not modifiable
                                         disabled={page.statut !== 'not_started' && page.statut !== 'in_progress'}
                                     />
                                 ))}

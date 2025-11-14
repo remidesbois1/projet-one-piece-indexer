@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { getMySubmissions } from '../services/api';
 import { Link } from 'react-router-dom';
 
-const RESULTS_PER_PAGE = 10;
+const RESULTS_PER_PAGE = 15;
 
 // Styles pour la page
 const styles = {
@@ -43,7 +43,7 @@ const styles = {
         backgroundColor: '#fff',
         boxShadow: '0 2px 5px rgba(0,0,0,0.1)',
         borderRadius: '4px',
-        overflow: 'hidden', /* Ensures border radius is applied to table */
+        overflow: 'hidden',
     },
     th: {
         textAlign: 'left',
@@ -58,7 +58,7 @@ const styles = {
         padding: '10px 15px',
         borderBottom: '1px solid #eee',
         fontFamily: 'var(--font-text)',
-        verticalAlign: 'top', /* Align text nicely if it wraps */
+        verticalAlign: 'top',
     },
     tdLink: {
         color: 'var(--color-navy)',
@@ -74,15 +74,15 @@ const styles = {
     },
     statusValid: {
         color: 'var(--color-status-valid)',
-        backgroundColor: '#e9f7ef', // Light green background
+        backgroundColor: '#d2f4e1ff',
     },
     statusRejected: {
         color: 'var(--color-status-rejected)',
-        backgroundColor: '#fce8e8', // Light red background
+        backgroundColor: '#fce8e8',
     },
     statusPending: {
         color: 'var(--color-status-pending)',
-        backgroundColor: '#fff8e1', // Light orange background
+        backgroundColor: '#fff8e1',
     },
     pagination: {
         display: 'flex',
@@ -91,7 +91,7 @@ const styles = {
         gap: '1rem',
         marginTop: '2rem',
     },
-    paginationButton: { /* Basic button style, can inherit from index.css */
+    paginationButton: {
         padding: '8px 16px',
         cursor: 'pointer',
     },
@@ -119,7 +119,6 @@ const MySubmissionsPage = () => {
                 })
                 .catch(err => {
                     console.error("Erreur de chargement des soumissions:", err);
-                    // Handle error display if needed
                 })
                 .finally(() => setIsLoading(false));
         }
@@ -147,7 +146,6 @@ const MySubmissionsPage = () => {
         <div style={styles.container}>
             <div style={styles.header}>
                 <h1 style={styles.title}>Mes Soumissions</h1>
-                <Link to="/" style={styles.link}>Retour à la Bibliothèque</Link>
             </div>
             <p style={styles.description}>Voici la liste de toutes les bulles que vous avez annotées et leur statut actuel.</p>
 
