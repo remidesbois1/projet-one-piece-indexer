@@ -10,18 +10,25 @@ const BubbleReviewItem = ({ bubble, onAction }) => {
 
   useEffect(() => {
     const token = session?.access_token;
+    let isMounted = true;
+
     if (token) {
       setIsLoading(true);
       getBubbleCrop(bubble.id, token)
         .then(response => {
-          const localUrl = URL.createObjectURL(response.data);
-          setImageSrc(localUrl);
+          if (isMounted) {
+            const localUrl = URL.createObjectURL(response.data);
+            setImageSrc(localUrl);
+          }
         })
-        .catch(console.error)
-        .finally(() => setIsLoading(false));
+        .catch(err => console.error("Erreur chargement image crop", err))
+        .finally(() => {
+          if (isMounted) setIsLoading(false);
+        });
     }
 
     return () => {
+      isMounted = false;
       if (imageSrc) {
         URL.revokeObjectURL(imageSrc);
       }
@@ -32,21 +39,38 @@ const BubbleReviewItem = ({ bubble, onAction }) => {
     <div className={styles.itemContainer}>
       <div className={styles.imageContainer}>
         {isLoading ? (
-          <small className={styles.loadingText}>Chargement...</small>
-        ) : (
+          <span className={styles.loadingText}>Chargement...</span>
+        ) : imageSrc ? (
           <img 
             src={imageSrc} 
-            alt="Aperçu de la bulle" 
+            alt="Contexte" 
             className={styles.cropImage} 
           />
+        ) : (
+          <span className={styles.loadingText}>Image indisponible</span>
         )}
       </div>
+      
       <div className={styles.content}>
-        <p>"{bubble.texte_propose}"</p>
+        <div className={styles.label}>Proposition de texte</div>
+        <p className={styles.textProposal}>{bubble.texte_propose}</p>
       </div>
+      
       <div className={styles.actions}>
-        <button onClick={() => onAction('validate', bubble.id)} className={`${styles.actionButton} ${styles.validate}`}>Valider</button>
-        <button onClick={() => onAction('reject', bubble.id)} className={`${styles.actionButton} ${styles.reject}`}>Rejeter</button>
+        <button 
+            onClick={() => onAction('validate', bubble.id)} 
+            className={`${styles.actionButton} ${styles.validate}`}
+            title="Valider cette proposition"
+        >
+            ✓ Valider
+        </button>
+        <button 
+            onClick={() => onAction('reject', bubble.id)} 
+            className={`${styles.actionButton} ${styles.reject}`}
+            title="Rejeter cette proposition"
+        >
+            ✕ Rejeter
+        </button>
       </div>
     </div>
   );

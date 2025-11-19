@@ -1,15 +1,23 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { createBubble, updateBubbleText } from '../services/api';
 import styles from './ValidationForm.module.css';
 
-const ValidationForm = ({ annotationData, onValidationSuccess }) => {
+const ValidationForm = ({ annotationData, onValidationSuccess, onCancel }) => {
   const { session } = useAuth();
   const [text, setText] = useState('');
   const [isAiFailure, setIsAiFailure] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
-  const isEditing = annotationData && annotationData.id; // On détermine si on est en mode édition
+  const textareaRef = useRef(null);
+
+  const isEditing = annotationData && annotationData.id; 
+
+  // Focus automatique sur le textarea à l'ouverture
+  useEffect(() => {
+    if (textareaRef.current) {
+        textareaRef.current.focus();
+    }
+  }, []);
 
   useEffect(() => {
     if (annotationData) {
@@ -34,7 +42,6 @@ const ValidationForm = ({ annotationData, onValidationSuccess }) => {
       if (isEditing) {
         // Mode MISE À JOUR
         await updateBubbleText(annotationData.id, text, session.access_token);
-        alert("Annotation mise à jour !");
       } else {
         // Mode CRÉATION
         const finalBubbleData = {
@@ -44,12 +51,12 @@ const ValidationForm = ({ annotationData, onValidationSuccess }) => {
             texte_propose: text,
         };
         await createBubble(finalBubbleData, session.access_token);
-        alert("Annotation envoyée pour validation !");
       }
+      // On appelle le succès seulement après la fin de l'await pour fermer la modale proprement
       onValidationSuccess();
     } catch (error) {
-      console.error("Erreur lors de la soumission", error);
-      alert("Une erreur est survenue lors de la soumission.");
+      console.error("Erreur soumission", error);
+      alert("Une erreur est survenue. Veuillez réessayer.");
     } finally {
       setIsSubmitting(false);
     }
@@ -58,24 +65,54 @@ const ValidationForm = ({ annotationData, onValidationSuccess }) => {
   if (!annotationData) return null;
 
   return (
-    <form onSubmit={handleSubmit} className={styles.form}>
-      <h3 className={styles.title}>
-        {isEditing 
-            ? "Éditer le texte de la bulle" 
-            : isAiFailure 
-                ? "L'analyse a échoué, veuillez saisir le texte" 
-                : "Vérifier le texte et valider"
-        }
-      </h3>
-      <textarea 
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder="Saisir le texte de la bulle ici..."
-        className={styles.textarea}
-      />
-      <button type="submit" disabled={isSubmitting} className={styles.submitButton}>
-        {isSubmitting ? 'Envoi...' : (isEditing ? 'Sauvegarder les changements' : 'Envoyer pour validation')}
-      </button>
+    <form onSubmit={handleSubmit} className={styles.formContainer}>
+      
+      <div className={styles.header}>
+        <h3 className={styles.title}>
+            {isEditing ? "Édition de la bulle" : "Nouvelle annotation"}
+        </h3>
+        <p className={styles.subtitle}>
+            {isAiFailure 
+                ? "L'IA n'a pas pu lire le texte. Veuillez le transcrire manuellement." 
+                : "Vérifiez ou corrigez le texte détecté ci-dessous."}
+        </p>
+      </div>
+
+      <div className={styles.fieldGroup}>
+        <label className={styles.label}>Texte de la bulle</label>
+        <textarea 
+            ref={textareaRef}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Saisissez le texte ici..."
+            className={styles.textarea}
+        />
+      </div>
+
+      <div className={styles.footer}>
+        {/* Bouton Annuler optionnel si onCancel est passé */}
+        {onCancel && (
+            <button 
+                type="button" 
+                onClick={onCancel} 
+                className={`${styles.button} ${styles.cancelButton}`}
+                disabled={isSubmitting}
+            >
+                Annuler
+            </button>
+        )}
+        
+        <button 
+            type="submit" 
+            disabled={isSubmitting} 
+            className={`${styles.button} ${styles.submitButton}`}
+        >
+            {isSubmitting 
+                ? 'Enregistrement...' 
+                : (isEditing ? 'Mettre à jour' : 'Valider et créer')
+            }
+        </button>
+      </div>
     </form>
   );
 };

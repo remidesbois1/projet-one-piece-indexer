@@ -1,70 +1,151 @@
+/* Variables (à adapter si définies globalement) */
+:root {
+    --color-navy: #1a2b4c;
+    --color-wood: #d4a373;
+    --color-bg-app: #f4f6f8;
+    --color-white: #ffffff;
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+/* Layout principal pleine hauteur */
 .container {
-    padding: 2rem 1rem;
-    max-width: 900px;
-    margin: 0 auto;
-    position: relative; /* Ajouté pour le positionnement absolu */
-}
-
-/* Nouveau style pour le lien vers l'accueil */
-.homeLink {
-    position: absolute;
-    top: 2rem; /* Aligné sur le padding du conteneur */
-    right: 1rem; /* Aligné sur le padding du conteneur */
-    color: var(--color-navy);
-    font-weight: bold;
-    font-family: var(--font-text);
-}
-
-.subHeader {
     display: flex;
-    /* justify-content: space-between; Supprimé, le lien n'est plus là */
+    flex-direction: column;
+    height: calc(100vh - 60px); /* Ajuster selon la hauteur de votre Navbar principale */
+    background-color: var(--color-bg-app);
+    font-family: 'Inter', system-ui, sans-serif;
+    overflow: hidden; /* Empêche le scroll global */
+}
+
+/* En-tête de la page */
+.header {
+    flex-shrink: 0;
+    display: flex;
+    justify-content: space-between;
     align-items: center;
-    margin-bottom: 2rem;
-    border-bottom: 2px solid var(--color-wood);
-    padding-bottom: 1rem;
+    padding: 1rem 2rem;
+    background-color: var(--color-white);
+    border-bottom: 1px solid #e5e7eb;
+    box-shadow: var(--shadow-sm);
 }
-.subHeader h1 {
+
+.headerTitle h1 {
     margin: 0;
-    font-size: 2.5rem;
+    font-size: 1.5rem;
     color: var(--color-navy);
-}
-/* Le style .subHeader a {} a été supprimé car géré par .homeLink */
-
-.tabs {
-    margin-bottom: 0; 
-    border-bottom: 1px solid #ccc;
+    font-weight: 700;
 }
 
-.tabs button {
-    padding: 10px 20px;
-    margin-right: 5px;
-    margin-bottom: -1px;
-    border: 1px solid transparent;
-    border-bottom: none;
-    background-color: transparent;
+.headerTitle span {
+    display: block;
+    font-size: 0.85rem;
+    color: #6b7280;
+    font-weight: 400;
+    margin-top: 2px;
+}
+
+.linkBack {
+    text-decoration: none;
+    color: #4b5563;
+    font-size: 0.9rem;
+    font-weight: 500;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    transition: background-color 0.2s, color 0.2s;
+}
+
+.linkBack:hover {
+    background-color: #f3f4f6;
     color: var(--color-navy);
-    font-size: 1.1rem;
+}
+
+/* Zone de contenu principale */
+.contentWrapper {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 1.5rem 2rem;
+    max-width: 1200px;
+    width: 100%;
+    margin: 0 auto;
+    box-sizing: border-box;
+    overflow: hidden; /* Le scroll se fera dans tabContent */
+}
+
+/* Onglets */
+.tabsContainer {
+    display: flex;
+    gap: 0.5rem;
+    border-bottom: 1px solid #e5e7eb;
+    margin-bottom: 0; /* Collé au contenu */
+}
+
+.tabButton {
+    padding: 0.75rem 1.25rem;
+    border: none;
+    background: transparent;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: #6b7280;
     cursor: pointer;
-    border-radius: 4px 4px 0 0;
-    font-family: var(--font-text);
+    border-radius: 8px 8px 0 0;
+    transition: all 0.2s;
+    position: relative;
+    bottom: -1px; /* Pour chevaucher la bordure du bas */
+    border: 1px solid transparent;
 }
 
-.tabs button:hover {
-    background-color: #fdf5e6; /* Parchemin plus clair */
+.tabButton:hover {
+    color: var(--color-navy);
+    background-color: rgba(0,0,0,0.02);
 }
 
-.tabs button.activeTab {
-    background-color: white; 
-    border-color: #ccc;
-    font-weight: bold;
-    color: var(--color-wood);
+.activeTab {
+    background-color: var(--color-white);
+    color: var(--color-navy);
+    font-weight: 600;
+    border-color: #e5e7eb;
+    border-bottom-color: var(--color-white); /* Masque la ligne du container */
+    box-shadow: 0 -2px 4px rgba(0,0,0,0.02);
 }
 
+.countBadge {
+    display: inline-block;
+    background-color: #f3f4f6;
+    color: #4b5563;
+    font-size: 0.75rem;
+    padding: 1px 6px;
+    border-radius: 10px;
+    margin-left: 8px;
+    vertical-align: middle;
+}
+
+.activeTab .countBadge {
+    background-color: var(--color-navy);
+    color: white;
+}
+
+/* Contenu de l'onglet (Scrollable) */
 .tabContent {
-    background-color: #fff;
+    flex: 1;
+    background-color: var(--color-white);
+    border: 1px solid #e5e7eb;
+    border-top: none; /* Déjà géré par les onglets */
+    border-radius: 0 4px 4px 4px; /* Coin carré en haut à gauche si premier onglet actif */
+    padding: 0; /* Padding géré par les listes internes ou à ajouter ici */
+    box-shadow: var(--shadow-sm);
+    overflow-y: auto; /* Scroll interne vertical */
+    position: relative;
+}
+
+/* Si vous voulez que le premier onglet ait le coin carré pour fusionner visuellement */
+.tabsContainer:has(button:first-child.activeTab) + .tabContent {
+    border-top-left-radius: 0;
+}
+
+/* Conteneur interne pour donner de l'air aux listes */
+.innerScrollContainer {
     padding: 1.5rem;
-    border-radius: 0 0 8px 8px; 
-    border: 1px solid #ccc;
-    border-top: none; 
-    box-shadow: 0 4px 10px rgba(0,0,0,0.08); 
+    min-height: 100%; /* Assure que le fond blanc remplit tout */
 }

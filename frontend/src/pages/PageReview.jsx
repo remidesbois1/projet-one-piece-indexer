@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { getPageById, getBubblesForPage, approvePage, rejectPage } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -8,98 +8,181 @@ const PageReview = () => {
     const { pageId } = useParams();
     const navigate = useNavigate();
     const { session } = useAuth();
+    
     const [page, setPage] = useState(null);
     const [bubbles, setBubbles] = useState([]);
-    const imageRef = useRef(null);
+    const [loading, setLoading] = useState(true);
+    
+    // Gestion de l'image pour le scaling des rectangles
+    const [imageDimensions, setImageDimensions] = useState(null);
+    const imageContainerRef = useRef(null); // Pour le positionnement du tooltip
+    const imageRef = useRef(null); // Pour la taille naturelle de l'image
 
-    useEffect(() => {
+    // États pour le tooltip
+    const [hoveredBubble, setHoveredBubble] = useState(null);
+    const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+
+    const fetchPageData = useCallback(async () => {
         const token = session?.access_token;
-        if (pageId && token) {
-            getPageById(pageId, token)
-                .then(res => setPage(res.data))
-                .catch(err => console.error("Error fetching page:", err));
-            getBubblesForPage(pageId, token)
-                .then(res => {
-                    const sortedBubbles = res.data.sort((a, b) => a.order - b.order);
-                    setBubbles(sortedBubbles);
-                })
-                .catch(err => console.error("Error fetching bubbles:", err));
+        if (!pageId || !token) return;
+
+        setLoading(true);
+        try {
+            const [pageRes, bubblesRes] = await Promise.all([
+                getPageById(pageId, token),
+                getBubblesForPage(pageId, token)
+            ]);
+            setPage(pageRes.data);
+            const sortedBubbles = bubblesRes.data.sort((a, b) => a.order - b.order);
+            setBubbles(sortedBubbles);
+        } catch (err) {
+            console.error("Erreur lors du chargement des données:", err);
+            alert("Impossible de charger la page.");
+        } finally {
+            setLoading(false);
         }
     }, [pageId, session]);
 
+    useEffect(() => {
+        fetchPageData();
+    }, [fetchPageData]);
+
     const handleApprove = async () => {
-        if (window.confirm("Approuver cette page et toutes ses bulles ?")) {
+        if (window.confirm("Confirmer l'approbation de cette page ?")) {
              try {
                 await approvePage(pageId, session.access_token);
                 navigate('/moderation');
             } catch (error) {
-                 alert("Erreur lors de l'approbation.");
+                 alert("Erreur technique lors de l'approbation.");
                  console.error(error);
              }
         }
     };
 
     const handleReject = async () => {
-        if (window.confirm("Rejeter cette page ? Elle retournera au statut 'en cours'.")) {
+        const reason = window.prompt("Motif du rejet (optionnel) :");
+        if (reason !== null) { // Si l'utilisateur n'a pas annulé
             try {
-                await rejectPage(pageId, session.access_token);
+                // Si votre API rejectPage accepte un motif, incluez-le ici
+                await rejectPage(pageId, session.access_token, reason); 
                 navigate('/moderation');
             } catch (error) {
-                alert("Erreur lors du rejet.");
+                alert("Erreur technique lors du rejet.");
                 console.error(error);
             }
         }
     };
 
-    if (!page) return <div>Chargement de la page de vérification...</div>;
+    // Gérer la position de la souris pour le tooltip
+    const handleMouseMove = (event) => {
+        if (imageContainerRef.current) {
+            const rect = imageContainerRef.current.getBoundingClientRect();
+            setMousePos({
+                x: event.clientX - rect.left,
+                y: event.clientY - rect.top,
+            });
+        }
+    };
+
+    if (loading) return <div style={{padding: '2rem', textAlign: 'center', color: '#666'}}>Chargement de l'interface de vérification...</div>;
+    if (!page) return <div style={{padding: '2rem', color: 'red'}}>Page introuvable.</div>;
 
     const tomeNumber = page.chapitres?.tomes?.numero || '?';
     const chapterNumber = page.chapitres?.numero || '?';
 
     return (
         <div className={styles.container}>
-            <div className={styles.subHeader}>
-                <h2>Vérification - T{tomeNumber} C{chapterNumber} P{page.numero_page}</h2>
-                <div className={styles.actions}>
-                    <Link to="/moderation" className={styles.backLink}>Retour Modération</Link>
-                    <button onClick={handleApprove} className={styles.approveButton}>Approuver</button>
-                    <button onClick={handleReject} className={styles.rejectButton}>Rejeter</button>
+            {/* HEADER */}
+            <header className={styles.header}>
+                <div className={styles.headerInfo}>
+                    <h2>Vérification Page {page.numero_page}</h2>
+                    <div className={styles.headerMeta}>Tome {tomeNumber} - Chapitre {chapterNumber}</div>
                 </div>
-            </div>
+                <div className={styles.actions}>
+                    <Link to="/moderation" className={styles.backLink}>Annuler / Retour</Link>
+                    <button onClick={handleReject} className={styles.rejectButton}>Refuser la page</button>
+                    <button onClick={handleApprove} className={styles.approveButton}>Valider la page</button>
+                </div>
+            </header>
 
             <div className={styles.pageLayout}>
+                {/* ZONE IMAGE (Gauche) */}
                 <main className={styles.mainContent}>
-                    <div className={styles.imageContainer}>
-                        <img ref={imageRef} src={page.url_image} alt={`Page ${page.numero_page}`} className={styles.mangaImage} />
-                        {bubbles.map((bubble, index) => {
-                            const imageEl = imageRef.current;
-                            if (!imageEl || !imageEl.naturalWidth || imageEl.naturalWidth === 0) return null;
-                            const scale = imageEl.offsetWidth / imageEl.naturalWidth;
+                    <div 
+                        ref={imageContainerRef}
+                        className={styles.imageContainer}
+                        onMouseMove={handleMouseMove}
+                        onMouseLeave={() => setHoveredBubble(null)} // Cacher le tooltip en sortant de la zone
+                    >
+                        <img 
+                            ref={imageRef} 
+                            src={page.url_image} 
+                            alt={`Page ${page.numero_page}`} 
+                            className={styles.mangaImage}
+                            onLoad={(e) => setImageDimensions({
+                                width: e.target.offsetWidth,
+                                naturalWidth: e.target.naturalWidth
+                            })}
+                        />
+                        
+                        {/* Overlay des bulles */}
+                        {imageDimensions && bubbles.map((bubble, index) => {
+                            const scale = imageDimensions.width / imageDimensions.naturalWidth;
+                            
+                            if (!scale || isNaN(scale)) return null;
+
                             const style = {
                                 left: `${bubble.x * scale}px`,
                                 top: `${bubble.y * scale}px`,
                                 width: `${bubble.w * scale}px`,
                                 height: `${bubble.h * scale}px`,
                             };
+                            
                             return (
-                                <div key={bubble.id} style={style} className={styles.existingRectangle}>
+                                <div 
+                                    key={bubble.id} 
+                                    style={style} 
+                                    className={styles.existingRectangle}
+                                    onMouseEnter={() => setHoveredBubble(bubble)}
+                                    onMouseLeave={() => setHoveredBubble(null)}
+                                >
                                     <span className={styles.bubbleNumber}>{index + 1}</span>
                                 </div>
                             );
                         })}
+
+                        {/* Tooltip */}
+                        {hoveredBubble && (
+                            <div 
+                                className={styles.tooltip} 
+                                style={{ 
+                                    left: 0, top: 0, // Les coordonnées seront gérées par transform
+                                    transform: `translate(${mousePos.x + 15}px, ${mousePos.y + 15}px)` 
+                                }}
+                            >
+                                <strong>#{bubbles.findIndex(b => b.id === hoveredBubble.id) + 1}</strong><br/>
+                                {hoveredBubble.texte_propose || <em>(Texte non disponible)</em>}
+                            </div>
+                        )}
                     </div>
                 </main>
 
+                {/* SIDEBAR (Droite) */}
                 <aside className={styles.sidebar}>
-                    <h3>Bulles Validées ({bubbles.length})</h3>
-                    <ul className={styles.bubbleList}>
-                        {bubbles.map((bubble, index) => (
-                            <li key={bubble.id} className={styles.bubbleListItem}>
-                                <span>{index + 1}.</span>
-                                {bubble.texte_propose}
-                            </li>
-                        ))}
-                    </ul>
+                    <div className={styles.sidebarHeader}>
+                        <h3>Textes Validés <span className={styles.bubbleCount}>{bubbles.length}</span></h3>
+                    </div>
+                    
+                    <div className={styles.bubbleListContainer}>
+                        <ul className={styles.bubbleList}>
+                            {bubbles.map((bubble, index) => (
+                                <li key={bubble.id} className={styles.bubbleListItem}>
+                                    <span className={styles.listIndex}>{index + 1}</span>
+                                    <span className={styles.listText}>{bubble.texte_propose}</span>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
                 </aside>
             </div>
         </div>
