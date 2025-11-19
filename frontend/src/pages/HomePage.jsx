@@ -1,139 +1,195 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../hooks/useUserProfile';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { getTomes, getChapitres, getPages } from '../services/api';
 import styles from './HomePage.module.css';
-import Modal from '../components/Modal';
 
 const HomePage = () => {
-  const { user, session, signOut } = useAuth();
-  const { profile, loading: profileLoading } = useUserProfile();
+  const { session } = useAuth();
+  const { loading: profileLoading } = useUserProfile();
   const navigate = useNavigate();
 
   const [tomes, setTomes] = useState([]);
+  
+  // États Drawer
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedTome, setSelectedTome] = useState(null);
-  const [chapters, setChapters] = useState([]);
-  const [isLoadingChapters, setIsLoadingChapters] = useState(false);
   const [selectedChapter, setSelectedChapter] = useState(null);
+  
+  // Data
+  const [chapters, setChapters] = useState([]);
   const [pages, setPages] = useState([]);
-  const [isLoadingPages, setIsLoadingPages] = useState(false);
+  const [isLoadingData, setIsLoadingData] = useState(false);
 
   const token = session?.access_token;
 
   useEffect(() => {
     if (token) {
-      getTomes(token).then(response => setTomes(response.data)).catch(console.error);
+      getTomes(token).then(res => setTomes(res.data)).catch(console.error);
     }
   }, [token]);
 
-  const handleTomeClick = (tome) => {
+  // Ouvrir Tome
+  const openTome = async (tome) => {
     setSelectedTome(tome);
-    setIsLoadingChapters(true);
-    getChapitres(tome.id, token)
-      .then(response => setChapters(response.data))
-      .catch(console.error)
-      .finally(() => setIsLoadingChapters(false));
-  };
-
-  const handleChapterClick = (chapter) => {
-    setSelectedChapter(chapter);
-    setIsLoadingPages(true);
-    getPages(chapter.id, token)
-      .then(response => setPages(response.data))
-      .catch(console.error)
-      .finally(() => setIsLoadingPages(false));
-  };
-
-  const closeModal = () => {
-    setSelectedTome(null);
-    setChapters([]);
-    setSelectedChapter(null);
+    setIsDrawerOpen(true);
+    setIsLoadingData(true);
+    setSelectedChapter(null); // Reset
     setPages([]);
-  };
-
-  const backToChapters = () => {
-    setSelectedChapter(null);
-    setPages([]);
-  }
-
-  const handleLogout = async () => {
-    await signOut();
-    navigate('/login');
-  };
-
-  const getPageItemClass = (status) => {
-    switch (status) {
-      case 'pending_review':
-        return styles.pageItemPending;
-      case 'completed':
-        return styles.pageItemCompleted;
-      default:
-        return '';
+    
+    try {
+      const res = await getChapitres(tome.id, token);
+      setChapters(res.data);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoadingData(false);
     }
   };
 
-  if (profileLoading) return <div>Chargement du profil...</div>;
+  // Ouvrir Chapitre
+  const openChapter = async (chapter) => {
+    setSelectedChapter(chapter);
+    setIsLoadingData(true);
+    try {
+      const res = await getPages(chapter.id, token);
+      setPages(res.data);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoadingData(false);
+    }
+  };
+
+  const closeDrawer = () => {
+    setIsDrawerOpen(false);
+    setTimeout(() => {
+      setSelectedTome(null);
+      setSelectedChapter(null);
+    }, 350);
+  };
+
+  const getHeatmapClass = (status) => {
+    switch (status) {
+      case 'pending_review': return styles.statusPending;
+      case 'completed': return styles.statusCompleted;
+      case 'rejected': return styles.statusRejected;
+      default: return '';
+    }
+  };
+
+  if (profileLoading) return null;
 
   return (
     <div className={styles.libraryContainer}>
       
-      <main>
-        <h2>Tomes</h2>
-        <div className={styles.tomeGrid}>
-          {tomes.map(tome => (
-            <div key={tome.id} className={styles.tomeItem} onClick={() => handleTomeClick(tome)}>
-              <img 
-                src={tome.cover_url || 'https://placehold.co/150x225?text=Pas+d\'image'} 
-                alt={`Couverture du tome ${tome.numero}`} 
+      {/* Header */}
+      <header className={styles.headerBar}>
+        <h1 className={styles.headerTitle}>
+          Poneglyph Archives
+          <span className={styles.headerStats}>{tomes.length} VOL</span>
+        </h1>
+      </header>
+
+      {/* Grille */}
+      <div className={styles.tomeGrid}>
+        {tomes.map(tome => (
+          <div key={tome.id} className={styles.tomeItem} onClick={() => openTome(tome)}>
+            <div className={styles.tomeCoverWrapper}>
+               <img 
+                src={tome.cover_url || 'https://placehold.co/300x450/f7fafc/cbd5e0?text=Tome'} 
+                alt="" 
                 className={styles.tomeCover}
               />
+            </div>
+            <div className={styles.tomeInfo}>
               <p className={styles.tomeTitle}>Tome {tome.numero}</p>
             </div>
-          ))}
-        </div>
-      </main>
+          </div>
+        ))}
+      </div>
 
-      <Modal isOpen={!!selectedTome} onClose={closeModal}>
+      {/* --- DRAWER --- */}
+      
+      <div 
+        className={`${styles.drawerOverlay} ${isDrawerOpen ? styles.open : ''}`} 
+        onClick={closeDrawer}
+      />
+
+      <div className={`${styles.drawer} ${isDrawerOpen ? styles.open : ''}`}>
         {selectedTome && (
-          <div>
-            {selectedChapter ? (
-              <div>
-                <button onClick={backToChapters}>&larr; Retour aux chapitres</button>
-                <h4 style={{marginTop: '1rem'}}>Chapitre {selectedChapter.numero} - Pages</h4>
-                <hr />
-                {isLoadingPages ? <p>Chargement...</p> : (
-                  <div className={styles.pageGrid}>
-                    {pages.map(page => (
-                      <div 
-                        key={page.id} 
-                        className={`${styles.pageItem} ${getPageItemClass(page.statut)}`} 
-                        onClick={() => navigate(`/annotate/${page.id}`)}
-                      >
-                        {page.numero_page}
-                      </div>
-                    ))}
-                  </div>
+          <>
+            <div className={styles.drawerHeader}>
+              <div className={styles.navBreadcrumb}>
+                {selectedChapter ? (
+                  /* Mode Chapitre : Bouton Retour + Titre Chapitre */
+                  <>
+                    <span 
+                      className={styles.navBackLink} 
+                      onClick={() => setSelectedChapter(null)}
+                    >
+                      &larr; Tome {selectedTome.numero}
+                    </span>
+                    <h3 className={styles.drawerTitle}>Chapitre {selectedChapter.numero}</h3>
+                  </>
+                ) : (
+                  /* Mode Tome : Titre "SÉLECTION" + Titre Tome */
+                  <>
+                    <span className={styles.navBackLink} style={{cursor: 'default', opacity: 0.5}}>
+                      SÉLECTION
+                    </span>
+                    <h3 className={styles.drawerTitle}>Tome {selectedTome.numero}</h3>
+                  </>
                 )}
               </div>
-            ) : (
-              <div>
-                <h3>Tome {selectedTome.numero} - {selectedTome.titre}</h3>
-                <hr />
-                {isLoadingChapters ? <p>Chargement...</p> : (
+              
+              <button onClick={closeDrawer} className={styles.closeButton} title="Fermer">
+                &times;
+              </button>
+            </div>
+
+            <div className={styles.drawerContent}>
+              {selectedChapter ? (
+                /* CONTENU : PAGES (Heatmap) */
+                <div className={styles.heatmapContainer}>
+                  {isLoadingData ? (
+                    <div className={styles.loader}>Chargement des pages...</div>
+                  ) : (
+                    <div className={styles.heatmapGrid}>
+                      {pages.map(page => (
+                        <div 
+                          key={page.id} 
+                          className={`${styles.heatmapItem} ${getHeatmapClass(page.statut)}`}
+                          onClick={() => navigate(`/annotate/${page.id}`)}
+                          title={`Page ${page.numero_page} - ${page.statut || 'À faire'}`}
+                        >
+                          {page.numero_page}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* CONTENU : CHAPITRES (Liste) */
+                isLoadingData ? (
+                   <div className={styles.loader}>Chargement de l'index...</div>
+                ) : (
                   <ul className={styles.chapterList}>
                     {chapters.map(chap => (
-                      <li key={chap.id} onClick={() => handleChapterClick(chap)}>
-                        Chapitre {chap.numero} - {chap.titre}
+                      <li key={chap.id} className={styles.chapterItem} onClick={() => openChapter(chap)}>
+                        <span className={styles.chapterNum}>{chap.numero}</span>
+                        <span className={styles.chapterTitle}>{chap.titre || 'Sans titre'}</span>
+                        <span className={styles.chapterArrow}>›</span>
                       </li>
                     ))}
                   </ul>
-                )}
-              </div>
-            )}
-          </div>
+                )
+              )}
+            </div>
+          </>
         )}
-      </Modal>
+      </div>
     </div>
   );
 };

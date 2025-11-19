@@ -14,8 +14,8 @@ const SearchPage = () => {
   const [searched, setSearched] = useState(false);
 
   const performSearch = async (pageToFetch) => {
-    if (query.length < 3) {
-      setError("La recherche doit contenir au moins 3 caractères.");
+    if (query.trim().length < 3) {
+      setError("Veuillez saisir au moins 3 caractères pour lancer la recherche.");
       return;
     }
     setIsLoading(true);
@@ -28,7 +28,7 @@ const SearchPage = () => {
       setTotalCount(response.data.totalCount);
       setCurrentPage(pageToFetch);
     } catch (err) {
-      setError("Une erreur est survenue lors de la recherche.");
+      setError("Une erreur technique est survenue. Veuillez réessayer plus tard.");
       console.error(err);
     } finally {
       setIsLoading(false);
@@ -44,8 +44,10 @@ const SearchPage = () => {
 
   return (
     <div className={styles.container}>
+      
       <header className={styles.header}>
-        <h1>Recherche dans l'œuvre</h1>
+        <h1 className={styles.title}>Bibliothèque de Recherche</h1>
+        <p className={styles.subtitle}>Trouvez n'importe quelle réplique dans l'œuvre</p>
       </header>
 
       <form onSubmit={handleSearch} className={styles.searchForm}>
@@ -53,46 +55,73 @@ const SearchPage = () => {
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Ex: chapeau de paille"
+          placeholder="Rechercher une citation, un personnage..."
           className={styles.searchInput}
+          autoFocus
         />
         <button type="submit" className={styles.searchButton} disabled={isLoading}>
-          {isLoading ? 'Recherche...' : 'Rechercher'}
+          {isLoading ? '...' : 'Rechercher'}
         </button>
       </form>
 
-      {error && <p style={{ color: 'red' }}>{error}</p>}
+      {error && <div className={styles.errorState}>{error}</div>}
 
-      <div>
+      <div className={styles.resultsContainer}>
         {isLoading ? (
-          <p>Chargement...</p>
+          <div className={styles.emptyState}>Recherche en cours...</div>
         ) : (
-          searched && results.length === 0 ? (
-            <p>Aucun résultat trouvé pour "{query}".</p>
-          ) : (
+          searched && (
             <>
-              {searched && totalCount > 0 && <p><strong>{totalCount}</strong> résultat(s) trouvé(s) pour "{query}"</p>}
-              {results.map((bubble) => (
-                <div key={bubble.id} className={styles.resultItem}>
-                  <p className={styles.resultText}>"{bubble.texte_propose}"</p>
-                  <p className={styles.resultSource}>
-                    Tome {bubble.numero_tome} - Chapitre {bubble.numero_chapitre}, Page {bubble.numero_page}
-                  </p>
+              {results.length === 0 ? (
+                <div className={styles.emptyState}>
+                  Aucun résultat trouvé pour "{query}".
                 </div>
-              ))}
+              ) : (
+                <>
+                  <div className={styles.resultsMeta}>
+                    <span className={styles.resultsCount}>{totalCount}</span> résultat(s) trouvé(s)
+                  </div>
+                  
+                  <div className={styles.resultsGrid}>
+                    {results.map((bubble) => (
+                      <div key={bubble.id} className={styles.resultCard}>
+                        <p className={styles.resultText}>« {bubble.texte_propose} »</p>
+                        
+                        <div className={styles.cardFooter}>
+                          <span className={styles.badge}>Tome {bubble.numero_tome}</span>
+                          <span className={styles.badge}>Chapitre {bubble.numero_chapitre}</span>
+                          <span className={styles.badge}>Page {bubble.numero_page}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </>
           )
         )}
       </div>
 
-      {totalPages > 1 && (
+      {searched && totalPages > 1 && (
         <div className={styles.pagination}>
-          <button onClick={() => performSearch(currentPage - 1)} disabled={currentPage === 1} className={styles.searchButton}>
-            Précédent
+          <button 
+            onClick={() => performSearch(currentPage - 1)} 
+            disabled={currentPage === 1} 
+            className={styles.pageButton}
+          >
+            &larr; Précédent
           </button>
-          <span>Page {currentPage} sur {totalPages}</span>
-          <button onClick={() => performSearch(currentPage + 1)} disabled={currentPage === totalPages} className={styles.searchButton}>
-            Suivant
+          
+          <span className={styles.pageInfo}>
+            Page {currentPage} / {totalPages}
+          </span>
+          
+          <button 
+            onClick={() => performSearch(currentPage + 1)} 
+            disabled={currentPage === totalPages} 
+            className={styles.pageButton}
+          >
+            Suivant &rarr;
           </button>
         </div>
       )}

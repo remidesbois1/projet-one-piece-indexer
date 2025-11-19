@@ -1,145 +1,293 @@
+/* HomePage.module.css */
+
+/* --- Layout Principal --- */
 .libraryContainer {
-    padding: 0; /* Padding is now handled by the Layout component */
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 2rem 3rem;
+  background-color: #fcfcfc; /* Fond très clair "papier" */
+  min-height: 100vh;
 }
 
-.header { /* Style moved to the global Header component */
-    /* Remove styles related to the header here */
-    margin-bottom: 2rem; /* Keep spacing if needed below the global header */
+/* --- Header Technique --- */
+.headerBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2.5rem;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 1rem;
 }
 
+.headerTitle {
+  font-family: var(--font-title, sans-serif);
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #1a202c;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+}
+
+.headerStats {
+  font-size: 0.75rem;
+  font-family: monospace;
+  color: #718096;
+  background: #edf2f7;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #e2e8f0;
+}
+
+/* --- Grille des Tomes (Style Étagère) --- */
 .tomeGrid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); /* Slightly larger min size */
-    gap: 2rem;
-    margin-top: 1rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
+  gap: 2rem 1.5rem;
 }
 
 .tomeItem {
-    cursor: pointer;
-    text-align: center;
-    transition: transform 0.2s ease-in-out;
-    border-radius: 8px;
-    overflow: hidden; /* Ensure cover radius is respected */
-    background-color: #fff; /* Add a light background for contrast */
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-    padding-bottom: 0.5rem;
+  cursor: pointer;
+  transition: transform 0.2s ease;
 }
 
-.tomeItem:hover {
-    transform: translateY(-5px) scale(1.03);
-    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+.tomeCoverWrapper {
+  position: relative;
+  aspect-ratio: 2 / 3;
+  border-radius: 6px; /* Arrondi subtil */
+  overflow: hidden;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  border: 1px solid #eee;
+  background: #fff;
+  transition: all 0.2s ease;
 }
 
 .tomeCover {
-    width: 100%;
-    height: auto;
-    aspect-ratio: 2 / 3;
-    object-fit: cover;
-    display: block; /* Remove margin issues */
-    margin-bottom: 0.5rem; /* Space between image and title */
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: filter 0.2s;
+  /* On garde l'image naturelle, pas de grayscale forcé cette fois, plus vivant */
+}
+
+.tomeInfo {
+  margin-top: 0.8rem;
 }
 
 .tomeTitle {
-    font-weight: bold;
-    font-size: 1rem; /* Slightly larger font */
-    color: var(--color-navy); /* Use theme color */
-    padding: 0 0.5rem; /* Add horizontal padding */
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #2d3748;
+  margin: 0;
+  line-height: 1.3;
 }
 
-/* Modal Content Styles (Chapters/Pages) */
-.modalHeader {
-    font-family: var(--font-title);
-    color: var(--color-wood);
-    border-bottom: 2px solid var(--color-wood);
-    padding-bottom: 0.5rem;
-    margin-bottom: 1rem;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+/* Interaction Tome */
+.tomeItem:hover .tomeCoverWrapper {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+  border-color: #dce0e5;
 }
 
-.modalHeader button { /* Back button style */
-    background: none;
-    border: none;
-    color: var(--color-navy);
-    cursor: pointer;
-    font-size: 1.5rem;
-    padding: 0 0.5rem;
-}
-.modalHeader button:hover {
-    color: var(--color-accent);
+.tomeItem:hover .tomeTitle {
+  color: #000;
 }
 
+/* --- DRAWER (Panneau Latéral) --- */
+.drawerOverlay {
+  position: fixed;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(2px); /* Flou léger sur le fond */
+  z-index: 2000;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s ease;
+}
+
+.drawerOverlay.open {
+  opacity: 1;
+  visibility: visible;
+}
+
+.drawer {
+  position: fixed;
+  top: 0; right: -460px;
+  width: 440px;
+  max-width: 100vw;
+  height: 100vh;
+  background: #fff;
+  z-index: 2001;
+  box-shadow: -5px 0 25px rgba(0,0,0,0.1);
+  transition: right 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+}
+
+.drawer.open {
+  right: 0;
+}
+
+/* Header du Drawer */
+.drawerHeader {
+  padding: 1.5rem 2rem;
+  border-bottom: 1px solid #f0f0f0;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  background-color: #fff;
+}
+
+/* Breadcrumb Navigation */
+.navBreadcrumb {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.navBackLink {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #a0aec0;
+  cursor: pointer;
+  transition: color 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.navBackLink:hover {
+  color: #4a5568;
+}
+
+.drawerTitle {
+  margin: 0;
+  font-size: 1.25rem;
+  color: #1a202c;
+  font-weight: 700;
+}
+
+.closeButton {
+  background: transparent;
+  border: none;
+  font-size: 1.5rem;
+  color: #cbd5e0;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  transition: color 0.2s;
+}
+
+.closeButton:hover {
+  color: #2d3748;
+}
+
+/* Contenu */
+.drawerContent {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+}
+
+/* Liste Chapitres (Clean) */
 .chapterList {
-    list-style: none;
-    padding: 0;
-    max-height: 60vh;
-    overflow-y: auto;
+  list-style: none;
+  padding: 0;
+  margin: 0;
 }
 
-.chapterList li {
-    padding: 12px 15px;
-    cursor: pointer;
-    border-radius: 4px;
-    transition: background-color 0.2s;
-    border-bottom: 1px solid #eee; /* Separator */
-    font-size: 1rem;
+.chapterItem {
+  padding: 1rem 2rem;
+  border-bottom: 1px solid #f7fafc;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: background 0.15s;
 }
 
-.chapterList li:last-child {
-    border-bottom: none;
+.chapterItem:hover {
+  background-color: #f8fafc;
 }
 
-.chapterList li:hover {
-    background-color: var(--color-parchment);
-    color: var(--color-wood);
-    font-weight: bold;
+.chapterNum {
+  font-family: monospace;
+  font-weight: 600;
+  color: #2d3748;
+  font-size: 1rem;
+  width: 30px; 
 }
 
-.pageGrid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); /* Slightly larger page numbers */
-    gap: 12px;
-    margin-top: 1rem;
-    max-height: 55vh;
-    overflow-y: auto;
-    padding: 5px; /* Add padding for scrollbar */
+.chapterTitle {
+  flex: 1;
+  color: #4a5568;
+  font-size: 0.95rem;
+  padding: 0 1rem;
 }
 
-.pageItem {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    border: 1px solid #ccc;
-    padding: 12px;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background-color 0.2s, border-color 0.2s, transform 0.1s;
-    font-weight: bold;
-    background-color: #fff;
+.chapterArrow {
+  color: #e2e8f0;
+  font-size: 1.2rem;
 }
 
-.pageItem:hover {
-    background-color: var(--color-parchment);
-    border-color: var(--color-wood);
-    transform: scale(1.05);
+/* --- HEATMAP AMÉLIORÉE --- */
+.heatmapContainer {
+  padding: 2rem;
 }
 
-/* Status colors using theme variables */
-.pageItemPending {
-    background-color: #ffe0b3; /* Light orange */
-    border-color: var(--color-status-pending);
-    color: var(--color-status-pending);
-}
-.pageItemPending:hover {
-    background-color: #ffca80; /* Darker orange */
+.heatmapGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
-.pageItemCompleted {
-    background-color: #c8e6c9; /* Light green */
-    border-color: var(--color-status-valid);
-    color: var(--color-status-valid);
+.heatmapItem {
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border-radius: 6px; /* Coins adoucis */
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: 1px solid #e9e9e9;
 }
-.pageItemCompleted:hover {
-    background-color: #a5d6a7; /* Darker green */
+
+.heatmapItem:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 3px 6px rgba(0,0,0,0.1);
+  z-index: 5;
+}
+
+/* Couleurs de statut (Soft & Clean) */
+.statusPending {
+  background-color: #fffaf0;
+  border-color: #fceeb5;
+  color: #b7791f;
+}
+.statusPending:hover { border-color: #d69e2e; }
+
+.statusCompleted {
+  background-color: #f0fff4;
+  border-color: #c6f6d5;
+  color: #276749; /* Vert forêt lisible */
+}
+.statusCompleted:hover { border-color: #48bb78; background-color: #dcffe4; }
+
+.statusRejected {
+  background-color: #fff5f5;
+  border-color: #fed7d7;
+  color: #c53030;
+}
+
+.loader {
+  text-align: center;
+  padding: 2rem;
+  color: #a0aec0;
+  font-style: italic;
 }
