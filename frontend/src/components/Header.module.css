@@ -1,66 +1,115 @@
+/* Header.module.css */
+
 .header {
+  background-color: #ffffff;
+  border-bottom: 1px solid #dee2e6; /* Gris très clair typique Bootstrap */
+  box-shadow: 0 .125rem .25rem rgba(0,0,0,.075); /* Ombre légère */
+  position: sticky;
+  top: 0;
+  z-index: 999;
+  width: 100%;
+}
+
+/* Conteneur pour gérer les marges et centrer le contenu sur les grands écrans */
+.container {
+  max-width: 1200px; /* Largeur standard Bootstrap */
+  margin: 0 auto;    /* Centre le bloc */
+  padding: 0.8rem 1.5rem; /* Espacement vertical et horizontal interne */
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem 2rem;
-  color: var(--color-text-light);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
+/* --- Logo / Marque --- */
 .brand a {
-  font-family: var(--font-title);
-  font-size: 1.8rem;
-  color: var(--color-gold);
+  font-family: var(--font-title, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif);
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #212529; /* Noir anthracite doux */
   text-decoration: none;
-}
-.brand a:hover {
-  text-decoration: none;
-  opacity: 0.9;
+  letter-spacing: -0.5px;
 }
 
+.brand a:hover {
+  color: #000;
+}
+
+/* --- Navigation --- */
 .nav {
   display: flex;
-  gap: 1.5rem;
+  align-items: center;
+  gap: 5px; /* Espace entre les boutons de nav */
 }
 
-.nav a {
-  color: var(--color-text-light);
+.navLink {
+  color: #555; /* Gris moyen */
   text-decoration: none;
-  font-size: 1rem;
-  padding-bottom: 4px;
-  border-bottom: 2px solid transparent;
-  transition: border-color 0.2s;
+  font-size: 0.95rem;
+  font-weight: 500;
+  padding: 0.5rem 1rem; /* Zone de clic confortable */
+  border-radius: 4px; /* Coins arrondis style bouton */
+  transition: all 0.2s ease-in-out;
 }
 
-.nav a:hover,
-.nav a.active {
-  color: var(--color-gold);
-  border-bottom-color: var(--color-gold);
-  text-decoration: none;
+/* Effet au survol : fond gris très léger */
+.navLink:hover {
+  background-color: #f8f9fa;
+  color: #212529;
 }
 
+/* Lien actif : texte coloré (Or ou couleur primaire) */
+.activeLink {
+  color: var(--color-gold, #d4af37); /* On garde ta couleur d'accent */
+  font-weight: 600;
+}
+
+/* --- Section Utilisateur --- */
 .userSection {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 1rem; /* Espace net entre l'email et le bouton */
 }
 
-.userSection span {
+.userEmail {
   font-size: 0.9rem;
+  color: #6c757d; /* Gris muet */
 }
 
+/* Bouton Déconnexion style "Outline Danger" */
 .logoutButton {
-  padding: 6px 12px;
-  background-color: var(--color-accent);
-  color: var(--color-text-light);
-  border: none;
+  padding: 0.375rem 0.75rem;
+  background-color: transparent;
+  color: #dc3545; /* Rouge Bootstrap */
+  border: 1px solid #dc3545;
   border-radius: 4px;
   cursor: pointer;
   font-size: 0.9rem;
+  transition: all 0.2s ease-in-out;
 }
 
 .logoutButton:hover {
-  background-color: #a8031f; /* Darker accent */
+  background-color: #dc3545;
+  color: white;
 }
 
-/* Add styles for smaller screens (hamburger menu) later */
+.loginLink {
+  font-weight: 500;
+  color: var(--color-gold, #007bff);
+  text-decoration: none;
+  padding: 0.375rem 0.75rem;
+}
+
+.loginLink:hover {
+  text-decoration: underline;
+}
+
+/* Responsive simple */
+@media (max-width: 768px) {
+  .container {
+    padding: 0.8rem 1rem;
+  }
+  
+  .nav {
+    display: none; /* À gérer avec un menu mobile */
+  }
+}
