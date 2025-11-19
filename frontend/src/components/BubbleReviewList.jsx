@@ -23,10 +23,11 @@ const BubbleReviewList = () => {
                 setPendingBubbles(response.data.results);
                 setTotalCount(response.data.totalCount);
                 setCurrentPage(pageToFetch);
+                setError(null);
             })
             .catch(err => {
                 console.error(err);
-                setError("Erreur lors de la récupération des propositions.");
+                setError("Impossible de récupérer les propositions.");
             })
             .finally(() => setIsLoading(false));
     };
@@ -45,41 +46,77 @@ const BubbleReviewList = () => {
             } else if (action === 'reject') {
                 await rejectBubble(id, token);
             }
+            // Recharger la page courante
             fetchPending(currentPage);
         } catch (err) {
-            alert(`Erreur lors de l'action de modération.`);
+            alert(`Une erreur est survenue lors de l'action.`);
             console.error(err);
         }
     };
     
     const totalPages = Math.ceil(totalCount / RESULTS_PER_PAGE);
 
-    if (isLoading) return <p>Chargement des propositions...</p>;
-    if (error) return <p style={{ color: 'red' }}>{error}</p>;
+    if (isLoading && pendingBubbles.length === 0) return <div style={{padding:'2rem', textAlign:'center', color:'#666'}}>Chargement des propositions...</div>;
+    if (error) return <div style={{padding:'1rem', color:'#ef4444', background:'#fee2e2', borderRadius:'6px'}}>{error}</div>;
+
+    // Styles pour la pagination (inline pour simplifier sans nouveau fichier module)
+    const paginationStyle = {
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: '1rem',
+        marginTop: '2rem',
+        paddingTop: '1rem',
+        borderTop: '1px solid #eee'
+    };
+    
+    const btnStyle = {
+        padding: '0.5rem 1rem',
+        border: '1px solid #d1d5db',
+        background: 'white',
+        borderRadius: '6px',
+        cursor: 'pointer',
+        color: '#374151'
+    };
 
     return (
         <div>
-            <p><strong>{totalCount} bulle(s)</strong> en attente de validation.</p>
+            <div style={{marginBottom: '1.5rem', color: '#4b5563'}}>
+                <strong>{totalCount}</strong> bulle(s) en attente de votre expertise.
+            </div>
+
             {pendingBubbles.length === 0 ? (
-                <p>Aucune proposition pour le moment.</p>
+                <div style={{textAlign: 'center', padding: '3rem', border: '2px dashed #e5e7eb', borderRadius: '8px', color:'#9ca3af'}}>
+                    <p>Tout est propre ! Aucune bulle à valider pour le moment.</p>
+                </div>
             ) : (
-                pendingBubbles.map(bubble => (
-                    <BubbleReviewItem 
-                        key={bubble.id}
-                        bubble={bubble}
-                        onAction={handleAction}
-                    />
-                ))
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {pendingBubbles.map(bubble => (
+                        <BubbleReviewItem 
+                            key={bubble.id}
+                            bubble={bubble}
+                            onAction={handleAction}
+                        />
+                    ))}
+                </div>
             )}
             
             {totalPages > 1 && (
-                <div style={{display: 'flex', justifyContent: 'center', gap: '1rem', marginTop: '1rem'}}>
-                    <button onClick={() => fetchPending(currentPage - 1)} disabled={currentPage === 1}>
-                        Précédent
+                <div style={paginationStyle}>
+                    <button 
+                        style={{...btnStyle, opacity: currentPage === 1 ? 0.5 : 1}} 
+                        onClick={() => fetchPending(currentPage - 1)} 
+                        disabled={currentPage === 1}
+                    >
+                        &larr; Précédent
                     </button>
-                    <span>Page {currentPage} sur {totalPages}</span>
-                    <button onClick={() => fetchPending(currentPage + 1)} disabled={currentPage === totalPages}>
-                        Suivant
+                    <span style={{fontSize: '0.9rem', color: '#6b7280'}}>Page {currentPage} / {totalPages}</span>
+                    <button 
+                        style={{...btnStyle, opacity: currentPage === totalPages ? 0.5 : 1}} 
+                        onClick={() => fetchPending(currentPage + 1)} 
+                        disabled={currentPage === totalPages}
+                    >
+                        Suivant &rarr;
                     </button>
                 </div>
             )}

@@ -3,7 +3,6 @@
   justify-content: space-between;
   align-items: center;
   padding: 1rem 2rem;
-  background-color: var(--color-navy);
   color: var(--color-text-light);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }

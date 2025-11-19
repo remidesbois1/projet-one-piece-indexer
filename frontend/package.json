@@ -14,9 +14,11 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@supabase/supabase-js": "^2.75.1",
     "axios": "^1.12.2",
+    "lucide-react": "^0.554.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "react-router-dom": "^7.9.4"
+    "react-router-dom": "^7.9.4",
+    "react-zoom-pan-pinch": "^3.7.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.36.0",

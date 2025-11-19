@@ -1,163 +1,248 @@
-.container {
-    padding: 0 0 2rem 0;
-    margin: 0 auto;
-    max-width: 100%;
-    /* La ligne de fond gris a bien été supprimée */
-    min-height: 100vh;
+/* Variables globales (simulées) */
+:root {
+    --color-navy: #1a2b4c;
+    --color-wood: #d4a373;
+    --color-bg-app: #f4f6f8;
+    --color-white: #ffffff;
+    --color-success: #10b981; /* Vert moderne */
+    --color-danger: #ef4444; /* Rouge moderne */
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
 }
 
-.subHeader {
+/* Layout Principal : Pleine hauteur, pas de scroll global */
+.container {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 60px); /* Ajuster selon la hauteur de votre Navbar */
+    background-color: var(--color-bg-app);
+    font-family: 'Inter', system-ui, sans-serif;
+    overflow: hidden;
+}
+
+/* En-tête */
+.header {
+    flex-shrink: 0;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1rem 2rem;
-    background-color: #fff; 
-    border-bottom: 1px solid #e0e0e0;
-    margin-bottom: 2rem; 
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05); 
+    padding: 0.75rem 1.5rem;
+    background-color: var(--color-white);
+    border-bottom: 1px solid #e5e7eb;
+    box-shadow: var(--shadow-sm);
+    z-index: 20;
 }
-.subHeader h2 {
+
+.headerInfo h2 {
     margin: 0;
-    font-size: 1.8rem;
+    font-size: 1.25rem;
     color: var(--color-navy);
+    font-weight: 700;
 }
 
-.backLink {
-    color: var(--color-navy);
-    font-weight: 600;
-    text-decoration: none;
-    padding: 8px 16px;
-    border-radius: 5px;
-    transition: background-color 0.2s;
-    margin-right: 1rem; 
-}
-.backLink:hover {
-    background-color: #f0f0f0;
+.headerMeta {
+    font-size: 0.85rem;
+    color: #6b7280;
+    margin-top: 2px;
 }
 
+/* Actions (Boutons) */
 .actions {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 1rem;
 }
 
-/* Style de base des boutons */
-.actions button {
-    margin-left: 0;
-    padding: 8px 16px;
-    border: none; 
-    color: white; /* Texte blanc */
-    font-weight: bold;
-    border-radius: 5px;
-    cursor: pointer;
-    font-family: var(--font-text);
-    text-transform: uppercase;
+.backLink {
+    color: #4b5563;
+    font-weight: 500;
+    text-decoration: none;
     font-size: 0.9rem;
-    transition: opacity 0.2s, transform 0.1s; 
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    transition: background-color 0.2s;
 }
 
-.actions button:hover {
-    transform: scale(1.02);
-    opacity: 0.85;
+.backLink:hover {
+    background-color: #f3f4f6;
+    color: var(--color-navy);
 }
 
-/* Bouton Approuver (CORRIGÉ AVEC CODE COULEUR) */
-.approveButton { 
-    background-color: #28a745; /* FOND VERT DIRECT */
+.approveButton, .rejectButton {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    color: white;
+    transition: transform 0.1s, opacity 0.2s;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
 }
 
-/* Bouton Rejeter (CORRIGÉ AVEC CODE COULEUR) */
-.rejectButton { 
-    background-color: #dc3545; /* FOND ROUGE DIRECT */
+.approveButton {
+    background-color: var(--color-success);
+}
+.approveButton:hover {
+    background-color: #059669;
 }
 
+.rejectButton {
+    background-color: var(--color-danger);
+}
+.rejectButton:hover {
+    background-color: #dc2626;
+}
+
+/* Layout Split : Image (gauche) / Sidebar (droite) */
 .pageLayout {
     display: flex;
-    gap: 2rem;
-    padding: 0 2rem 2rem 2rem; 
+    flex: 1;
+    overflow: hidden; /* Important pour le scroll indépendant */
 }
 
+/* Zone Image */
 .mainContent {
-    flex-grow: 1;
-    text-align: center;
+    flex: 1;
+    background-color: #e5e7eb; /* Fond gris pour contraste */
+    overflow: auto; /* Scroll interne */
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 2rem;
+    position: relative;
 }
 
 .imageContainer {
     position: relative;
     display: inline-block;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1); 
-    border: 1px solid #ddd; 
     background-color: white;
-    border-radius: 8px; 
-    overflow: hidden; 
+    box-shadow: var(--shadow-md);
+    border-radius: 4px; /* Léger arrondi */
+    /* Pas d'overflow hidden ici pour laisser dépasser les tooltips si besoin */
 }
 
 .mangaImage {
     max-width: 100%;
     height: auto;
     display: block;
+    border-radius: 4px;
 }
 
+/* Sidebar */
 .sidebar {
-    width: 350px;
+    width: 380px; /* Un peu plus large pour bien lire le texte */
     flex-shrink: 0;
-    background: #fff; 
-    padding: 1.5rem;
-    border-radius: 8px;
-    border: 1px solid #ddd; 
-    max-height: calc(100vh - 160px); 
-    overflow-y: auto;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1); 
-}
-.sidebar h3 {
-    margin-top: 0;
-    padding-bottom: 0.8rem;
-    border-bottom: 2px solid var(--color-navy); 
-    font-size: 1.5rem;
-    color: var(--color-navy);
+    background: var(--color-white);
+    border-left: 1px solid #e5e7eb;
+    display: flex;
+    flex-direction: column;
+    z-index: 10;
 }
 
-.bubbleList { 
+.sidebarHeader {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid #f3f4f6;
+    background-color: #fafafa;
+}
+
+.sidebarHeader h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    color: var(--color-navy);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.bubbleCount {
+    background: #e5e7eb;
+    color: #374151;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+}
+
+/* Liste des bulles */
+.bubbleListContainer {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0;
+}
+
+.bubbleList {
     list-style: none;
     padding: 0;
-    margin-top: 1rem;
+    margin: 0;
 }
 
 .bubbleListItem {
-    padding: 10px 0; 
-    border-bottom: 1px solid #eee; 
-    font-family: var(--font-text);
-    line-height: 1.5;
-}
-.bubbleListItem:last-child {
-    border-bottom: none;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid #f3f4f6;
+    display: flex;
+    gap: 1rem;
+    transition: background-color 0.2s;
 }
 
-.bubbleListItem span { 
-    font-weight: bold;
-    margin-right: 10px;
-    color: var(--color-navy);
-    display: inline-block;
-    min-width: 25px;
+.bubbleListItem:hover {
+    background-color: #f9fafb;
+}
+
+.listIndex {
+    font-weight: 700;
+    color: #9ca3af;
+    font-size: 1.1rem;
+    min-width: 24px;
     text-align: right;
 }
 
+.listText {
+    color: #1f2937;
+    font-size: 0.95rem;
+    line-height: 1.5;
+}
+
+/* Rectangles sur l'image */
 .existingRectangle {
     position: absolute;
-    border: 2px solid #28a745; /* Code couleur direct */
+    border: 2px solid var(--color-success);
+    background-color: rgba(16, 185, 129, 0.1);
     box-sizing: border-box;
-    pointer-events: none;
+    cursor: help; /* Indique qu'il y a une interaction */
+    z-index: 10;
+    transition: background-color 0.2s; /* Effet hover */
+}
+
+.existingRectangle:hover {
+    background-color: rgba(16, 185, 129, 0.2);
 }
 
 .bubbleNumber {
     position: absolute;
-    top: -22px;
+    top: -24px;
     left: -2px;
-    background-color: #28a745; /* Code couleur direct */
+    background-color: var(--color-success);
     color: white;
     padding: 2px 8px;
     border-radius: 4px;
-    font-size: 0.8rem;
-    font-weight: bold;
-    font-family: var(--font-text);
+    font-size: 12px;
+    font-weight: 700;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Tooltip pour le texte de la bulle */
+.tooltip {
+    position: absolute;
+    background: rgba(31, 41, 55, 0.95); /* Gris foncé presque noir */
+    color: white;
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    pointer-events: none; /* Important pour que la souris interagisse avec l'élément sous-jacent */
+    max-width: 280px;
+    z-index: 100;
+    box-shadow: var(--shadow-md);
+    line-height: 1.4;
+    transform: translate(10px, 10px); /* Léger décalage */
+    border: 1px solid rgba(255,255,255,0.1);
 }
