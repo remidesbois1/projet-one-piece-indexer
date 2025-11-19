@@ -10,18 +10,47 @@ const ModerationPage = () => {
   return (
     <div className={styles.container}>
       
-      <header className={styles.subHeader}>
-        <h1>Page de Modération</h1>
+      {/* En-tête fixe */}
+      <header className={styles.header}>
+        <div className={styles.headerTitle}>
+          <h1>Espace Modération</h1>
+          <span>Validez les contributions de la communauté</span>
+        </div>
+        <Link to="/" className={styles.linkBack}>
+          Retour Accueil
+        </Link>
       </header>
-      
-      <div className={styles.tabs}>
-        <button onClick={() => setActiveTab('bubbles')} className={activeTab === 'bubbles' ? styles.activeTab : ''}>Bulles Individuelles</button>
-        <button onClick={() => setActiveTab('pages')} className={activeTab === 'pages' ? styles.activeTab : ''}>Pages Complètes</button>
-      </div>
 
-      <div className={styles.tabContent}>
-        {activeTab === 'bubbles' && <BubbleReviewList />}
-        {activeTab === 'pages' && <PageReviewList />}
+      {/* Zone principale */}
+      <div className={styles.contentWrapper}>
+        
+        {/* Barre d'onglets */}
+        <div className={styles.tabsContainer}>
+          <button 
+            onClick={() => setActiveTab('bubbles')} 
+            className={`${styles.tabButton} ${activeTab === 'bubbles' ? styles.activeTab : ''}`}
+          >
+            Bulles à valider
+            {/* Exemple de badge statique, à connecter aux données réelles si possible */}
+            {/* <span className={styles.countBadge}>12</span> */}
+          </button>
+          
+          <button 
+            onClick={() => setActiveTab('pages')} 
+            className={`${styles.tabButton} ${activeTab === 'pages' ? styles.activeTab : ''}`}
+          >
+            Pages complètes
+          </button>
+        </div>
+
+        {/* Contenu défilable */}
+        <div className={styles.tabContent}>
+            <div className={styles.innerScrollContainer}>
+                {activeTab === 'bubbles' && <BubbleReviewList />}
+                {activeTab === 'pages' && <PageReviewList />}
+            </div>
+        </div>
+
       </div>
     </div>
   );
