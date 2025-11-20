@@ -1,13 +1,15 @@
+/* Conteneur principal de l'item */
 .itemContainer {
     display: flex;
     flex-direction: row;
-    align-items: stretch; /* Pour que l'image prenne la hauteur si besoin */
+    align-items: stretch;
     background: #fff;
     border: 1px solid #e5e7eb;
     border-radius: 8px;
     margin-bottom: 1rem;
     transition: box-shadow 0.2s, transform 0.2s;
     overflow: hidden;
+    position: relative;
 }
 
 .itemContainer:hover {
@@ -15,7 +17,65 @@
     border-color: #d1d5db;
 }
 
-/* Zone image à gauche */
+.validating {
+    animation: slideOutSuccess 0.6s forwards ease-in;
+    border-color: #10b981;
+    background-color: #ecfdf5;
+}
+
+.rejecting {
+    animation: dropDownFail 0.4s forwards ease-in;
+    border-color: #ef4444;
+    background-color: #fef2f2;
+}
+
+@keyframes slideOutSuccess {
+    0% { transform: translateX(0); opacity: 1; }
+    20% { transform: translateX(-10px); opacity: 1; }
+    100% { transform: translateX(100%); opacity: 0; margin-bottom: -120px; } 
+}
+
+@keyframes dropDownFail {
+    0% { transform: translateY(0) rotate(0); opacity: 1; }
+    100% { transform: translateY(100px) rotate(10deg); opacity: 0; margin-bottom: -120px; }
+}
+
+
+.stamp {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0);
+    font-family: 'Courier New', Courier, monospace;
+    font-weight: 900;
+    font-size: 4rem;
+    text-transform: uppercase;
+    border: 6px solid;
+    padding: 0.5rem 2rem;
+    border-radius: 8px;
+    opacity: 0;
+    z-index: 50;
+    pointer-events: none;
+    mix-blend-mode: multiply;
+}
+
+.validatingStamp {
+    color: #059669;
+    border-color: #059669;
+    animation: stampIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.5) forwards;
+}
+
+.rejectingStamp {
+    color: #dc2626;
+    border-color: #dc2626;
+    animation: stampIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.5) forwards;
+}
+
+@keyframes stampIn {
+    0% { opacity: 0; transform: translate(-50%, -50%) scale(3) rotate(-15deg); }
+    100% { opacity: 0.85; transform: translate(-50%, -50%) scale(1) rotate(-10deg); }
+}
+
 .imageContainer {
     width: 200px;
     background-color: #f9fafb;
@@ -44,7 +104,7 @@
     font-style: italic;
 }
 
-/* Contenu central */
+/* Contenu central (Texte) */
 .content {
     flex-grow: 1;
     padding: 1.25rem;
@@ -79,11 +139,17 @@
     display: flex;
     flex-direction: column;
     justify-content: center;
-    gap: 0.75rem;
-    padding: 1.25rem;
+    gap: 0.5rem;
+    padding: 1rem;
     background-color: #fafafa;
     border-left: 1px solid #e5e7eb;
     min-width: 140px;
+}
+
+.separator {
+    height: 1px;
+    background-color: #e5e7eb;
+    margin: 0.25rem 0;
 }
 
 .actionButton {
@@ -101,10 +167,23 @@
     gap: 6px;
 }
 
-/* Bouton Valider (Style Success) */
+/* Style Bouton Éditer */
+.edit {
+    background-color: #eff6ff;
+    color: #1e40af;
+    border-color: #dbeafe;
+}
+
+.edit:hover {
+    background-color: #3b82f6;
+    color: white;
+    border-color: #3b82f6;
+}
+
+/* Style Bouton Valider */
 .validate {
-    background-color: #d1fae5; /* Vert très clair */
-    color: #065f46; /* Vert foncé */
+    background-color: #d1fae5;
+    color: #065f46;
     border-color: #a7f3d0;
 }
 
@@ -114,10 +193,10 @@
     border-color: #10b981;
 }
 
-/* Bouton Rejeter (Style Danger) */
+/* Style Bouton Rejeter */
 .reject {
-    background-color: #fee2e2; /* Rouge très clair */
-    color: #991b1b; /* Rouge foncé */
+    background-color: #fee2e2;
+    color: #991b1b;
     border-color: #fecaca;
 }
 
