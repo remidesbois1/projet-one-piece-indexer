@@ -1,0 +1,28 @@
+.appContainer {
+  display: flex;
+  flex-direction: column;
+  height: 100vh; /* Prend toute la hauteur de l'écran */
+  overflow: hidden;
+}
+
+.mainContent {
+  flex: 1; /* Prend tout l'espace restant sous le header */
+  overflow-y: auto; /* Active le scroll UNIQUEMENT ici */
+  overflow-x: hidden;
+  position: relative;
+  
+  /* Pour un scroll fluide */
+  scroll-behavior: smooth;
+}
+
+/* Optionnel : Styliser la scrollbar pour qu'elle soit plus discrète */
+.mainContent::-webkit-scrollbar {
+  width: 8px;
+}
+.mainContent::-webkit-scrollbar-track {
+  background: transparent;
+}
+.mainContent::-webkit-scrollbar-thumb {
+  background-color: #cbd5e0;
+  border-radius: 4px;
+}

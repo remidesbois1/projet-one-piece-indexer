@@ -10,31 +10,31 @@ import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-ki
 import { SortableBubbleItem } from '../components/SortableBubbleItem';
 
 const AnnotatePage = () => {
-    const handleEditBubble = (bubble) => {
-        setPendingAnnotation(bubble);
-    };
     const { user, session } = useAuth();
     const { pageId } = useParams();
+    
+    // États de données
     const [page, setPage] = useState(null);
-    const [error, setError] = useState(null);
     const [existingBubbles, setExistingBubbles] = useState([]);
+    const [error, setError] = useState(null);
+    
+    // États d'interaction UI
     const [hoveredBubble, setHoveredBubble] = useState(null);
     const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [pendingAnnotation, setPendingAnnotation] = useState(null);
 
-    const containerRef = useRef(null);
-    const imageRef = useRef(null); // On garde imageRef pour le handleMouseUp
-
+    // États de dessin
     const [isDrawing, setIsDrawing] = useState(false);
     const [startPoint, setStartPoint] = useState(null);
     const [endPoint, setEndPoint] = useState(null);
     const [rectangle, setRectangle] = useState(null);
+    const [imageDimensions, setImageDimensions] = useState(null);
 
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const [pendingAnnotation, setPendingAnnotation] = useState(null);
-    
-    // --- CORRECTION 1.A : Remplacer imageLoaded par les dimensions ---
-    const [imageDimensions, setImageDimensions] = useState(null); 
+    const containerRef = useRef(null);
+    const imageRef = useRef(null);
 
+    // --- 1. CHARGEMENT DES DONNÉES ---
     const fetchBubbles = useCallback(() => {
         if (pageId && session?.access_token) {
             getBubblesForPage(pageId, session.access_token)
@@ -42,7 +42,7 @@ const AnnotatePage = () => {
                     const sortedBubbles = response.data.sort((a, b) => a.order - b.order);
                     setExistingBubbles(sortedBubbles);
                 })
-                .catch(error => console.error("Erreur de chargement des bulles existantes", error));
+                .catch(error => console.error("Erreur chargement bulles", error));
         }
     }, [pageId, session]);
 
@@ -50,11 +50,12 @@ const AnnotatePage = () => {
         if (pageId && session?.access_token) {
             getPageById(pageId, session.access_token)
                 .then(response => setPage(response.data))
-                .catch(error => setError("Impossible de charger les données de la page."));
+                .catch(error => setError("Impossible de charger la page."));
             fetchBubbles();
         }
     }, [pageId, session, fetchBubbles]);
 
+    // --- 2. LOGIQUE D'ANALYSE (OCR) ---
     useEffect(() => {
         const token = session?.access_token;
         if (rectangle && token) {
@@ -72,8 +73,9 @@ const AnnotatePage = () => {
                     });
                 })
                 .catch(error => {
-                    console.error("Erreur lors de l'analyse de la bulle:", error);
-                    setError("L'analyse de la bulle a échoué.");
+                    console.error("Erreur OCR:", error);
+                    alert("L'analyse de la zone a échoué. Veuillez réessayer.");
+                    setRectangle(null); // Reset on error
                 })
                 .finally(() => {
                     setIsSubmitting(false);
@@ -81,14 +83,18 @@ const AnnotatePage = () => {
         }
     }, [rectangle, pageId, session]);
 
+    // --- 3. GESTIONNAIRES D'ÉVÉNEMENTS ---
+    const handleEditBubble = (bubble) => {
+        setPendingAnnotation(bubble);
+    };
+
     const handleDeleteBubble = async (bubbleId) => {
-        if (window.confirm("Êtes-vous sûr de vouloir supprimer cette proposition ?")) {
+        if (window.confirm("Supprimer cette annotation ?")) {
             try {
                 await deleteBubble(bubbleId, session.access_token);
                 fetchBubbles();
             } catch (error) {
                 alert("Erreur lors de la suppression.");
-                console.error(error);
             }
         }
     };
@@ -99,25 +105,19 @@ const AnnotatePage = () => {
         fetchBubbles();
     };
 
-    const getBubbleColorClass = (status) => {
-        if (status === 'Proposé') return styles.proposedRectangle;
-        if (status === 'Validé') return styles.validatedRectangle;
-        return '';
-    };
-
     const handleSubmitPage = async () => {
-        if (window.confirm("Êtes-vous sûr de vouloir soumettre cette page pour validation ? Vous ne pourrez plus y ajouter de bulles.")) {
+        if (window.confirm("Confirmer la validation de la page ?")) {
             try {
                 const response = await submitPageForReview(pageId, session.access_token);
-                setPage(response.data); // Mettre à jour le statut de la page affiché
-                alert("Page soumise pour validation !");
+                setPage(response.data);
+                alert("Page envoyée pour validation !");
             } catch (error) {
-                alert("Erreur lors de la soumission de la page.");
-                console.error(error);
+                alert("Erreur lors de la soumission.");
             }
         }
     };
 
+    // --- 4. LOGIQUE DE DESSIN (SOURIS) ---
     const getContainerCoords = (event) => {
         const container = containerRef.current;
         if (!container) return null;
@@ -130,6 +130,8 @@ const AnnotatePage = () => {
 
     const handleMouseDown = (event) => {
         if (page?.statut !== 'not_started' && page?.statut !== 'in_progress') return;
+        if (isSubmitting) return; // Bloquer si analyse en cours
+        
         event.preventDefault();
         setIsDrawing(true);
         const coords = getContainerCoords(event);
@@ -140,33 +142,25 @@ const AnnotatePage = () => {
     };
 
     const handleMouseMove = (event) => {
-        const container = containerRef.current;
-        if (container) {
-            const rect = container.getBoundingClientRect();
-            setMousePos({ x: event.clientX - rect.left, y: event.clientY - rect.top });
-        }
+        const coords = getContainerCoords(event);
+        if (coords) setMousePos(coords); // Pour le tooltip
+
         if (!isDrawing) return;
         event.preventDefault();
-        setEndPoint(getContainerCoords(event));
+        setEndPoint(coords);
     };
 
     const handleMouseUp = (event) => {
         if (!isDrawing) return;
         event.preventDefault();
         setIsDrawing(false);
+        
         const imageEl = imageRef.current;
         if (!imageEl || !startPoint || !endPoint) return;
 
-        if (imageEl.naturalWidth === 0 || imageEl.naturalHeight === 0) {
-            console.warn("Image natural dimensions not available yet.");
-            return;
-        }
-
-        const originalWidth = imageEl.naturalWidth;
-        const displayedWidth = imageEl.offsetWidth;
-        if (displayedWidth === 0) return;
-
-        const scale = originalWidth / displayedWidth;
+        // Calculs de mise à l'échelle
+        if (imageEl.naturalWidth === 0) return;
+        const scale = imageEl.naturalWidth / imageEl.offsetWidth;
         const currentEndPoint = getContainerCoords(event) || endPoint; 
 
         const unscaledRect = {
@@ -176,7 +170,8 @@ const AnnotatePage = () => {
             h: Math.abs(startPoint.y - currentEndPoint.y),
         };
 
-        if (unscaledRect.w > 5 && unscaledRect.h > 5) {
+        // Seuil minimum pour éviter les clics accidentels (10x10px)
+        if (unscaledRect.w > 10 && unscaledRect.h > 10) {
             const finalRect = {
                 x: Math.round(unscaledRect.x * scale),
                 y: Math.round(unscaledRect.y * scale),
@@ -185,13 +180,14 @@ const AnnotatePage = () => {
             };
             setRectangle(finalRect);
         } else {
+            // Annuler si trop petit
             setStartPoint(null);
             setEndPoint(null);
         }
     };
 
-
-    const getRectangleStyle = () => {
+    // Style dynamique du rectangle de dessin
+    const getDrawingStyle = () => {
         if (!isDrawing || !startPoint || !endPoint) return { display: 'none' };
         const left = Math.min(startPoint.x, endPoint.x);
         const top = Math.min(startPoint.y, endPoint.y);
@@ -200,50 +196,54 @@ const AnnotatePage = () => {
         return { left: `${left}px`, top: `${top}px`, width: `${width}px`, height: `${height}px` };
     };
 
+    // --- 5. DRAG AND DROP ---
     const handleDragEnd = (event) => {
         const { active, over } = event;
         if (active && over && active.id !== over.id) {
             setExistingBubbles((bubbles) => {
                 const oldIndex = bubbles.findIndex(b => b.id === active.id);
                 const newIndex = bubbles.findIndex(b => b.id === over.id);
-                if (oldIndex === -1 || newIndex === -1) return bubbles; 
-
                 const newOrder = arrayMove(bubbles, oldIndex, newIndex);
                 
+                // Optimistic UI update
                 const orderedBubblesForApi = newOrder.map((b, index) => ({ id: b.id, order: index + 1 }));
                 reorderBubbles(orderedBubblesForApi, session.access_token).catch(err => {
-                    console.error("Failed to save new order:", err);
-                    alert("Erreur lors de la sauvegarde du nouvel ordre.");
-                    return bubbles; 
+                    console.error("Erreur ordre", err);
+                    fetchBubbles(); // Revert on error
                 });
-
                 return newOrder; 
             });
         }
     };
 
-    if (error) return <div><p style={{ color: 'red' }}>{error}</p><Link to="/">Retour</Link></div>;
-    if (!page) return <div>Chargement...</div>;
+    if (error) return <div className={styles.errorState}>{error} <Link to="/">Retour</Link></div>;
+    if (!page) return <div className={styles.loadingState}>Chargement de la page...</div>;
 
-    const tomeNumber = page.chapitres?.tomes?.numero || '?';
-    const chapterNumber = page.chapitres?.numero || '?';
+    const canEdit = page.statut === 'not_started' || page.statut === 'in_progress';
 
     return (
         <div className={styles.container}>
-            <div className={styles.subHeader}>
-                <h2>Annotation - T{tomeNumber} C{chapterNumber} P{page.numero_page} (Statut: {page.statut})</h2>
-                <div>
-                    <button
-                        onClick={handleSubmitPage}
-                        disabled={page.statut !== 'not_started' && page.statut !== 'in_progress'}
-                    >
-                        Soumettre la page pour vérification
-                    </button>
-                    <Link to="/">Retour Bibliothèque</Link>
+            {/* --- HEADER --- */}
+            <header className={styles.subHeader}>
+                <div className={styles.headerInfo}>
+                    <h2>Annoter : {page.chapitres?.tomes?.nom || 'Tome'} - Chapitre {page.chapitres?.numero}</h2>
+                    <div className={styles.headerMeta}>Page {page.numero_page} • Statut: <span style={{fontWeight:'bold'}}>{page.statut}</span></div>
                 </div>
-            </div>
+                <div className={styles.headerActions}>
+                    <Link to="/" className={styles.linkBack}>Retour Bibliothèque</Link>
+                    <button
+                        className={styles.btnPrimary}
+                        onClick={handleSubmitPage}
+                        disabled={!canEdit}
+                        title={!canEdit ? "Page déjà validée ou en cours de revue" : "Terminer l'annotation"}
+                    >
+                        Soumettre la page
+                    </button>
+                </div>
+            </header>
 
             <div className={styles.pageLayout}>
+                {/* --- MAIN IMAGE AREA --- */}
                 <main className={styles.mainContent}>
                      <div
                         ref={containerRef}
@@ -259,22 +259,27 @@ const AnnotatePage = () => {
                             alt={`Page ${page.numero_page}`} 
                             className={styles.mangaImage} 
                             draggable="false"
-                            // --- CORRECTION 1.B : Stocker les dimensions réelles ---
                             onLoad={(e) => setImageDimensions({
                                 width: e.target.offsetWidth,
                                 naturalWidth: e.target.naturalWidth
                             })}
                         />
 
-                        {isDrawing && <div style={getRectangleStyle()} className={styles.drawingRectangle} />}
+                        {/* Loading Overlay (OCR) */}
+                        {isSubmitting && (
+                            <div className={styles.loadingOverlay}>
+                                <div className={styles.spinner}></div>
+                                <span>Analyse intelligente en cours...</span>
+                            </div>
+                        )}
 
-                        {/* --- CORRECTION 1.C : Utiliser l'état des dimensions --- */}
+                        {/* Drawing Rectangle */}
+                        {isDrawing && <div style={getDrawingStyle()} className={styles.drawingRectangle} />}
+
+                        {/* Existing Bubbles Overlay */}
                         {imageDimensions && existingBubbles.map((bubble, index) => {
-                            // Plus besoin de ref ni de 'if' : on utilise l'état.
                             const scale = imageDimensions.width / imageDimensions.naturalWidth;
-                            
-                            // Sécurité au cas où naturalWidth serait 0
-                            if (isNaN(scale) || scale === 0) return null; 
+                            if (!scale) return null; 
 
                             const style = {
                                 left: `${bubble.x * scale}px`,
@@ -282,11 +287,14 @@ const AnnotatePage = () => {
                                 width: `${bubble.w * scale}px`,
                                 height: `${bubble.h * scale}px`,
                             };
+                            
+                            const statusClass = bubble.statut === 'Validé' ? styles.validatedRectangle : styles.proposedRectangle;
+
                             return (
                                 <div
                                     key={bubble.id}
                                     style={style}
-                                    className={`${styles.existingRectangle} ${getBubbleColorClass(bubble.statut)}`}
+                                    className={`${styles.existingRectangle} ${statusClass}`}
                                     onMouseEnter={() => setHoveredBubble(bubble)}
                                     onMouseLeave={() => setHoveredBubble(null)}
                                 >
@@ -295,47 +303,71 @@ const AnnotatePage = () => {
                             );
                         })}
 
+                        {/* Tooltip */}
                         {hoveredBubble && (
-                            <div className={styles.tooltip} style={{ transform: `translate(${mousePos.x + 15}px, ${mousePos.y + 15}px)` }}>
-                                {hoveredBubble.texte_propose}
+                            <div 
+                                className={styles.tooltip} 
+                                style={{ 
+                                    left: 0, top: 0,
+                                    transform: `translate(${mousePos.x + 15}px, ${mousePos.y + 15}px)` 
+                                }}
+                            >
+                                <strong>#{existingBubbles.findIndex(b => b.id === hoveredBubble.id) + 1}</strong><br/>
+                                {hoveredBubble.texte_propose || <em>Aucun texte détecté</em>}
                             </div>
                         )}
                     </div>
-                    {isSubmitting && <div className={styles.loadingMessage}>Analyse OCR en cours...</div>}
-
-                    <Modal isOpen={!!pendingAnnotation} onClose={() => setPendingAnnotation(null)}>
-                        <ValidationForm annotationData={pendingAnnotation} onValidationSuccess={handleSuccess} />
-                    </Modal>
                 </main>
 
+                {/* --- SIDEBAR --- */}
                 <aside className={styles.sidebar}>
-                    <h3>Bulles ({existingBubbles.length})</h3>
-                    <DndContext
-                        collisionDetection={closestCenter}
-                        onDragEnd={handleDragEnd}
-                    >
-                        <SortableContext
-                            items={existingBubbles.map(b => b.id)}
-                            strategy={verticalListSortingStrategy}
-                        >
-                            <ul className={styles.bubbleList}>
-                                {existingBubbles.map((bubble, index) => (
-                                    <SortableBubbleItem
-                                        key={bubble.id}
-                                        id={bubble.id} 
-                                        bubble={bubble}
-                                        index={index}
-                                        user={user}
-                                        onEdit={handleEditBubble}
-                                        onDelete={handleDeleteBubble}
-                                        disabled={page.statut !== 'not_started' && page.statut !== 'in_progress'}
-                                    />
-                                ))}
-                            </ul>
-                        </SortableContext>
-                    </DndContext>
+                    <div className={styles.sidebarHeader}>
+                        <h3>Annotations <span className={styles.bubbleCount}>{existingBubbles.length}</span></h3>
+                    </div>
+                    
+                    <div className={styles.bubbleListContainer}>
+                        {existingBubbles.length === 0 ? (
+                            <div className={styles.emptyState}>
+                                <p>Aucune bulle détectée.</p>
+                                <p>Dessinez un rectangle sur l'image pour commencer.</p>
+                            </div>
+                        ) : (
+                            <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                                <SortableContext
+                                    items={existingBubbles.map(b => b.id)}
+                                    strategy={verticalListSortingStrategy}
+                                >
+                                    <ul className={styles.bubbleList}>
+                                        {existingBubbles.map((bubble, index) => (
+                                            <SortableBubbleItem
+                                                key={bubble.id}
+                                                id={bubble.id} 
+                                                bubble={bubble}
+                                                index={index}
+                                                user={user}
+                                                onEdit={handleEditBubble}
+                                                onDelete={handleDeleteBubble}
+                                                disabled={!canEdit}
+                                            />
+                                        ))}
+                                    </ul>
+                                </SortableContext>
+                            </DndContext>
+                        )}
+                    </div>
                 </aside>
             </div>
+
+            {/* --- MODALS --- */}
+            <Modal isOpen={!!pendingAnnotation && !isSubmitting} onClose={() => {
+                setPendingAnnotation(null);
+                setRectangle(null); // Clean up selection if cancelled
+            }}>
+                <ValidationForm 
+                    annotationData={pendingAnnotation} 
+                    onValidationSuccess={handleSuccess} 
+                />
+            </Modal>
         </div>
     );
 };
