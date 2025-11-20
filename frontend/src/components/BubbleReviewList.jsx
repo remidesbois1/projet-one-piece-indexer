@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { getPendingBubbles, validateBubble, rejectBubble } from '../services/api';
 import BubbleReviewItem from './BubbleReviewItem';
+import Modal from './Modal';
+import ValidationForm from './ValidationForm';
 
 const RESULTS_PER_PAGE = 5;
 
@@ -12,6 +14,9 @@ const BubbleReviewList = () => {
     const [currentPage, setCurrentPage] = useState(1);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
+    
+    // État pour l'édition
+    const [editingBubble, setEditingBubble] = useState(null);
 
     const token = session?.access_token;
 
@@ -46,12 +51,21 @@ const BubbleReviewList = () => {
             } else if (action === 'reject') {
                 await rejectBubble(id, token);
             }
-            // Recharger la page courante
             fetchPending(currentPage);
         } catch (err) {
             alert(`Une erreur est survenue lors de l'action.`);
             console.error(err);
         }
+    };
+
+    // Gestion de l'édition
+    const handleEditClick = (bubble) => {
+        setEditingBubble(bubble);
+    };
+
+    const handleEditSuccess = () => {
+        setEditingBubble(null);
+        fetchPending(currentPage); // Recharger pour afficher le texte corrigé
     };
     
     const totalPages = Math.ceil(totalCount / RESULTS_PER_PAGE);
@@ -59,7 +73,6 @@ const BubbleReviewList = () => {
     if (isLoading && pendingBubbles.length === 0) return <div style={{padding:'2rem', textAlign:'center', color:'#666'}}>Chargement des propositions...</div>;
     if (error) return <div style={{padding:'1rem', color:'#ef4444', background:'#fee2e2', borderRadius:'6px'}}>{error}</div>;
 
-    // Styles pour la pagination (inline pour simplifier sans nouveau fichier module)
     const paginationStyle = {
         display: 'flex',
         justifyContent: 'center',
@@ -96,6 +109,7 @@ const BubbleReviewList = () => {
                             key={bubble.id}
                             bubble={bubble}
                             onAction={handleAction}
+                            onEdit={handleEditClick} // On passe la fonction d'édition
                         />
                     ))}
                 </div>
@@ -120,6 +134,19 @@ const BubbleReviewList = () => {
                     </button>
                 </div>
             )}
+
+            {/* Modale d'édition */}
+            <Modal 
+                isOpen={!!editingBubble} 
+                onClose={() => setEditingBubble(null)}
+                title="Correction de la proposition"
+            >
+                <ValidationForm 
+                    annotationData={editingBubble} 
+                    onValidationSuccess={handleEditSuccess}
+                    onCancel={() => setEditingBubble(null)}
+                />
+            </Modal>
         </div>
     );
 };
