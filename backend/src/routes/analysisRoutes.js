@@ -1,28 +1,122 @@
 const express = require('express');
 const router = express.Router();
 const { authMiddleware } = require('../middleware/auth');
+const { createClient } = require('@supabase/supabase-js');
+const axios = require('axios');
+const sharp = require('sharp');
+const fs = require('fs');
+const path = require('path');
 
-// La simulation d'IA est maintenant ici
-const callAiMicroservice = async (pageId, coords) => {
-  await new Promise(resolve => setTimeout(resolve, 1000));
+// Initialisation Supabase Admin
+const supabaseAdmin = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+
+function fileToGenerativePart(buffer, mimeType) {
   return {
-    texteOcrBrut: "",
-    textePropose: "<REJET>"
+    inlineData: {
+      data: buffer.toString("base64"),
+      mimeType
+    },
   };
+}
+
+// On passe la clé API en paramètre de la fonction
+const analyzeWithGeminiVision = async (imageUrl, coords, apiKey) => {
+  try {
+    // Initialisation de Gemini avec la clé de l'utilisateur
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: "gemini-flash-lite-latest" });
+
+    // 1. Téléchargement
+    const imageResponse = await axios({ url: imageUrl, responseType: 'arraybuffer' });
+    
+    // 2. Crop (Sharp)
+    const inputBuffer = Buffer.from(imageResponse.data);
+    const metadata = await sharp(inputBuffer).metadata();
+    
+    const cropOptions = {
+        left: Math.max(0, Math.floor(coords.x)),
+        top: Math.max(0, Math.floor(coords.y)),
+        width: Math.min(metadata.width - coords.x, Math.floor(coords.w)),
+        height: Math.min(metadata.height - coords.y, Math.floor(coords.h))
+    };
+
+    const croppedBuffer = await sharp(inputBuffer)
+      .extract(cropOptions)
+      .toFormat('png') 
+      .toBuffer();
+
+    // 3. Prompt
+    const prompt = `
+    Tu es un expert en numérisation de manga.
+    Ta tâche est de transcrire le texte présent dans cette bulle de dialogue.
+    
+    Règles strictes :
+    1. Transcris EXACTEMENT le texte visible (OCR).
+    2. Corrige automatiquement les erreurs mineures d'OCR.
+    3. Rétablis la casse naturelle.
+    4. Ne traduis pas. Reste en Français.
+    5. Renvoie UNIQUEMENT le texte final.
+    `;
+
+    const imagePart = fileToGenerativePart(croppedBuffer, "image/png");
+
+    console.log(`[Vision] Envoi à Gemini Flash-Lite (Clé utilisateur)...`);
+    const result = await model.generateContent([prompt, imagePart]);
+    const response = await result.response;
+    let text = response.text();
+
+    return text.trim();
+
+  } catch (error) {
+    console.error("[Vision Error]", error.message);
+    return null;
+  }
 };
 
 router.post('/bubble', authMiddleware, async (req, res) => {
     const { id_page, x, y, w, h } = req.body;
     
-    if (id_page === undefined || x === undefined || y === undefined || w === undefined || h === undefined) {
-        return res.status(400).json({ error: 'Données manquantes.' });
+    // Récupération de la clé depuis les headers
+    const userApiKey = req.headers['x-google-api-key'];
+
+    if (!userApiKey) {
+        return res.status(400).json({ error: 'Clé API Google manquante (x-google-api-key).' });
+    }
+    
+    if (id_page === undefined || x === undefined) {
+        return res.status(400).json({ error: 'Coordonnées manquantes.' });
     }
 
     try {
-        const aiResult = await callAiMicroservice(id_page, { x, y, w, h });
-        res.status(200).json(aiResult);
+        const { data: pageData, error: pageError } = await supabaseAdmin
+            .from('pages')
+            .select('url_image')
+            .eq('id', id_page)
+            .single();
+
+        if (pageError || !pageData) return res.status(404).json({ error: "Page introuvable." });
+
+        // Appel avec la clé utilisateur
+        const resultText = await analyzeWithGeminiVision(pageData.url_image, { x, y, w, h }, userApiKey);
+
+        if (!resultText) {
+            return res.status(200).json({ 
+                texte_ocr_brut: null, 
+                texte_propose: "<ÉCHEC LECTURE>" 
+            });
+        }
+
+        res.status(200).json({
+            texte_ocr_brut: resultText,
+            texte_propose: resultText
+        });
+
     } catch (error) {
-        res.status(500).json({ error: "Erreur lors de l'analyse." });
+        console.error("Erreur serveur:", error);
+        res.status(500).json({ error: "Erreur interne." });
     }
 });
 
