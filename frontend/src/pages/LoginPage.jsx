@@ -37,7 +37,7 @@ function LoginPage() {
       <div className={styles.loginCard}>
         <header className={styles.header}>
           <h2>Connexion</h2>
-          <p>Accès à la plateforme d'indexation</p>
+          <p>Accès au site d'indexation de One Piece</p>
         </header>
         <form onSubmit={handleLogin}>
           <div className={styles.formGroup}>
