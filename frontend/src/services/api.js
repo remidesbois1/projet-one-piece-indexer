@@ -40,7 +40,12 @@ export const submitPageForReview = (pageId, token) => apiClient.put(`/pages/${pa
 export const getPagesForReview = (token) => apiClient.get('/moderation/pages', getAuthHeaders(token));
 export const approvePage = (pageId, token) => apiClient.put(`/moderation/pages/${pageId}/approve`, {}, getAuthHeaders(token));
 export const rejectPage = (pageId, token) => apiClient.put(`/moderation/pages/${pageId}/reject`, {}, getAuthHeaders(token));
-export const analyseBubble = (bubbleData, token) => apiClient.post('/analyse/bubble', bubbleData, getAuthHeaders(token));
+export const analyseBubble = (bubbleData, token, googleApiKey) => apiClient.post('/analyse/bubble', bubbleData, {
+    headers: {
+        Authorization: `Bearer ${token}`,
+        'x-google-api-key': googleApiKey
+    }
+});
 export const getMySubmissions = (token, page = 1, limit = 10) => apiClient.get(`/user/bulles?page=${page}&limit=${limit}`, getAuthHeaders(token));
 export const getStatsSummary = () => apiClient.get('/stats/summary');
 export const getTopContributors = () => apiClient.get('/stats/top-contributors');

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, reorderBubbles, analyseBubble } from '../services/api';
 import ValidationForm from '../components/ValidationForm';
+import ApiKeyForm from '../components/ApiKeyForm';
 import { useAuth } from '../context/AuthContext';
 import styles from './AnnotatePage.module.css';
 import Modal from '../components/Modal';
@@ -24,6 +25,10 @@ const AnnotatePage = () => {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [pendingAnnotation, setPendingAnnotation] = useState(null);
 
+    // États Clé API (NOUVEAU)
+    const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+    const [retryTrigger, setRetryTrigger] = useState(0); // Pour relancer l'analyse après saisie de la clé
+
     // États de dessin
     const [isDrawing, setIsDrawing] = useState(false);
     const [startPoint, setStartPoint] = useState(null);
@@ -34,7 +39,6 @@ const AnnotatePage = () => {
     const containerRef = useRef(null);
     const imageRef = useRef(null);
 
-    // --- 1. CHARGEMENT DES DONNÉES ---
     const fetchBubbles = useCallback(() => {
         if (pageId && session?.access_token) {
             getBubblesForPage(pageId, session.access_token)
@@ -55,17 +59,26 @@ const AnnotatePage = () => {
         }
     }, [pageId, session, fetchBubbles]);
 
-    // --- 2. LOGIQUE D'ANALYSE (OCR) ---
     useEffect(() => {
         const token = session?.access_token;
+        
         if (rectangle && token) {
+            const storedKey = localStorage.getItem('google_api_key');
+            
+            if (!storedKey) {
+                setShowApiKeyModal(true);
+                return;
+            }
+
             setIsSubmitting(true);
             setPendingAnnotation(null);
+            
             const analysisData = {
                 id_page: parseInt(pageId, 10),
                 ...rectangle,
             };
-            analyseBubble(analysisData, token)
+
+            analyseBubble(analysisData, token, storedKey)
                 .then(response => {
                     setPendingAnnotation({
                         ...analysisData,
@@ -74,16 +87,27 @@ const AnnotatePage = () => {
                 })
                 .catch(error => {
                     console.error("Erreur OCR:", error);
-                    alert("L'analyse de la zone a échoué. Veuillez réessayer.");
-                    setRectangle(null); // Reset on error
+                    if (error.response?.status === 400 && error.response?.data?.error?.includes('Clé')) {
+                        alert("Votre clé API semble invalide. Veuillez la vérifier.");
+                        localStorage.removeItem('google_api_key');
+                        setShowApiKeyModal(true);
+                    } else {
+                        alert("L'analyse de la zone a échoué.");
+                        setRectangle(null);
+                    }
                 })
                 .finally(() => {
                     setIsSubmitting(false);
                 });
         }
-    }, [rectangle, pageId, session]);
+    }, [rectangle, pageId, session, retryTrigger]);
 
-    // --- 3. GESTIONNAIRES D'ÉVÉNEMENTS ---
+    const handleSaveApiKey = (key) => {
+        localStorage.setItem('google_api_key', key);
+        setShowApiKeyModal(false);
+        setRetryTrigger(prev => prev + 1);
+    };
+
     const handleEditBubble = (bubble) => {
         setPendingAnnotation(bubble);
     };
@@ -117,7 +141,6 @@ const AnnotatePage = () => {
         }
     };
 
-    // --- 4. LOGIQUE DE DESSIN (SOURIS) ---
     const getContainerCoords = (event) => {
         const container = containerRef.current;
         if (!container) return null;
@@ -130,7 +153,8 @@ const AnnotatePage = () => {
 
     const handleMouseDown = (event) => {
         if (page?.statut !== 'not_started' && page?.statut !== 'in_progress') return;
-        if (isSubmitting) return; // Bloquer si analyse en cours
+        if (isSubmitting) return;
+        if (showApiKeyModal) return; 
         
         event.preventDefault();
         setIsDrawing(true);
@@ -143,7 +167,7 @@ const AnnotatePage = () => {
 
     const handleMouseMove = (event) => {
         const coords = getContainerCoords(event);
-        if (coords) setMousePos(coords); // Pour le tooltip
+        if (coords) setMousePos(coords);
 
         if (!isDrawing) return;
         event.preventDefault();
@@ -158,7 +182,6 @@ const AnnotatePage = () => {
         const imageEl = imageRef.current;
         if (!imageEl || !startPoint || !endPoint) return;
 
-        // Calculs de mise à l'échelle
         if (imageEl.naturalWidth === 0) return;
         const scale = imageEl.naturalWidth / imageEl.offsetWidth;
         const currentEndPoint = getContainerCoords(event) || endPoint; 
@@ -170,7 +193,6 @@ const AnnotatePage = () => {
             h: Math.abs(startPoint.y - currentEndPoint.y),
         };
 
-        // Seuil minimum pour éviter les clics accidentels (10x10px)
         if (unscaledRect.w > 10 && unscaledRect.h > 10) {
             const finalRect = {
                 x: Math.round(unscaledRect.x * scale),
@@ -180,13 +202,11 @@ const AnnotatePage = () => {
             };
             setRectangle(finalRect);
         } else {
-            // Annuler si trop petit
             setStartPoint(null);
             setEndPoint(null);
         }
     };
 
-    // Style dynamique du rectangle de dessin
     const getDrawingStyle = () => {
         if (!isDrawing || !startPoint || !endPoint) return { display: 'none' };
         const left = Math.min(startPoint.x, endPoint.x);
@@ -196,7 +216,6 @@ const AnnotatePage = () => {
         return { left: `${left}px`, top: `${top}px`, width: `${width}px`, height: `${height}px` };
     };
 
-    // --- 5. DRAG AND DROP ---
     const handleDragEnd = (event) => {
         const { active, over } = event;
         if (active && over && active.id !== over.id) {
@@ -205,11 +224,10 @@ const AnnotatePage = () => {
                 const newIndex = bubbles.findIndex(b => b.id === over.id);
                 const newOrder = arrayMove(bubbles, oldIndex, newIndex);
                 
-                // Optimistic UI update
                 const orderedBubblesForApi = newOrder.map((b, index) => ({ id: b.id, order: index + 1 }));
                 reorderBubbles(orderedBubblesForApi, session.access_token).catch(err => {
                     console.error("Erreur ordre", err);
-                    fetchBubbles(); // Revert on error
+                    fetchBubbles();
                 });
                 return newOrder; 
             });
@@ -223,27 +241,32 @@ const AnnotatePage = () => {
 
     return (
         <div className={styles.container}>
-            {/* --- HEADER --- */}
             <header className={styles.subHeader}>
                 <div className={styles.headerInfo}>
-                    <h2>Annoter : {page.chapitres?.tomes?.nom || 'Tome'} - Chapitre {page.chapitres?.numero}</h2>
-                    <div className={styles.headerMeta}>Page {page.numero_page} • Statut: <span style={{fontWeight:'bold'}}>{page.statut}</span></div>
+                    <h2>Annoter : {page.chapitres?.tomes?.titre || 'Tome'} - Chapitre {page.chapitres?.numero}</h2>
+                    <div className={styles.headerMeta}>Page {page.numero_page} • Statut: <span>{page.statut}</span></div>
                 </div>
                 <div className={styles.headerActions}>
-                    <Link to="/" className={styles.linkBack}>Retour Bibliothèque</Link>
+                    <button 
+                        onClick={() => setShowApiKeyModal(true)} 
+                        className={styles.btnSecondary}
+                        style={{fontSize: '0.8rem', padding: '0.3rem 0.6rem', marginRight: '1rem'}}
+                    >
+                        🔑 Clé IA
+                    </button>
+
+                    <Link to="/" className={styles.linkBack}>Retour</Link>
                     <button
                         className={styles.btnPrimary}
                         onClick={handleSubmitPage}
                         disabled={!canEdit}
-                        title={!canEdit ? "Page déjà validée ou en cours de revue" : "Terminer l'annotation"}
                     >
-                        Soumettre la page
+                        Soumettre
                     </button>
                 </div>
             </header>
 
             <div className={styles.pageLayout}>
-                {/* --- MAIN IMAGE AREA --- */}
                 <main className={styles.mainContent}>
                      <div
                         ref={containerRef}
@@ -265,18 +288,15 @@ const AnnotatePage = () => {
                             })}
                         />
 
-                        {/* Loading Overlay (OCR) */}
                         {isSubmitting && (
                             <div className={styles.loadingOverlay}>
                                 <div className={styles.spinner}></div>
-                                <span>Analyse intelligente en cours...</span>
+                                <span>Analyse Gemini en cours...</span>
                             </div>
                         )}
 
-                        {/* Drawing Rectangle */}
                         {isDrawing && <div style={getDrawingStyle()} className={styles.drawingRectangle} />}
 
-                        {/* Existing Bubbles Overlay */}
                         {imageDimensions && existingBubbles.map((bubble, index) => {
                             const scale = imageDimensions.width / imageDimensions.naturalWidth;
                             if (!scale) return null; 
@@ -303,7 +323,6 @@ const AnnotatePage = () => {
                             );
                         })}
 
-                        {/* Tooltip */}
                         {hoveredBubble && (
                             <div 
                                 className={styles.tooltip} 
@@ -313,23 +332,21 @@ const AnnotatePage = () => {
                                 }}
                             >
                                 <strong>#{existingBubbles.findIndex(b => b.id === hoveredBubble.id) + 1}</strong><br/>
-                                {hoveredBubble.texte_propose || <em>Aucun texte détecté</em>}
+                                {hoveredBubble.texte_propose}
                             </div>
                         )}
                     </div>
                 </main>
 
-                {/* --- SIDEBAR --- */}
                 <aside className={styles.sidebar}>
                     <div className={styles.sidebarHeader}>
                         <h3>Annotations <span className={styles.bubbleCount}>{existingBubbles.length}</span></h3>
                     </div>
-                    
                     <div className={styles.bubbleListContainer}>
                         {existingBubbles.length === 0 ? (
                             <div className={styles.emptyState}>
                                 <p>Aucune bulle détectée.</p>
-                                <p>Dessinez un rectangle sur l'image pour commencer.</p>
+                                <p>Dessinez un rectangle pour commencer.</p>
                             </div>
                         ) : (
                             <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -358,15 +375,20 @@ const AnnotatePage = () => {
                 </aside>
             </div>
 
-            {/* --- MODALS --- */}
+            {/* MODALE DE VALIDATION (Edition texte) */}
             <Modal isOpen={!!pendingAnnotation && !isSubmitting} onClose={() => {
                 setPendingAnnotation(null);
-                setRectangle(null); // Clean up selection if cancelled
+                setRectangle(null);
             }}>
                 <ValidationForm 
                     annotationData={pendingAnnotation} 
                     onValidationSuccess={handleSuccess} 
                 />
+            </Modal>
+
+            {/* MODALE CLÉ API (Nouvelle) */}
+            <Modal isOpen={showApiKeyModal} onClose={() => setShowApiKeyModal(false)} title="">
+                <ApiKeyForm onSave={handleSaveApiKey} />
             </Modal>
         </div>
     );
