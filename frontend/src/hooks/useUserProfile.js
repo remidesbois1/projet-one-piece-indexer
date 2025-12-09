@@ -8,8 +8,9 @@ export const useUserProfile = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (user) {
+    if (user?.id) {
       setLoading(true);
+      
       supabase
         .from('profiles')
         .select('role')
@@ -25,7 +26,7 @@ export const useUserProfile = () => {
     } else {
       setLoading(false);
     }
-  }, [user]);
+  }, [user?.id]);
 
   return { profile, loading };
 };

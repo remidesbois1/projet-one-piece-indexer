@@ -14,8 +14,13 @@ export function AuthProvider({ children }) {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setSession(session);
+      (_event, newSession) => {
+        setSession((prevSession) => {
+            if (prevSession?.access_token === newSession?.access_token) {
+                return prevSession;
+            }
+            return newSession;
+        });
       }
     );
 

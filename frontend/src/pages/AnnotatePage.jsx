@@ -57,7 +57,7 @@ const AnnotatePage = () => {
                 .catch(error => setError("Impossible de charger la page."));
             fetchBubbles();
         }
-    }, [pageId, session, fetchBubbles]);
+    }, [pageId, session?.access_token, fetchBubbles]);
 
     useEffect(() => {
         const token = session?.access_token;

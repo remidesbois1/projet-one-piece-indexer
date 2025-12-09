@@ -16,7 +16,7 @@ const PageReviewList = () => {
         .catch(err => console.error("Erreur chargement pages", err))
         .finally(() => setIsLoading(false));
     }
-  }, [session]);
+  }, [session?.access_token]);
 
   if (isLoading) return <div style={{padding:'2rem', color:'#666'}}>Chargement des pages...</div>;
 

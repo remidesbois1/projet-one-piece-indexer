@@ -33,7 +33,7 @@ const MySubmissionsPage = () => {
         if(session){
             fetchSubmissions(1);
         }
-    }, [session]);
+    }, [session?.access_token]);
 
     const totalPages = Math.ceil(totalCount / RESULTS_PER_PAGE);
 
