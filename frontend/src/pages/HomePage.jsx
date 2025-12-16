@@ -12,12 +12,10 @@ const HomePage = () => {
 
   const [tomes, setTomes] = useState([]);
   
-  // États Drawer
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [selectedTome, setSelectedTome] = useState(null);
   const [selectedChapter, setSelectedChapter] = useState(null);
   
-  // Data
   const [chapters, setChapters] = useState([]);
   const [pages, setPages] = useState([]);
   const [isLoadingData, setIsLoadingData] = useState(false);
@@ -30,12 +28,11 @@ const HomePage = () => {
     }
   }, [token]);
 
-  // Ouvrir Tome
   const openTome = async (tome) => {
     setSelectedTome(tome);
     setIsDrawerOpen(true);
     setIsLoadingData(true);
-    setSelectedChapter(null); // Reset
+    setSelectedChapter(null);
     setPages([]);
     
     try {
@@ -48,7 +45,6 @@ const HomePage = () => {
     }
   };
 
-  // Ouvrir Chapitre
   const openChapter = async (chapter) => {
     setSelectedChapter(chapter);
     setIsLoadingData(true);
@@ -84,7 +80,6 @@ const HomePage = () => {
   return (
     <div className={styles.libraryContainer}>
       
-      {/* Header */}
       <header className={styles.headerBar}>
         <h1 className={styles.headerTitle}>
           Poneglyph Archives
@@ -92,7 +87,6 @@ const HomePage = () => {
         </h1>
       </header>
 
-      {/* Grille */}
       <div className={styles.tomeGrid}>
         {tomes.map(tome => (
           <div key={tome.id} className={styles.tomeItem} onClick={() => openTome(tome)}>
@@ -110,7 +104,6 @@ const HomePage = () => {
         ))}
       </div>
 
-      {/* --- DRAWER --- */}
       
       <div 
         className={`${styles.drawerOverlay} ${isDrawerOpen ? styles.open : ''}`} 
@@ -123,7 +116,6 @@ const HomePage = () => {
             <div className={styles.drawerHeader}>
               <div className={styles.navBreadcrumb}>
                 {selectedChapter ? (
-                  /* Mode Chapitre : Bouton Retour + Titre Chapitre */
                   <>
                     <span 
                       className={styles.navBackLink} 
@@ -134,7 +126,6 @@ const HomePage = () => {
                     <h3 className={styles.drawerTitle}>Chapitre {selectedChapter.numero}</h3>
                   </>
                 ) : (
-                  /* Mode Tome : Titre "SÉLECTION" + Titre Tome */
                   <>
                     <span className={styles.navBackLink} style={{cursor: 'default', opacity: 0.5}}>
                       SÉLECTION
@@ -151,7 +142,6 @@ const HomePage = () => {
 
             <div className={styles.drawerContent}>
               {selectedChapter ? (
-                /* CONTENU : PAGES (Heatmap) */
                 <div className={styles.heatmapContainer}>
                   {isLoadingData ? (
                     <div className={styles.loader}>Chargement des pages...</div>
@@ -171,7 +161,6 @@ const HomePage = () => {
                   )}
                 </div>
               ) : (
-                /* CONTENU : CHAPITRES (Liste) */
                 isLoadingData ? (
                    <div className={styles.loader}>Chargement de l'index...</div>
                 ) : (
