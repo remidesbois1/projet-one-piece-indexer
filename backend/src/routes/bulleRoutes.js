@@ -16,11 +16,38 @@ router.post('/', authMiddleware, async (req, res) => {
   if (id_page === undefined || x === undefined || y === undefined || w === undefined || h === undefined || texte_propose === undefined) {
     return res.status(400).json({ error: 'Données manquantes.' });
   }
+  
   try {
-    const { data, error } = await supabaseAdmin.from('bulles').insert([{ id_page, id_user_createur: userId, x, y, w, h, texte_propose, statut: 'Proposé' }]).select().single();
-    if (error) throw error;
+    const { data: maxOrderData, error: maxOrderError } = await supabaseAdmin
+        .from('bulles')
+        .select('order')
+        .eq('id_page', id_page)
+        .order('order', { ascending: false })
+        .limit(1)
+        .single();
+    
+    const maxOrder = maxOrderData ? maxOrderData.order : 0;
+    const newOrder = maxOrder + 1;
+    
+    const { data, error: insertError } = await supabaseAdmin
+      .from('bulles')
+      .insert([{ 
+          id_page, 
+          id_user_createur: userId, 
+          x, y, w, h, 
+          texte_propose, 
+          statut: 'Proposé', 
+          order: newOrder
+      }])
+      .select()
+      .single();
+
+    if (insertError) throw insertError;
+    
     res.status(201).json(data);
+
   } catch (error) {
+    console.error("Erreur lors de la création de la bulle:", error);
     res.status(500).json({ error: "Erreur lors de la création de la bulle." });
   }
 });

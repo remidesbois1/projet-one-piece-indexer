@@ -3,7 +3,6 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { getPageById, getBubblesForPage, approvePage, rejectPage } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import styles from './PageReview.module.css';
-// NOUVEAUX IMPORTS
 import Modal from '../components/Modal';
 import ValidationForm from '../components/ValidationForm';
 
@@ -11,20 +10,17 @@ const PageReview = () => {
     const { pageId } = useParams();
     const navigate = useNavigate();
     const { session } = useAuth();
-    
+
     const [page, setPage] = useState(null);
     const [bubbles, setBubbles] = useState([]);
     const [loading, setLoading] = useState(true);
-    
-    // État pour l'édition
+
     const [editingBubble, setEditingBubble] = useState(null);
 
-    // Gestion de l'image
     const [imageDimensions, setImageDimensions] = useState(null);
     const imageContainerRef = useRef(null);
     const imageRef = useRef(null);
 
-    // États pour le tooltip
     const [hoveredBubble, setHoveredBubble] = useState(null);
     const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
@@ -32,7 +28,6 @@ const PageReview = () => {
         const token = session?.access_token;
         if (!pageId || !token) return;
 
-        // On ne remet pas setLoading(true) ici pour éviter le clignotement lors d'un edit
         try {
             const [pageRes, bubblesRes] = await Promise.all([
                 getPageById(pageId, token),
@@ -50,18 +45,16 @@ const PageReview = () => {
     }, [pageId, session]);
 
     useEffect(() => {
-        setLoading(true); // Loading initial seulement
+        setLoading(true);
         fetchPageData();
     }, [fetchPageData]);
-
-    // --- ACTIONS DE MODÉRATION ---
 
     const handleApprove = async () => {
         if (window.confirm("Confirmer l'approbation de cette page ?")) {
              try {
-                await approvePage(pageId, session.access_token);
-                navigate('/moderation');
-            } catch (error) {
+                 await approvePage(pageId, session.access_token);
+                 navigate('/moderation');
+             } catch (error) {
                  alert("Erreur technique lors de l'approbation.");
                  console.error(error);
              }
@@ -72,7 +65,7 @@ const PageReview = () => {
         const reason = window.prompt("Motif du rejet (optionnel) :");
         if (reason !== null) {
             try {
-                await rejectPage(pageId, session.access_token, reason); 
+                await rejectPage(pageId, session.access_token, reason);
                 navigate('/moderation');
             } catch (error) {
                 alert("Erreur technique lors du rejet.");
@@ -81,15 +74,13 @@ const PageReview = () => {
         }
     };
 
-    // --- GESTION DE L'ÉDITION ---
-
     const handleEditClick = (bubble) => {
         setEditingBubble(bubble);
     };
 
     const handleEditSuccess = () => {
         setEditingBubble(null);
-        fetchPageData(); // Rafraîchir la liste pour voir le nouveau texte
+        fetchPageData();
     };
 
     const handleMouseMove = (event) => {
@@ -124,23 +115,23 @@ const PageReview = () => {
 
             <div className={styles.pageLayout}>
                 <main className={styles.mainContent}>
-                    <div 
+                    <div
                         ref={imageContainerRef}
                         className={styles.imageContainer}
                         onMouseMove={handleMouseMove}
                         onMouseLeave={() => setHoveredBubble(null)}
                     >
-                        <img 
-                            ref={imageRef} 
-                            src={page.url_image} 
-                            alt={`Page ${page.numero_page}`} 
+                        <img
+                            ref={imageRef}
+                            src={page.url_image}
+                            alt={`Page ${page.numero_page}`}
                             className={styles.mangaImage}
                             onLoad={(e) => setImageDimensions({
                                 width: e.target.offsetWidth,
                                 naturalWidth: e.target.naturalWidth
                             })}
                         />
-                        
+
                         {imageDimensions && bubbles.map((bubble, index) => {
                             const scale = imageDimensions.width / imageDimensions.naturalWidth;
                             if (!scale || isNaN(scale)) return null;
@@ -151,15 +142,15 @@ const PageReview = () => {
                                 width: `${bubble.w * scale}px`,
                                 height: `${bubble.h * scale}px`,
                             };
-                            
+
                             return (
-                                <div 
-                                    key={bubble.id} 
-                                    style={style} 
+                                <div
+                                    key={bubble.id}
+                                    style={style}
                                     className={styles.existingRectangle}
                                     onMouseEnter={() => setHoveredBubble(bubble)}
                                     onMouseLeave={() => setHoveredBubble(null)}
-                                    onClick={() => handleEditClick(bubble)} // Clic sur le rectangle pour éditer aussi
+                                    onClick={() => handleEditClick(bubble)}
                                     title="Cliquez pour corriger"
                                 >
                                     <span className={styles.bubbleNumber}>{index + 1}</span>
@@ -168,11 +159,11 @@ const PageReview = () => {
                         })}
 
                         {hoveredBubble && (
-                            <div 
-                                className={styles.tooltip} 
-                                style={{ 
-                                    left: 0, top: 0, 
-                                    transform: `translate(${mousePos.x + 15}px, ${mousePos.y + 15}px)` 
+                            <div
+                                className={styles.tooltip}
+                                style={{
+                                    left: 0, top: 0,
+                                    transform: `translate(${mousePos.x + 15}px, ${mousePos.y + 15}px)`
                                 }}
                             >
                                 <strong>#{bubbles.findIndex(b => b.id === hoveredBubble.id) + 1}</strong><br/>
@@ -186,7 +177,7 @@ const PageReview = () => {
                     <div className={styles.sidebarHeader}>
                         <h3>Textes Validés <span className={styles.bubbleCount}>{bubbles.length}</span></h3>
                     </div>
-                    
+
                     <div className={styles.bubbleListContainer}>
                         <ul className={styles.bubbleList}>
                             {bubbles.map((bubble, index) => (
@@ -194,14 +185,13 @@ const PageReview = () => {
                                     <span className={styles.listIndex}>{index + 1}</span>
                                     <div style={{flex: 1}}>
                                         <p className={styles.listText}>{bubble.texte_propose}</p>
-                                        
-                                        {/* BOUTON ÉDITER */}
-                                        <button 
+
+                                        <button
                                             className={styles.miniEditBtn}
                                             onClick={() => handleEditClick(bubble)}
                                             title="Corriger le texte"
                                         >
-                                            ✏️ Corriger
+                                            Corriger
                                         </button>
                                     </div>
                                 </li>
@@ -211,14 +201,13 @@ const PageReview = () => {
                 </aside>
             </div>
 
-            {/* MODALE D'ÉDITION */}
-            <Modal 
-                isOpen={!!editingBubble} 
+            <Modal
+                isOpen={!!editingBubble}
                 onClose={() => setEditingBubble(null)}
                 title="Correction Rapide"
             >
-                <ValidationForm 
-                    annotationData={editingBubble} 
+                <ValidationForm
+                    annotationData={editingBubble}
                     onValidationSuccess={handleEditSuccess}
                     onCancel={() => setEditingBubble(null)}
                 />

@@ -17,13 +17,11 @@ const Header = () => {
   const isAdmin = profile?.role === 'Admin';
   const isModo = profile?.role === 'Modo';
 
-  // Helper pour appliquer la classe active proprement
   const getNavLinkClass = ({ isActive }) => 
     isActive ? `${styles.navLink} ${styles.activeLink}` : styles.navLink;
 
   return (
     <header className={styles.header}>
-      {/* Le container gère les marges et le centrage */}
       <div className={styles.container}>
         
         <div className={styles.brand}>

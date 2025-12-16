@@ -58,14 +58,13 @@ const BubbleReviewList = () => {
         }
     };
 
-    // Gestion de l'édition
     const handleEditClick = (bubble) => {
         setEditingBubble(bubble);
     };
 
     const handleEditSuccess = () => {
         setEditingBubble(null);
-        fetchPending(currentPage); // Recharger pour afficher le texte corrigé
+        fetchPending(currentPage);
     };
     
     const totalPages = Math.ceil(totalCount / RESULTS_PER_PAGE);
@@ -109,7 +108,7 @@ const BubbleReviewList = () => {
                             key={bubble.id}
                             bubble={bubble}
                             onAction={handleAction}
-                            onEdit={handleEditClick} // On passe la fonction d'édition
+                            onEdit={handleEditClick}
                         />
                     ))}
                 </div>
@@ -135,7 +134,6 @@ const BubbleReviewList = () => {
                 </div>
             )}
 
-            {/* Modale d'édition */}
             <Modal 
                 isOpen={!!editingBubble} 
                 onClose={() => setEditingBubble(null)}

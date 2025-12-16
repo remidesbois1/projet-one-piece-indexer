@@ -59,7 +59,7 @@ const MySubmissionsPage = () => {
             <div className={styles.header}>
                 <h1 className={styles.title}>Mes Soumissions</h1>
                 <p className={styles.description}>
-                    Suivez l'état de validation de vos contributions à la bibliothèque.
+                    Suivez l'état de validation de vos contributions.
                 </p>
             </div>
 
