@@ -14,22 +14,18 @@ const AnnotatePage = () => {
     const { user, session } = useAuth();
     const { pageId } = useParams();
     
-    // États de données
     const [page, setPage] = useState(null);
     const [existingBubbles, setExistingBubbles] = useState([]);
     const [error, setError] = useState(null);
     
-    // États d'interaction UI
     const [hoveredBubble, setHoveredBubble] = useState(null);
     const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [pendingAnnotation, setPendingAnnotation] = useState(null);
 
-    // États Clé API (NOUVEAU)
     const [showApiKeyModal, setShowApiKeyModal] = useState(false);
-    const [retryTrigger, setRetryTrigger] = useState(0); // Pour relancer l'analyse après saisie de la clé
+    const [retryTrigger, setRetryTrigger] = useState(0);
 
-    // États de dessin
     const [isDrawing, setIsDrawing] = useState(false);
     const [startPoint, setStartPoint] = useState(null);
     const [endPoint, setEndPoint] = useState(null);
@@ -252,7 +248,7 @@ const AnnotatePage = () => {
                         className={styles.btnSecondary}
                         style={{fontSize: '0.8rem', padding: '0.3rem 0.6rem', marginRight: '1rem'}}
                     >
-                        🔑 Clé IA
+                        Clé IA
                     </button>
 
                     <Link to="/" className={styles.linkBack}>Retour</Link>
@@ -291,7 +287,7 @@ const AnnotatePage = () => {
                         {isSubmitting && (
                             <div className={styles.loadingOverlay}>
                                 <div className={styles.spinner}></div>
-                                <span>Analyse Gemini en cours...</span>
+                                <span>Analyse IA en cours...</span>
                             </div>
                         )}
 
@@ -375,7 +371,6 @@ const AnnotatePage = () => {
                 </aside>
             </div>
 
-            {/* MODALE DE VALIDATION (Edition texte) */}
             <Modal isOpen={!!pendingAnnotation && !isSubmitting} onClose={() => {
                 setPendingAnnotation(null);
                 setRectangle(null);
@@ -386,7 +381,6 @@ const AnnotatePage = () => {
                 />
             </Modal>
 
-            {/* MODALE CLÉ API (Nouvelle) */}
             <Modal isOpen={showApiKeyModal} onClose={() => setShowApiKeyModal(false)} title="">
                 <ApiKeyForm onSave={handleSaveApiKey} />
             </Modal>

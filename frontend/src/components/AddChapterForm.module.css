@@ -74,7 +74,6 @@
     border: 1px solid var(--color-wood);
     color: var(--color-navy);
 }
-/* Style for error messages if needed */
 .messageError {
     background-color: #fce8e8;
     border-color: var(--color-status-rejected);

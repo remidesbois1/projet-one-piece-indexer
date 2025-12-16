@@ -1,151 +1,65 @@
-/* Variables (à adapter si définies globalement) */
-:root {
-    --color-navy: #1a2b4c;
-    --color-wood: #d4a373;
-    --color-bg-app: #f4f6f8;
-    --color-white: #ffffff;
-    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-}
-
-/* Layout principal pleine hauteur */
 .container {
-    display: flex;
-    flex-direction: column;
-    height: calc(100vh - 60px); /* Ajuster selon la hauteur de votre Navbar principale */
-    background-color: var(--color-bg-app);
-    font-family: 'Inter', system-ui, sans-serif;
-    overflow: hidden; /* Empêche le scroll global */
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 3rem 1.5rem;
+  animation: fadeIn 0.5s ease-in-out;
 }
 
-/* En-tête de la page */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .header {
-    flex-shrink: 0;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1rem 2rem;
-    background-color: var(--color-white);
-    border-bottom: 1px solid #e5e7eb;
-    box-shadow: var(--shadow-sm);
+  margin-bottom: 2.5rem;
 }
 
-.headerTitle h1 {
-    margin: 0;
-    font-size: 1.5rem;
-    color: var(--color-navy);
-    font-weight: 700;
+.title {
+  font-family: var(--font-title, sans-serif);
+  font-size: 2.2rem;
+  font-weight: 700;
+  color: #1a202c;
+  margin-bottom: 0.5rem;
 }
 
-.headerTitle span {
-    display: block;
-    font-size: 0.85rem;
-    color: #6b7280;
-    font-weight: 400;
-    margin-top: 2px;
+.description {
+  color: #718096;
+  font-size: 1rem;
+  max-width: 600px;
+  line-height: 1.5;
 }
 
-.linkBack {
-    text-decoration: none;
-    color: #4b5563;
-    font-size: 0.9rem;
-    font-weight: 500;
-    padding: 0.5rem 1rem;
-    border-radius: 6px;
-    transition: background-color 0.2s, color 0.2s;
-}
-
-.linkBack:hover {
-    background-color: #f3f4f6;
-    color: var(--color-navy);
-}
-
-/* Zone de contenu principale */
-.contentWrapper {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    padding: 1.5rem 2rem;
-    max-width: 1200px;
-    width: 100%;
-    margin: 0 auto;
-    box-sizing: border-box;
-    overflow: hidden; /* Le scroll se fera dans tabContent */
-}
-
-/* Onglets */
 .tabsContainer {
-    display: flex;
-    gap: 0.5rem;
-    border-bottom: 1px solid #e5e7eb;
-    margin-bottom: 0; /* Collé au contenu */
+  display: flex;
+  gap: 2rem;
+  border-bottom: 1px solid #e2e8f0;
+  margin-bottom: 2rem;
 }
 
 .tabButton {
-    padding: 0.75rem 1.25rem;
-    border: none;
-    background: transparent;
-    font-size: 0.95rem;
-    font-weight: 500;
-    color: #6b7280;
-    cursor: pointer;
-    border-radius: 8px 8px 0 0;
-    transition: all 0.2s;
-    position: relative;
-    bottom: -1px; /* Pour chevaucher la bordure du bas */
-    border: 1px solid transparent;
+  padding: 0.75rem 0;
+  background: transparent;
+  border: none;
+  font-size: 1rem;
+  font-weight: 500;
+  color: #718096;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  bottom: -1px;
+  border-bottom: 2px solid transparent;
 }
 
 .tabButton:hover {
-    color: var(--color-navy);
-    background-color: rgba(0,0,0,0.02);
+  color: #2d3748;
 }
 
 .activeTab {
-    background-color: var(--color-white);
-    color: var(--color-navy);
-    font-weight: 600;
-    border-color: #e5e7eb;
-    border-bottom-color: var(--color-white); /* Masque la ligne du container */
-    box-shadow: 0 -2px 4px rgba(0,0,0,0.02);
+  color: #1a2b4c;
+  border-bottom-color: #1a2b4c;
+  font-weight: 600;
 }
 
-.countBadge {
-    display: inline-block;
-    background-color: #f3f4f6;
-    color: #4b5563;
-    font-size: 0.75rem;
-    padding: 1px 6px;
-    border-radius: 10px;
-    margin-left: 8px;
-    vertical-align: middle;
-}
-
-.activeTab .countBadge {
-    background-color: var(--color-navy);
-    color: white;
-}
-
-/* Contenu de l'onglet (Scrollable) */
-.tabContent {
-    flex: 1;
-    background-color: var(--color-white);
-    border: 1px solid #e5e7eb;
-    border-top: none; /* Déjà géré par les onglets */
-    border-radius: 0 4px 4px 4px; /* Coin carré en haut à gauche si premier onglet actif */
-    padding: 0; /* Padding géré par les listes internes ou à ajouter ici */
-    box-shadow: var(--shadow-sm);
-    overflow-y: auto; /* Scroll interne vertical */
-    position: relative;
-}
-
-/* Si vous voulez que le premier onglet ait le coin carré pour fusionner visuellement */
-.tabsContainer:has(button:first-child.activeTab) + .tabContent {
-    border-top-left-radius: 0;
-}
-
-/* Conteneur interne pour donner de l'air aux listes */
-.innerScrollContainer {
-    padding: 1.5rem;
-    min-height: 100%; /* Assure que le fond blanc remplit tout */
+.contentWrapper {
+  min-height: 200px;
 }

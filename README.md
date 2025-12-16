@@ -1,65 +1,120 @@
-# Projet Poneglyph : Indexation Textuelle de One Piece
+## Projet Poneglyph : Indexation de Dialogues One Piece
 
-Notre mission : déchiffrer et archiver chaque mot prononcé au cours de la plus grande épopée pirate de notre temps.
+Le Projet Poneglyph est une plateforme collaborative visant à **numériser intelligemment et indexer l'intégralité des dialogues du manga One Piece**. Elle combine une interface de lecture fluide, un système de contribution communautaire et un pipeline d'IA (OCR) simplifié pour extraire et archiver le texte des bulles.
 
-Ce projet est une application web collaborative conçue pour créer une base de données textuelle complète et interrogeable de l'édition française officielle du manga **ONE PIECE**. L'objectif final est de permettre la recherche ultra-précise et l'analyse statistique sur l'intégralité de l'œuvre.
+---
 
-***
+### Stack Technique Détaillée
 
-## 🗺️ Table des Matières
+#### Frontend (Client - SPA)
 
-- ✨ Fonctionnalités Clés
-- 🚀 Installation et Lancement Local
-- 🌊 Workflow de Développement
-- 🧭 Prochaines Étapes
+| Composant | Technologie | Rôle |
+| :--- | :--- | :--- |
+| **Core** | React 19 & Vite | Application moderne et performante. |
+| **Routing** | React Router v7 | Gestion des vues et de la navigation. |
+| **UI/UX** | CSS Modules, lucide-react | Style modulaire, kit d'icônes. |
+| **Navigation Image** | react-zoom-pan-pinch | Zoom et Pan sur les planches de manga. |
+| **État & D&D** | Context API, @dnd-kit | Gestion de l'état global et réorganisation des bulles. |
+| **HTTP Client** | Axios (avec intercepteurs) | Requêtes API sécurisées et gestion de l'authentification (JWT). |
 
-***
+#### Backend (API RESTful)
 
-## ✨ Fonctionnalités Clés
+| Composant | Technologie | Rôle |
+| :--- | :--- | :--- |
+| **Runtime** | Node.js & Express | Serveur API robuste. |
+| **Traitement d'Images** | sharp | **Découpage (crop) haute performance** des planches pour l'OCR. |
+| **Upload Streaming** | multer + unzipper | Traitement des fichiers `.cbz` / `.zip` volumineux **page par page (streaming)** pour minimiser la surcharge mémoire. |
+| **IA / OCR** | Google Generative AI (gemini-flash-lite-latest) | **Transcription textuelle** des bulles de manga. |
 
-L'application est divisée en plusieurs sections pour différents types d'utilisateurs.
+#### Infrastructure & Data
 
-### Pour les Contributeurs (Utilisateurs)
+| Composant | Technologie | Rôle |
+| :--- | :--- | :--- |
+| **BaaS** | Supabase (PostgreSQL) | Backend as a Service. |
+| **Database** | Supabase (PostgreSQL) | Structure relationnelle pour les données (Tomes > Chapitres > Pages > Bulles). |
+| **Storage** | Supabase Storage (Bucket `manga-pages`) | Hébergement des fichiers images des planches. |
+| **Auth** | Supabase Auth (JWT) | Gestion sécurisée des utilisateurs et des **rôles (Admin, Modo, User)**. |
 
-- **Annotation Visuelle** : Une interface intuitive permet de dessiner un rectangle sur une page de manga pour définir une bulle de texte.
-- **Flux de Soumission Intelligent** : Le système analyse la zone (actuellement simulé) et propose un texte. L'utilisateur valide ou corrige ce texte avant de le soumettre pour modération.
-- **Suivi des Contributions** : Une page "Mes Soumissions" permet à chaque utilisateur de voir l'état de ses propositions (**Proposé, Validé, Rejeté**).
-- **Organisation des Bulles** : Possibilité de réorganiser par glisser-déposer l'ordre des bulles sur une page pour qu'il corresponde à l'ordre de lecture.
+---
 
-### Pour la Communauté (Public)
+### Fonctionnalités Clés
 
-- **Recherche "Full-Text"** : Un moteur de recherche performant et paginé pour retrouver n'importe quelle phrase dans tous les dialogues validés de l'œuvre.
-- **Tableau de Primes** : Une page de statistiques thématique qui classe les meilleurs contributeurs comme des pirates avec des "**primes**" basées sur leur nombre de contributions.
+#### Pour le Public
 
-### Pour l'Équipage (Modérateurs & Admins)
+* **Bibliothèque :** Navigation fluide par Tomes et Chapitres.
+* **Recherche Full-Text :** Moteur de recherche performant pour retrouver n'importe quelle citation.
+* **Heatmap :** Visualisation de l'état d'avancement des chapitres (validé, en cours, à faire).
 
-- **Modération de Bulles** : Une interface dédiée pour valider ou rejeter les soumissions individuelles, avec un aperçu de l'image découpée pour une vérification rapide.
-- **Modération de Pages** : Un flux de travail complet permettant aux utilisateurs de soumettre une page entière pour vérification, et aux modérateurs de l'approuver ou de la rejeter.
-- **Dashboard Admin** :
-    - Création manuelle de Tomes.
-    - Création automatisée de Chapitres et de Pages via l'upload d'un fichier **.cbz**, avec analyse de la nomenclature des fichiers (CHXXXX_PXXX.jpg).
+#### Pour les Contributeurs
 
-***
+* **Annotateur Visuel :** Outil de dessin sur canvas pour **délimiter les bulles de texte**. 
+* **OCR Assisté par IA :** Utilisation de Google Gemini pour **pré-remplir le texte** de la zone sélectionnée.
+* **Clé API Personnelle :** Gestion de la clé Google API côté client pour optimiser les quotas serveur.
 
-## 🚀 Installation et Lancement Local
+#### Pour le Staff (Admins & Modos)
 
-### Prérequis
+* **Upload CBZ :** Importation massive et automatique de chapitres.
+* **Modération :** Interface de **validation/rejet/édition** des bulles et pages.
+* **Statistiques :** Suivi des "Top Contributeurs" et système de primes.
 
-- **Node.js** (v18+ recommandé)
-- **Git**
-- Un compte **Supabase**
+---
 
-### 1. Configuration de Supabase
+### Pipeline OCR (Fonctionnement)
 
-1. Créez un nouveau projet.
-2. Allez dans **SQL Editor** et exécutez l'intégralité du script SQL `schema.sql` (à créer, contenant toutes les commandes `CREATE TABLE`, `CREATE FUNCTION`, `ALTER TABLE`...).
-3. Allez dans **Project Settings > API**. Gardez cette page ouverte, vous aurez besoin des clés.
+1.  **Sélection :** L'utilisateur dessine un rectangle (coordonnées $x, y, w, h$) sur la planche de manga (Frontend).
+2.  **Envoi :** Les coordonnées et l'ID de la page sont envoyés à l'API (`POST /api/analyse/bubble`).
+3.  **Traitement (Backend) :**
+    * Téléchargement de l'image source (Supabase Storage).
+    * **Découpage/Crop** de la zone exacte avec `sharp`.
+    * Conversion du buffer en format compatible.
+4.  **Inférence (IA) :** Envoi de l'image découpée à **Gemini Flash-Lite** avec un prompt système spécifique.
+5.  **Réponse :** Le texte transcrit est renvoyé au Frontend pour **validation humaine**.
 
-### 2. Installation du Projet
+---
 
+### Installation et Configuration
+
+#### Prérequis
+
+* Node.js (v18+)
+* Un projet Supabase (URL + Clés)
+* Une clé API Google AI Studio // Non obligatoire
+
+#### 1. Cloner le projet
 ```bash
-git clone [repository_url]
-cd [project_folder]/frontend
+git clone https://github.com/votre-repo/projet-one-piece-indexer.git
+cd projet-one-piece-indexer
+```
+#### 2. Configuration Backend
+Créer ```backend/.env``` :
+```
+PORT=3001
+SUPABASE_URL=https://votre-projet.supabase.co
+SUPABASE_ANON_KEY=votre-cle-anon
+SUPABASE_SERVICE_ROLE_KEY=votre-cle-service-role
+```
+#### 3. Configuration Frontend
+Créer ```frontend/.env.local``` :
+```
+VITE_BACKEND_URL=http://localhost:3001/api
+VITE_SUPABASE_URL=(https://votre-projet.supabase.co
+VITE_SUPABASE_ANON_KEY=votre-cle-anon
+```
+#### 4. Installation des dépendances et Lancement
+
+##### Backend :
+```bash
+cd backend
 npm install
-cd [project_folder]/backend
+npm run dev
+```
+### Le serveur démarrera sur http://localhost:3001
+
+
+##### Frontend :
+```bash
+cd frontend
 npm install
+npm run dev
+```
+### L'application sera accessible sur http://localhost:5173

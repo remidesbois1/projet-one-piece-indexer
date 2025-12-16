@@ -1,6 +1,5 @@
 /* SearchPage.module.css */
 
-/* Conteneur principal centré avec de l'air */
 .container {
   max-width: 900px;
   margin: 0 auto;
@@ -8,13 +7,11 @@
   animation: fadeIn 0.5s ease-in-out;
 }
 
-/* Animation d'apparition */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* --- En-tête --- */
 .header {
   text-align: center;
   margin-bottom: 3rem;
@@ -24,25 +21,24 @@
   font-family: var(--font-title, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
   font-size: 2.5rem;
   font-weight: 700;
-  color: #1a202c; /* Gris très sombre presque noir */
+  color: #1a202c;
   margin-bottom: 0.5rem;
   letter-spacing: -0.02em;
 }
 
 .subtitle {
-  color: #718096; /* Gris moyen */
+  color: #718096;
   font-size: 1.1rem;
 }
 
-/* --- Barre de Recherche (Style Hero) --- */
 .searchForm {
   display: flex;
   gap: 10px;
   background: #fff;
   padding: 0.5rem;
   border: 1px solid #e2e8f0;
-  border-radius: 50px; /* Forme de pilule complète */
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05); /* Ombre douce et large */
+  border-radius: 50px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
   max-width: 700px;
   margin: 0 auto 3rem auto;
   transition: box-shadow 0.3s ease;
@@ -69,7 +65,7 @@
 }
 
 .searchButton {
-  background-color: #2d3748; /* Sombre élégant */
+  background-color: #2d3748;
   color: white;
   border: none;
   padding: 0 2rem;
@@ -91,7 +87,6 @@
   cursor: not-allowed;
 }
 
-/* --- Zone d'info résultats --- */
 .resultsMeta {
   margin-bottom: 2rem;
   color: #718096;
@@ -105,14 +100,12 @@
   font-weight: 700;
 }
 
-/* --- Liste des Cartes --- */
 .resultsGrid {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
 }
 
-/* --- Carte de Résultat (Style Moderne) --- */
 .resultCard {
   background: #ffffff;
   border: 1px solid #e2e8f0;
@@ -123,7 +116,6 @@
   overflow: hidden;
 }
 
-/* Petite barre latérale colorée pour l'accent */
 .resultCard::before {
   content: '';
   position: absolute;
@@ -146,11 +138,10 @@
   line-height: 1.6;
   color: #2d3748;
   margin: 0 0 1.5rem 0;
-  font-family: var(--font-text, serif); /* Serif souvent plus élégant pour les citations */
+  font-family: var(--font-text, serif);
   font-style: italic;
 }
 
-/* Badges pour les métadonnées */
 .cardFooter {
   display: flex;
   gap: 0.8rem;
@@ -169,7 +160,6 @@
   border: 1px solid #edf2f7;
 }
 
-/* --- Pagination --- */
 .pagination {
   display: flex;
   justify-content: center;
@@ -205,7 +195,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* --- États vides et erreurs --- */
 .emptyState, .errorState {
   text-align: center;
   padding: 4rem 0;

@@ -4,14 +4,13 @@ import styles from './Modal.module.css';
 
 const Modal = ({ isOpen, onClose, title, children }) => {
     const [isDragging, setIsDragging] = useState(false);
-    const [position, setPosition] = useState({ x: 0, y: 0 }); // Position relative par rapport au centre initial
-    const [offset, setOffset] = useState({ x: 0, y: 0 }); // Offset de la souris par rapport au coin de la modale
+    const [position, setPosition] = useState({ x: 0, y: 0 });
+    const [offset, setOffset] = useState({ x: 0, y: 0 });
 
-    const modalRef = useRef(null); // Référence à la modale pour le déplacement
+    const modalRef = useRef(null);
 
     useEffect(() => {
         if (isOpen) {
-            // Centrer la modale à l'ouverture, mais seulement une fois
             const centerModal = () => {
                 if (modalRef.current) {
                     const modalRect = modalRef.current.getBoundingClientRect();
@@ -21,14 +20,12 @@ const Modal = ({ isOpen, onClose, title, children }) => {
                 }
             };
             centerModal();
-            window.addEventListener('resize', centerModal); // Réajuster au redimensionnement
+            window.addEventListener('resize', centerModal);
             return () => window.removeEventListener('resize', centerModal);
         }
     }, [isOpen]);
 
-    // Gérer le début du drag
     const handleMouseDown = (e) => {
-        // Ne commence le drag que si on clique sur le header
         if (!e.target.closest(`.${styles.modalHeader}`)) return;
 
         setIsDragging(true);
@@ -41,7 +38,6 @@ const Modal = ({ isOpen, onClose, title, children }) => {
         }
     };
 
-    // Gérer le déplacement
     const handleMouseMove = (e) => {
         if (!isDragging) return;
         setPosition({
@@ -50,12 +46,10 @@ const Modal = ({ isOpen, onClose, title, children }) => {
         });
     };
 
-    // Gérer la fin du drag
     const handleMouseUp = () => {
         setIsDragging(false);
     };
 
-    // Attacher les écouteurs de déplacement au document entier pour éviter de "perdre" la modale
     useEffect(() => {
         if (isDragging) {
             document.addEventListener('mousemove', handleMouseMove);
@@ -68,15 +62,14 @@ const Modal = ({ isOpen, onClose, title, children }) => {
             document.removeEventListener('mousemove', handleMouseMove);
             document.removeEventListener('mouseup', handleMouseUp);
         };
-    }, [isDragging, offset]); // Dépend de isDragging et offset
+    }, [isDragging, offset]);
 
     if (!isOpen) return null;
 
-    // Calculer les styles dynamiques pour la position
     const modalStyle = {
         transform: `translate(${position.x}px, ${position.y}px)`,
-        position: 'fixed', // Positionnement fixe pour un placement précis
-        margin: 0, // Supprimer le margin auto par défaut du CSS
+        position: 'fixed',
+        margin: 0,
     };
 
     return ReactDOM.createPortal(

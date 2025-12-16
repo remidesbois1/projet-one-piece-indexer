@@ -6,7 +6,6 @@
     --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
 }
 
-/* Overlay principal de la modale */
 .modalOverlay {
     position: fixed;
     top: 0;
@@ -17,7 +16,7 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    z-index: 1000; /* Assure que la modale est au-dessus de tout */
+    z-index: 1000;
     font-family: 'Inter', system-ui, sans-serif;
 }
 

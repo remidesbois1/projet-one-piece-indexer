@@ -9,7 +9,6 @@ const Layout = () => {
       <main style={{ padding: '2rem' }}>
         <Outlet />
       </main>
-      {/* Add a Footer component here if needed later */}
     </div>
   );
 };
