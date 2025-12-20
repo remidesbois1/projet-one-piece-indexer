@@ -1,7 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { createBubble, updateBubbleText } from '../services/api';
-import styles from './ValidationForm.module.css';
+
+// UI Components
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription } from "@/components/ui/alert"; // Optionnel, sinon div simple
+
+// Icons
+import { AlertCircle, Loader2 } from "lucide-react";
 
 const ValidationForm = ({ annotationData, onValidationSuccess, onCancel }) => {
   const { session } = useAuth();
@@ -12,11 +20,13 @@ const ValidationForm = ({ annotationData, onValidationSuccess, onCancel }) => {
 
   const isEditing = annotationData && annotationData.id; 
 
-  // Focus automatique sur le textarea à l'ouverture
   useEffect(() => {
-    if (textareaRef.current) {
-        textareaRef.current.focus();
-    }
+    // Petit délai pour laisser le temps au Dialog de s'ouvrir et focus
+    setTimeout(() => {
+        if (textareaRef.current) {
+            textareaRef.current.focus();
+        }
+    }, 100);
   }, []);
 
   useEffect(() => {
@@ -34,16 +44,15 @@ const ValidationForm = ({ annotationData, onValidationSuccess, onCancel }) => {
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (text.trim() === '') {
+        // Tu pourrais utiliser un Toast ici
         alert("Le texte ne peut pas être vide.");
         return;
     }
     setIsSubmitting(true);
     try {
       if (isEditing) {
-        // Mode MISE À JOUR
         await updateBubbleText(annotationData.id, text, session.access_token);
       } else {
-        // Mode CRÉATION
         const finalBubbleData = {
             id_page: annotationData.id_page,
             x: annotationData.x, y: annotationData.y,
@@ -52,11 +61,10 @@ const ValidationForm = ({ annotationData, onValidationSuccess, onCancel }) => {
         };
         await createBubble(finalBubbleData, session.access_token);
       }
-      // On appelle le succès seulement après la fin de l'await pour fermer la modale proprement
       onValidationSuccess();
     } catch (error) {
       console.error("Erreur soumission", error);
-      alert("Une erreur est survenue. Veuillez réessayer.");
+      alert("Une erreur est survenue.");
     } finally {
       setIsSubmitting(false);
     }
@@ -65,53 +73,52 @@ const ValidationForm = ({ annotationData, onValidationSuccess, onCancel }) => {
   if (!annotationData) return null;
 
   return (
-    <form onSubmit={handleSubmit} className={styles.formContainer}>
+    <form onSubmit={handleSubmit} className="space-y-6">
       
-      <div className={styles.header}>
-        <h3 className={styles.title}>
-            {isEditing ? "Édition de la bulle" : "Nouvelle annotation"}
-        </h3>
-        <p className={styles.subtitle}>
-            {isAiFailure 
-                ? "L'IA n'a pas pu lire le texte. Veuillez le transcrire manuellement." 
-                : "Vérifiez ou corrigez le texte détecté ci-dessous."}
-        </p>
-      </div>
+      {isAiFailure && (
+        <div className="bg-amber-50 border border-amber-200 rounded-md p-3 flex gap-2 text-sm text-amber-800">
+            <AlertCircle className="h-5 w-5 shrink-0" />
+            <p>L'IA n'a pas pu lire le texte. Veuillez le transcrire manuellement.</p>
+        </div>
+      )}
 
-      <div className={styles.fieldGroup}>
-        <label className={styles.label}>Texte de la bulle</label>
-        <textarea 
+      <div className="space-y-2">
+        <Label htmlFor="bubble-text">Texte de la bulle</Label>
+        <Textarea 
+            id="bubble-text"
             ref={textareaRef}
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder="Saisissez le texte ici..."
-            className={styles.textarea}
+            className="min-h-[120px] text-base resize-y font-medium"
         />
       </div>
 
-      <div className={styles.footer}>
-        {/* Bouton Annuler optionnel si onCancel est passé */}
+      <div className="flex justify-end gap-3 pt-2">
         {onCancel && (
-            <button 
+            <Button 
                 type="button" 
+                variant="outline"
                 onClick={onCancel} 
-                className={`${styles.button} ${styles.cancelButton}`}
                 disabled={isSubmitting}
             >
                 Annuler
-            </button>
+            </Button>
         )}
         
-        <button 
+        <Button 
             type="submit" 
-            disabled={isSubmitting} 
-            className={`${styles.button} ${styles.submitButton}`}
+            disabled={isSubmitting}
+            className="bg-slate-900 hover:bg-slate-800 text-white min-w-[140px]"
         >
-            {isSubmitting 
-                ? 'Enregistrement...' 
-                : (isEditing ? 'Mettre à jour' : 'Valider et créer')
-            }
-        </button>
+            {isSubmitting ? (
+                <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Enregistrement...
+                </>
+            ) : (
+                isEditing ? 'Mettre à jour' : 'Valider'
+            )}
+        </Button>
       </div>
     </form>
   );
