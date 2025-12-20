@@ -4,37 +4,55 @@ import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, reor
 import ValidationForm from '../components/ValidationForm';
 import ApiKeyForm from '../components/ApiKeyForm';
 import { useAuth } from '../context/AuthContext';
-import styles from './AnnotatePage.module.css';
-import Modal from '../components/Modal';
 import { DndContext, closestCenter } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { SortableBubbleItem } from '../components/SortableBubbleItem';
+import DraggableWrapper from '../components/DraggableWrapper';
+
+// Shadcn Components
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription
+} from "@/components/ui/dialog";
+
+// Icons
+import { ArrowLeft, Send, KeyRound, Loader2, MousePointer2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 const AnnotatePage = () => {
     const { user, session } = useAuth();
     const { pageId } = useParams();
     
+    // --- Data State ---
     const [page, setPage] = useState(null);
     const [existingBubbles, setExistingBubbles] = useState([]);
     const [error, setError] = useState(null);
     
+    // --- UI State ---
     const [hoveredBubble, setHoveredBubble] = useState(null);
     const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [pendingAnnotation, setPendingAnnotation] = useState(null);
-
+    const [pendingAnnotation, setPendingAnnotation] = useState(null); 
     const [showApiKeyModal, setShowApiKeyModal] = useState(false);
-    const [retryTrigger, setRetryTrigger] = useState(0);
-
+    
+    // --- Drawing State ---
     const [isDrawing, setIsDrawing] = useState(false);
     const [startPoint, setStartPoint] = useState(null);
     const [endPoint, setEndPoint] = useState(null);
     const [rectangle, setRectangle] = useState(null);
     const [imageDimensions, setImageDimensions] = useState(null);
+    const [retryTrigger, setRetryTrigger] = useState(0);
 
     const containerRef = useRef(null);
     const imageRef = useRef(null);
 
+    // Charger les bulles
     const fetchBubbles = useCallback(() => {
         if (pageId && session?.access_token) {
             getBubblesForPage(pageId, session.access_token)
@@ -46,6 +64,7 @@ const AnnotatePage = () => {
         }
     }, [pageId, session]);
 
+    // Charger la page
     useEffect(() => {
         if (pageId && session?.access_token) {
             getPageById(pageId, session.access_token)
@@ -55,12 +74,11 @@ const AnnotatePage = () => {
         }
     }, [pageId, session?.access_token, fetchBubbles]);
 
+    // Logique OCR (Google Vision / Gemini)
     useEffect(() => {
         const token = session?.access_token;
-        
         if (rectangle && token) {
             const storedKey = localStorage.getItem('google_api_key');
-            
             if (!storedKey) {
                 setShowApiKeyModal(true);
                 return;
@@ -84,11 +102,11 @@ const AnnotatePage = () => {
                 .catch(error => {
                     console.error("Erreur OCR:", error);
                     if (error.response?.status === 400 && error.response?.data?.error?.includes('Clé')) {
-                        alert("Votre clé API semble invalide. Veuillez la vérifier.");
+                        alert("Clé API invalide.");
                         localStorage.removeItem('google_api_key');
                         setShowApiKeyModal(true);
                     } else {
-                        alert("L'analyse de la zone a échoué.");
+                        alert("Échec de l'analyse.");
                         setRectangle(null);
                     }
                 })
@@ -104,18 +122,14 @@ const AnnotatePage = () => {
         setRetryTrigger(prev => prev + 1);
     };
 
-    const handleEditBubble = (bubble) => {
-        setPendingAnnotation(bubble);
-    };
+    const handleEditBubble = (bubble) => setPendingAnnotation(bubble);
 
     const handleDeleteBubble = async (bubbleId) => {
         if (window.confirm("Supprimer cette annotation ?")) {
             try {
                 await deleteBubble(bubbleId, session.access_token);
                 fetchBubbles();
-            } catch (error) {
-                alert("Erreur lors de la suppression.");
-            }
+            } catch (error) { alert("Erreur lors de la suppression."); }
         }
     };
 
@@ -126,16 +140,15 @@ const AnnotatePage = () => {
     };
 
     const handleSubmitPage = async () => {
-        if (window.confirm("Confirmer la validation de la page ?")) {
+        if (window.confirm("Envoyer pour validation ?")) {
             try {
                 const response = await submitPageForReview(pageId, session.access_token);
                 setPage(response.data);
-                alert("Page envoyée pour validation !");
-            } catch (error) {
-                alert("Erreur lors de la soumission.");
-            }
+            } catch (error) { alert("Erreur soumission."); }
         }
     };
+
+    // --- LOGIQUE CANVAS / SOURIS ---
 
     const getContainerCoords = (event) => {
         const container = containerRef.current;
@@ -149,8 +162,7 @@ const AnnotatePage = () => {
 
     const handleMouseDown = (event) => {
         if (page?.statut !== 'not_started' && page?.statut !== 'in_progress') return;
-        if (isSubmitting) return;
-        if (showApiKeyModal) return; 
+        if (isSubmitting || showApiKeyModal) return;
         
         event.preventDefault();
         setIsDrawing(true);
@@ -164,7 +176,6 @@ const AnnotatePage = () => {
     const handleMouseMove = (event) => {
         const coords = getContainerCoords(event);
         if (coords) setMousePos(coords);
-
         if (!isDrawing) return;
         event.preventDefault();
         setEndPoint(coords);
@@ -176,9 +187,8 @@ const AnnotatePage = () => {
         setIsDrawing(false);
         
         const imageEl = imageRef.current;
-        if (!imageEl || !startPoint || !endPoint) return;
+        if (!imageEl || !startPoint || !endPoint || imageEl.naturalWidth === 0) return;
 
-        if (imageEl.naturalWidth === 0) return;
         const scale = imageEl.naturalWidth / imageEl.offsetWidth;
         const currentEndPoint = getContainerCoords(event) || endPoint; 
 
@@ -190,26 +200,16 @@ const AnnotatePage = () => {
         };
 
         if (unscaledRect.w > 10 && unscaledRect.h > 10) {
-            const finalRect = {
+            setRectangle({
                 x: Math.round(unscaledRect.x * scale),
                 y: Math.round(unscaledRect.y * scale),
                 w: Math.round(unscaledRect.w * scale),
                 h: Math.round(unscaledRect.h * scale),
-            };
-            setRectangle(finalRect);
+            });
         } else {
             setStartPoint(null);
             setEndPoint(null);
         }
-    };
-
-    const getDrawingStyle = () => {
-        if (!isDrawing || !startPoint || !endPoint) return { display: 'none' };
-        const left = Math.min(startPoint.x, endPoint.x);
-        const top = Math.min(startPoint.y, endPoint.y);
-        const width = Math.abs(startPoint.x - endPoint.x);
-        const height = Math.abs(startPoint.y - endPoint.y);
-        return { left: `${left}px`, top: `${top}px`, width: `${width}px`, height: `${height}px` };
     };
 
     const handleDragEnd = (event) => {
@@ -230,43 +230,61 @@ const AnnotatePage = () => {
         }
     };
 
-    if (error) return <div className={styles.errorState}>{error} <Link to="/">Retour</Link></div>;
-    if (!page) return <div className={styles.loadingState}>Chargement de la page...</div>;
+    if (error) return <div className="p-8 text-red-500">{error}</div>;
+    if (!page) return <div className="flex h-screen items-center justify-center text-slate-500">Chargement...</div>;
 
     const canEdit = page.statut === 'not_started' || page.statut === 'in_progress';
 
     return (
-        <div className={styles.container}>
-            <header className={styles.subHeader}>
-                <div className={styles.headerInfo}>
-                    <h2>Annoter : {page.chapitres?.tomes?.titre || 'Tome'} - Chapitre {page.chapitres?.numero}</h2>
-                    <div className={styles.headerMeta}>Page {page.numero_page} • Statut: <span>{page.statut}</span></div>
+        <div className="flex flex-col h-[calc(100vh-64px)] bg-slate-50">
+            {/* --- HEADER --- */}
+            <header className="flex-none h-16 border-b border-slate-200 bg-white px-6 flex items-center justify-between z-20 shadow-sm">
+                <div className="flex items-center gap-4">
+                    <Link to="/">
+                        <Button variant="ghost" size="sm">
+                            <ArrowLeft className="h-4 w-4 mr-2" /> Retour
+                        </Button>
+                    </Link>
+                    <div className="h-6 w-px bg-slate-200" />
+                    <div>
+                        <h2 className="text-lg font-bold text-slate-900">
+                            {page.chapitres?.tomes?.titre || 'Tome'} - Chapitre {page.chapitres?.numero}
+                        </h2>
+                        <div className="flex items-center gap-2 text-xs text-slate-500 font-mono">
+                            Page {page.numero_page} 
+                            <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">{page.statut}</Badge>
+                        </div>
+                    </div>
                 </div>
-                <div className={styles.headerActions}>
-                    <button 
-                        onClick={() => setShowApiKeyModal(true)} 
-                        className={styles.btnSecondary}
-                        style={{fontSize: '0.8rem', padding: '0.3rem 0.6rem', marginRight: '1rem'}}
+                <div className="flex items-center gap-3">
+                    <Button 
+                        variant="secondary" 
+                        size="sm"
+                        onClick={() => setShowApiKeyModal(true)}
+                        className="text-xs h-8"
                     >
-                        Clé IA
-                    </button>
+                        <KeyRound className="h-3 w-3 mr-2" /> Clé IA
+                    </Button>
 
-                    <Link to="/" className={styles.linkBack}>Retour</Link>
-                    <button
-                        className={styles.btnPrimary}
+                    <Button
+                        className="bg-slate-900 hover:bg-slate-800"
                         onClick={handleSubmitPage}
                         disabled={!canEdit}
                     >
-                        Soumettre
-                    </button>
+                        <Send className="h-3 w-3 mr-2" /> Soumettre
+                    </Button>
                 </div>
             </header>
 
-            <div className={styles.pageLayout}>
-                <main className={styles.mainContent}>
+            {/* --- WORKSPACE --- */}
+            <div className="flex flex-1 overflow-hidden">
+                <main className="flex-1 bg-slate-200/50 overflow-auto flex justify-center p-8 relative cursor-default">
                      <div
                         ref={containerRef}
-                        className={styles.imageContainer}
+                        className={cn(
+                            "relative inline-block bg-white shadow-xl select-none max-w-none h-fit",
+                            canEdit ? "cursor-crosshair" : "cursor-default"
+                        )}
                         onMouseDown={handleMouseDown}
                         onMouseMove={handleMouseMove}
                         onMouseUp={handleMouseUp}
@@ -276,23 +294,35 @@ const AnnotatePage = () => {
                             ref={imageRef} 
                             src={page.url_image} 
                             alt={`Page ${page.numero_page}`} 
-                            className={styles.mangaImage} 
-                            draggable="false"
+                            className="block max-w-full h-auto pointer-events-none"
                             onLoad={(e) => setImageDimensions({
                                 width: e.target.offsetWidth,
                                 naturalWidth: e.target.naturalWidth
                             })}
                         />
 
+                        {/* Loading Overlay */}
                         {isSubmitting && (
-                            <div className={styles.loadingOverlay}>
-                                <div className={styles.spinner}></div>
+                            <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] z-50 flex flex-col items-center justify-center text-slate-800 font-semibold">
+                                <Loader2 className="h-10 w-10 animate-spin mb-2 text-slate-900" />
                                 <span>Analyse IA en cours...</span>
                             </div>
                         )}
 
-                        {isDrawing && <div style={getDrawingStyle()} className={styles.drawingRectangle} />}
+                        {/* Rectangle en cours de dessin */}
+                        {isDrawing && startPoint && endPoint && (
+                            <div 
+                                style={{
+                                    left: Math.min(startPoint.x, endPoint.x),
+                                    top: Math.min(startPoint.y, endPoint.y),
+                                    width: Math.abs(startPoint.x - endPoint.x),
+                                    height: Math.abs(startPoint.y - endPoint.y),
+                                }} 
+                                className="absolute border-2 border-dashed border-red-500 bg-red-500/10 pointer-events-none z-20" 
+                            />
+                        )}
 
+                        {/* Bulles existantes */}
                         {imageDimensions && existingBubbles.map((bubble, index) => {
                             const scale = imageDimensions.width / imageDimensions.naturalWidth;
                             if (!scale) return null; 
@@ -304,86 +334,156 @@ const AnnotatePage = () => {
                                 height: `${bubble.h * scale}px`,
                             };
                             
-                            const statusClass = bubble.statut === 'Validé' ? styles.validatedRectangle : styles.proposedRectangle;
+                            const colorClass = bubble.statut === 'Validé' 
+                                ? "border-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20" 
+                                : "border-amber-500 bg-amber-500/10 hover:bg-amber-500/20";
 
                             return (
                                 <div
                                     key={bubble.id}
                                     style={style}
-                                    className={`${styles.existingRectangle} ${statusClass}`}
+                                    className={cn("absolute border-2 z-10 transition-colors cursor-pointer group", colorClass)}
                                     onMouseEnter={() => setHoveredBubble(bubble)}
                                     onMouseLeave={() => setHoveredBubble(null)}
+                                    onClick={(e) => {
+                                        // On arrête la propagation pour ne pas déclencher le dessin
+                                        e.stopPropagation();
+                                        handleEditBubble(bubble);
+                                    }}
                                 >
-                                    <span className={styles.bubbleNumber}>{index + 1}</span>
+                                    <div className={cn(
+                                        "absolute -top-6 -left-[2px] text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm",
+                                        bubble.statut === 'Validé' ? "bg-emerald-500" : "bg-amber-500"
+                                    )}>
+                                        #{index + 1}
+                                    </div>
                                 </div>
                             );
                         })}
 
+                        {/* Tooltip custom suiveur */}
                         {hoveredBubble && (
-                            <div 
-                                className={styles.tooltip} 
-                                style={{ 
+                             <div
+                                className="fixed z-50 pointer-events-none bg-slate-900/95 text-white p-3 rounded-lg shadow-xl border border-slate-700 backdrop-blur-sm max-w-[300px]"
+                                style={{
                                     left: 0, top: 0,
-                                    transform: `translate(${mousePos.x + 15}px, ${mousePos.y + 15}px)` 
+                                    transform: `translate(${mousePos.x + 20 + containerRef.current?.getBoundingClientRect().left}px, ${mousePos.y + 20 + containerRef.current?.getBoundingClientRect().top}px)`
                                 }}
                             >
-                                <strong>#{existingBubbles.findIndex(b => b.id === hoveredBubble.id) + 1}</strong><br/>
-                                {hoveredBubble.texte_propose}
+                                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                                    Bulle #{existingBubbles.findIndex(b => b.id === hoveredBubble.id) + 1}
+                                </div>
+                                <p className="text-sm font-medium leading-relaxed">
+                                    {hoveredBubble.texte_propose}
+                                </p>
                             </div>
                         )}
                     </div>
                 </main>
 
-                <aside className={styles.sidebar}>
-                    <div className={styles.sidebarHeader}>
-                        <h3>Annotations <span className={styles.bubbleCount}>{existingBubbles.length}</span></h3>
+                {/* --- SIDEBAR --- */}
+                <aside className="w-[380px] bg-white border-l border-slate-200 flex flex-col h-full overflow-hidden z-10 shadow-lg">
+                    <div className="flex-none p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                        <h3 className="font-semibold text-slate-900">Annotations</h3>
+                        <Badge variant="secondary">{existingBubbles.length}</Badge>
                     </div>
-                    <div className={styles.bubbleListContainer}>
-                        {existingBubbles.length === 0 ? (
-                            <div className={styles.emptyState}>
-                                <p>Aucune bulle détectée.</p>
-                                <p>Dessinez un rectangle pour commencer.</p>
-                            </div>
-                        ) : (
-                            <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                                <SortableContext
-                                    items={existingBubbles.map(b => b.id)}
-                                    strategy={verticalListSortingStrategy}
-                                >
-                                    <ul className={styles.bubbleList}>
-                                        {existingBubbles.map((bubble, index) => (
-                                            <SortableBubbleItem
-                                                key={bubble.id}
-                                                id={bubble.id} 
-                                                bubble={bubble}
-                                                index={index}
-                                                user={user}
-                                                onEdit={handleEditBubble}
-                                                onDelete={handleDeleteBubble}
-                                                disabled={!canEdit}
-                                            />
-                                        ))}
-                                    </ul>
-                                </SortableContext>
-                            </DndContext>
-                        )}
-                    </div>
+                    
+                    <ScrollArea className="flex-1 w-full h-full">
+                        {/* 1. w-full : prend toute la largeur
+                        2. px-4 : padding horizontal standard
+                        3. pb-20 : espace pour le scroll en bas
+                        4. overflow-x-hidden : COUPE tout ce qui oserait dépasser horizontalement
+                        */}
+                        <div className="flex flex-col w-full max-w-full px-4 py-4 pb-20 overflow-x-hidden">
+                            {existingBubbles.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center py-10 text-center border-2 border-dashed border-slate-200 rounded-lg bg-slate-50/50 text-slate-500">
+                                    <MousePointer2 className="h-8 w-8 mb-2 text-slate-300" />
+                                    <p className="text-sm font-medium">Aucune annotation</p>
+                                    <p className="text-xs mt-1">Dessinez un rectangle sur l'image<br/>pour commencer.</p>
+                                </div>
+                            ) : (
+                                <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                                    <SortableContext
+                                        items={existingBubbles.map(b => b.id)}
+                                        strategy={verticalListSortingStrategy}
+                                    >
+                                        <ul className="flex flex-col gap-3 w-full max-w-full">
+                                            {existingBubbles.map((bubble, index) => (
+                                                <SortableBubbleItem
+                                                    key={bubble.id}
+                                                    id={bubble.id} 
+                                                    bubble={bubble}
+                                                    index={index}
+                                                    user={user}
+                                                    onEdit={handleEditBubble}
+                                                    onDelete={handleDeleteBubble}
+                                                    disabled={!canEdit}
+                                                />
+                                            ))}
+                                        </ul>
+                                    </SortableContext>
+                                </DndContext>
+                            )}
+                        </div>
+                    </ScrollArea>
                 </aside>
             </div>
 
-            <Modal isOpen={!!pendingAnnotation && !isSubmitting} onClose={() => {
-                setPendingAnnotation(null);
-                setRectangle(null);
-            }}>
-                <ValidationForm 
-                    annotationData={pendingAnnotation} 
-                    onValidationSuccess={handleSuccess} 
-                />
-            </Modal>
+            {/* --- MODALS (DIALOGS) --- */}
+            
+            {/* 1. Validation / Édition (DRAGGABLE) */}
+            <Dialog 
+                open={!!pendingAnnotation && !isSubmitting} 
+                onOpenChange={(open) => {
+                    if(!open) {
+                        setPendingAnnotation(null);
+                        setRectangle(null);
+                    }
+                }}
+            >
+                {/* Conteneur invisible pour permettre le drag */}
+                <DialogContent 
+                    className="max-w-none w-full h-full bg-transparent border-0 shadow-none p-0 flex items-center justify-center pointer-events-none"
+                    showCloseButton={false}
+                >
+                    {pendingAnnotation && (
+                        <div className="pointer-events-auto">
+                            <DraggableWrapper 
+                                title={pendingAnnotation?.id ? "Modifier l'annotation" : "Nouvelle annotation"}
+                                onClose={() => {
+                                    setPendingAnnotation(null);
+                                    setRectangle(null);
+                                }}
+                                className="w-full max-w-lg"
+                            >
+                                <div className="p-6">
+                                    <ValidationForm 
+                                        annotationData={pendingAnnotation} 
+                                        onValidationSuccess={handleSuccess}
+                                        onCancel={() => {
+                                            setPendingAnnotation(null);
+                                            setRectangle(null);
+                                        }}
+                                    />
+                                </div>
+                            </DraggableWrapper>
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog>
 
-            <Modal isOpen={showApiKeyModal} onClose={() => setShowApiKeyModal(false)} title="">
-                <ApiKeyForm onSave={handleSaveApiKey} />
-            </Modal>
+            {/* 2. Clé API (STANDARD) */}
+            <Dialog open={showApiKeyModal} onOpenChange={setShowApiKeyModal}>
+                <DialogContent className="sm:max-w-md">
+                     <DialogHeader>
+                        <DialogTitle>Configuration API Google Vision</DialogTitle>
+                        <DialogDescription>
+                            Une clé API est requise pour la reconnaissance de texte.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <ApiKeyForm onSave={handleSaveApiKey} />
+                </DialogContent>
+            </Dialog>
         </div>
     );
 };

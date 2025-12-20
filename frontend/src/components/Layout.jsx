@@ -4,9 +4,12 @@ import Header from './Header';
 
 const Layout = () => {
   return (
-    <div>
+    <div className="flex min-h-screen flex-col bg-slate-50">
+      {/* Header Sticky en haut */}
       <Header />
-      <main style={{ padding: '2rem' }}>
+      
+      {/* Main prend tout l'espace restant */}
+      <main className="flex-1 w-full">
         <Outlet />
       </main>
     </div>
