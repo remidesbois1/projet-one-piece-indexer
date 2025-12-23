@@ -9,7 +9,7 @@ import { DndContext, closestCenter } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { SortableBubbleItem } from '../components/SortableBubbleItem';
 import DraggableWrapper from '../components/DraggableWrapper';
-import { cropImage, fixMangaCase } from '../lib/utils';
+import { cropImage } from '../lib/utils';
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils";
 const AnnotatePage = () => {
     const { user, session } = useAuth();
     const { pageId } = useParams();
-    const { worker, modelStatus, loadModel, downloadProgress, runOcr } = useWorker();
+    const { worker, modelStatus, loadModel, downloadProgress, runOcr, correctionDict } = useWorker();
     
     const [page, setPage] = useState(null);
     const [existingBubbles, setExistingBubbles] = useState([]);
@@ -58,8 +58,10 @@ const AnnotatePage = () => {
             if (status === 'debug_image') setDebugImageUrl(url);
 
             if (status === 'complete') {
-                const cleanedText = fixMangaCase(text);
-                setPendingAnnotation(prev => ({ ...prev, texte_propose: cleanedText }));
+                setPendingAnnotation(prev => ({ 
+                    ...prev, 
+                    texte_propose: text 
+                }));
                 setOcrSource('local');
                 setIsSubmitting(false);
             }
