@@ -4,55 +4,84 @@ import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, reor
 import ValidationForm from '../components/ValidationForm';
 import ApiKeyForm from '../components/ApiKeyForm';
 import { useAuth } from '../context/AuthContext';
+import { useWorker } from '../context/WorkerContext';
 import { DndContext, closestCenter } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { SortableBubbleItem } from '../components/SortableBubbleItem';
 import DraggableWrapper from '../components/DraggableWrapper';
-
-// Shadcn Components
+import { cropImage, fixMangaCase } from '../lib/utils';
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription
-} from "@/components/ui/dialog";
-
-// Icons
-import { ArrowLeft, Send, KeyRound, Loader2, MousePointer2 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { ArrowLeft, Send, KeyRound, Loader2, MousePointer2, Cpu, CloudLightning, Download, Settings2, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const AnnotatePage = () => {
     const { user, session } = useAuth();
     const { pageId } = useParams();
+    const { worker, modelStatus, loadModel, downloadProgress, runOcr } = useWorker();
     
-    // --- Data State ---
     const [page, setPage] = useState(null);
     const [existingBubbles, setExistingBubbles] = useState([]);
     const [error, setError] = useState(null);
     
-    // --- UI State ---
     const [hoveredBubble, setHoveredBubble] = useState(null);
     const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+    
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [loadingText, setLoadingText] = useState("Analyse en cours...");
+
     const [pendingAnnotation, setPendingAnnotation] = useState(null); 
     const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+    const [ocrSource, setOcrSource] = useState(null); 
     
-    // --- Drawing State ---
     const [isDrawing, setIsDrawing] = useState(false);
     const [startPoint, setStartPoint] = useState(null);
     const [endPoint, setEndPoint] = useState(null);
     const [rectangle, setRectangle] = useState(null);
     const [imageDimensions, setImageDimensions] = useState(null);
-    const [retryTrigger, setRetryTrigger] = useState(0);
+
+    const [debugImageUrl, setDebugImageUrl] = useState(null);
+    const [preferLocalOCR, setPreferLocalOCR] = useState(() => localStorage.getItem('preferLocalOCR') !== 'false');
 
     const containerRef = useRef(null);
     const imageRef = useRef(null);
 
-    // Charger les bulles
+    useEffect(() => {
+        if (!worker) return;
+
+        const handleMessage = (e) => {
+            const { status, text, error, url } = e.data;
+
+            if (status === 'debug_image') setDebugImageUrl(url);
+
+            if (status === 'complete') {
+                const cleanedText = fixMangaCase(text);
+                setPendingAnnotation(prev => ({ ...prev, texte_propose: cleanedText }));
+                setOcrSource('local');
+                setIsSubmitting(false);
+            }
+
+            if (status === 'error') {
+                if (modelStatus === 'ready') {
+                    console.error("Erreur OCR:", error);
+                    setIsSubmitting(false);
+                }
+            }
+        };
+
+        worker.addEventListener('message', handleMessage);
+        return () => worker.removeEventListener('message', handleMessage);
+    }, [worker, modelStatus]);
+
+    const toggleOcrPreference = () => {
+        const newValue = !preferLocalOCR;
+        setPreferLocalOCR(newValue);
+        localStorage.setItem('preferLocalOCR', newValue);
+    };
+
     const fetchBubbles = useCallback(() => {
         if (pageId && session?.access_token) {
             getBubblesForPage(pageId, session.access_token)
@@ -60,66 +89,79 @@ const AnnotatePage = () => {
                     const sortedBubbles = response.data.sort((a, b) => a.order - b.order);
                     setExistingBubbles(sortedBubbles);
                 })
-                .catch(error => console.error("Erreur chargement bulles", error));
+                .catch(error => console.error(error));
         }
     }, [pageId, session]);
 
-    // Charger la page
     useEffect(() => {
         if (pageId && session?.access_token) {
             getPageById(pageId, session.access_token)
                 .then(response => setPage(response.data))
-                .catch(error => setError("Impossible de charger la page."));
+                .catch(() => setError("Impossible de charger la page."));
             fetchBubbles();
         }
     }, [pageId, session?.access_token, fetchBubbles]);
 
-    // Logique OCR (Google Vision / Gemini)
     useEffect(() => {
-        const token = session?.access_token;
-        if (rectangle && token) {
-            const storedKey = localStorage.getItem('google_api_key');
-            if (!storedKey) {
-                setShowApiKeyModal(true);
-                return;
-            }
-
-            setIsSubmitting(true);
-            setPendingAnnotation(null);
+        if (rectangle && imageRef.current) {
+            const analysisData = { id_page: parseInt(pageId, 10), ...rectangle, texte_propose: '' };
+            setPendingAnnotation(analysisData);
+            setDebugImageUrl(null);
             
-            const analysisData = {
-                id_page: parseInt(pageId, 10),
-                ...rectangle,
-            };
-
-            analyseBubble(analysisData, token, storedKey)
-                .then(response => {
-                    setPendingAnnotation({
-                        ...analysisData,
-                        texte_propose: response.data.texte_propose
-                    });
-                })
-                .catch(error => {
-                    console.error("Erreur OCR:", error);
-                    if (error.response?.status === 400 && error.response?.data?.error?.includes('Clé')) {
-                        alert("Clé API invalide.");
-                        localStorage.removeItem('google_api_key');
-                        setShowApiKeyModal(true);
-                    } else {
-                        alert("Échec de l'analyse.");
-                        setRectangle(null);
-                    }
-                })
-                .finally(() => {
-                    setIsSubmitting(false);
-                });
+            if (preferLocalOCR) {
+                if (modelStatus === 'ready') {
+                    runLocalOcr();
+                }
+            } else {
+                handleRetryWithCloud(analysisData);
+            }
         }
-    }, [rectangle, pageId, session, retryTrigger]);
+    }, [rectangle, pageId]);
+
+    const runLocalOcr = async () => {
+        try {
+            setLoadingText("Analyse Locale...");
+            setIsSubmitting(true);
+            const blob = await cropImage(imageRef.current, rectangle);
+            runOcr(blob); 
+        } catch (err) {
+            console.error(err);
+            setIsSubmitting(false);
+        }
+    };
+
+    const handleRetryWithCloud = (dataOverride = null) => {
+        const dataToUse = dataOverride || pendingAnnotation;
+        if (!dataToUse) return;
+        
+        const storedKey = localStorage.getItem('google_api_key');
+        if (!storedKey) {
+            if (!pendingAnnotation) setPendingAnnotation(dataToUse);
+            return;
+        }
+
+        setLoadingText("Analyse Cloud (Google)...");
+        setIsSubmitting(true);
+        setDebugImageUrl(null);
+
+        analyseBubble(dataToUse, session.access_token, storedKey)
+            .then(response => {
+                setPendingAnnotation(prev => ({ ...prev, texte_propose: response.data.texte_propose }));
+                setOcrSource('cloud');
+            })
+            .catch(error => {
+                if (error.response?.status === 400 && error.response?.data?.error?.includes('Clé')) {
+                    localStorage.removeItem('google_api_key');
+                    setShowApiKeyModal(true);
+                }
+            })
+            .finally(() => setIsSubmitting(false));
+    };
 
     const handleSaveApiKey = (key) => {
         localStorage.setItem('google_api_key', key);
         setShowApiKeyModal(false);
-        setRetryTrigger(prev => prev + 1);
+        handleRetryWithCloud();
     };
 
     const handleEditBubble = (bubble) => setPendingAnnotation(bubble);
@@ -129,13 +171,14 @@ const AnnotatePage = () => {
             try {
                 await deleteBubble(bubbleId, session.access_token);
                 fetchBubbles();
-            } catch (error) { alert("Erreur lors de la suppression."); }
+            } catch (error) { alert("Erreur suppression."); }
         }
     };
 
     const handleSuccess = () => {
         setPendingAnnotation(null);
         setRectangle(null);
+        setDebugImageUrl(null);
         fetchBubbles();
     };
 
@@ -148,16 +191,11 @@ const AnnotatePage = () => {
         }
     };
 
-    // --- LOGIQUE CANVAS / SOURIS ---
-
     const getContainerCoords = (event) => {
         const container = containerRef.current;
         if (!container) return null;
         const rect = container.getBoundingClientRect();
-        return {
-            x: event.clientX - rect.left,
-            y: event.clientY - rect.top,
-        };
+        return { x: event.clientX - rect.left, y: event.clientY - rect.top };
     };
 
     const handleMouseDown = (event) => {
@@ -221,10 +259,7 @@ const AnnotatePage = () => {
                 const newOrder = arrayMove(bubbles, oldIndex, newIndex);
                 
                 const orderedBubblesForApi = newOrder.map((b, index) => ({ id: b.id, order: index + 1 }));
-                reorderBubbles(orderedBubblesForApi, session.access_token).catch(err => {
-                    console.error("Erreur ordre", err);
-                    fetchBubbles();
-                });
+                reorderBubbles(orderedBubblesForApi, session.access_token).catch(() => fetchBubbles());
                 return newOrder; 
             });
         }
@@ -237,8 +272,7 @@ const AnnotatePage = () => {
 
     return (
         <div className="flex flex-col h-[calc(100vh-64px)] bg-slate-50">
-            {/* --- HEADER --- */}
-            <header className="flex-none h-16 border-b border-slate-200 bg-white px-6 flex items-center justify-between z-20 shadow-sm">
+            <header className="flex-none h-16 border-b border-slate-200 bg-white px-6 flex items-center justify-between z-20 shadow-sm gap-4">
                 <div className="flex items-center gap-4">
                     <Link to="/">
                         <Button variant="ghost" size="sm">
@@ -247,8 +281,8 @@ const AnnotatePage = () => {
                     </Link>
                     <div className="h-6 w-px bg-slate-200" />
                     <div>
-                        <h2 className="text-lg font-bold text-slate-900">
-                            {page.chapitres?.tomes?.titre || 'Tome'} - Chapitre {page.chapitres?.numero}
+                        <h2 className="text-lg font-bold text-slate-900 hidden md:block">
+                            {page.chapitres?.tomes?.titre} - Ch.{page.chapitres?.numero}
                         </h2>
                         <div className="flex items-center gap-2 text-xs text-slate-500 font-mono">
                             Page {page.numero_page} 
@@ -256,14 +290,75 @@ const AnnotatePage = () => {
                         </div>
                     </div>
                 </div>
-                <div className="flex items-center gap-3">
+
+                <div className="flex items-center gap-3 ml-auto">
+                    <div className="flex items-center gap-3 bg-slate-50 p-1.5 rounded-lg border border-slate-100">
+                        <div className="flex items-center gap-2 px-2">
+                            <Label htmlFor="ocr-mode" className="text-xs font-medium text-slate-600 cursor-pointer">
+                                {preferLocalOCR ? "Local" : "Cloud"}
+                            </Label>
+                            <button 
+                                id="ocr-mode"
+                                onClick={toggleOcrPreference}
+                                className={cn(
+                                    "relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus-visible:outline-none",
+                                    preferLocalOCR ? "bg-emerald-500" : "bg-blue-500"
+                                )}
+                            >
+                                <span className={cn(
+                                    "inline-block h-3 w-3 transform rounded-full bg-white transition-transform",
+                                    preferLocalOCR ? "translate-x-5" : "translate-x-1"
+                                )} />
+                            </button>
+                        </div>
+
+                        <div className="h-4 w-px bg-slate-200" />
+
+                        {modelStatus === 'idle' && preferLocalOCR && (
+                            <Button 
+                                variant="outline" 
+                                size="sm" 
+                                onClick={loadModel}
+                                className="h-7 text-xs border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100"
+                            >
+                                <Download className="h-3 w-3 mr-1.5" />
+                                Charger Modèle
+                            </Button>
+                        )}
+
+                        {modelStatus === 'loading' && (
+                             <div className="flex flex-col w-32 gap-1">
+                                <div className="flex justify-between text-[9px] text-slate-500">
+                                    <span>Chargement...</span>
+                                    <span>{downloadProgress}%</span>
+                                </div>
+                                <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
+                                    <div 
+                                        className="h-full bg-emerald-500 transition-all duration-300" 
+                                        style={{ width: `${downloadProgress}%` }} 
+                                    />
+                                </div>
+                             </div>
+                        )}
+
+                        {modelStatus === 'ready' && (
+                            <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 text-[10px] gap-1 h-7">
+                                <Cpu className="h-3 w-3" /> Prêt
+                            </Badge>
+                        )}
+                        
+                        {modelStatus === 'error' && (
+                            <Badge variant="destructive" className="text-[10px] h-7">Erreur</Badge>
+                        )}
+                    </div>
+
                     <Button 
-                        variant="secondary" 
-                        size="sm"
+                        variant="ghost" 
+                        size="icon"
                         onClick={() => setShowApiKeyModal(true)}
-                        className="text-xs h-8"
+                        className="h-9 w-9 text-slate-400 hover:text-slate-900"
                     >
-                        <KeyRound className="h-3 w-3 mr-2" /> Clé IA
+                        <Settings2 className="h-4 w-4" />
                     </Button>
 
                     <Button
@@ -276,7 +371,6 @@ const AnnotatePage = () => {
                 </div>
             </header>
 
-            {/* --- WORKSPACE --- */}
             <div className="flex flex-1 overflow-hidden">
                 <main className="flex-1 bg-slate-200/50 overflow-auto flex justify-center p-8 relative cursor-default">
                      <div
@@ -293,6 +387,7 @@ const AnnotatePage = () => {
                         <img 
                             ref={imageRef} 
                             src={page.url_image} 
+                            crossOrigin="anonymous" 
                             alt={`Page ${page.numero_page}`} 
                             className="block max-w-full h-auto pointer-events-none"
                             onLoad={(e) => setImageDimensions({
@@ -301,15 +396,14 @@ const AnnotatePage = () => {
                             })}
                         />
 
-                        {/* Loading Overlay */}
                         {isSubmitting && (
                             <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] z-50 flex flex-col items-center justify-center text-slate-800 font-semibold">
                                 <Loader2 className="h-10 w-10 animate-spin mb-2 text-slate-900" />
-                                <span>Analyse IA en cours...</span>
+                                {/* UTILISATION DU TEXTE DYNAMIQUE ICI */}
+                                <span>{loadingText}</span>
                             </div>
                         )}
 
-                        {/* Rectangle en cours de dessin */}
                         {isDrawing && startPoint && endPoint && (
                             <div 
                                 style={{
@@ -322,7 +416,6 @@ const AnnotatePage = () => {
                             />
                         )}
 
-                        {/* Bulles existantes */}
                         {imageDimensions && existingBubbles.map((bubble, index) => {
                             const scale = imageDimensions.width / imageDimensions.naturalWidth;
                             if (!scale) return null; 
@@ -346,7 +439,6 @@ const AnnotatePage = () => {
                                     onMouseEnter={() => setHoveredBubble(bubble)}
                                     onMouseLeave={() => setHoveredBubble(null)}
                                     onClick={(e) => {
-                                        // On arrête la propagation pour ne pas déclencher le dessin
                                         e.stopPropagation();
                                         handleEditBubble(bubble);
                                     }}
@@ -361,7 +453,6 @@ const AnnotatePage = () => {
                             );
                         })}
 
-                        {/* Tooltip custom suiveur */}
                         {hoveredBubble && (
                              <div
                                 className="fixed z-50 pointer-events-none bg-slate-900/95 text-white p-3 rounded-lg shadow-xl border border-slate-700 backdrop-blur-sm max-w-[300px]"
@@ -373,27 +464,18 @@ const AnnotatePage = () => {
                                 <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
                                     Bulle #{existingBubbles.findIndex(b => b.id === hoveredBubble.id) + 1}
                                 </div>
-                                <p className="text-sm font-medium leading-relaxed">
-                                    {hoveredBubble.texte_propose}
-                                </p>
+                                <p className="text-sm font-medium leading-relaxed">{hoveredBubble.texte_propose}</p>
                             </div>
                         )}
                     </div>
                 </main>
 
-                {/* --- SIDEBAR --- */}
                 <aside className="w-[380px] bg-white border-l border-slate-200 flex flex-col h-full overflow-hidden z-10 shadow-lg">
-                    <div className="flex-none p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                     <div className="flex-none p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
                         <h3 className="font-semibold text-slate-900">Annotations</h3>
                         <Badge variant="secondary">{existingBubbles.length}</Badge>
                     </div>
-                    
                     <ScrollArea className="flex-1 w-full h-full">
-                        {/* 1. w-full : prend toute la largeur
-                        2. px-4 : padding horizontal standard
-                        3. pb-20 : espace pour le scroll en bas
-                        4. overflow-x-hidden : COUPE tout ce qui oserait dépasser horizontalement
-                        */}
                         <div className="flex flex-col w-full max-w-full px-4 py-4 pb-20 overflow-x-hidden">
                             {existingBubbles.length === 0 ? (
                                 <div className="flex flex-col items-center justify-center py-10 text-center border-2 border-dashed border-slate-200 rounded-lg bg-slate-50/50 text-slate-500">
@@ -403,10 +485,7 @@ const AnnotatePage = () => {
                                 </div>
                             ) : (
                                 <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                                    <SortableContext
-                                        items={existingBubbles.map(b => b.id)}
-                                        strategy={verticalListSortingStrategy}
-                                    >
+                                    <SortableContext items={existingBubbles.map(b => b.id)} strategy={verticalListSortingStrategy}>
                                         <ul className="flex flex-col gap-3 w-full max-w-full">
                                             {existingBubbles.map((bubble, index) => (
                                                 <SortableBubbleItem
@@ -429,30 +508,48 @@ const AnnotatePage = () => {
                 </aside>
             </div>
 
-            {/* --- MODALS (DIALOGS) --- */}
-            
-            {/* 1. Validation / Édition (DRAGGABLE) */}
             <Dialog 
                 open={!!pendingAnnotation && !isSubmitting} 
                 onOpenChange={(open) => {
                     if(!open) {
                         setPendingAnnotation(null);
                         setRectangle(null);
+                        setDebugImageUrl(null);
                     }
                 }}
             >
-                {/* Conteneur invisible pour permettre le drag */}
                 <DialogContent 
                     className="max-w-none w-full h-full bg-transparent border-0 shadow-none p-0 flex items-center justify-center pointer-events-none"
                     showCloseButton={false}
+                    aria-describedby={undefined}
                 >
+                    <div className="sr-only">
+                        <DialogTitle>Édition de l'annotation</DialogTitle>
+                        <DialogDescription>Zone d'édition</DialogDescription>
+                    </div>
+
                     {pendingAnnotation && (
-                        <div className="pointer-events-auto">
+                        <div className="pointer-events-auto flex flex-col items-center gap-2">
                             <DraggableWrapper 
-                                title={pendingAnnotation?.id ? "Modifier l'annotation" : "Nouvelle annotation"}
+                                title={
+                                    <div className="flex items-center gap-2">
+                                        {pendingAnnotation?.id ? "Modifier" : "Nouvelle"} annotation
+                                        {ocrSource === 'local' && (
+                                            <Badge variant="outline" className="text-[10px] text-emerald-600 border-emerald-200 bg-emerald-50">
+                                                <Cpu className="h-3 w-3 mr-1"/> Local IA
+                                            </Badge>
+                                        )}
+                                        {ocrSource === 'cloud' && (
+                                            <Badge variant="outline" className="text-[10px] text-blue-600 border-blue-200 bg-blue-50">
+                                                <CloudLightning className="h-3 w-3 mr-1"/> Cloud IA
+                                            </Badge>
+                                        )}
+                                    </div>
+                                }
                                 onClose={() => {
                                     setPendingAnnotation(null);
                                     setRectangle(null);
+                                    setDebugImageUrl(null);
                                 }}
                                 className="w-full max-w-lg"
                             >
@@ -463,8 +560,31 @@ const AnnotatePage = () => {
                                         onCancel={() => {
                                             setPendingAnnotation(null);
                                             setRectangle(null);
+                                            setDebugImageUrl(null);
                                         }}
                                     />
+                                    
+                                    {debugImageUrl && (
+                                        <div className="mt-4 flex justify-center">
+                                            <img 
+                                                src={debugImageUrl} 
+                                                alt="Debug" 
+                                                className="max-h-24 object-contain border border-slate-200 shadow-sm rounded bg-white p-1"
+                                            />
+                                        </div>
+                                    )}
+
+                                    <div className="mt-4 pt-4 border-t border-slate-100 flex justify-center">
+                                        <Button 
+                                            variant="ghost" 
+                                            size="sm" 
+                                            className="text-xs text-slate-500 hover:text-slate-900"
+                                            onClick={() => handleRetryWithCloud()}
+                                        >
+                                            <CloudLightning className="h-3 w-3 mr-1" />
+                                            {preferLocalOCR ? "Réessayer avec l'IA Cloud" : "Relancer l'analyse Cloud"}
+                                        </Button>
+                                    </div>
                                 </div>
                             </DraggableWrapper>
                         </div>
@@ -472,14 +592,11 @@ const AnnotatePage = () => {
                 </DialogContent>
             </Dialog>
 
-            {/* 2. Clé API (STANDARD) */}
             <Dialog open={showApiKeyModal} onOpenChange={setShowApiKeyModal}>
                 <DialogContent className="sm:max-w-md">
                      <DialogHeader>
                         <DialogTitle>Configuration API Google Vision</DialogTitle>
-                        <DialogDescription>
-                            Une clé API est requise pour la reconnaissance de texte.
-                        </DialogDescription>
+                        <DialogDescription>Requis pour le Cloud.</DialogDescription>
                     </DialogHeader>
                     <ApiKeyForm onSave={handleSaveApiKey} />
                 </DialogContent>
