@@ -17,7 +17,15 @@ const analysisRoutes = require('./routes/analysisRoutes');
 const userRoutes = require('./routes/userRoutes');
 const statRoutes = require('./routes/statsRoutes')
 
-app.use(cors());
+app.use(cors({
+  origin: [
+    'https://onepiece-index.com', 
+    'http://localhost:5173', 
+    'http://localhost:3000'
+  ],
+  credentials: true
+}));
+
 app.use(express.json());
 
 app.get('/', (req, res) => {
