@@ -284,7 +284,7 @@ const AnnotatePage = () => {
                     <div className="h-6 w-px bg-slate-200" />
                     <div>
                         <h2 className="text-lg font-bold text-slate-900 hidden md:block">
-                            {page.chapitres?.tomes?.titre} - Ch.{page.chapitres?.numero}
+                            Tome {page.chapitres?.tomes?.numero} - Ch.{page.chapitres?.numero}
                         </h2>
                         <div className="flex items-center gap-2 text-xs text-slate-500 font-mono">
                             Page {page.numero_page} 
@@ -401,7 +401,6 @@ const AnnotatePage = () => {
                         {isSubmitting && (
                             <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] z-50 flex flex-col items-center justify-center text-slate-800 font-semibold">
                                 <Loader2 className="h-10 w-10 animate-spin mb-2 text-slate-900" />
-                                {/* UTILISATION DU TEXTE DYNAMIQUE ICI */}
                                 <span>{loadingText}</span>
                             </div>
                         )}

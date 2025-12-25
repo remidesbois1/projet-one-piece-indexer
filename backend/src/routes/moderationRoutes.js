@@ -12,7 +12,7 @@ router.get('/pages', authMiddleware, roleCheck(['Admin', 'Modo']), async (req, r
     const { data, error } = await supabaseAdmin
         .from('pages')
         .select(`
-            id, numero_page, statut,
+            id, numero_page, statut, url_image,
             chapitres ( numero, titre, tomes ( numero, titre ) )
         `)
         .eq('statut', 'pending_review');
