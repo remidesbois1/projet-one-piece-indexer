@@ -2,46 +2,66 @@ import React from 'react';
 import BubbleReviewList from '../components/BubbleReviewList';
 import PageReviewList from '../components/PageReviewList';
 
-// Shadcn Components
 import {
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import { ShieldCheck, MessageSquareDashed, FileCheck } from "lucide-react";
 
 const ModerationPage = () => {
   return (
-    <div className="container max-w-5xl mx-auto py-10 px-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      
-      {/* Header */}
-      <div className="mb-8 space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight text-slate-900">
-          Espace Modération
-        </h1>
-        <p className="text-slate-500 text-lg">
-          Vérifiez les traductions et validez les pages finales.
-        </p>
-      </div>
+    <div className="min-h-screen bg-slate-50/50">
+        <div className="container max-w-7xl mx-auto py-10 px-4 sm:px-6">
+        
+        <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
+            <div className="space-y-1">
+                <h1 className="text-3xl font-bold tracking-tight text-slate-900 flex items-center gap-3">
+                    <ShieldCheck className="h-8 w-8 text-slate-900" />
+                    Espace Modération
+                </h1>
+                <p className="text-slate-500 text-lg max-w-2xl">
+                    Supervisez les contributions de la communauté. Validez les bulles individuelles ou approuvez les pages finales.
+                </p>
+            </div>
+        </div>
 
-      {/* Tabs Navigation */}
-      <Tabs defaultValue="bubbles" className="w-full">
-        <TabsList className="grid w-full max-w-[400px] grid-cols-2 mb-8">
-          <TabsTrigger value="bubbles">Bulles à valider</TabsTrigger>
-          <TabsTrigger value="pages">Pages complètes</TabsTrigger>
-        </TabsList>
+        <Tabs defaultValue="bubbles" className="w-full space-y-6">
+            
+            <div className="bg-white p-1 rounded-xl border border-slate-200 w-fit shadow-sm">
+                <TabsList className="grid w-full grid-cols-2 h-10 bg-slate-100/50">
+                    <TabsTrigger 
+                        value="bubbles" 
+                        className="data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-slate-900 px-6 gap-2"
+                    >
+                        <MessageSquareDashed className="h-4 w-4" />
+                        Bulles à valider
+                    </TabsTrigger>
+                    <TabsTrigger 
+                        value="pages" 
+                        className="data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-slate-900 px-6 gap-2"
+                    >
+                        <FileCheck className="h-4 w-4" />
+                        Pages complètes
+                    </TabsTrigger>
+                </TabsList>
+            </div>
 
-        <TabsContent value="bubbles" className="min-h-[300px]">
-          {/* Note: Assure-toi que BubbleReviewList est aussi mis à jour si nécessaire, 
-              sinon il fonctionnera quand même à l'intérieur de cet onglet */}
-          <BubbleReviewList />
-        </TabsContent>
+            <TabsContent value="bubbles" className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+                <Card className="border-none shadow-none bg-transparent">
+                    <BubbleReviewList />
+                </Card>
+            </TabsContent>
 
-        <TabsContent value="pages" className="min-h-[300px]">
-          <PageReviewList />
-        </TabsContent>
-      </Tabs>
+            <TabsContent value="pages" className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+                <Card className="border-none shadow-none bg-transparent">
+                    <PageReviewList />
+                </Card>
+            </TabsContent>
+        </Tabs>
+        </div>
     </div>
   );
 };

@@ -32,11 +32,11 @@ router.get('/:id', async (req, res) => {
     res.json(data);
 });
 
-// Bulles (AVEC ORDER)
+// Bulles (Encore protégé ici, deviendra public au prochain commit)
 router.get('/:id/bulles', authMiddleware, async (req, res) => {
     const { data, error } = await supabase
         .from('bulles')
-        .select('id, x, y, w, h, texte_propose, statut, id_user_createur, order') // <-- Ajout de 'order'
+        .select('id, x, y, w, h, texte_propose, statut, id_user_createur, order')
         .eq('id_page', req.params.id)
         .neq('statut', 'Rejeté');
 

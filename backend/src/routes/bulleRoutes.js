@@ -13,6 +13,7 @@ const supabaseAdmin = createClient(
 router.post('/', authMiddleware, async (req, res) => {
   const { id: userId } = req.user;
   const { id_page, x, y, w, h, texte_propose } = req.body;
+
   if (id_page === undefined || x === undefined || y === undefined || w === undefined || h === undefined || texte_propose === undefined) {
     return res.status(400).json({ error: 'Données manquantes.' });
   }
@@ -43,6 +44,14 @@ router.post('/', authMiddleware, async (req, res) => {
       .single();
 
     if (insertError) throw insertError;
+    const { error: pageUpdateError } = await supabaseAdmin
+        .from('pages')
+        .update({ statut: 'in_progress' })
+        .eq('id', id_page);
+
+    if (pageUpdateError) {
+        console.error("Erreur lors de la mise à jour du statut de la page :", pageUpdateError);
+    }
     
     res.status(201).json(data);
 
@@ -53,7 +62,7 @@ router.post('/', authMiddleware, async (req, res) => {
 });
 
 router.get('/pending', authMiddleware, roleCheck(['Admin', 'Modo']), async (req, res) => {
-  const { page = 1, limit = 5 } = req.query; // On met une limite par défaut plus basse
+  const { page = 1, limit = 5 } = req.query;
   const pageInt = parseInt(page);
   const limitInt = parseInt(limit);
   const offset = (pageInt - 1) * limitInt;
@@ -92,6 +101,22 @@ router.put('/reorder', authMiddleware, async (req, res) => {
         res.status(200).json({ message: "Ordre mis à jour." });
     } catch (error) {
         res.status(500).json({ error: "Erreur lors de la mise à jour de l'ordre." });
+    }
+});
+
+router.put('/validate-all', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+    try {
+        const { error } = await supabaseAdmin
+            .from('bulles')
+            .update({ statut: 'Validé', validated_at: new Date() })
+            .eq('statut', 'Proposé'); 
+
+        if (error) throw error;
+        
+        res.status(200).json({ message: "Toutes les bulles en attente ont été validées avec succès." });
+    } catch (error) {
+        console.error("Erreur lors de la validation globale :", error);
+        res.status(500).json({ error: "Erreur lors de la validation de toutes les bulles." });
     }
 });
 
