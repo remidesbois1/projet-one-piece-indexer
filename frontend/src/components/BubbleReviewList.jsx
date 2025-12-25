@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { getPendingBubbles, validateBubble, rejectBubble } from '../services/api';
+// Import du hook pour le profil (rôle) et de la nouvelle fonction API
+import { useUserProfile } from '../hooks/useUserProfile';
+import { getPendingBubbles, validateBubble, rejectBubble, validateAllBubbles } from '../services/api';
 import BubbleReviewItem from './BubbleReviewItem';
 import ValidationForm from './ValidationForm';
 
@@ -22,13 +24,14 @@ const RESULTS_PER_PAGE = 5;
 
 const BubbleReviewList = () => {
     const { session } = useAuth();
+    const { profile } = useUserProfile();
+    
     const [pendingBubbles, setPendingBubbles] = useState([]);
     const [totalCount, setTotalCount] = useState(0);
     const [currentPage, setCurrentPage] = useState(1);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
     
-    // État pour l'édition (Dialog)
     const [editingBubble, setEditingBubble] = useState(null);
 
     const token = session?.access_token;
@@ -64,11 +67,28 @@ const BubbleReviewList = () => {
             } else if (action === 'reject') {
                 await rejectBubble(id, token);
             }
-            // On recharge la liste après l'action
             fetchPending(currentPage);
         } catch (err) {
             alert(`Une erreur est survenue lors de l'action.`);
             console.error(err);
+        }
+    };
+
+    const handleValidateAll = async () => {
+        if (!confirm(`Êtes-vous sûr de vouloir valider TOUTES les ${totalCount} bulles en attente ?\nCette action est réservée aux administrateurs.`)) {
+            return;
+        }
+
+        if (!token) return;
+        
+        setIsLoading(true);
+        try {
+            await validateAllBubbles(token);
+            fetchPending(1);
+        } catch (err) {
+            console.error(err);
+            alert("Une erreur est survenue lors de la validation globale.");
+            setIsLoading(false);
         }
     };
 
@@ -79,7 +99,6 @@ const BubbleReviewList = () => {
     
     const totalPages = Math.ceil(totalCount / RESULTS_PER_PAGE);
 
-    // --- Loading State ---
     if (isLoading && pendingBubbles.length === 0) {
         return (
             <div className="space-y-4">
@@ -88,7 +107,6 @@ const BubbleReviewList = () => {
         );
     }
 
-    // --- Error State ---
     if (error) {
         return (
             <div className="bg-red-50 text-red-600 p-4 rounded-lg flex items-center gap-2 border border-red-100">
@@ -101,15 +119,26 @@ const BubbleReviewList = () => {
     return (
         <div className="space-y-6">
             
-            {/* Header Info */}
-            <div className="flex items-center gap-2 text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-200 w-fit">
-                <Badge variant="secondary" className="bg-white border-slate-200 text-slate-900">
-                    {totalCount}
-                </Badge>
-                <span className="text-sm font-medium">bulle(s) en attente de validation</span>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-2 text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-200 w-fit">
+                    <Badge variant="secondary" className="bg-white border-slate-200 text-slate-900">
+                        {totalCount}
+                    </Badge>
+                    <span className="text-sm font-medium">bulle(s) en attente de validation</span>
+                </div>
+
+                {profile?.role === 'Admin' && totalCount > 0 && (
+                    <Button 
+                        onClick={handleValidateAll} 
+                        variant="default" 
+                        className="bg-slate-900 hover:bg-slate-800 text-white"
+                    >
+                        <CheckCircle2 className="mr-2 h-4 w-4" />
+                        Tout Valider (Admin)
+                    </Button>
+                )}
             </div>
 
-            {/* List Content */}
             {pendingBubbles.length === 0 ? (
                 <div className="text-center py-16 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50">
                     <div className="flex justify-center mb-4">
@@ -131,7 +160,6 @@ const BubbleReviewList = () => {
                 </div>
             )}
             
-            {/* Pagination */}
             {totalPages > 1 && (
                 <div className="flex justify-center items-center gap-4 pt-6 mt-4 border-t border-slate-100">
                     <Button 
@@ -158,7 +186,6 @@ const BubbleReviewList = () => {
                 </div>
             )}
 
-            {/* Dialog d'Édition (Remplacement du Modal) */}
             <Dialog open={!!editingBubble} onOpenChange={(open) => !open && setEditingBubble(null)}>
                 <DialogContent className="sm:max-w-lg">
                     <DialogHeader>

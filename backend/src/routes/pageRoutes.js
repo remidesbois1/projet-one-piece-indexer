@@ -30,7 +30,7 @@ router.get('/', async (req, res) => {
 
 /**
  * @route   GET /api/pages/:id
- * @desc    Récupérer une page spécifique par son ID
+ * @desc    Récupérer une page spécifique par son ID avec les infos du Chapitre et du Tome
  * @access  Public
  */
 router.get('/:id', async (req, res) => {
@@ -39,9 +39,19 @@ router.get('/:id', async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('pages')
-      .select('*')
+      .select(`
+        *,
+        chapitres (
+            numero,
+            titre,
+            tomes (
+                titre,
+                numero
+            )
+        )
+      `)
       .eq('id', id)
-      .single(); // .single() pour ne retourner qu'un seul objet
+      .single();
 
     if (error) throw error;
     
