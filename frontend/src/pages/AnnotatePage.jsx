@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, reorderBubbles, analyseBubble } from '../services/api';
+import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, reorderBubbles, analyseBubble, savePageDescription } from '../services/api';
 import ValidationForm from '../components/ValidationForm';
 import ApiKeyForm from '../components/ApiKeyForm';
 import { useAuth } from '../context/AuthContext';
@@ -13,15 +13,18 @@ import { cropImage } from '../lib/utils';
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Send, KeyRound, Loader2, MousePointer2, Cpu, CloudLightning, Download, Settings2, Eye } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { ArrowLeft, Send, Loader2, MousePointer2, Cpu, CloudLightning, Download, Settings2, FileText, Save } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const AnnotatePage = () => {
     const { user, session } = useAuth();
     const { pageId } = useParams();
-    const { worker, modelStatus, loadModel, downloadProgress, runOcr, correctionDict } = useWorker();
+    const { worker, modelStatus, loadModel, downloadProgress, runOcr } = useWorker();
+    
+    // --- 1. ALL HOOKS MUST BE DECLARED HERE (Before any return) ---
     
     const [page, setPage] = useState(null);
     const [existingBubbles, setExistingBubbles] = useState([]);
@@ -46,8 +49,33 @@ const AnnotatePage = () => {
     const [debugImageUrl, setDebugImageUrl] = useState(null);
     const [preferLocalOCR, setPreferLocalOCR] = useState(() => localStorage.getItem('preferLocalOCR') !== 'false');
 
+    // -- New Hooks for Semantic Description --
+    const [showDescModal, setShowDescModal] = useState(false);
+    const [jsonDescription, setJsonDescription] = useState('');
+    const [isSavingDesc, setIsSavingDesc] = useState(false);
+
     const containerRef = useRef(null);
     const imageRef = useRef(null);
+
+    // Initialiser le JSON quand la page est chargée (Hook sécurisé)
+    useEffect(() => {
+        if (page?.description) {
+            // Si la description est déjà un objet, on le stringify
+            const descVal = typeof page.description === 'string' 
+                ? page.description 
+                : JSON.stringify(page.description, null, 2);
+            setJsonDescription(descVal);
+        } else if (page) {
+            // Template par défaut seulement si la page est chargée mais sans desc
+            setJsonDescription(JSON.stringify({
+                content: "",
+                metadata: {
+                    arc: "",
+                    characters: []
+                }
+            }, null, 2));
+        }
+    }, [page]);
 
     useEffect(() => {
         if (!worker) return;
@@ -163,7 +191,41 @@ const AnnotatePage = () => {
     const handleSaveApiKey = (key) => {
         localStorage.setItem('google_api_key', key);
         setShowApiKeyModal(false);
-        handleRetryWithCloud();
+        // Si on a une annotation en attente, on relance
+        if (pendingAnnotation) handleRetryWithCloud();
+        // Si on était en train de sauver une description, on relance
+        if (showDescModal) handleSaveDescription();
+    };
+
+    const handleSaveDescription = async () => {
+        let parsedJson;
+        try {
+            parsedJson = JSON.parse(jsonDescription);
+        } catch (e) {
+            alert("Format JSON invalide.");
+            return;
+        }
+
+        const storedKey = localStorage.getItem('google_api_key');
+        if (!storedKey) {
+            setShowApiKeyModal(true);
+            return;
+        }
+
+        setIsSavingDesc(true);
+        try {
+            await savePageDescription(pageId, parsedJson, session.access_token, storedKey);
+            alert("Description et vecteurs enregistrés !");
+            setShowDescModal(false);
+            // Recharger la page pour mettre à jour les données
+            const res = await getPageById(pageId, session.access_token);
+            setPage(res.data);
+        } catch (error) {
+            console.error(error);
+            alert("Erreur lors de la sauvegarde.");
+        } finally {
+            setIsSavingDesc(false);
+        }
     };
 
     const handleEditBubble = (bubble) => setPendingAnnotation(bubble);
@@ -202,7 +264,7 @@ const AnnotatePage = () => {
 
     const handleMouseDown = (event) => {
         if (page?.statut !== 'not_started' && page?.statut !== 'in_progress') return;
-        if (isSubmitting || showApiKeyModal) return;
+        if (isSubmitting || showApiKeyModal || showDescModal) return;
         
         event.preventDefault();
         setIsDrawing(true);
@@ -267,6 +329,7 @@ const AnnotatePage = () => {
         }
     };
 
+    // --- Conditional Returns MUST be after all hooks ---
     if (error) return <div className="p-8 text-red-500">{error}</div>;
     if (!page) return <div className="flex h-screen items-center justify-center text-slate-500">Chargement...</div>;
 
@@ -353,6 +416,18 @@ const AnnotatePage = () => {
                             <Badge variant="destructive" className="text-[10px] h-7">Erreur</Badge>
                         )}
                     </div>
+
+                    <div className="h-6 w-px bg-slate-200" />
+
+                    <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => setShowDescModal(true)}
+                        className="hidden md:flex gap-2 border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100"
+                    >
+                        <FileText className="h-4 w-4" />
+                        Métadonnées
+                    </Button>
 
                     <Button 
                         variant="ghost" 
@@ -597,9 +672,43 @@ const AnnotatePage = () => {
                 <DialogContent className="sm:max-w-md">
                      <DialogHeader>
                         <DialogTitle>Configuration API Google Vision</DialogTitle>
-                        <DialogDescription>Requis pour le Cloud.</DialogDescription>
+                        <DialogDescription>Requis pour le Cloud et l'Embedding.</DialogDescription>
                     </DialogHeader>
                     <ApiKeyForm onSave={handleSaveApiKey} />
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={showDescModal} onOpenChange={setShowDescModal}>
+                <DialogContent className="max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle>Description Sémantique de la Page</DialogTitle>
+                        <DialogDescription>
+                            Ce JSON sera vectorisé pour permettre la recherche sémantique.
+                        </DialogDescription>
+                    </DialogHeader>
+                    
+                    <div className="grid gap-4 py-4">
+                        <div className="flex flex-col gap-2">
+                            <Label htmlFor="json-desc">Contenu JSON</Label>
+                            <Textarea
+                                id="json-desc"
+                                value={jsonDescription}
+                                onChange={(e) => setJsonDescription(e.target.value)}
+                                className="font-mono text-xs h-[400px]"
+                                placeholder='{"content": "Description...", "metadata": ...}'
+                            />
+                        </div>
+                    </div>
+
+                    <DialogFooter className="gap-2">
+                        <Button variant="outline" onClick={() => setShowDescModal(false)}>
+                            Annuler
+                        </Button>
+                        <Button onClick={handleSaveDescription} disabled={isSavingDesc} className="bg-indigo-600 hover:bg-indigo-700">
+                            {isSavingDesc ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                            Enregistrer & Vectoriser
+                        </Button>
+                    </DialogFooter>
                 </DialogContent>
             </Dialog>
         </div>

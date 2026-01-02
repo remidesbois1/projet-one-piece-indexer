@@ -4,11 +4,16 @@ const apiClient = axios.create({
   baseURL: import.meta.env.VITE_BACKEND_URL,
 });
 
-const getAuthHeaders = (token) => ({
-  headers: {
-    Authorization: `Bearer ${token}`,
-  },
-});
+const getAuthHeaders = (token, googleApiKey = null) => {
+  const headers = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  if (googleApiKey) {
+    headers['x-google-api-key'] = googleApiKey;
+  }
+  return { headers };
+};
 
 export const getTomes = (token) => apiClient.get('/tomes', getAuthHeaders(token));
 export const getChapitres = (id_tome, token) => apiClient.get(`/chapitres/tome/${id_tome}`, getAuthHeaders(token));
@@ -16,7 +21,12 @@ export const getPages = (id_chapitre, token) => apiClient.get(`/pages?id_chapitr
 export const getPageById = (id, token) => apiClient.get(`/pages/${id}`, getAuthHeaders(token));
 export const createBubble = (bubbleData, token) => apiClient.post('/bulles', bubbleData, getAuthHeaders(token));
 export const updateBubbleText = (id, text, token) => apiClient.put(`/bulles/${id}`, { texte_propose: text }, getAuthHeaders(token));
-export const searchBubbles = (query, page = 1) => apiClient.get(`/search?q=${query}&page=${page}`);
+export const searchBubbles = (query, page = 1, limit = 10, googleApiKey = null) => {
+    return apiClient.get(
+        `/search?q=${query}&page=${page}&limit=${limit}`, 
+        getAuthHeaders(null, googleApiKey)
+    );
+};
 export const getPendingBubbles = (token, page = 1, limit = 5) => apiClient.get(`/bulles/pending?page=${page}&limit=${limit}`, getAuthHeaders(token));
 export const validateBubble = (id, token) => apiClient.put(`/bulles/${id}/validate`, {}, getAuthHeaders(token));
 export const validateAllBubbles = (token) => apiClient.put('/bulles/validate-all', {}, getAuthHeaders(token));
@@ -50,3 +60,13 @@ export const analyseBubble = (bubbleData, token, googleApiKey) => apiClient.post
 export const getMySubmissions = (token, page = 1, limit = 10) => apiClient.get(`/user/bulles?page=${page}&limit=${limit}`, getAuthHeaders(token));
 export const getStatsSummary = () => apiClient.get('/stats/summary');
 export const getTopContributors = () => apiClient.get('/stats/top-contributors');
+
+// Semantic Search & Description
+export const savePageDescription = (pageId, description, token, googleApiKey) => apiClient.post('/analyse/page-description', { id_page: pageId, description }, {
+    headers: {
+        Authorization: `Bearer ${token}`,
+        'x-google-api-key': googleApiKey
+    }
+});
+
+export const searchSemantic = (query, limit = 10) => apiClient.get(`/search/semantic?q=${query}&limit=${limit}`);

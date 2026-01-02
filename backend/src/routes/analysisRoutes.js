@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { authMiddleware } = require('../middleware/auth');
 const { createClient } = require('@supabase/supabase-js');
-const { GoogleGenerativeAI } = require("@google/generative-ai"); // On garde l'import, mais pas l'init globale
+const { GoogleGenerativeAI } = require("@google/generative-ai"); 
 const axios = require('axios');
 const sharp = require('sharp');
 const fs = require('fs');
@@ -23,10 +23,9 @@ function fileToGenerativePart(buffer, mimeType) {
   };
 }
 
-// On passe la clé API en paramètre de la fonction
+// Analyse Vision (Texte Bulle)
 const analyzeWithGeminiVision = async (imageUrl, coords, apiKey) => {
   try {
-    // Initialisation de Gemini avec la clé de l'utilisateur
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: "gemini-flash-lite-latest" });
 
@@ -77,10 +76,24 @@ const analyzeWithGeminiVision = async (imageUrl, coords, apiKey) => {
   }
 };
 
+// Fonction Embedding Text
+const generateEmbedding = async (text, apiKey) => {
+    try {
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const model = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
+        
+        const result = await model.embedContent(text);
+        return result.embedding.values;
+    } catch (error) {
+        console.error("[Embedding Error]", error.message);
+        throw error;
+    }
+};
+
+// --- ROUTES ---
+
 router.post('/bubble', authMiddleware, async (req, res) => {
     const { id_page, x, y, w, h } = req.body;
-    
-    // Récupération de la clé depuis les headers
     const userApiKey = req.headers['x-google-api-key'];
 
     if (!userApiKey) {
@@ -100,7 +113,6 @@ router.post('/bubble', authMiddleware, async (req, res) => {
 
         if (pageError || !pageData) return res.status(404).json({ error: "Page introuvable." });
 
-        // Appel avec la clé utilisateur
         const resultText = await analyzeWithGeminiVision(pageData.url_image, { x, y, w, h }, userApiKey);
 
         if (!resultText) {
@@ -118,6 +130,55 @@ router.post('/bubble', authMiddleware, async (req, res) => {
     } catch (error) {
         console.error("Erreur serveur:", error);
         res.status(500).json({ error: "Erreur interne." });
+    }
+});
+
+router.post('/page-description', authMiddleware, async (req, res) => {
+    const { id_page, description } = req.body;
+    const userApiKey = req.headers['x-google-api-key'];
+
+    if (!userApiKey) {
+        return res.status(400).json({ error: 'Clé API Google manquante.' });
+    }
+
+    if (!id_page || !description) {
+        return res.status(400).json({ error: 'Données manquantes (id_page ou description).' });
+    }
+
+    try {
+        // 1. Préparer le texte pour l'embedding
+        let textToEmbed = "";
+        if (typeof description === 'string') {
+             try {
+                const jsonDesc = JSON.parse(description);
+                textToEmbed = `${jsonDesc.content || ""} ${(jsonDesc.metadata?.characters || []).join(" ")} ${jsonDesc.metadata?.arc || ""}`;
+             } catch (e) {
+                textToEmbed = description;
+             }
+        } else {
+             textToEmbed = `${description.content || ""} ${(description.metadata?.characters || []).join(" ")} ${description.metadata?.arc || ""}`;
+        }
+
+        // 2. Générer l'embedding via Google
+        console.log(`[Embedding] Génération pour la page ${id_page}...`);
+        const embeddingVector = await generateEmbedding(textToEmbed, userApiKey);
+
+        // 3. Sauvegarder dans Supabase (JSON + Vector)
+        const { error } = await supabaseAdmin
+            .from('pages')
+            .update({ 
+                description: description, 
+                embedding: embeddingVector 
+            })
+            .eq('id', id_page);
+
+        if (error) throw error;
+
+        res.status(200).json({ success: true, message: "Description et vecteurs mis à jour." });
+
+    } catch (error) {
+        console.error("Erreur sauvegarde description:", error);
+        res.status(500).json({ error: error.message || "Erreur interne." });
     }
 });
 
