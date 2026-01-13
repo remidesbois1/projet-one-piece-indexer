@@ -15,7 +15,6 @@ router.get('/', async (req, res) => {
 
     try {
         if (userApiKey) {
-            // Recherche Vectorielle + Rerank
             const genAI = new GoogleGenerativeAI(userApiKey);
             const embedModel = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
             
@@ -24,13 +23,12 @@ router.get('/', async (req, res) => {
             const { data: candidates, error } = await supabase.rpc('match_pages', {
                 query_embedding: embedding.values,
                 match_threshold: 0.60,
-                match_count: 30
+                match_count: 6
             });
 
             if (error) throw error;
             if (!candidates?.length) return res.json({ results: [], totalCount: 0 });
 
-            // Reranking IA
             const rerankModel = genAI.getGenerativeModel({ 
                 model: "gemini-2.5-flash-lite", 
                 generationConfig: { responseMimeType: "application/json" }
@@ -51,12 +49,11 @@ router.get('/', async (req, res) => {
 
             const prompt = `
             Requête: "${q}"
-            Trouve la page exacte.
-            Notation stricte:
-            - 90-100: Correspondance parfaite (Action + Perso).
-            - 70-85: Très proche.
-            - <40: Erreur de perso ou d'action.
-            Renvoie JSON: [{ "id": 123, "score": 95 }]
+            Règles de notation AGRESSIVES:
+            1. PAGE ÉLUE (90-100): Perso + Action exacte.
+            2. DOUTE (70-85): Ressemblance forte.
+            3. SANCTION (<40): Mauvais perso ou mauvaise action.
+            Renvoie JSON minifié (keys: "i"=id, "s"=score): [{"i":123,"s":95}]
             Candidats: ${JSON.stringify(candidatesForAI)}`;
 
             let scores = [];
@@ -64,28 +61,37 @@ router.get('/', async (req, res) => {
                 const result = await rerankModel.generateContent(prompt);
                 scores = JSON.parse(result.response.text());
             } catch (err) {
-                scores = candidates.map(c => ({ id: c.id, score: c.similarity * 100 }));
+                scores = candidates.map(c => ({ i: c.id, s: c.similarity * 100 }));
             }
 
             finalResults = candidates.map(c => {
-                const aiScore = scores.find(s => s.id === c.id)?.score || 0;
+                const aiData = scores.find(s => s.i === c.id);
+                const finalScore = aiData ? aiData.s : 0;
+                
+                let snippet = c.description;
+                try {
+                     if (typeof snippet === 'string') snippet = JSON.parse(snippet).content;
+                     else if (typeof snippet === 'object') snippet = snippet.content;
+                } catch (e) {}
+
                 return {
                     type: 'semantic',
                     id: `page-${c.id}`,
                     page_id: c.id,
                     url_image: c.url_image,
+                    content: snippet || "",
                     context: `Tome ${c.tome_numero} - Chap. ${c.chapitre_numero} - Page ${c.numero_page}`,
-                    similarity: aiScore / 100
+                    scores: { ai: finalScore, vector: Math.round(c.similarity * 100) },
+                    similarity: finalScore / 100
                 };
             })
-            .filter(r => r.similarity >= 0.60)
-            .sort((a, b) => b.similarity - a.similarity)
+            .filter(r => r.scores.ai >= 75)
+            .sort((a, b) => b.scores.ai - a.scores.ai)
             .slice(0, parseInt(limit));
 
             totalCount = finalResults.length;
 
         } else {
-            // Recherche Classique
             const { data, error } = await supabase.rpc('search_bulles', {
                 search_term: q,
                 page_limit: parseInt(limit),
