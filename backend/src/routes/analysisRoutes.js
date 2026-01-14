@@ -2,51 +2,50 @@ const express = require('express');
 const router = express.Router();
 const { authMiddleware } = require('../middleware/auth');
 const { createClient } = require('@supabase/supabase-js');
-const { GoogleGenerativeAI } = require("@google/generative-ai"); 
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 const axios = require('axios');
 const sharp = require('sharp');
 const fs = require('fs');
 const path = require('path');
 
-// Initialisation Supabase Admin
 const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
+    process.env.SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
 function fileToGenerativePart(buffer, mimeType) {
-  return {
-    inlineData: {
-      data: buffer.toString("base64"),
-      mimeType
-    },
-  };
+    return {
+        inlineData: {
+            data: buffer.toString("base64"),
+            mimeType
+        },
+    };
 }
 
 // Analyse Vision (Texte Bulle)
 const analyzeWithGeminiVision = async (imageUrl, coords, apiKey) => {
-  try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-flash-lite-latest" });
+    try {
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const model = genAI.getGenerativeModel({ model: "gemini-flash-lite-latest" });
 
-    const imageResponse = await axios({ url: imageUrl, responseType: 'arraybuffer' });
-    
-    const inputBuffer = Buffer.from(imageResponse.data);
-    const metadata = await sharp(inputBuffer).metadata();
-    
-    const cropOptions = {
-        left: Math.max(0, Math.floor(coords.x)),
-        top: Math.max(0, Math.floor(coords.y)),
-        width: Math.min(metadata.width - coords.x, Math.floor(coords.w)),
-        height: Math.min(metadata.height - coords.y, Math.floor(coords.h))
-    };
+        const imageResponse = await axios({ url: imageUrl, responseType: 'arraybuffer' });
 
-    const croppedBuffer = await sharp(inputBuffer)
-      .extract(cropOptions)
-      .toFormat('png') 
-      .toBuffer();
+        const inputBuffer = Buffer.from(imageResponse.data);
+        const metadata = await sharp(inputBuffer).metadata();
 
-    const prompt = `
+        const cropOptions = {
+            left: Math.max(0, Math.floor(coords.x)),
+            top: Math.max(0, Math.floor(coords.y)),
+            width: Math.min(metadata.width - coords.x, Math.floor(coords.w)),
+            height: Math.min(metadata.height - coords.y, Math.floor(coords.h))
+        };
+
+        const croppedBuffer = await sharp(inputBuffer)
+            .extract(cropOptions)
+            .toFormat('png')
+            .toBuffer();
+
+        const prompt = `
     Tu es un expert en numérisation de manga.
     Ta tâche est de transcrire le texte présent dans cette bulle de dialogue.
     
@@ -58,19 +57,19 @@ const analyzeWithGeminiVision = async (imageUrl, coords, apiKey) => {
     5. Renvoie UNIQUEMENT le texte final.
     `;
 
-    const imagePart = fileToGenerativePart(croppedBuffer, "image/png");
+        const imagePart = fileToGenerativePart(croppedBuffer, "image/png");
 
-    console.log(`[Vision] Envoi à Gemini Flash-Lite (Clé utilisateur)...`);
-    const result = await model.generateContent([prompt, imagePart]);
-    const response = await result.response;
-    let text = response.text();
+        console.log(`[Vision] Envoi à Gemini Flash-Lite (Clé utilisateur)...`);
+        const result = await model.generateContent([prompt, imagePart]);
+        const response = await result.response;
+        let text = response.text();
 
-    return text.trim();
+        return text.trim();
 
-  } catch (error) {
-    console.error("[Vision Error]", error.message);
-    return null;
-  }
+    } catch (error) {
+        console.error("[Vision Error]", error.message);
+        return null;
+    }
 };
 
 // Fonction Embedding Text
@@ -78,7 +77,7 @@ const generateEmbedding = async (text, apiKey) => {
     try {
         const genAI = new GoogleGenerativeAI(apiKey);
         const model = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
-        
+
         const result = await model.embedContent(text);
         return result.embedding.values;
     } catch (error) {
@@ -96,7 +95,7 @@ router.post('/bubble', authMiddleware, async (req, res) => {
     if (!userApiKey) {
         return res.status(400).json({ error: 'Clé API Google manquante (x-google-api-key).' });
     }
-    
+
     if (id_page === undefined || x === undefined) {
         return res.status(400).json({ error: 'Coordonnées manquantes.' });
     }
@@ -113,9 +112,9 @@ router.post('/bubble', authMiddleware, async (req, res) => {
         const resultText = await analyzeWithGeminiVision(pageData.url_image, { x, y, w, h }, userApiKey);
 
         if (!resultText) {
-            return res.status(200).json({ 
-                texte_ocr_brut: null, 
-                texte_propose: "<ÉCHEC LECTURE>" 
+            return res.status(200).json({
+                texte_ocr_brut: null,
+                texte_propose: "<ÉCHEC LECTURE>"
             });
         }
 
@@ -145,14 +144,14 @@ router.post('/page-description', authMiddleware, async (req, res) => {
     try {
         let textToEmbed = "";
         if (typeof description === 'string') {
-             try {
+            try {
                 const jsonDesc = JSON.parse(description);
                 textToEmbed = `${jsonDesc.content || ""} ${(jsonDesc.metadata?.characters || []).join(" ")} ${jsonDesc.metadata?.arc || ""}`;
-             } catch (e) {
+            } catch (e) {
                 textToEmbed = description;
-             }
+            }
         } else {
-             textToEmbed = `${description.content || ""} ${(description.metadata?.characters || []).join(" ")} ${description.metadata?.arc || ""}`;
+            textToEmbed = `${description.content || ""} ${(description.metadata?.characters || []).join(" ")} ${description.metadata?.arc || ""}`;
         }
 
         console.log(`[Embedding] Génération pour la page ${id_page}...`);
@@ -160,9 +159,9 @@ router.post('/page-description', authMiddleware, async (req, res) => {
 
         const { error } = await supabaseAdmin
             .from('pages')
-            .update({ 
-                description: description, 
-                embedding: embeddingVector 
+            .update({
+                description: description,
+                embedding: embeddingVector
             })
             .eq('id', id_page);
 
@@ -173,6 +172,46 @@ router.post('/page-description', authMiddleware, async (req, res) => {
     } catch (error) {
         console.error("Erreur sauvegarde description:", error);
         res.status(500).json({ error: error.message || "Erreur interne." });
+    }
+});
+
+router.get('/metadata-suggestions', authMiddleware, async (req, res) => {
+    try {
+        const { data, error } = await supabaseAdmin
+            .from('pages')
+            .select('description')
+            .not('description', 'is', null);
+
+        if (error) throw error;
+
+        const characters = new Set();
+        const arcs = new Set();
+
+        data.forEach(item => {
+            let desc = item.description;
+            if (typeof desc === 'string') {
+                try { desc = JSON.parse(desc); } catch (e) { return; }
+            }
+
+            if (desc?.metadata) {
+                if (Array.isArray(desc.metadata.characters)) {
+                    desc.metadata.characters.forEach(c => {
+                        if (c && typeof c === 'string') characters.add(c.trim());
+                    });
+                }
+                if (desc.metadata.arc && typeof desc.metadata.arc === 'string') {
+                    arcs.add(desc.metadata.arc.trim());
+                }
+            }
+        });
+
+        res.status(200).json({
+            characters: Array.from(characters).sort((a, b) => a.localeCompare(b)),
+            arcs: Array.from(arcs).sort((a, b) => a.localeCompare(b))
+        });
+    } catch (error) {
+        console.error("Erreur suggestions:", error);
+        res.status(500).json({ error: "Erreur lors de la récupération des suggestions." });
     }
 });
 

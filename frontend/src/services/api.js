@@ -22,10 +22,10 @@ export const getPageById = (id, token) => apiClient.get(`/pages/${id}`, getAuthH
 export const createBubble = (bubbleData, token) => apiClient.post('/bulles', bubbleData, getAuthHeaders(token));
 export const updateBubbleText = (id, text, token) => apiClient.put(`/bulles/${id}`, { texte_propose: text }, getAuthHeaders(token));
 export const searchBubbles = (query, page = 1, limit = 10, googleApiKey = null) => {
-    return apiClient.get(
-        `/search?q=${query}&page=${page}&limit=${limit}`, 
-        getAuthHeaders(null, googleApiKey)
-    );
+  return apiClient.get(
+    `/search?q=${query}&page=${page}&limit=${limit}`,
+    getAuthHeaders(null, googleApiKey)
+  );
 };
 export const getPendingBubbles = (token, page = 1, limit = 5) => apiClient.get(`/bulles/pending?page=${page}&limit=${limit}`, getAuthHeaders(token));
 export const validateBubble = (id, token) => apiClient.put(`/bulles/${id}/validate`, {}, getAuthHeaders(token));
@@ -39,9 +39,9 @@ export const getBubbleCrop = (id, token) => apiClient.get(`/bulles/${id}/crop`, 
 // Fonctions Admin
 export const createTome = (tomeData, token) => apiClient.post('/admin/tomes', tomeData, getAuthHeaders(token));
 export const uploadChapter = (formData, token) => apiClient.post('/admin/chapitres/upload', formData, {
-    headers: {
-        Authorization: `Bearer ${token}`
-    }
+  headers: {
+    Authorization: `Bearer ${token}`
+  }
 });
 
 export const getBubblesForPage = (pageId, token) => apiClient.get(`/pages/${pageId}/bulles`, getAuthHeaders(token));
@@ -52,10 +52,10 @@ export const getPagesForReview = (token) => apiClient.get('/moderation/pages', g
 export const approvePage = (pageId, token) => apiClient.put(`/moderation/pages/${pageId}/approve`, {}, getAuthHeaders(token));
 export const rejectPage = (pageId, token) => apiClient.put(`/moderation/pages/${pageId}/reject`, {}, getAuthHeaders(token));
 export const analyseBubble = (bubbleData, token, googleApiKey) => apiClient.post('/analyse/bubble', bubbleData, {
-    headers: {
-        Authorization: `Bearer ${token}`,
-        'x-google-api-key': googleApiKey
-    }
+  headers: {
+    Authorization: `Bearer ${token}`,
+    'x-google-api-key': googleApiKey
+  }
 });
 export const getMySubmissions = (token, page = 1, limit = 10) => apiClient.get(`/user/bulles?page=${page}&limit=${limit}`, getAuthHeaders(token));
 export const getStatsSummary = () => apiClient.get('/stats/summary');
@@ -63,10 +63,12 @@ export const getTopContributors = () => apiClient.get('/stats/top-contributors')
 
 // Semantic Search & Description
 export const savePageDescription = (pageId, description, token, googleApiKey) => apiClient.post('/analyse/page-description', { id_page: pageId, description }, {
-    headers: {
-        Authorization: `Bearer ${token}`,
-        'x-google-api-key': googleApiKey
-    }
+  headers: {
+    Authorization: `Bearer ${token}`,
+    'x-google-api-key': googleApiKey
+  }
 });
 
 export const searchSemantic = (query, limit = 10) => apiClient.get(`/search/semantic?q=${query}&limit=${limit}`);
+
+export const getMetadataSuggestions = (token) => apiClient.get('/analyse/metadata-suggestions', getAuthHeaders(token));
