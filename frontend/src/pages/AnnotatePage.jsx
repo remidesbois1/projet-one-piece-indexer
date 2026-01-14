@@ -16,11 +16,11 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, Send, Loader2, MousePointer2, Cpu, CloudLightning, Download, Settings2, FileText, Save, Plus, X, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, Send, Loader2, MousePointer2, Cpu, CloudLightning, Download, Settings2, FileText, Save, Plus, X, Search, ChevronLeft, ChevronRight, Shield } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const AnnotatePage = () => {
-    const { user, session } = useAuth();
+    const { user, session, isGuest } = useAuth();
     const { pageId } = useParams();
     const navigate = useNavigate();
     const { worker, modelStatus, loadModel, downloadProgress, runOcr } = useWorker();
@@ -158,24 +158,24 @@ const AnnotatePage = () => {
     };
 
     const fetchBubbles = useCallback(() => {
-        if (pageId && session?.access_token) {
-            getBubblesForPage(pageId, session.access_token)
+        if (pageId && (session?.access_token || isGuest)) {
+            getBubblesForPage(pageId, session?.access_token)
                 .then(response => {
                     const sortedBubbles = response.data.sort((a, b) => a.order - b.order);
                     setExistingBubbles(sortedBubbles);
                 })
                 .catch(error => console.error(error));
         }
-    }, [pageId, session]);
+    }, [pageId, session, isGuest]);
 
     useEffect(() => {
-        if (pageId && session?.access_token) {
-            getPageById(pageId, session.access_token)
+        if (pageId && (session?.access_token || isGuest)) {
+            getPageById(pageId, session?.access_token)
                 .then(response => {
                     setPage(response.data);
                     // Fetch list of pages in chapter for navigation
                     if (response.data.id_chapitre) {
-                        getPages(response.data.id_chapitre, session.access_token)
+                        getPages(response.data.id_chapitre, session?.access_token)
                             .then(pagesRes => {
                                 const pages = pagesRes.data;
                                 setChapterPages(pages);
@@ -190,7 +190,7 @@ const AnnotatePage = () => {
                 .catch(() => setError("Impossible de charger la page."));
             fetchBubbles();
         }
-    }, [pageId, session?.access_token, fetchBubbles]);
+    }, [pageId, session?.access_token, isGuest, fetchBubbles]);
 
     // Keyboard Shortcuts
     useEffect(() => {
@@ -351,9 +351,13 @@ const AnnotatePage = () => {
         }));
     };
 
-    const handleEditBubble = (bubble) => setPendingAnnotation(bubble);
+    const handleEditBubble = (bubble) => {
+        if (isGuest) return;
+        setPendingAnnotation(bubble);
+    };
 
     const handleDeleteBubble = async (bubbleId) => {
+        if (isGuest) return;
         if (window.confirm("Supprimer cette annotation ?")) {
             try {
                 await deleteBubble(bubbleId, session.access_token);
@@ -370,6 +374,7 @@ const AnnotatePage = () => {
     };
 
     const handleSubmitPage = async () => {
+        if (isGuest) return;
         if (window.confirm("Envoyer pour validation ?")) {
             try {
                 const response = await submitPageForReview(pageId, session.access_token);
@@ -386,6 +391,7 @@ const AnnotatePage = () => {
     };
 
     const handleMouseDown = (event) => {
+        if (isGuest) return;
         if (page?.statut !== 'not_started' && page?.statut !== 'in_progress') return;
         if (isSubmitting || showApiKeyModal || showDescModal) return;
 
@@ -438,6 +444,7 @@ const AnnotatePage = () => {
     };
 
     const handleDragEnd = (event) => {
+        if (isGuest) return;
         const { active, over } = event;
         if (active && over && active.id !== over.id) {
             setExistingBubbles((bubbles) => {
@@ -456,7 +463,7 @@ const AnnotatePage = () => {
     if (error) return <div className="p-8 text-red-500">{error}</div>;
     if (!page) return <div className="flex h-screen items-center justify-center text-slate-500">Chargement...</div>;
 
-    const canEdit = page.statut === 'not_started' || page.statut === 'in_progress';
+    const canEdit = !isGuest && (page.statut === 'not_started' || page.statut === 'in_progress');
 
     return (
         <div className="flex flex-col h-[calc(100vh-64px)] bg-slate-50">
@@ -513,10 +520,12 @@ const AnnotatePage = () => {
                             </Label>
                             <button
                                 id="ocr-mode"
-                                onClick={toggleOcrPreference}
+                                onClick={() => !isGuest && toggleOcrPreference()}
+                                disabled={isGuest}
                                 className={cn(
                                     "relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus-visible:outline-none",
-                                    preferLocalOCR ? "bg-emerald-500" : "bg-blue-500"
+                                    preferLocalOCR ? "bg-emerald-500" : "bg-blue-500",
+                                    isGuest && "opacity-50 cursor-not-allowed"
                                 )}
                             >
                                 <span className={cn(
@@ -571,8 +580,12 @@ const AnnotatePage = () => {
                     <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setShowDescModal(true)}
-                        className="hidden md:flex gap-2 border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100"
+                        onClick={() => !isGuest && setShowDescModal(true)}
+                        disabled={isGuest}
+                        className={cn(
+                            "hidden md:flex gap-2 border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100",
+                            isGuest && "opacity-50 cursor-not-allowed"
+                        )}
                     >
                         <FileText className="h-4 w-4" />
                         Métadonnées
@@ -581,8 +594,9 @@ const AnnotatePage = () => {
                     <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => setShowApiKeyModal(true)}
-                        className="h-9 w-9 text-slate-400 hover:text-slate-900"
+                        onClick={() => !isGuest && setShowApiKeyModal(true)}
+                        className={cn("h-9 w-9 text-slate-400 hover:text-slate-900", isGuest && "opacity-50 cursor-not-allowed")}
+                        disabled={isGuest}
                     >
                         <Settings2 className="h-4 w-4" />
                     </Button>
@@ -590,12 +604,19 @@ const AnnotatePage = () => {
                     <Button
                         className="bg-slate-900 hover:bg-slate-800"
                         onClick={handleSubmitPage}
-                        disabled={!canEdit}
+                        disabled={!canEdit || isGuest}
                     >
                         <Send className="h-3 w-3 mr-2" /> Soumettre
                     </Button>
                 </div>
             </header>
+
+            {isGuest && (
+                <div className="bg-amber-50 border-b border-amber-200 px-6 py-2 flex items-center justify-center gap-2 text-amber-800 text-sm font-medium">
+                    <Shield className="h-4 w-4" />
+                    Mode Lecture Seule : La modification des données est réservée aux utilisateurs connectés.
+                </div>
+            )}
 
             {/* Image Prefetching */}
             {navContext.next && (

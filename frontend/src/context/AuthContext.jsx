@@ -5,6 +5,7 @@ const AuthContext = createContext();
 
 export function AuthProvider({ children }) {
   const [session, setSession] = useState(null);
+  const [isGuest, setIsGuest] = useState(() => localStorage.getItem('guest_mode') === 'true');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -16,10 +17,14 @@ export function AuthProvider({ children }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, newSession) => {
         setSession((prevSession) => {
-            if (prevSession?.access_token === newSession?.access_token) {
-                return prevSession;
-            }
-            return newSession;
+          if (prevSession?.access_token === newSession?.access_token) {
+            return prevSession;
+          }
+          if (newSession) {
+            setIsGuest(false);
+            localStorage.removeItem('guest_mode');
+          }
+          return newSession;
         });
       }
     );
@@ -30,7 +35,17 @@ export function AuthProvider({ children }) {
   const value = {
     session,
     user: session?.user,
-    signOut: () => supabase.auth.signOut(),
+    isGuest,
+    loginAsGuest: () => {
+      setIsGuest(true);
+      localStorage.setItem('guest_mode', 'true');
+      setSession(null);
+    },
+    signOut: () => {
+      setIsGuest(false);
+      localStorage.removeItem('guest_mode');
+      return supabase.auth.signOut();
+    },
   };
 
   return (

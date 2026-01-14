@@ -14,12 +14,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 
 // Icons
 import { LogOut, User, Shield, ShieldAlert, Book } from "lucide-react";
 
 const Header = () => {
-  const { user, signOut } = useAuth();
+  const { user, signOut, isGuest } = useAuth();
   const { profile } = useUserProfile();
   const navigate = useNavigate();
 
@@ -33,8 +34,7 @@ const Header = () => {
 
   // Fonction utilitaire pour le style des liens
   const getLinkStyle = ({ isActive }) =>
-    `text-sm font-medium transition-colors hover:text-primary ${
-      isActive ? "text-primary font-bold" : "text-slate-500"
+    `text-sm font-medium transition-colors hover:text-primary ${isActive ? "text-primary font-bold" : "text-slate-500"
     }`;
 
   // Initiales pour l'avatar (ex: "john.doe@gmail.com" -> "JO")
@@ -46,7 +46,7 @@ const Header = () => {
   return (
     <header className="sticky top-0 z-50 w-full border-b border-slate-200 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
       <div className="container mx-auto flex h-16 items-center justify-between px-4 sm:px-8 max-w-[1600px]">
-        
+
         {/* LOGO */}
         <div className="flex items-center gap-2">
           <Link to="/" className="flex items-center space-x-2">
@@ -64,15 +64,17 @@ const Header = () => {
           <NavLink to="/search" className={getLinkStyle}>
             Recherche
           </NavLink>
-          <NavLink to="/my-submissions" className={getLinkStyle}>
-            Mes Soumissions
-          </NavLink>
-          {(isAdmin || isModo) && (
+          {!isGuest && (
+            <NavLink to="/my-submissions" className={getLinkStyle}>
+              Mes Soumissions
+            </NavLink>
+          )}
+          {!isGuest && (isAdmin || isModo) && (
             <NavLink to="/moderation" className={getLinkStyle}>
               Modération
             </NavLink>
           )}
-          {isAdmin && (
+          {!isGuest && isAdmin && (
             <NavLink to="/admin" className={getLinkStyle}>
               Admin
             </NavLink>
@@ -81,7 +83,7 @@ const Header = () => {
 
         {/* USER SECTION */}
         <div className="flex items-center gap-4">
-          {user ? (
+          {user && !isGuest ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-9 w-9 rounded-full">
@@ -125,9 +127,16 @@ const Header = () => {
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <Link to="/login">
-              <Button size="sm">Connexion</Button>
-            </Link>
+            <div className="flex items-center gap-2">
+              {isGuest && (
+                <Badge variant="outline" className="text-slate-500 border-slate-200">
+                  Mode Invité
+                </Badge>
+              )}
+              <Link to="/login">
+                <Button size="sm">Connexion</Button>
+              </Link>
+            </div>
           )}
         </div>
       </div>
