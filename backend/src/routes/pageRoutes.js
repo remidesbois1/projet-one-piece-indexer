@@ -32,8 +32,8 @@ router.get('/:id', async (req, res) => {
     res.json(data);
 });
 
-// Bulles (Encore protégé ici, deviendra public au prochain commit)
-router.get('/:id/bulles', authMiddleware, async (req, res) => {
+// Bulles (PUBLIC pour le mode Invité)
+router.get('/:id/bulles', async (req, res) => {
     const { data, error } = await supabase
         .from('bulles')
         .select('id, x, y, w, h, texte_propose, statut, id_user_createur, order')
@@ -44,7 +44,7 @@ router.get('/:id/bulles', authMiddleware, async (req, res) => {
     res.json(data);
 });
 
-// Soumission
+// Soumission (Reste protégé)
 router.put('/:id/submit-review', authMiddleware, async (req, res) => {
     const { data, error } = await supabase
         .from('pages')

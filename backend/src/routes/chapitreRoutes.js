@@ -3,7 +3,7 @@ const router = express.Router();
 const supabaseAdmin = require('../config/supabaseClient');
 const { authMiddleware } = require('../middleware/auth');
 
-router.get('/tome/:tomeId', authMiddleware, async (req, res) => {
+router.get('/tome/:tomeId', async (req, res) => {
     const { tomeId } = req.params;
 
     try {
@@ -23,13 +23,13 @@ router.get('/tome/:tomeId', authMiddleware, async (req, res) => {
         const chapitresWithStatus = chapitres.map(chap => {
             const pages = chap.pages || [];
             const total = pages.length;
-            
+
             if (total === 0) {
                 return { ...chap, global_status: 'empty' };
             }
 
             const completedCount = pages.filter(p => p.statut === 'completed').length;
-            
+
             const inProgressCount = pages.filter(p => ['in_progress', 'pending_review'].includes(p.statut)).length;
 
             let global_status = 'empty';
@@ -40,7 +40,7 @@ router.get('/tome/:tomeId', authMiddleware, async (req, res) => {
                 global_status = 'in_progress';
             }
             const { pages: _, ...chapitreSansPages } = chap;
-            
+
             return { ...chapitreSansPages, global_status };
         });
 

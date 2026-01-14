@@ -4,18 +4,18 @@ import { useAuth } from '../context/AuthContext';
 import { useUserProfile } from '../hooks/useUserProfile';
 
 const ProtectedRoute = ({ children, allowedRoles }) => {
-  const { session } = useAuth();
+  const { session, isGuest } = useAuth();
   const { profile, loading } = useUserProfile();
 
-  if (loading) {
+  if (loading && !isGuest) {
     return <div>Chargement de l'utilisateur...</div>;
   }
 
-  if (!session) {
+  if (!session && !isGuest) {
     return <Navigate to="/login" />;
   }
 
-  if (allowedRoles && !allowedRoles.includes(profile?.role)) {
+  if (allowedRoles && (isGuest || !allowedRoles.includes(profile?.role))) {
     return <Navigate to="/" />;
   }
 
