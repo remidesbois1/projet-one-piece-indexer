@@ -97,10 +97,10 @@ const generateEmbedding = async (text, apiKey) => {
 
 const correctWithLanguageTool = async (text) => {
     try {
-        console.log("[LanguageTool] Raw OCR input:", text);
+        const ltUrl = process.env.LANGUAGETOOL_URL || 'http://localhost:8010/v2';
 
-        // Envoi à LanguageTool (Accès local via Docker network ou localhost)
-        const response = await axios.post('http://localhost:8010/v2/check', null, {
+        // Envoi à LanguageTool
+        const response = await axios.post(`${ltUrl}/check`, null, {
             params: {
                 text: text,
                 language: 'fr'
@@ -109,11 +109,9 @@ const correctWithLanguageTool = async (text) => {
 
         let correctedText = text;
         const matches = response.data.matches;
-        console.log(`[LanguageTool] Found ${matches.length} matches/errors.`);
+        console.log(`[LanguageTool] Found ${matches.length} matches for input: "${text}"`);
 
-        // On applique les suggestions de remplacement de manière basique
-        // Note : pour un résultat optimal, on parcourt de la fin vers le début 
-        // pour ne pas décaler les offsets des matches suivants.
+        // On applique les suggestions de remplacement
         const sortedMatches = matches.filter(m => m.replacements && m.replacements.length > 0)
             .sort((a, b) => b.offset - a.offset);
 
@@ -124,11 +122,17 @@ const correctWithLanguageTool = async (text) => {
                 correctedText.substring(match.offset + match.length);
         }
 
-        console.log("[LanguageTool] Corrected output:", correctedText);
+        if (text !== correctedText) {
+            console.log("[LanguageTool] Corrected to:", correctedText);
+        }
+
         return correctedText;
     } catch (error) {
-        console.error("[LanguageTool Error]", error.message);
-        return text; // Retourne le texte original si LT est injoignable
+        console.error("[LanguageTool Error]", error.response ? {
+            status: error.response.status,
+            data: error.response.data
+        } : error.message);
+        return text;
     }
 };
 
