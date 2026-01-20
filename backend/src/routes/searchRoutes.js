@@ -17,9 +17,9 @@ router.get('/', async (req, res) => {
         if (userApiKey) {
             const genAI = new GoogleGenerativeAI(userApiKey);
             const embedModel = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
-            
+
             const { embedding } = await embedModel.embedContent(q);
-            
+
             const { data: candidates, error } = await supabase.rpc('match_pages', {
                 query_embedding: embedding.values,
                 match_threshold: 0.60,
@@ -29,8 +29,8 @@ router.get('/', async (req, res) => {
             if (error) throw error;
             if (!candidates?.length) return res.json({ results: [], totalCount: 0 });
 
-            const rerankModel = genAI.getGenerativeModel({ 
-                model: "gemini-2.5-flash-lite", 
+            const rerankModel = genAI.getGenerativeModel({
+                model: "gemini-2.5-flash-lite",
                 generationConfig: { responseMimeType: "application/json" }
             });
 
@@ -38,23 +38,20 @@ router.get('/', async (req, res) => {
                 let desc = c.description;
                 try {
                     if (typeof desc === 'string') desc = JSON.parse(desc);
-                } catch(e) {}
-                
-                const content = typeof desc === 'object' 
+                } catch (e) { }
+
+                const content = typeof desc === 'object'
                     ? `${desc.content || ""} (Persos: ${desc.metadata?.characters?.join(', ')})`
                     : String(desc);
 
                 return { id: c.id, text: content.substring(0, 400) };
             });
 
-            const prompt = `
-            Requête: "${q}"
-            Règles de notation AGRESSIVES:
-            1. PAGE ÉLUE (90-100): Perso + Action exacte.
-            2. DOUTE (70-85): Ressemblance forte.
-            3. SANCTION (<40): Mauvais perso ou mauvaise action.
-            Renvoie JSON minifié (keys: "i"=id, "s"=score): [{"i":123,"s":95}]
-            Candidats: ${JSON.stringify(candidatesForAI)}`;
+            const promptTemplate = process.env.SEARCH_PROMPT;
+
+            const prompt = promptTemplate
+                .replace('{{query}}', q)
+                .replace('{{candidates}}', JSON.stringify(candidatesForAI));
 
             let scores = [];
             try {
@@ -67,12 +64,12 @@ router.get('/', async (req, res) => {
             finalResults = candidates.map(c => {
                 const aiData = scores.find(s => s.i === c.id);
                 const finalScore = aiData ? aiData.s : 0;
-                
+
                 let snippet = c.description;
                 try {
-                     if (typeof snippet === 'string') snippet = JSON.parse(snippet).content;
-                     else if (typeof snippet === 'object') snippet = snippet.content;
-                } catch (e) {}
+                    if (typeof snippet === 'string') snippet = JSON.parse(snippet).content;
+                    else if (typeof snippet === 'object') snippet = snippet.content;
+                } catch (e) { }
 
                 return {
                     type: 'semantic',
@@ -85,9 +82,9 @@ router.get('/', async (req, res) => {
                     similarity: finalScore / 100
                 };
             })
-            .filter(r => r.scores.ai >= 75)
-            .sort((a, b) => b.scores.ai - a.scores.ai)
-            .slice(0, parseInt(limit));
+                .filter(r => r.scores.ai >= 75)
+                .sort((a, b) => b.scores.ai - a.scores.ai)
+                .slice(0, parseInt(limit));
 
             totalCount = finalResults.length;
 

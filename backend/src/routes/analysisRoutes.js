@@ -55,17 +55,7 @@ const analyzeWithGeminiVision = async (imageUrl, coords, apiKey) => {
             .toFormat('png')
             .toBuffer();
 
-        const prompt = `
-    Tu es un expert en numérisation de manga.
-    Ta tâche est de transcrire le texte présent dans cette bulle de dialogue.
-    
-    Règles strictes :
-    1. Transcris EXACTEMENT le texte visible (OCR).
-    2. Corrige automatiquement les erreurs mineures d'OCR.
-    3. Rétablis la casse naturelle.
-    4. Ne traduis pas. Reste en Français.
-    5. Renvoie UNIQUEMENT le texte final.
-    `;
+        const prompt = process.env.ANALYSIS_PROMPT;
 
         const imagePart = fileToGenerativePart(croppedBuffer, "image/png");
 
