@@ -11,10 +11,10 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
 } from "@/components/ui/dialog";
 
 // Icons
@@ -25,21 +25,19 @@ const RESULTS_PER_PAGE = 5;
 const BubbleReviewList = () => {
     const { session } = useAuth();
     const { profile } = useUserProfile();
-    
+
     const [pendingBubbles, setPendingBubbles] = useState([]);
     const [totalCount, setTotalCount] = useState(0);
     const [currentPage, setCurrentPage] = useState(1);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
-    
+
     const [editingBubble, setEditingBubble] = useState(null);
 
-    const token = session?.access_token;
-
     const fetchPending = (pageToFetch) => {
-        if (!token) return;
+        if (!session) return;
         setIsLoading(true);
-        getPendingBubbles(token, pageToFetch, RESULTS_PER_PAGE)
+        getPendingBubbles(pageToFetch, RESULTS_PER_PAGE)
             .then(response => {
                 setPendingBubbles(response.data.results);
                 setTotalCount(response.data.totalCount);
@@ -54,18 +52,18 @@ const BubbleReviewList = () => {
     };
 
     useEffect(() => {
-        if (token) {
+        if (session) {
             fetchPending(1);
         }
-    }, [token]);
+    }, [session]);
 
     const handleAction = async (action, id) => {
-        if (!token) return;
+        if (!session) return;
         try {
             if (action === 'validate') {
-                await validateBubble(id, token);
+                await validateBubble(id);
             } else if (action === 'reject') {
-                await rejectBubble(id, token);
+                await rejectBubble(id);
             }
             fetchPending(currentPage);
         } catch (err) {
@@ -79,11 +77,11 @@ const BubbleReviewList = () => {
             return;
         }
 
-        if (!token) return;
-        
+        if (!session) return;
+
         setIsLoading(true);
         try {
-            await validateAllBubbles(token);
+            await validateAllBubbles();
             fetchPending(1);
         } catch (err) {
             console.error(err);
@@ -96,7 +94,7 @@ const BubbleReviewList = () => {
         setEditingBubble(null);
         fetchPending(currentPage);
     };
-    
+
     const totalPages = Math.ceil(totalCount / RESULTS_PER_PAGE);
 
     if (isLoading && pendingBubbles.length === 0) {
@@ -118,7 +116,7 @@ const BubbleReviewList = () => {
 
     return (
         <div className="space-y-6">
-            
+
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-2 text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-200 w-fit">
                     <Badge variant="secondary" className="bg-white border-slate-200 text-slate-900">
@@ -128,9 +126,9 @@ const BubbleReviewList = () => {
                 </div>
 
                 {profile?.role === 'Admin' && totalCount > 0 && (
-                    <Button 
-                        onClick={handleValidateAll} 
-                        variant="default" 
+                    <Button
+                        onClick={handleValidateAll}
+                        variant="default"
                         className="bg-slate-900 hover:bg-slate-800 text-white"
                     >
                         <CheckCircle2 className="mr-2 h-4 w-4" />
@@ -150,7 +148,7 @@ const BubbleReviewList = () => {
             ) : (
                 <div className="flex flex-col gap-2">
                     {pendingBubbles.map(bubble => (
-                        <BubbleReviewItem 
+                        <BubbleReviewItem
                             key={bubble.id}
                             bubble={bubble}
                             onAction={handleAction}
@@ -159,25 +157,25 @@ const BubbleReviewList = () => {
                     ))}
                 </div>
             )}
-            
+
             {totalPages > 1 && (
                 <div className="flex justify-center items-center gap-4 pt-6 mt-4 border-t border-slate-100">
-                    <Button 
+                    <Button
                         variant="outline"
-                        onClick={() => fetchPending(currentPage - 1)} 
+                        onClick={() => fetchPending(currentPage - 1)}
                         disabled={currentPage === 1}
                         className="w-32"
                     >
                         <ChevronLeft className="mr-2 h-4 w-4" /> Précédent
                     </Button>
-                    
+
                     <span className="text-sm font-medium text-slate-600">
                         Page {currentPage} / {totalPages}
                     </span>
-                    
-                    <Button 
+
+                    <Button
                         variant="outline"
-                        onClick={() => fetchPending(currentPage + 1)} 
+                        onClick={() => fetchPending(currentPage + 1)}
                         disabled={currentPage === totalPages}
                         className="w-32"
                     >
@@ -191,10 +189,10 @@ const BubbleReviewList = () => {
                     <DialogHeader>
                         <DialogTitle>Correction de la proposition</DialogTitle>
                     </DialogHeader>
-                    
+
                     {editingBubble && (
-                        <ValidationForm 
-                            annotationData={editingBubble} 
+                        <ValidationForm
+                            annotationData={editingBubble}
                             onValidationSuccess={handleEditSuccess}
                             onCancel={() => setEditingBubble(null)}
                         />

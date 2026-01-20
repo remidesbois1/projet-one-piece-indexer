@@ -16,14 +16,13 @@ const AddTomeForm = ({ onTomeAdded }) => {
   const handleSubmit = async (event) => {
     event.preventDefault();
     setIsSubmitting(true);
-    
+
     const formData = new FormData(event.target);
     const numero = formData.get('numero');
     const titre = formData.get('titre');
 
     try {
-      const token = session?.access_token;
-      await createTome({ numero, titre }, token);
+      await createTome({ numero, titre });
       alert(`Le tome ${numero} a été créé avec succès !`);
       event.target.reset();
       if (onTomeAdded) onTomeAdded();
@@ -46,30 +45,30 @@ const AddTomeForm = ({ onTomeAdded }) => {
           Ajoutez un volume (Tome) avant de pouvoir y lier des chapitres.
         </CardDescription>
       </CardHeader>
-      
+
       <CardContent>
         <form onSubmit={handleSubmit} id="add-tome-form" className="grid gap-6 sm:grid-cols-2">
-          
+
           <div className="space-y-2">
             <Label htmlFor="tome-numero">Numéro du Tome</Label>
-            <Input 
-              id="tome-numero" 
-              type="number" 
-              name="numero" 
-              placeholder="Ex: 104" 
-              required 
+            <Input
+              id="tome-numero"
+              type="number"
+              name="numero"
+              placeholder="Ex: 104"
+              required
               min="1"
             />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="tome-titre">Titre du Tome</Label>
-            <Input 
-              id="tome-titre" 
-              type="text" 
-              name="titre" 
-              placeholder="Ex: Shogun de Wano" 
-              required 
+            <Input
+              id="tome-titre"
+              type="text"
+              name="titre"
+              placeholder="Ex: Shogun de Wano"
+              required
             />
           </div>
 
@@ -77,11 +76,11 @@ const AddTomeForm = ({ onTomeAdded }) => {
       </CardContent>
 
       <CardFooter className="bg-slate-50/50 border-t border-slate-100 flex justify-end py-3">
-        <Button 
-            type="submit" 
-            form="add-tome-form" 
-            disabled={isSubmitting}
-            className="bg-slate-900 hover:bg-slate-800"
+        <Button
+          type="submit"
+          form="add-tome-form"
+          disabled={isSubmitting}
+          className="bg-slate-900 hover:bg-slate-800"
         >
           {isSubmitting ? (
             <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Création...</>

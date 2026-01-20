@@ -5,12 +5,12 @@ import { Link } from 'react-router-dom';
 
 // Shadcn Components
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,7 +32,7 @@ const MySubmissionsPage = () => {
     const fetchSubmissions = (pageToFetch) => {
         if (session) {
             setIsLoading(true);
-            getMySubmissions(session.access_token, pageToFetch, RESULTS_PER_PAGE)
+            getMySubmissions(pageToFetch, RESULTS_PER_PAGE)
                 .then(res => {
                     setSubmissions(res.data.results);
                     setTotalCount(res.data.totalCount);
@@ -46,7 +46,7 @@ const MySubmissionsPage = () => {
     };
 
     useEffect(() => {
-        if(session){
+        if (session) {
             fetchSubmissions(1);
         }
     }, [session?.access_token]);
@@ -54,12 +54,12 @@ const MySubmissionsPage = () => {
     const totalPages = Math.ceil(totalCount / RESULTS_PER_PAGE);
 
     const getStatusBadge = (status) => {
-        switch(status) {
-            case 'Validé': 
+        switch (status) {
+            case 'Validé':
                 return <Badge className="bg-green-100 text-green-700 hover:bg-green-200 border-green-200">Validé</Badge>;
-            case 'Rejeté': 
+            case 'Rejeté':
                 return <Badge variant="destructive" className="bg-red-100 text-red-700 hover:bg-red-200 border-red-200">Rejeté</Badge>;
-            default: 
+            default:
                 return <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">En attente</Badge>;
         }
     };
@@ -75,12 +75,12 @@ const MySubmissionsPage = () => {
 
             <Card className="border-slate-200 shadow-sm">
                 <CardHeader className="border-b border-slate-100 bg-slate-50/50">
-                   <div className="flex justify-between items-center">
+                    <div className="flex justify-between items-center">
                         <div>
                             <CardTitle>Historique</CardTitle>
                             <CardDescription>Vos {totalCount} propositions de traduction.</CardDescription>
                         </div>
-                   </div>
+                    </div>
                 </CardHeader>
                 <CardContent className="p-0">
                     {isLoading ? (
@@ -106,14 +106,14 @@ const MySubmissionsPage = () => {
                                     <TableRow key={sub.id} className="hover:bg-slate-50/50">
                                         {/* AJOUT : max-w sur la cellule et truncate sur le contenu */}
                                         <TableCell className="max-w-[200px] md:max-w-[450px]">
-                                            <div 
-                                                className="font-medium text-slate-700 italic truncate" 
+                                            <div
+                                                className="font-medium text-slate-700 italic truncate"
                                                 title={sub.texte_propose} // L'utilisateur peut voir le texte complet au survol
                                             >
                                                 "{sub.texte_propose}"
                                             </div>
                                         </TableCell>
-                                        
+
                                         <TableCell>
                                             <Link
                                                 to={`/annotate/${sub.pages.id}`}
@@ -144,11 +144,11 @@ const MySubmissionsPage = () => {
                     >
                         <ChevronLeft className="h-4 w-4 mr-1" /> Précédent
                     </Button>
-                    
+
                     <span className="text-sm font-medium text-slate-600">
                         Page {currentPage} / {totalPages}
                     </span>
-                    
+
                     <Button
                         variant="outline"
                         onClick={() => fetchSubmissions(currentPage + 1)}

@@ -10,10 +10,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
 } from "@/components/ui/dialog";
 import {
     Tooltip,
@@ -28,7 +28,7 @@ import { Check, X, ArrowLeft, Pencil, AlertTriangle } from "lucide-react";
 const PageReview = () => {
     const { pageId } = useParams();
     const navigate = useNavigate();
-    const { session } = useAuth();
+    const { session, isGuest } = useAuth();
 
     const [page, setPage] = useState(null);
     const [bubbles, setBubbles] = useState([]);
@@ -44,13 +44,12 @@ const PageReview = () => {
     const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
     const fetchPageData = useCallback(async () => {
-        const token = session?.access_token;
-        if (!pageId || !token) return;
+        if (!pageId || (!session?.access_token && !isGuest)) return;
 
         try {
             const [pageRes, bubblesRes] = await Promise.all([
-                getPageById(pageId, token),
-                getBubblesForPage(pageId, token)
+                getPageById(pageId),
+                getBubblesForPage(pageId)
             ]);
             setPage(pageRes.data);
             const sortedBubbles = bubblesRes.data.sort((a, b) => a.order - b.order);
@@ -61,7 +60,7 @@ const PageReview = () => {
         } finally {
             setLoading(false);
         }
-    }, [pageId, session]);
+    }, [pageId, session, isGuest]);
 
     useEffect(() => {
         setLoading(true);
@@ -70,21 +69,20 @@ const PageReview = () => {
 
     const handleApprove = async () => {
         if (window.confirm("Confirmer l'approbation de cette page ?")) {
-             try {
-                 await approvePage(pageId, session.access_token);
-                 navigate('/moderation');
-             } catch (error) {
-                 alert("Erreur technique lors de l'approbation.");
-                 console.error(error);
-             }
+            try {
+                await approvePage(pageId);
+                navigate('/moderation');
+            } catch (error) {
+                alert("Erreur technique lors de l'approbation.");
+                console.error(error);
+            }
         }
     };
 
     const handleReject = async () => {
-        const reason = window.prompt("Motif du rejet (optionnel) :");
-        if (reason !== null) {
+        if (window.confirm("Refuser cette page ?")) {
             try {
-                await rejectPage(pageId, session.access_token, reason);
+                await rejectPage(pageId);
                 navigate('/moderation');
             } catch (error) {
                 alert("Erreur technique lors du rejet.");
@@ -113,7 +111,7 @@ const PageReview = () => {
             <div className="text-slate-500 animate-pulse">Chargement de l'interface...</div>
         </div>
     );
-    
+
     if (!page) return <div className="p-8 text-red-500">Page introuvable.</div>;
 
     const tomeNumber = page.chapitres?.tomes?.numero || '?';
@@ -121,7 +119,7 @@ const PageReview = () => {
 
     return (
         <div className="flex flex-col h-[calc(100vh-64px)] bg-slate-50">
-            
+
             {/* HEADER DE L'OUTIL */}
             <header className="flex-none h-16 border-b border-slate-200 bg-white px-6 flex items-center justify-between z-20 shadow-sm">
                 <div className="flex items-center gap-4">
@@ -146,7 +144,7 @@ const PageReview = () => {
 
             {/* CONTENU PRINCIPAL (Split View) */}
             <div className="flex flex-1 overflow-hidden">
-                
+
                 {/* ZONE IMAGE (Scrollable) */}
                 <main className="flex-1 bg-slate-200/50 overflow-auto flex justify-center p-8 relative">
                     <div
@@ -215,7 +213,7 @@ const PageReview = () => {
 
                 {/* SIDEBAR DROITE (Liste des textes) */}
                 <aside className="w-[400px] bg-white border-l border-slate-200 flex flex-col h-full overflow-hidden z-10 shadow-lg">
-                    
+
                     {/* Header fixe de la sidebar */}
                     <div className="flex-none p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
                         <h3 className="font-semibold text-slate-900">Textes détectés</h3>
@@ -228,8 +226,8 @@ const PageReview = () => {
                     <ScrollArea className="flex-1 w-full min-h-0">
                         <div className="p-0 pb-20"> {/* Padding bottom extra pour être sûr que le dernier élément est visible */}
                             {bubbles.map((bubble, index) => (
-                                <div 
-                                    key={bubble.id} 
+                                <div
+                                    key={bubble.id}
                                     className="flex gap-4 p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors group relative"
                                     onMouseEnter={() => setHoveredBubble(bubble)}
                                     onMouseLeave={() => setHoveredBubble(null)}
@@ -241,9 +239,9 @@ const PageReview = () => {
                                         <p className="text-sm text-slate-800 leading-relaxed font-medium">
                                             {bubble.texte_propose}
                                         </p>
-                                        <Button 
-                                            variant="outline" 
-                                            size="sm" 
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
                                             className="h-7 text-xs text-blue-600 border-blue-100 bg-blue-50 hover:bg-blue-100 hover:text-blue-700 opacity-0 group-hover:opacity-100 transition-opacity"
                                             onClick={() => setEditingBubble(bubble)}
                                         >

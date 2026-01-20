@@ -19,8 +19,8 @@ const statRoutes = require('./routes/statsRoutes')
 
 app.use(cors({
   origin: [
-    'https://onepiece-index.com', 
-    'http://localhost:5173', 
+    'https://onepiece-index.com',
+    'http://localhost:5173',
     'http://localhost:3000'
   ],
   credentials: true
@@ -29,9 +29,9 @@ app.use(cors({
 app.use(express.json());
 
 app.get('/', (req, res) => {
-  res.status(200).json({ 
+  res.status(200).json({
     message: "API de l'indexeur One Piece fonctionnelle.",
-    timestamp: new Date().toISOString() 
+    timestamp: new Date().toISOString()
   });
 });
 

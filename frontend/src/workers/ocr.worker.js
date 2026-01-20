@@ -6,22 +6,19 @@ env.useBrowserCache = true;
 
 let model = null;
 let processor = null;
-let dictionaryPromise = null;
 
-const MODEL_ID = 'onnx-community/Florence-2-base-ft'; 
-
-function removeAccents(str) {
-    return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-}
+const MODEL_ID = 'onnx-community/Florence-2-base-ft';
 
 self.addEventListener('message', async (event) => {
     const { type, imageBlob } = event.data;
 
+    // --- INITIALISATION DU MODÈLE ---
     if (type === 'init') {
         try {
-            dictionaryPromise = fetch('/corrections_huge.json')
-                .then(r => r.ok ? r.json() : {})
-                .catch(() => ({}));
+            if (model && processor) {
+                self.postMessage({ status: 'ready' });
+                return;
+            }
 
             const progressCallback = (data) => {
                 if (data.status === 'progress') {
@@ -29,23 +26,28 @@ self.addEventListener('message', async (event) => {
                 }
             };
 
+            console.log("[Worker] Chargement de Florence-2 (fp32)...");
+
             model = await Florence2ForConditionalGeneration.from_pretrained(MODEL_ID, {
                 dtype: 'fp32',
                 device: 'webgpu',
                 progress_callback: progressCallback
             });
-            
+
             processor = await AutoProcessor.from_pretrained(MODEL_ID, {
                 progress_callback: progressCallback
             });
-            
+
+            console.log("[Worker] Modèle chargé et prêt.");
             self.postMessage({ status: 'ready' });
         } catch (err) {
+            console.error("[Worker Init Error]", err);
             const errorMsg = err instanceof Error ? err.message : String(err);
-            self.postMessage({ status: 'error', error: errorMsg });
+            self.postMessage({ status: 'error', error: `Initialisation impossible : ${errorMsg}` });
         }
     }
 
+    // --- EXÉCUTION DE L'OCR ---
     if (type === 'run' && imageBlob) {
         if (!model || !processor) {
             self.postMessage({ status: 'error', error: 'Modèle non chargé.' });
@@ -53,70 +55,37 @@ self.addEventListener('message', async (event) => {
         }
 
         try {
+            // Debug: renvoi de l'image découpée au frontend
             const debugURL = URL.createObjectURL(imageBlob);
             self.postMessage({ status: 'debug_image', url: debugURL });
 
-            // 1. OCR avec Régions (Force les espaces)
             const image = await RawImage.fromBlob(imageBlob);
-            const task = '<OCR_WITH_REGION>'; 
+            const task = '<OCR_WITH_REGION>';
             const inputs = await processor(image, task);
 
+            // Génération avec Greedy Search pour la stabilité
             const generatedIds = await model.generate({
                 ...inputs,
                 max_new_tokens: 256,
-                num_beams: 3,      
-                do_sample: false,  
+                num_beams: 1,
+                do_sample: false,
             });
 
             const generatedText = processor.tokenizer.batch_decode(generatedIds, {
                 skip_special_tokens: false,
             })[0];
-            let cleanText = generatedText.replace(/<[^>]+>/g, ' '); 
-            
+
+            // --- NETTOYAGE BRUT ---
+            // Suppression uniquement des balises <...> et des espaces multiples
+            let cleanText = generatedText.replace(/<[^>]+>/g, ' ');
             cleanText = cleanText.replace(/\s+/g, ' ').trim();
-            
-            cleanText = cleanText.toLowerCase();
-
-            const dictionary = await dictionaryPromise;
-
-            cleanText = cleanText.replace(/([a-zA-Zà-ÿ])([?!:;])/g, '$1 $2'); 
-            cleanText = cleanText.replace(/([?!:;])([a-zA-Zà-ÿ])/g, '$1 $2');
-            
-            if (dictionary) {
-                cleanText = cleanText.replace(/[a-zà-ÿ]+/g, (word) => {
-                    const normalizedKey = removeAccents(word);
-                    // Si on trouve une correction (ex: "etait" -> "était"), on remplace.
-                    // Sinon on garde le mot tel quel (en minuscule).
-                    return dictionary[normalizedKey] || word;
-                });
-            }
-
-            
-            cleanText = cleanText.replace(/(^\s*|[.!?…]\s+)([a-zà-ÿ])/g, (match) => match.toUpperCase());
-
-            const ONE_PIECE_KEYWORDS = [
-                "One Piece", "Grand Line", "New World", "Nouveau Monde", "All Blue", 
-                "Laugh Tale", "Raftel", "Red Line", "Calm Belt", "Log Pose", "Vivre Card",
-                "Berry", "Berries", "Haki", "Mugiwara", "Yonko", "Empereur", "Amiral", 
-                "Corsaire", "Shichibukai", "Tenryubito", "Joy Boy", "Roi des Pirates",
-                "Luffy", "Zoro", "Nami", "Usopp", "Sanji", "Chopper", "Robin", "Franky", 
-                "Brook", "Jinbe", "Vivi", "Yamato", "Momonosuke", "Ace", "Sabo", "Shanks", 
-                "Roger", "Whitebeard", "Barbe Blanche", "Blackbeard", "Barbe Noire", "Kaido", 
-                "Big Mom", "Linlin", "Law", "Kid", "Buggy", "Mihawk", "Hancock", "Doflamingo", 
-                "Crocodile", "Akainu", "Kizaru", "Aokiji", "Fujitora", "Ryokugyu", "Garp", 
-                "Sengoku", "Dragon", "Imu", "Vegapunk", "Gum Gum", "Gomu Gomu"
-            ];
-            
-            ONE_PIECE_KEYWORDS.forEach(kw => {
-                 const regex = new RegExp(`\\b${kw}\\b`, 'gi');
-                 cleanText = cleanText.replace(regex, kw);
-            });
 
             self.postMessage({ status: 'complete', text: cleanText });
 
         } catch (err) {
+            console.error("[Worker Run Error]", err);
             const errorMsg = err instanceof Error ? err.message : String(err);
-            self.postMessage({ status: 'error', error: errorMsg });
+            self.postMessage({ status: 'error', error: `Erreur OCR : ${errorMsg}` });
         }
     }
 });

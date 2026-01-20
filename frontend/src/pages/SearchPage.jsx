@@ -138,11 +138,8 @@ const SearchPage = () => {
         setIsLoading(true);
         if (isNewSearch) setResults([]);
 
-        const storedApiKey = localStorage.getItem('google_api_key');
-        const apiKeyToSend = (useSemantic && storedApiKey) ? storedApiKey : null;
-
         try {
-            const response = await searchBubbles(searchTerm, pageToFetch, RESULTS_PER_PAGE, apiKeyToSend);
+            const response = await searchBubbles(searchTerm, pageToFetch, RESULTS_PER_PAGE);
             const newResults = response.data.results;
             const total = response.data.totalCount;
 

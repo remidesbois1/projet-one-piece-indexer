@@ -22,9 +22,19 @@ function fileToGenerativePart(buffer, mimeType) {
     };
 }
 
-// Analyse Vision (Texte Bulle)
 const analyzeWithGeminiVision = async (imageUrl, coords, apiKey) => {
     try {
+        const parsedUrl = new URL(imageUrl);
+        const allowedHosts = [];
+        if (process.env.SUPABASE_URL) allowedHosts.push(new URL(process.env.SUPABASE_URL).hostname);
+        if (process.env.R2_PUBLIC_URL) {
+            try { allowedHosts.push(new URL(process.env.R2_PUBLIC_URL).hostname); } catch (e) { }
+        }
+
+        if (!allowedHosts.some(host => parsedUrl.hostname.endsWith(host))) {
+            throw new Error("Sécurité : Tentative de téléchargement hors du domaine autorisé (SSRF protection).");
+        }
+
         const genAI = new GoogleGenerativeAI(apiKey);
         const model = genAI.getGenerativeModel({ model: "gemini-flash-lite-latest" });
 
@@ -72,7 +82,6 @@ const analyzeWithGeminiVision = async (imageUrl, coords, apiKey) => {
     }
 };
 
-// Fonction Embedding Text
 const generateEmbedding = async (text, apiKey) => {
     try {
         const genAI = new GoogleGenerativeAI(apiKey);
@@ -86,7 +95,51 @@ const generateEmbedding = async (text, apiKey) => {
     }
 };
 
-// --- ROUTES ---
+const correctWithLanguageTool = async (text) => {
+    try {
+        console.log("[LanguageTool] Raw OCR input:", text);
+
+        // Envoi à LanguageTool (Accès local via Docker network ou localhost)
+        const response = await axios.post('http://localhost:8010/v2/check', null, {
+            params: {
+                text: text,
+                language: 'fr'
+            }
+        });
+
+        let correctedText = text;
+        const matches = response.data.matches;
+        console.log(`[LanguageTool] Found ${matches.length} matches/errors.`);
+
+        // On applique les suggestions de remplacement de manière basique
+        // Note : pour un résultat optimal, on parcourt de la fin vers le début 
+        // pour ne pas décaler les offsets des matches suivants.
+        const sortedMatches = matches.filter(m => m.replacements && m.replacements.length > 0)
+            .sort((a, b) => b.offset - a.offset);
+
+        for (const match of sortedMatches) {
+            const replacement = match.replacements[0].value;
+            correctedText = correctedText.substring(0, match.offset) +
+                replacement +
+                correctedText.substring(match.offset + match.length);
+        }
+
+        console.log("[LanguageTool] Corrected output:", correctedText);
+        return correctedText;
+    } catch (error) {
+        console.error("[LanguageTool Error]", error.message);
+        return text; // Retourne le texte original si LT est injoignable
+    }
+};
+
+// Route pour corriger un texte (utilisée par l'OCR Florence/Local)
+router.post('/correct-text', authMiddleware, async (req, res) => {
+    const { text } = req.body;
+    if (!text) return res.status(400).json({ error: "Texte manquant." });
+
+    const corrected = await correctWithLanguageTool(text);
+    res.json({ correctedText: corrected });
+});
 
 router.post('/bubble', authMiddleware, async (req, res) => {
     const { id_page, x, y, w, h } = req.body;

@@ -1,74 +1,68 @@
 import axios from 'axios';
+import { supabase } from '../supabaseClient';
 
 const apiClient = axios.create({
   baseURL: import.meta.env.VITE_BACKEND_URL,
 });
 
-const getAuthHeaders = (token, googleApiKey = null) => {
-  const headers = {};
+// Intercepteur pour ajouter les headers d'authentification et les clés API
+apiClient.interceptors.request.use(async (config) => {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  const googleApiKey = localStorage.getItem('google_api_key');
+
   if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+    config.headers.Authorization = `Bearer ${token}`;
   }
   if (googleApiKey) {
-    headers['x-google-api-key'] = googleApiKey;
+    config.headers['x-google-api-key'] = googleApiKey;
   }
-  return { headers };
+  return config;
+});
+
+// --- API Endpoints ---
+
+// Tomes & Chapitres
+export const getTomes = () => apiClient.get('/tomes');
+export const getChapitres = (id_tome) => apiClient.get(`/chapitres/tome/${id_tome}`);
+export const getPages = (id_chapitre) => apiClient.get(`/pages?id_chapitre=${id_chapitre}`);
+export const getPageById = (id) => apiClient.get(`/pages/${id}`);
+
+// Bulles
+export const getBubblesForPage = (pageId) => apiClient.get(`/pages/${pageId}/bulles`);
+export const createBubble = (bubbleData) => apiClient.post('/bulles', bubbleData);
+export const updateBubbleText = (id, text) => apiClient.put(`/bulles/${id}`, { texte_propose: text });
+export const deleteBubble = (id) => apiClient.delete(`/bulles/${id}`);
+export const reorderBubbles = (orderedBubbles) => apiClient.put('/bulles/reorder', { orderedBubbles });
+
+// Recherche
+export const searchBubbles = (query, page = 1, limit = 10) => {
+  return apiClient.get(`/search?q=${query}&page=${page}&limit=${limit}`);
 };
-
-export const getTomes = (token) => apiClient.get('/tomes', getAuthHeaders(token));
-export const getChapitres = (id_tome, token) => apiClient.get(`/chapitres/tome/${id_tome}`, getAuthHeaders(token));
-export const getPages = (id_chapitre, token) => apiClient.get(`/pages?id_chapitre=${id_chapitre}`, getAuthHeaders(token));
-export const getPageById = (id, token) => apiClient.get(`/pages/${id}`, getAuthHeaders(token));
-export const createBubble = (bubbleData, token) => apiClient.post('/bulles', bubbleData, getAuthHeaders(token));
-export const updateBubbleText = (id, text, token) => apiClient.put(`/bulles/${id}`, { texte_propose: text }, getAuthHeaders(token));
-export const searchBubbles = (query, page = 1, limit = 10, googleApiKey = null) => {
-  return apiClient.get(
-    `/search?q=${query}&page=${page}&limit=${limit}`,
-    getAuthHeaders(null, googleApiKey)
-  );
-};
-export const getPendingBubbles = (token, page = 1, limit = 5) => apiClient.get(`/bulles/pending?page=${page}&limit=${limit}`, getAuthHeaders(token));
-export const validateBubble = (id, token) => apiClient.put(`/bulles/${id}/validate`, {}, getAuthHeaders(token));
-export const validateAllBubbles = (token) => apiClient.put('/bulles/validate-all', {}, getAuthHeaders(token));
-export const rejectBubble = (id, token) => apiClient.put(`/bulles/${id}/reject`, {}, getAuthHeaders(token));
-export const getBubbleCrop = (id, token) => apiClient.get(`/bulles/${id}/crop`, {
-  ...getAuthHeaders(token),
-  responseType: 'blob',
-});
-
-// Fonctions Admin
-export const createTome = (tomeData, token) => apiClient.post('/admin/tomes', tomeData, getAuthHeaders(token));
-export const uploadChapter = (formData, token) => apiClient.post('/admin/chapitres/upload', formData, {
-  headers: {
-    Authorization: `Bearer ${token}`
-  }
-});
-
-export const getBubblesForPage = (pageId, token) => apiClient.get(`/pages/${pageId}/bulles`, getAuthHeaders(token));
-export const deleteBubble = (id, token) => apiClient.delete(`/bulles/${id}`, getAuthHeaders(token));
-export const reorderBubbles = (orderedBubbles, token) => apiClient.put('/bulles/reorder', { orderedBubbles }, getAuthHeaders(token));
-export const submitPageForReview = (pageId, token) => apiClient.put(`/pages/${pageId}/submit-review`, {}, getAuthHeaders(token));
-export const getPagesForReview = (token) => apiClient.get('/moderation/pages', getAuthHeaders(token));
-export const approvePage = (pageId, token) => apiClient.put(`/moderation/pages/${pageId}/approve`, {}, getAuthHeaders(token));
-export const rejectPage = (pageId, token) => apiClient.put(`/moderation/pages/${pageId}/reject`, {}, getAuthHeaders(token));
-export const analyseBubble = (bubbleData, token, googleApiKey) => apiClient.post('/analyse/bubble', bubbleData, {
-  headers: {
-    Authorization: `Bearer ${token}`,
-    'x-google-api-key': googleApiKey
-  }
-});
-export const getMySubmissions = (token, page = 1, limit = 10) => apiClient.get(`/user/bulles?page=${page}&limit=${limit}`, getAuthHeaders(token));
-export const getStatsSummary = () => apiClient.get('/stats/summary');
-export const getTopContributors = () => apiClient.get('/stats/top-contributors');
-
-// Semantic Search & Description
-export const savePageDescription = (pageId, description, token, googleApiKey) => apiClient.post('/analyse/page-description', { id_page: pageId, description }, {
-  headers: {
-    Authorization: `Bearer ${token}`,
-    'x-google-api-key': googleApiKey
-  }
-});
-
 export const searchSemantic = (query, limit = 10) => apiClient.get(`/search/semantic?q=${query}&limit=${limit}`);
 
-export const getMetadataSuggestions = (token) => apiClient.get('/analyse/metadata-suggestions', getAuthHeaders(token));
+// Modération
+export const getPendingBubbles = (page = 1, limit = 5) => apiClient.get(`/bulles/pending?page=${page}&limit=${limit}`);
+export const validateBubble = (id) => apiClient.put(`/bulles/${id}/validate`, {});
+export const validateAllBubbles = () => apiClient.put('/bulles/validate-all', {});
+export const rejectBubble = (id) => apiClient.put(`/bulles/${id}/reject`, {});
+export const getPagesForReview = () => apiClient.get('/moderation/pages');
+export const approvePage = (pageId) => apiClient.put(`/moderation/pages/${pageId}/approve`, {});
+export const rejectPage = (pageId) => apiClient.put(`/moderation/pages/${pageId}/reject`, {});
+export const submitPageForReview = (pageId) => apiClient.put(`/pages/${pageId}/submit-review`, {});
+
+// Admin
+export const createTome = (tomeData) => apiClient.post('/admin/tomes', tomeData);
+export const uploadChapter = (formData) => apiClient.post('/admin/chapitres/upload', formData);
+
+// Analyse & IA
+export const analyseBubble = (bubbleData) => apiClient.post('/analyse/bubble', bubbleData);
+export const savePageDescription = (pageId, description) => apiClient.post('/analyse/page-description', { id_page: pageId, description });
+export const getMetadataSuggestions = () => apiClient.get('/analyse/metadata-suggestions');
+export const correctText = (text) => apiClient.post('/analyse/correct-text', { text });
+
+// Utils
+export const getBubbleCrop = (id) => apiClient.get(`/bulles/${id}/crop`, { responseType: 'blob' });
+export const getMySubmissions = (page = 1, limit = 10) => apiClient.get(`/user/bulles?page=${page}&limit=${limit}`);
+export const getStatsSummary = () => apiClient.get('/stats/summary');
+export const getTopContributors = () => apiClient.get('/stats/top-contributors');
