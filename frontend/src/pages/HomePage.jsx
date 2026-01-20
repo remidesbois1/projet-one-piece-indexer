@@ -33,13 +33,11 @@ const HomePage = () => {
   const [selectedChapter, setSelectedChapter] = useState(null);
   const [isLoadingData, setIsLoadingData] = useState(false);
 
-  const token = session?.access_token;
-
   useEffect(() => {
-    if (token || isGuest) {
-      getTomes(token).then(res => setTomes(res.data)).catch(console.error);
+    if (session?.access_token || isGuest) {
+      getTomes().then(res => setTomes(res.data)).catch(console.error);
     }
-  }, [token, isGuest]);
+  }, [session, isGuest]);
 
   const openTome = async (tome) => {
     setSelectedTome(tome);
@@ -49,7 +47,7 @@ const HomePage = () => {
     setIsLoadingData(true);
 
     try {
-      const res = await getChapitres(tome.id, token);
+      const res = await getChapitres(tome.id);
       setChapters(res.data);
     } catch (e) {
       console.error(e);
@@ -62,7 +60,7 @@ const HomePage = () => {
     setSelectedChapter(chapter);
     setIsLoadingData(true);
     try {
-      const res = await getPages(chapter.id, token);
+      const res = await getPages(chapter.id);
       setPages(res.data);
     } catch (e) {
       console.error(e);

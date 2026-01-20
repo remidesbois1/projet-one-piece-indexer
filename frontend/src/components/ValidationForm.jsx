@@ -51,7 +51,7 @@ const ValidationForm = ({ annotationData, onValidationSuccess, onCancel }) => {
     setIsSubmitting(true);
     try {
       if (isEditing) {
-        await updateBubbleText(annotationData.id, text, session.access_token);
+        await updateBubbleText(annotationData.id, text);
       } else {
         const finalBubbleData = {
           id_page: annotationData.id_page,
@@ -59,7 +59,7 @@ const ValidationForm = ({ annotationData, onValidationSuccess, onCancel }) => {
           w: annotationData.w, h: annotationData.h,
           texte_propose: text,
         };
-        await createBubble(finalBubbleData, session.access_token);
+        await createBubble(finalBubbleData);
       }
       onValidationSuccess();
     } catch (error) {

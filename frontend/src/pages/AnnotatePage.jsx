@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, reorderBubbles, analyseBubble, savePageDescription, getMetadataSuggestions, getPages } from '../services/api';
+import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, reorderBubbles, analyseBubble, savePageDescription, getMetadataSuggestions, getPages, correctText } from '../services/api';
 import ValidationForm from '../components/ValidationForm';
 import ApiKeyForm from '../components/ApiKeyForm';
 import { useAuth } from '../context/AuthContext';
@@ -107,7 +107,7 @@ const AnnotatePage = () => {
         if (!session?.access_token) return;
         setIsFetchingSuggestions(true);
         try {
-            const res = await getMetadataSuggestions(session.access_token);
+            const res = await getMetadataSuggestions();
             setSuggestions(res.data);
         } catch (err) {
             console.error("Erreur suggestions:", err);
@@ -125,18 +125,32 @@ const AnnotatePage = () => {
     useEffect(() => {
         if (!worker) return;
 
-        const handleMessage = (e) => {
+        const handleMessage = async (e) => {
             const { status, text, error, url } = e.data;
 
             if (status === 'debug_image') setDebugImageUrl(url);
 
             if (status === 'complete') {
-                setPendingAnnotation(prev => ({
-                    ...prev,
-                    texte_propose: text
-                }));
                 setOcrSource('local');
-                setIsSubmitting(false);
+                setLoadingText("Correction grammaticale...");
+
+                try {
+                    const correctionRes = await correctText(text);
+                    const finalText = correctionRes.data.correctedText;
+
+                    setPendingAnnotation(prev => ({
+                        ...prev,
+                        texte_propose: finalText
+                    }));
+                } catch (err) {
+                    console.error("Erreur correction LanguageTool:", err);
+                    setPendingAnnotation(prev => ({
+                        ...prev,
+                        texte_propose: text // Fallback au texte brut
+                    }));
+                } finally {
+                    setIsSubmitting(false);
+                }
             }
 
             if (status === 'error') {
@@ -159,7 +173,7 @@ const AnnotatePage = () => {
 
     const fetchBubbles = useCallback(() => {
         if (pageId && (session?.access_token || isGuest)) {
-            getBubblesForPage(pageId, session?.access_token)
+            getBubblesForPage(pageId)
                 .then(response => {
                     const sortedBubbles = response.data.sort((a, b) => a.order - b.order);
                     setExistingBubbles(sortedBubbles);
@@ -170,12 +184,12 @@ const AnnotatePage = () => {
 
     useEffect(() => {
         if (pageId && (session?.access_token || isGuest)) {
-            getPageById(pageId, session?.access_token)
+            getPageById(pageId)
                 .then(response => {
                     setPage(response.data);
                     // Fetch list of pages in chapter for navigation
                     if (response.data.id_chapitre) {
-                        getPages(response.data.id_chapitre, session?.access_token)
+                        getPages(response.data.id_chapitre)
                             .then(pagesRes => {
                                 const pages = pagesRes.data;
                                 setChapterPages(pages);
@@ -280,7 +294,7 @@ const AnnotatePage = () => {
         setIsSubmitting(true);
         setDebugImageUrl(null);
 
-        analyseBubble(dataToUse, session.access_token, storedKey)
+        analyseBubble(dataToUse)
             .then(response => {
                 setPendingAnnotation(prev => ({ ...prev, texte_propose: response.data.texte_propose }));
                 setOcrSource('cloud');
@@ -320,10 +334,10 @@ const AnnotatePage = () => {
 
         setIsSavingDesc(true);
         try {
-            await savePageDescription(pageId, payload, session.access_token, storedKey);
+            await savePageDescription(pageId, payload);
             alert("Description et vecteurs enregistrés !");
             setShowDescModal(false);
-            const res = await getPageById(pageId, session.access_token);
+            const res = await getPageById(pageId);
             setPage(res.data);
         } catch (error) {
             console.error(error);
@@ -360,7 +374,7 @@ const AnnotatePage = () => {
         if (isGuest) return;
         if (window.confirm("Supprimer cette annotation ?")) {
             try {
-                await deleteBubble(bubbleId, session.access_token);
+                await deleteBubble(bubbleId);
                 fetchBubbles();
             } catch (error) { alert("Erreur suppression."); }
         }
@@ -377,7 +391,7 @@ const AnnotatePage = () => {
         if (isGuest) return;
         if (window.confirm("Envoyer pour validation ?")) {
             try {
-                const response = await submitPageForReview(pageId, session.access_token);
+                const response = await submitPageForReview(pageId);
                 setPage(response.data);
             } catch (error) { alert("Erreur soumission."); }
         }
@@ -453,7 +467,7 @@ const AnnotatePage = () => {
                 const newOrder = arrayMove(bubbles, oldIndex, newIndex);
 
                 const orderedBubblesForApi = newOrder.map((b, index) => ({ id: b.id, order: index + 1 }));
-                reorderBubbles(orderedBubblesForApi, session.access_token).catch(() => fetchBubbles());
+                reorderBubbles(orderedBubblesForApi).catch(() => fetchBubbles());
                 return newOrder;
             });
         }

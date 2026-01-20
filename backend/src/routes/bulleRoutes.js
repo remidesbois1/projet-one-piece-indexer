@@ -151,6 +151,18 @@ router.get('/:id/crop', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: "Bulle ou image de la page non trouvée." });
     }
     const imageUrl = bubble.pages.url_image;
+
+    const parsedUrl = new URL(imageUrl);
+    const allowedHosts = [];
+    if (process.env.SUPABASE_URL) allowedHosts.push(new URL(process.env.SUPABASE_URL).hostname);
+    if (process.env.R2_PUBLIC_URL) {
+      try { allowedHosts.push(new URL(process.env.R2_PUBLIC_URL).hostname); } catch (e) { }
+    }
+
+    if (!allowedHosts.some(host => parsedUrl.hostname.endsWith(host))) {
+      throw new Error("Sécurité : Tentative de téléchargement hors du domaine autorisé (SSRF protection).");
+    }
+
     const imageResponse = await axios({ url: imageUrl, responseType: 'arraybuffer' });
     const imageBuffer = Buffer.from(imageResponse.data, 'binary');
     const croppedImageBuffer = await sharp(imageBuffer)

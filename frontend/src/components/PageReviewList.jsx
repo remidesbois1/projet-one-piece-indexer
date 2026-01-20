@@ -7,11 +7,11 @@ import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { 
-  CheckCircle2, 
-  FileText, 
-  ArrowRight, 
-  ScanEye 
+import {
+  CheckCircle2,
+  FileText,
+  ArrowRight,
+  ScanEye
 } from "lucide-react";
 
 const PageReviewList = () => {
@@ -21,12 +21,12 @@ const PageReviewList = () => {
 
   useEffect(() => {
     if (session) {
-      getPagesForReview(session.access_token)
+      getPagesForReview()
         .then(response => setPages(response.data))
         .catch(err => console.error("Erreur chargement pages", err))
         .finally(() => setIsLoading(false));
     }
-  }, [session?.access_token]);
+  }, [session]);
 
   if (isLoading) {
     return (
@@ -48,7 +48,7 @@ const PageReviewList = () => {
           <span className="text-sm font-medium pr-2">page(s) à vérifier</span>
         </div>
       </div>
-      
+
       {pages.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-24 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50">
           <div className="h-16 w-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-4">
@@ -62,44 +62,44 @@ const PageReviewList = () => {
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
           {pages.map(page => (
-            <Card 
-              key={page.id} 
+            <Card
+              key={page.id}
               className="group overflow-hidden border-slate-200 hover:shadow-xl hover:ring-2 hover:ring-slate-900/10 transition-all duration-300 flex flex-col"
             >
               <div className="aspect-[2/3] w-full bg-slate-100 relative overflow-hidden">
                 {page.url_image ? (
-                   <>
-                    <img 
-                      src={page.url_image} 
+                  <>
+                    <img
+                      src={page.url_image}
                       alt={`Page ${page.numero_page}`}
                       className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                       loading="lazy"
                     />
                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300" />
-                   </>
+                  </>
                 ) : (
                   <div className="h-full w-full flex flex-col items-center justify-center text-slate-300 gap-2">
                     <FileText size={48} strokeWidth={1} />
                     <span className="text-xs font-medium uppercase tracking-widest text-slate-400">Aperçu</span>
                   </div>
                 )}
-                
+
                 <div className="absolute top-2 right-2">
-                    <Badge variant="secondary" className="bg-white/90 backdrop-blur text-slate-900 shadow-sm border-slate-200">
-                        P.{page.numero_page}
-                    </Badge>
+                  <Badge variant="secondary" className="bg-white/90 backdrop-blur text-slate-900 shadow-sm border-slate-200">
+                    P.{page.numero_page}
+                  </Badge>
                 </div>
               </div>
 
               <CardContent className="p-3 bg-white relative z-10 flex-1 flex flex-col justify-between">
-                 <div>
-                    <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-0.5">
-                        Tome {page.chapitres?.tomes?.numero}
-                    </div>
-                    <div className="font-bold text-slate-900 leading-tight">
-                        Chapitre {page.chapitres?.numero}
-                    </div>
-                 </div>
+                <div>
+                  <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-0.5">
+                    Tome {page.chapitres?.tomes?.numero}
+                  </div>
+                  <div className="font-bold text-slate-900 leading-tight">
+                    Chapitre {page.chapitres?.numero}
+                  </div>
+                </div>
               </CardContent>
 
               <CardFooter className="p-3 pt-0">

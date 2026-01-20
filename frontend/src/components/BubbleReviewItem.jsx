@@ -14,18 +14,17 @@ const BubbleReviewItem = ({ bubble, onAction, onEdit }) => {
   const { session } = useAuth();
   const [imageSrc, setImageSrc] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
-  
+
   // États d'animation : 'idle' -> 'stamped' -> 'leaving'
   const [animStep, setAnimStep] = useState('idle');
   const [actionType, setActionType] = useState(null); // 'validate' ou 'reject'
 
   useEffect(() => {
-    const token = session?.access_token;
     let isMounted = true;
 
-    if (token) {
+    if (session) {
       setIsLoading(true);
-      getBubbleCrop(bubble.id, token)
+      getBubbleCrop(bubble.id)
         .then(response => {
           if (isMounted) {
             const localUrl = URL.createObjectURL(response.data);
@@ -52,17 +51,17 @@ const BubbleReviewItem = ({ bubble, onAction, onEdit }) => {
 
     // 2. Attend 600ms que l'utilisateur voit le tampon, puis lance la sortie
     setTimeout(() => {
-        setAnimStep('leaving');
-        
-        // 3. Attend la fin de l'animation de sortie (500ms) pour notifier le parent
-        setTimeout(() => {
-            onAction(type, bubble.id);
-        }, 500);
+      setAnimStep('leaving');
+
+      // 3. Attend la fin de l'animation de sortie (500ms) pour notifier le parent
+      setTimeout(() => {
+        onAction(type, bubble.id);
+      }, 500);
     }, 600);
   };
 
   return (
-    <div 
+    <div
       className={cn(
         "relative flex flex-col sm:flex-row bg-white border border-slate-200 rounded-lg overflow-hidden transition-all duration-500 ease-in-out mb-4 shadow-sm",
         // ÉTAPE 3 : La carte disparait
@@ -71,7 +70,7 @@ const BubbleReviewItem = ({ bubble, onAction, onEdit }) => {
         animStep === 'idle' && "hover:shadow-md hover:border-slate-300"
       )}
     >
-      
+
       {/* TAMPON (Overlay) */}
       <div className={cn(
         "absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-50 border-[6px] rounded-lg px-8 py-2 text-4xl font-black uppercase tracking-widest opacity-0 scale-150 transition-all duration-300",
@@ -87,10 +86,10 @@ const BubbleReviewItem = ({ bubble, onAction, onEdit }) => {
         {isLoading ? (
           <Skeleton className="h-24 w-full rounded" />
         ) : imageSrc ? (
-          <img 
-            src={imageSrc} 
-            alt="Contexte" 
-            className="max-w-full max-h-[120px] object-contain rounded shadow-sm bg-white" 
+          <img
+            src={imageSrc}
+            alt="Contexte"
+            className="max-w-full max-h-[120px] object-contain rounded shadow-sm bg-white"
           />
         ) : (
           <div className="flex flex-col items-center text-slate-300 text-xs">
@@ -99,7 +98,7 @@ const BubbleReviewItem = ({ bubble, onAction, onEdit }) => {
           </div>
         )}
       </div>
-      
+
       {/* Colonne Contenu */}
       <div className="flex-1 p-5 flex flex-col justify-center">
         <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">
@@ -109,12 +108,12 @@ const BubbleReviewItem = ({ bubble, onAction, onEdit }) => {
           {bubble.texte_propose}
         </div>
       </div>
-      
+
       {/* Colonne Actions */}
       <div className="flex sm:flex-col items-center justify-center gap-2 p-4 bg-slate-50/50 border-t sm:border-t-0 sm:border-l border-slate-100 min-w-[140px]">
-        
-        <Button 
-          variant="outline" 
+
+        <Button
+          variant="outline"
           size="sm"
           onClick={() => onEdit(bubble)}
           disabled={animStep !== 'idle'}
@@ -123,10 +122,10 @@ const BubbleReviewItem = ({ bubble, onAction, onEdit }) => {
           <Pencil className="mr-2 h-3.5 w-3.5" />
           Éditer
         </Button>
-        
+
         <div className="hidden sm:block w-full h-px bg-slate-200 my-1"></div>
 
-        <Button 
+        <Button
           variant="outline"
           size="sm"
           onClick={() => handleActionSequence('validate')}
@@ -137,7 +136,7 @@ const BubbleReviewItem = ({ bubble, onAction, onEdit }) => {
           Valider
         </Button>
 
-        <Button 
+        <Button
           variant="outline"
           size="sm"
           onClick={() => handleActionSequence('reject')}
