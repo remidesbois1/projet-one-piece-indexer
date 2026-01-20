@@ -1,6 +1,5 @@
 import { AutoProcessor, Florence2ForConditionalGeneration, RawImage, env } from '@huggingface/transformers';
 
-// Configuration
 env.allowLocalModels = false;
 env.useBrowserCache = true;
 
@@ -12,7 +11,6 @@ const MODEL_ID = 'onnx-community/Florence-2-base-ft';
 self.addEventListener('message', async (event) => {
     const { type, imageBlob } = event.data;
 
-    // --- INITIALISATION DU MODÈLE ---
     if (type === 'init') {
         try {
             if (model && processor) {
@@ -47,7 +45,6 @@ self.addEventListener('message', async (event) => {
         }
     }
 
-    // --- EXÉCUTION DE L'OCR ---
     if (type === 'run' && imageBlob) {
         if (!model || !processor) {
             self.postMessage({ status: 'error', error: 'Modèle non chargé.' });
@@ -55,7 +52,6 @@ self.addEventListener('message', async (event) => {
         }
 
         try {
-            // Debug: renvoi de l'image découpée au frontend
             const debugURL = URL.createObjectURL(imageBlob);
             self.postMessage({ status: 'debug_image', url: debugURL });
 
@@ -63,7 +59,6 @@ self.addEventListener('message', async (event) => {
             const task = '<OCR_WITH_REGION>';
             const inputs = await processor(image, task);
 
-            // Génération avec Greedy Search pour la stabilité
             const generatedIds = await model.generate({
                 ...inputs,
                 max_new_tokens: 256,
@@ -75,8 +70,6 @@ self.addEventListener('message', async (event) => {
                 skip_special_tokens: false,
             })[0];
 
-            // --- NETTOYAGE BRUT ---
-            // Suppression uniquement des balises <...> et des espaces multiples
             let cleanText = generatedText.replace(/<[^>]+>/g, ' ');
             cleanText = cleanText.replace(/\s+/g, ' ').trim();
 

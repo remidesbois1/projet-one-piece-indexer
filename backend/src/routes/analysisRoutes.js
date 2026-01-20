@@ -99,31 +99,67 @@ const correctWithLanguageTool = async (text) => {
     try {
         const ltUrl = process.env.LANGUAGETOOL_URL || 'http://localhost:8010/v2';
 
-        // Envoi à LanguageTool
+        const { data: glossaryData } = await supabaseAdmin
+            .from('glossary')
+            .select('word');
+
+        const glossaryEntries = glossaryData || [];
+
+        let normalizedText = text.trim();
+        if (normalizedText === normalizedText.toUpperCase() && normalizedText.length > 2) {
+            normalizedText = normalizedText.toLowerCase().replace(/(^\s*\w|[.!?]\s+\w)/g, c => c.toUpperCase());
+        }
+
+        let correctedText = normalizedText;
+
+        for (const entry of glossaryEntries) {
+            if (entry.word.includes(' ')) {
+                const regex = new RegExp(`\\b${entry.word}\\b`, 'gi');
+                correctedText = correctedText.replace(regex, entry.word);
+            }
+        }
+
         const response = await axios.post(`${ltUrl}/check`, null, {
             params: {
-                text: text,
-                language: 'fr'
+                text: correctedText,
+                language: 'fr',
+                disabledRules: 'FRENCH_WORD_CONFUSION,WHITESPACE_RULE'
             }
         });
 
-        let correctedText = text;
         const matches = response.data.matches;
-        console.log(`[LanguageTool] Found ${matches.length} matches for input: "${text}"`);
-
-        // On applique les suggestions de remplacement
-        const sortedMatches = matches.filter(m => m.replacements && m.replacements.length > 0)
+        const sortedMatches = matches
+            .filter(m => m.replacements && m.replacements.length > 0)
             .sort((a, b) => b.offset - a.offset);
 
         for (const match of sortedMatches) {
+            const originalWord = correctedText.substring(match.offset, match.offset + match.length);
+            const glossaryEntry = glossaryEntries.find(g => g.word.toLowerCase() === originalWord.toLowerCase());
+
+            if (glossaryEntry) {
+                if (originalWord !== glossaryEntry.word) {
+                    correctedText = correctedText.substring(0, match.offset) +
+                        glossaryEntry.word +
+                        correctedText.substring(match.offset + match.length);
+                }
+                continue;
+            }
+
             const replacement = match.replacements[0].value;
             correctedText = correctedText.substring(0, match.offset) +
                 replacement +
                 correctedText.substring(match.offset + match.length);
         }
 
-        if (text !== correctedText) {
-            console.log("[LanguageTool] Corrected to:", correctedText);
+        for (const entry of glossaryEntries) {
+            if (!entry.word.includes(' ')) {
+                const regex = new RegExp(`\\b${entry.word}\\b`, 'gi');
+                correctedText = correctedText.replace(regex, entry.word);
+            }
+        }
+
+        if (normalizedText !== correctedText) {
+            console.log(`[LanguageTool] "${normalizedText}" -> "${correctedText}"`);
         }
 
         return correctedText;
@@ -136,7 +172,6 @@ const correctWithLanguageTool = async (text) => {
     }
 };
 
-// Route pour corriger un texte (utilisée par l'OCR Florence/Local)
 router.post('/correct-text', authMiddleware, async (req, res) => {
     const { text } = req.body;
     if (!text) return res.status(400).json({ error: "Texte manquant." });
