@@ -3,7 +3,6 @@ const router = express.Router();
 const supabase = require('../config/supabaseClient');
 const { authMiddleware } = require('../middleware/auth');
 
-// Liste des pages
 router.get('/', async (req, res) => {
   const { id_chapitre } = req.query;
   if (!id_chapitre) return res.status(400).json({ error: "id_chapitre manquant" });
@@ -18,7 +17,6 @@ router.get('/', async (req, res) => {
   res.json(data);
 });
 
-// Page unique
 router.get('/:id', async (req, res) => {
     const { data, error } = await supabase
         .from('pages')
@@ -28,11 +26,9 @@ router.get('/:id', async (req, res) => {
 
     if (error) return res.status(500).json({ error: "Erreur serveur" });
     if (!data) return res.status(404).json({ error: "Page non trouvée" });
-    
     res.json(data);
 });
 
-// Bulles (PUBLIC pour le mode Invité)
 router.get('/:id/bulles', async (req, res) => {
     const { data, error } = await supabase
         .from('bulles')
@@ -44,7 +40,6 @@ router.get('/:id/bulles', async (req, res) => {
     res.json(data);
 });
 
-// Soumission (Reste protégé)
 router.put('/:id/submit-review', authMiddleware, async (req, res) => {
     const { data, error } = await supabase
         .from('pages')

@@ -16,6 +16,7 @@ const moderationRoutes = require('./routes/moderationRoutes');
 const analysisRoutes = require('./routes/analysisRoutes');
 const userRoutes = require('./routes/userRoutes');
 const statRoutes = require('./routes/statsRoutes')
+const glossaryRoutes = require('./routes/glossaryRoutes');
 
 app.use(cors({
   origin: [
@@ -45,6 +46,7 @@ app.use('/api/moderation', moderationRoutes);
 app.use('/api/analyse', analysisRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/stats', statRoutes);
+app.use('/api/glossary', glossaryRoutes);
 
 app.listen(PORT, () => {
   console.log(`Serveur démarré et à l'écoute sur le port ${PORT}`);
