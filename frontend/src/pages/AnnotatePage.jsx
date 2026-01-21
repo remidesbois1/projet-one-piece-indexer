@@ -16,7 +16,8 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, Send, Loader2, MousePointer2, Cpu, CloudLightning, Download, Settings2, FileText, Save, Plus, X, Search, ChevronLeft, ChevronRight, Shield } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ArrowLeft, Send, Loader2, MousePointer2, Cpu, CloudLightning, Download, Settings2, FileText, Save, Plus, X, Search, ChevronLeft, ChevronRight, Shield, Code } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const AnnotatePage = () => {
@@ -72,10 +73,53 @@ const AnnotatePage = () => {
         characters: []
     });
     const [charInput, setCharInput] = useState("");
-    const [arcInput, setArcInput] = useState("");
+
     const [isFetchingSuggestions, setIsFetchingSuggestions] = useState(false);
 
-    // Initialiser le formulaire quand la page est chargée
+    const [tabMode, setTabMode] = useState("form");
+    const [jsonInput, setJsonInput] = useState("");
+    const [jsonError, setJsonError] = useState(null);
+
+    useEffect(() => {
+        if (tabMode === 'form') {
+            const jsonStructure = {
+                content: formData.content,
+                metadata: {
+                    arc: formData.arc,
+                    characters: formData.characters
+                }
+            };
+            setJsonInput(JSON.stringify(jsonStructure, null, 4));
+            setJsonError(null);
+        }
+    }, [formData, tabMode]);
+
+    const handleJsonChange = (e) => {
+        const val = e.target.value;
+        setJsonInput(val);
+        try {
+            const parsed = JSON.parse(val);
+
+            // Validation de structure pour éviter de casser le format
+            if (typeof parsed !== 'object' || parsed === null) {
+                throw new Error("Le JSON doit être un objet.");
+            }
+            if (!parsed.metadata || typeof parsed.metadata !== 'object') {
+                throw new Error("L'objet doit contenir une clé 'metadata'.");
+            }
+
+            setJsonError(null);
+            setFormData(prev => ({
+                ...prev,
+                content: parsed.content || "",
+                arc: parsed.metadata.arc || "",
+                characters: Array.isArray(parsed.metadata.characters) ? parsed.metadata.characters : []
+            }));
+        } catch (err) {
+            setJsonError(err.message);
+        }
+    };
+
     useEffect(() => {
         if (page?.description) {
             let desc = page.description;
@@ -87,19 +131,43 @@ const AnnotatePage = () => {
                 }
             }
 
-            setFormData({
+            const newFormData = {
                 content: desc.content || "",
                 arc: desc.metadata?.arc || "",
                 characters: desc.metadata?.characters || []
-            });
-            setArcInput(desc.metadata?.arc || "");
+            };
+
+            setFormData(newFormData);
+
+            // Sync JSON input on page load regardless of tab mode
+            const jsonStructure = {
+                content: newFormData.content,
+                metadata: {
+                    arc: newFormData.arc,
+                    characters: newFormData.characters
+                }
+            };
+            setJsonInput(JSON.stringify(jsonStructure, null, 4));
+            setJsonError(null);
+
         } else if (page) {
-            setFormData({
+            const newFormData = {
                 content: "",
                 arc: "",
                 characters: []
-            });
-            setArcInput("");
+            };
+            setFormData(newFormData);
+
+            // Sync JSON input for empty page
+            const jsonStructure = {
+                content: newFormData.content,
+                metadata: {
+                    arc: newFormData.arc,
+                    characters: newFormData.characters
+                }
+            };
+            setJsonInput(JSON.stringify(jsonStructure, null, 4));
+            setJsonError(null);
         }
     }, [page]);
 
@@ -870,134 +938,123 @@ const AnnotatePage = () => {
             <Dialog open={showDescModal} onOpenChange={setShowDescModal}>
                 <DialogContent className="max-w-3xl">
                     <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2">
-                            <FileText className="h-5 w-5 text-indigo-600" />
-                            Description Sémantique de la Page
-                        </DialogTitle>
-                        <DialogDescription>
-                            Ces informations seront vectorisées pour permettre la recherche sémantique intelligente.
-                        </DialogDescription>
+                        <div className="flex items-center justify-between pr-4">
+                            <div>
+                                <DialogTitle className="flex items-center gap-2">
+                                    <FileText className="h-5 w-5 text-indigo-600" />
+                                    Description Sémantique
+                                </DialogTitle>
+                                <DialogDescription>
+                                    Définition des métadonnées pour le moteur de recherche.
+                                </DialogDescription>
+                            </div>
+                        </div>
                     </DialogHeader>
 
-                    <div className="grid gap-6 py-4">
-                        {/* Contenu de la scène */}
-                        <div className="flex flex-col gap-3">
-                            <Label htmlFor="scene-content" className="text-sm font-semibold text-slate-700">
-                                Contenu Sémantique
-                            </Label>
-                            <Textarea
-                                id="scene-content"
-                                value={formData.content}
-                                onChange={(e) => setFormData(prev => ({ ...prev, content: e.target.value }))}
-                                className="min-h-[120px] resize-none border-slate-200 focus:ring-indigo-500"
-                                placeholder="Décrivez ce qui se passe dans cette page (actions, lieux, ambiance)..."
-                            />
-                            <p className="text-[10px] text-slate-400 italic">
-                                Exemple: Luffy utilise son Gear Second contre Lucci dans la tour de la justice.
-                            </p>
-                        </div>
+                    <Tabs value={tabMode} onValueChange={setTabMode} className="w-full">
+                        <TabsList className="grid w-full grid-cols-2 mb-4">
+                            <TabsTrigger value="form">
+                                <FileText className="h-4 w-4 mr-2" />
+                                Formulaire
+                            </TabsTrigger>
+                            <TabsTrigger value="json">
+                                <Code className="h-4 w-4 mr-2" />
+                                JSON Raw
+                            </TabsTrigger>
+                        </TabsList>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {/* Arc Narratif */}
+                        <TabsContent value="form" className="space-y-4 outline-none">
+                            {/* Contenu de la scène */}
                             <div className="flex flex-col gap-3">
-                                <Label htmlFor="arc-select" className="text-sm font-semibold text-slate-700">
-                                    Arc Narratif
+                                <Label htmlFor="scene-content" className="text-sm font-semibold text-slate-700">
+                                    Contenu Sémantique
                                 </Label>
-                                <div className="relative">
-                                    <input
-                                        list="arc-suggestions"
-                                        id="arc-select"
-                                        value={arcInput}
-                                        onChange={(e) => {
-                                            setArcInput(e.target.value);
-                                            setFormData(prev => ({ ...prev, arc: e.target.value }));
-                                        }}
-                                        className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                                        placeholder="Choisir ou saisir un arc..."
-                                    />
-                                    <datalist id="arc-suggestions">
-                                        {suggestions.arcs.map(arc => (
-                                            <option key={arc} value={arc} />
-                                        ))}
-                                    </datalist>
-                                </div>
+                                <Textarea
+                                    id="scene-content"
+                                    value={formData.content}
+                                    onChange={(e) => setFormData(prev => ({ ...prev, content: e.target.value }))}
+                                    className="min-h-[120px] resize-none border-slate-200 focus:ring-indigo-500"
+                                    placeholder="Description de l'action, des lieux..."
+                                />
                             </div>
 
-                            {/* Personnages */}
-                            <div className="flex flex-col gap-3">
-                                <Label className="text-sm font-semibold text-slate-700">
-                                    Personnages Présents
-                                </Label>
-                                <div className="flex flex-col gap-2">
-                                    <div className="relative flex items-center gap-2">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {/* Arc Narratif */}
+                                <div className="flex flex-col gap-3">
+                                    <Label className="text-sm font-semibold text-slate-700">Arc Narratif</Label>
+                                    <div className="relative">
                                         <input
-                                            list="char-suggestions"
-                                            value={charInput}
-                                            onChange={(e) => setCharInput(e.target.value)}
-                                            onKeyDown={(e) => {
-                                                if (e.key === 'Enter') {
-                                                    e.preventDefault();
-                                                    addCharacter(charInput);
-                                                }
+                                            list="arc-suggestions"
+                                            value={formData.arc}
+                                            onChange={(e) => {
+                                                setFormData(prev => ({ ...prev, arc: e.target.value }));
                                             }}
-                                            className="flex h-10 flex-1 rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-                                            placeholder="Ajouter un personnage..."
+                                            className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:ring-indigo-500 focus:outline-none focus:ring-2"
+                                            placeholder="Ex: Water 7"
                                         />
-                                        <datalist id="char-suggestions">
-                                            {suggestions.characters.map(char => (
-                                                <option key={char} value={char} />
-                                            ))}
+                                        <datalist id="arc-suggestions">
+                                            {suggestions.arcs.map(arc => <option key={arc} value={arc} />)}
                                         </datalist>
-                                        <Button
-                                            size="icon"
-                                            variant="secondary"
-                                            className="h-10 w-10 shrink-0"
-                                            onClick={() => addCharacter(charInput)}
-                                        >
-                                            <Plus className="h-4 w-4" />
-                                        </Button>
                                     </div>
+                                </div>
 
-                                    <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 rounded-md border border-dashed border-slate-200 min-h-[44px]">
-                                        {formData.characters.length === 0 ? (
-                                            <span className="text-xs text-slate-400 m-auto">Aucun personnage ajouté</span>
-                                        ) : (
-                                            formData.characters.map((char) => (
-                                                <Badge
-                                                    key={char}
-                                                    variant="secondary"
-                                                    className="pl-2 pr-1 py-1 gap-1 bg-white border-slate-200 text-slate-700 hover:bg-red-50 hover:text-red-700 hover:border-red-200 transition-colors group"
-                                                >
-                                                    {char}
-                                                    <button
-                                                        onClick={() => removeCharacter(char)}
-                                                        className="h-4 w-4 rounded-full flex items-center justify-center hover:bg-red-100 transition-colors"
-                                                    >
-                                                        <X className="h-3 w-3" />
-                                                    </button>
+                                {/* Personnages */}
+                                <div className="flex flex-col gap-3">
+                                    <Label className="text-sm font-semibold text-slate-700">Personnages</Label>
+                                    <div className="flex flex-col gap-2">
+                                        <div className="flex gap-2">
+                                            <input
+                                                list="char-suggestions"
+                                                value={charInput}
+                                                onChange={(e) => setCharInput(e.target.value)}
+                                                onKeyDown={(e) => e.key === 'Enter' && addCharacter(charInput)}
+                                                className="flex h-10 flex-1 rounded-md border border-slate-200 px-3 text-sm focus:ring-indigo-500 focus:outline-none focus:ring-2"
+                                                placeholder="Ajouter..."
+                                            />
+                                            <datalist id="char-suggestions">
+                                                {suggestions.characters.map(c => <option key={c} value={c} />)}
+                                            </datalist>
+                                            <Button size="icon" variant="secondary" onClick={() => addCharacter(charInput)}>
+                                                <Plus className="h-4 w-4" />
+                                            </Button>
+                                        </div>
+                                        <div className="flex flex-wrap gap-2 min-h-[40px] p-2 bg-slate-50 rounded border border-dashed border-slate-200">
+                                            {formData.characters.map(char => (
+                                                <Badge key={char} variant="secondary" className="gap-1 bg-white hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer" onClick={() => removeCharacter(char)}>
+                                                    {char} <X className="h-3 w-3" />
                                                 </Badge>
-                                            ))
-                                        )}
+                                            ))}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    </div>
+                        </TabsContent>
 
-                    <DialogFooter className="gap-2 pt-4 border-t border-slate-100">
-                        <Button variant="ghost" onClick={() => setShowDescModal(false)}>
-                            Annuler
-                        </Button>
-                        <Button
-                            onClick={handleSaveDescription}
-                            disabled={isSavingDesc}
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white min-w-[200px]"
-                        >
-                            {isSavingDesc ? (
-                                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Traitement...</>
-                            ) : (
-                                <><Save className="mr-2 h-4 w-4" /> Enregistrer & Vectoriser</>
-                            )}
+                        <TabsContent value="json" className="outline-none">
+                            <div className="relative">
+                                <Textarea
+                                    value={jsonInput}
+                                    onChange={handleJsonChange}
+                                    className={cn(
+                                        "font-mono text-xs min-h-[350px] bg-slate-900 text-slate-50 resize-none",
+                                        jsonError ? "border-red-500 focus:ring-red-500" : "border-slate-800 focus:ring-slate-700"
+                                    )}
+                                    spellCheck={false}
+                                />
+                                {jsonError && (
+                                    <div className="absolute bottom-4 left-4 right-4 bg-red-500/90 text-white text-xs p-2 rounded shadow-lg backdrop-blur-sm">
+                                        Erreur JSON: {jsonError}
+                                    </div>
+                                )}
+                            </div>
+                        </TabsContent>
+                    </Tabs>
+
+                    <DialogFooter>
+                        <Button variant="ghost" onClick={() => setShowDescModal(false)}>Fermer</Button>
+                        <Button onClick={handleSaveDescription} disabled={isSavingDesc || !!jsonError} className="bg-indigo-600 hover:bg-indigo-700 text-white">
+                            {isSavingDesc ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                            Enregistrer
                         </Button>
                     </DialogFooter>
                 </DialogContent>
