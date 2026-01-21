@@ -4,6 +4,7 @@ const { supabase } = require('../config/supabaseClient');
 const { authMiddleware } = require('../middleware/auth');
 
 router.get('/', async (req, res) => {
+    console.log('GET pages', req.query);
     const { id_chapitre } = req.query;
     if (!id_chapitre) return res.status(400).json({ error: "id_chapitre manquant" });
 

@@ -49,5 +49,5 @@ app.use('/api/stats', statRoutes);
 app.use('/api/glossary', glossaryRoutes);
 
 app.listen(PORT, () => {
-  console.log(`Serveur démarré et à l'écoute sur le port ${PORT}`);
+  console.log(`Serveur démarré, port : ${PORT}`);
 });
