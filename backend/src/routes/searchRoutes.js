@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const supabase = require('../config/supabaseClient');
+const { supabase } = require('../config/supabaseClient');
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 router.get('/', async (req, res) => {

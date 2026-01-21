@@ -1,4 +1,4 @@
-const supabase = require('../config/supabaseClient');
+const { supabase } = require('../config/supabaseClient');
 
 const authMiddleware = async (req, res, next) => {
   const token = req.headers.authorization ? req.headers.authorization.split(' ')[1] : null;
@@ -16,7 +16,7 @@ const authMiddleware = async (req, res, next) => {
       .select('role')
       .eq('id', user.id)
       .single();
-      
+
     if (profileError || !profile) throw new Error('Profil utilisateur introuvable.');
 
     req.user = { ...user, role: profile.role };

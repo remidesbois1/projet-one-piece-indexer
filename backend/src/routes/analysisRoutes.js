@@ -1,17 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const { authMiddleware } = require('../middleware/auth');
-const { createClient } = require('@supabase/supabase-js');
+
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const axios = require('axios');
 const sharp = require('sharp');
 const fs = require('fs');
 const path = require('path');
 
-const supabaseAdmin = createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+const { supabaseAdmin } = require('../config/supabaseClient');
 
 function fileToGenerativePart(buffer, mimeType) {
     return {

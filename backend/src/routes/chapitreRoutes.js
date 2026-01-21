@@ -1,13 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const supabaseAdmin = require('../config/supabaseClient');
+const { supabase } = require('../config/supabaseClient');
 const { authMiddleware } = require('../middleware/auth');
 
 router.get('/tome/:tomeId', async (req, res) => {
     const { tomeId } = req.params;
 
     try {
-        const { data: chapitres, error } = await supabaseAdmin
+        const { data: chapitres, error } = await supabase
             .from('chapitres')
             .select(`
                 id, 
