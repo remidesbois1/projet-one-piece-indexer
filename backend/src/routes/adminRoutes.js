@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { authMiddleware, roleCheck } = require('../middleware/auth');
-const { createClient } = require('@supabase/supabase-js');
+
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const multer = require('multer');
 const unzipper = require('unzipper');
@@ -9,10 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const mime = require('mime-types');
 
-const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+const { supabaseAdmin } = require('../config/supabaseClient');
 
 const s3Client = new S3Client({
   region: 'auto',
@@ -87,16 +84,16 @@ router.post('/chapitres/upload', authMiddleware, roleCheck(['Admin']), upload.si
 
     for await (const entry of zip) {
       const fileName = entry.path;
-      const fileType = entry.type; 
+      const fileType = entry.type;
 
       if (fileType === 'File' && validImageExtensions.test(fileName) && !fileName.includes('__MACOSX')) {
         try {
           const fileBuffer = await entry.buffer();
-          
+
           const safeFileName = path.basename(fileName).replace(/[^a-zA-Z0-9._-]/g, '');
           const extension = path.extname(safeFileName);
           const contentType = mime.lookup(extension) || 'application/octet-stream';
-          
+
           const storagePath = `tome-${tome_id}/chapitre-${numero}/${pageCounter}-${safeFileName}`;
 
           await s3Client.send(new PutObjectCommand({
@@ -142,7 +139,7 @@ router.post('/chapitres/upload', authMiddleware, roleCheck(['Admin']), upload.si
     res.status(500).json({ error: "Echec du traitement.", details: error.message });
   } finally {
     if (file && fs.existsSync(file.path)) {
-      fs.unlink(file.path, () => {});
+      fs.unlink(file.path, () => { });
     }
   }
 });

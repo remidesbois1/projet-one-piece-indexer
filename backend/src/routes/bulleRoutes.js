@@ -1,14 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const { createClient } = require('@supabase/supabase-js');
+const { supabaseAdmin } = require('../config/supabaseClient');
 const { authMiddleware, roleCheck } = require('../middleware/auth');
 const sharp = require('sharp');
 const axios = require('axios');
-
-const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
 
 router.post('/', authMiddleware, async (req, res) => {
   const { id: userId } = req.user;

@@ -1,12 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const { authMiddleware, roleCheck } = require('../middleware/auth');
-const { createClient } = require('@supabase/supabase-js');
 
-const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+
+const { supabaseAdmin } = require('../config/supabaseClient');
 
 router.get('/pages', authMiddleware, roleCheck(['Admin', 'Modo']), async (req, res) => {
     const { data, error } = await supabaseAdmin

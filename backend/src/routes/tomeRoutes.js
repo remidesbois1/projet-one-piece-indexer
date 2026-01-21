@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const supabase = require('../config/supabaseClient');
+const { supabase } = require('../config/supabaseClient');
 
 router.get('/', async (req, res) => {
   try {
