@@ -1,117 +1,104 @@
 # **One Piece Indexer : Projet Poneglyph**
 
-Le **Projet Poneglyph** est une plateforme de haute performance dédiée à la numérisation, l'indexation sémantique et la recherche contextuelle du manga One Piece. En combinant l'intelligence artificielle déportée (WebGPU) et une infrastructure auto-hébergée optimisée, le système permet une exploration sans précédent de l'œuvre d'Eiichiro Oda.
+Le **Projet Poneglyph** est une plateforme de haute performance dédiée à la numérisation, l'indexation sémantique et la recherche contextuelle du manga One Piece. En combinant l'intelligence artificielle déportée (WebGPU) et une infrastructure auto-hébergée optimisée, le système permet une exploration technique et sémantique approfondie de l'œuvre d'Eiichiro Oda.
 
-## **🛠 Stack Technique**
+Le projet est accessible publiquement à l'adresse suivante (accès invité pour la recherche et la consultation) : [**onepiece-index.com**](https://onepiece-index.com).
 
-### **Core Infrastructure**
+## **Architecture Technique**
+
+### **Infrastructure Core**
 
 * **Hébergement :** VPS Cloud (Hetzner CX23 \- 2 vCPU, 4 Go RAM).  
-* **Orchestration :** **Coolify** (Gestion des conteneurs, CI/CD, et Reverse Proxy).  
-* **Stockage Objets :** **Cloudflare R2** (10 Go Free Tier) pour l'hébergement des planches.  
-* **CDN & Sécurité :** **Cloudflare** (Gestion DNS, protection DDoS et mise en cache agressive).
+* **Orchestration :** Coolify (Gestion des conteneurs, CI/CD et Reverse Proxy).  
+* **Stockage Objets :** Cloudflare R2 pour l'hébergement des planches (compatible S3).  
+* **CDN & Sécurité :** Cloudflare (Gestion DNS, protection DDoS et mise en cache).
 
 ### **Frontend & IA Cliente**
 
 * **Framework :** React 19 & Vite.  
-* **Local OCR :** Florence-2-base via **WebGPU** (@xenova/transformers).  
-* **Traitement de texte :** Layer de post-traitement personnalisé (dictionnaire de correction pour les accents et la casse).  
-* **State Management :** Context API & LocalStorage (persistence des clés API utilisateur).
+* **OCR Local :** Florence-2-base exécuté via WebGPU (@xenova/transformers) directement dans le navigateur client.  
+* **State Management :** Context API & LocalStorage (persistance locale et sécurisée des clés API utilisateur).
 
-### **Backend & Données**
+### **Backend & Services de Traitement**
 
-* **Serveur :** Node.js / Express.  
-* **Traitement Image :** sharp (découpage haute performance des zones OCR).  
-* **Base de Données :** **Supabase (PostgreSQL)** avec l'extension pgvector.  
+* **Serveur API :** Node.js / Express.  
+* **Traitement d'image :** Bibliothèque Sharp (découpage haute performance des zones OCR et prétraitement).  
+* **Correction Textuelle :** Conteneur Docker **LanguageTool** (basé sur l'image erikvl87/docker-languagetool) hébergé sur le VPS. Il assure la correction grammaticale et orthographique des sorties de l'OCR local.  
+* **Base de Données :** Supabase (PostgreSQL) avec l'extension pgvector pour la recherche vectorielle.  
 * **LLM & Embeddings :** Google Gemini 2.5 Flash Lite & gemini-embedding-001.
 
-## **🧠 Pipeline d'Extraction (OCR Hybride)**
+## **Pipeline d'Extraction (OCR Hybride)**
 
-L'extraction de texte repose sur une approche hybride permettant de garantir la gratuité et la rapidité du service.
+L'extraction de texte repose sur une architecture hybride conçue pour optimiser le ratio coût/performance tout en garantissant la qualité des données.
 
 ### **1\. Mode Local**
 
-Exécution directe dans le navigateur via l'API **WebGPU**.
+Ce mode déporte la charge de calcul sur le client tout en assurant une normalisation côté serveur.
 
-* **Modèle :** Florence-2 (Microsoft).  
-* **Post-traitement :** Un algorithme de comparaison avec un dictionnaire spécialisé intervient pour restaurer les accents et normaliser la casse, compensant les faiblesses natives du modèle sur la langue française.
+* **Extraction :** Exécution du modèle Florence-2 (Microsoft) via l'API WebGPU du navigateur.  
+* **Post-traitement :** Le texte brut est envoyé au backend qui le traite via l'instance locale de LanguageTool et un dictionnaire terminologique spécialisé (noms propres, lieux) pour corriger les erreurs d'OCR et restaurer la casse/accentuation.
 
 ### **2\. Mode Cloud**
 
-Utilisation de **Gemini 2.5 Flash Lite** via l'API Google (utilisant la clé API stockée en LocalStorage de l'utilisateur). Ce mode est activable pour les cas complexes ou si l'utilisateur n'a pas de GPU.
+Ce mode est une alternative pour les utilisateurs ne disposant pas d'accélération graphique matérielle.
 
-## **🔍 Moteur de Recherche Sémantique**
+* **Moteur :** Utilisation de **Gemini 2.5 Flash Lite** via l'API Google.  
+* **Sécurité :** L'appel API est effectué en utilisant la clé API personnelle de l'utilisateur, stockée en LocalStorage. Aucune clé n'est conservée côté serveur.
+* **Efficacité** Le résultat est souvent meilleur qu'avec Florence + les différents tweaks (Résultat parfait dans 90% des cas). Mais coûte des crédits de l'API.
 
-Le projet intègre un système de recherche contextuelle basé sur l'analyse visuelle des planches.
+## **Moteur de recherche sémantique**
 
-### **Indexation des Pages**
+Le système intègre une recherche contextuelle basée sur l'analyse multimodale (texte et image).
 
-Chaque page est associée à un objet JSON de métadonnées :
+### **Indexation et vectorisation**
 
-```{  
-  "content": "Description textuelle détaillée de la scène et des dialogues...",  
-  "metadata": {  
-    "arc": "Romance Dawn",  
-    "characters": \["Luffy", "Shanks"\]
-  }  
-}
+Chaque page est analysée pour produire un objet structuré, optimisé pour la similarité cosinus.
+
+La génération de ces descriptions est déléguée à Gemini ("Raisonnement") via un prompt strict (Sujet-Verbe-Complément, haute densité de mots-clés, exclusion du bruit visuel). Ce contenu est ensuite vectorisé via gemini-embedding-001 et stocké dans PostgreSQL.
+
+### **Algorithme de recherche**
+
+1. **Vectorisation :** La requête utilisateur est convertie en vecteur (embedding).  
+2. **Retrieval :** Recherche par similarité cosinus dans Supabase pour isoler les 6 pages les plus pertinentes.  
+3. **Reranking :** Les pages candidates et la requête initiale sont soumises à Gemini 2.5 Flash Lite pour une réévaluation contextuelle et un tri final avant présentation à l'utilisateur.
+
+## **Installation et Configuration**
+
+### **Variables d'environnement Backend (backend/.env)**
+
+```
+PORT=3001
+SUPABASE_URL=https://votre-projet.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=votre-cle-role
+R2_ACCESS_KEY_ID=votre-id-r2
+R2_SECRET_ACCESS_KEY=votre-secret-r2
+R2_BUCKET_NAME=manga-pages
+LANGUAGETOOL_URL=http://localhost:8010/v2
+ANALYSIS_PROMPT="Tu es un expert en numérisation de manga. Ta tâche est de transcrire le texte présent dans cette bulle de dialogue.  Règles strictes : 1. Transcris EXACTEMENT le texte visible (OCR). 2. Corrige automatiquement les erreurs mineures d'OCR. 3. Rétablis la casse naturelle. 4. Ne traduis pas. Reste en Français. 5. Renvoie UNIQUEMENT le texte final."
+SEARCH_PROMPT="Tu es l'expert ultime de One Piece. Ta mission est de retrouver LA page spécifique recherchée par l'utilisateur parmi des candidats imparfaits. Requête utilisateur : "{{query}}" Règles de notation AGRESSIVES (Polarise tes scores) : 1. **LA PAGE ÉLUE (90-100)** : Correspondance sémantique évidente. Personnage + Action exacte. 2. **LE DOUTE PERMIS (70-85)** : Très forte ressemblance mais pas parfait. 3. **CA POURRAIT, MAIS NON (45-60)** : On pourrait croire, mais pas sûr. 4. **LA SANCTION (< 40)** : - Mauvaise action (ex: cherche "mange", trouve "dort") -> Max 30. - Mauvais personnage -> Max 20. - Décor/Ambiance -> 0. Sois extrêmement agressif. Isole la bonne page du bruit. Renvoie UNIQUEMENT un JSON minifié sans espaces avec les clés "i" (id) et "s" (score) : [{"i":123,"s":95},{"i":456,"s":15}] Candidats : {{candidates}}"
 ```
 
-Ce contenu est vectorisé via gemini-embedding-001 et stocké dans Supabase (pgvector).
-
-Les descriptions sont générées à l'aide d'un prompt spécifiquement rédigé pour créer une description favorisant la similarité cosinus, et est envoyé manuellement à Gemini 3 "Raisonnement" avec l'image pour obtenir une description adaptée : 
-
-```Analyse cette page de One Piece. Ton but est de générer un objet JSON optimisé pour la similarité cosinus. La description doit être dense, directe et centrée sur l'action principale pour maximiser les scores de correspondance.
-
-Schéma de sortie attendu : JSON
-{"content": "Action principale. Détails de l'événement et contexte immédiat. Éléments de lore.","metadata": {"arc": "Nom de l'arc","characters": ["Liste des personnages"]}}
-Règles de rédaction pour 'content' (Priorité Recherche) :
-- Accroche Directe : Commence la première phrase par l'action ou l'événement exact (ex: "Exécution de Gol D. Roger" ou "Combat entre Luffy et Kaido"). C'est ce qui "ancre" le vecteur.
-- Sujet-Verbe-Complément : Utilise des phrases simples et factuelles. Évite les métaphores ou les envolées lyriques.
-- Mots-Clés de Haute Densité : Utilise les termes que les fans taperaient (ex: 'Haki des Rois', 'Fruit du Démon', 'Gear 5', 'Échafaud').
-- Suppression du Bruit : Ne décris PAS les conséquences à long terme (ex: "cela change le monde"), décris uniquement ce qui est visible sur la page.
-- Zéro Technique : Aucun mot sur le dessin (hachures, angles, traits).
-Réponds uniquement en JSON.
+### **Variables d'environnement Frontend (frontend/.env.local)**
+```
+VITE_BACKEND_URL=http://localhost:3001/api
+VITE_SUPABASE_URL=https://votre-projet.supabase.co
+VITE_SUPABASE_ANON_KEY=votre-cle-anon
 ```
 
-### **Processus de Recherche Sémantique**
-
-1. **Vectorisation :** La requête de l'utilisateur est convertie en vecteur.  
-2. **Similarité :** Le système effectue une recherche par similarité cosinus pour extraire les 10 pages les plus pertinentes.  
-3. **Reranking :** La requête et le contenu des 10 pages sélectionnées sont envoyés à **Gemini 2.5 Flash Lite** pour ré-analyser la pertinence et fournir le résultat exact à l'utilisateur.
-
-## **📦 Installation et Configuration**
-
-### **Configuration Backend (backend/.env)**
-```
-PORT=3001  
-SUPABASE\_URL=\[https://votre-projet.supabase.co\](https://votre-projet.supabase.co)  
-SUPABASE\_SERVICE\_ROLE\_KEY=votre-cle-role  
-R2\_ACCESS\_KEY\_ID=votre-id-r2  
-R2\_SECRET\_ACCESS\_KEY=votre-secret-r2  
-R2\_BUCKET\_NAME=manga-pages
-```
-### **Configuration Frontend (frontend/.env.local)**
-```
-VITE\_BACKEND\_URL=http://localhost:3001/api  
-VITE\_SUPABASE\_URL=\[https://votre-projet.supabase.co\](https://votre-projet.supabase.co)  
-VITE\_SUPABASE\_ANON\_KEY=votre-cle-anon
-```
 ### **Lancement**
 
-1. **Backend :** `cd backend && npm install && npm run dev`  
-2. **Frontend :** `cd frontend && npm install && npm run dev`
+* **Backend :** cd backend && npm install && npm run dev  
+* **Frontend :** cd frontend && npm install && npm run dev
 
-## **📈 Budget Prévisionnel Mensuel**
+## **Analyse des Coûts (Architecture IaaS)**
 
-Grâce à l'architecture IaaS et à l'utilisation intelligente des tiers gratuits, les coûts sont maintenus au strict minimum.
+L'architecture a été pensée pour une efficacité économique maximale (FinOps), en tirant parti des offres gratuites et de l'auto-hébergement des services critiques.
 
 | Composant | Fournisseur | Offre | Coût |
 | :--- | :--- | :--- | :--- |
 | Serveur VPS | Hetzner | CX21 (4 Go RAM) | ≈ 4,50 € |
 | Stockage R2 | Cloudflare | 10 Go Inclus | 0,00 € |
 | Base de Données | Supabase | Free Tier | 0,00 € |
-| IA / OCR | Google AI | Free Tier (via User Key) | 0,00 € |
+| IA / OCR Cloud | Google AI | Free Tier (via User Key) | 0,00 € |
+| Correction Texte | Self-hosted | Docker LanguageTool | Inclus VPS |
 | **TOTAL** | | | **≈ 4,50 € / mois** |
-
-**Sécurité :** Les clés API personnelles (Google Gemini) sont stockées localement dans le navigateur des contributeurs. Elles ne sont jamais stockées sur nos serveurs.
