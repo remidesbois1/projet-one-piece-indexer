@@ -20,7 +20,7 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
     const { data, error } = await supabase
         .from('pages')
-        .select('id, numero_page, url_image')
+        .select('*, chapitres(numero, tomes(numero))')
         .eq('id', req.params.id)
         .single();
 
