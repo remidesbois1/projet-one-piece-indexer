@@ -1,3 +1,4 @@
+"use client";
 import React, { useState } from 'react';
 
 // UI Components
@@ -20,15 +21,15 @@ const ApiKeyForm = ({ onSave }) => {
 
     return (
         <form onSubmit={handleSubmit} className="space-y-6 pt-2">
-            
+
             {/* Note de confidentialité / Info */}
             <div className="bg-blue-50 border border-blue-100 rounded-md p-3 flex gap-3 items-start">
                 <ShieldCheck className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
                 <div className="text-sm text-blue-900">
                     <p className="font-medium">Confidentialité</p>
                     <p className="text-blue-700/80 mt-1 leading-relaxed">
-                        Cette clé est requise pour l'analyse automatique par l'IA. 
-                        Elle est stockée <strong>uniquement dans votre navigateur</strong> (LocalStorage) 
+                        Cette clé est requise pour l'analyse automatique par l'IA.
+                        Elle est stockée <strong>uniquement dans votre navigateur</strong> (LocalStorage)
                         et n'est jamais sauvegardée sur nos serveurs.
                     </p>
                 </div>
@@ -39,10 +40,10 @@ const ApiKeyForm = ({ onSave }) => {
                     <Label htmlFor="api-key" className="text-slate-700 font-semibold">
                         Clé API Google (AI Studio)
                     </Label>
-                    <a 
-                        href="https://aistudio.google.com/app/apikey" 
-                        target="_blank" 
-                        rel="noopener noreferrer" 
+                    <a
+                        href="https://aistudio.google.com/app/apikey"
+                        target="_blank"
+                        rel="noopener noreferrer"
                         className="text-xs text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 font-medium transition-colors"
                     >
                         Obtenir une clé gratuite <ExternalLink className="h-3 w-3" />
@@ -51,7 +52,7 @@ const ApiKeyForm = ({ onSave }) => {
 
                 <div className="relative">
                     <KeyRound className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                    <Input 
+                    <Input
                         id="api-key"
                         type="password"
                         value={key}
@@ -68,8 +69,8 @@ const ApiKeyForm = ({ onSave }) => {
             </div>
 
             <div className="flex justify-end pt-2 border-t border-slate-100">
-                <Button 
-                    type="submit" 
+                <Button
+                    type="submit"
                     disabled={!key.trim()}
                     className="bg-slate-900 hover:bg-slate-800 text-white"
                 >

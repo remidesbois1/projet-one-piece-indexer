@@ -1,15 +1,18 @@
+"use client";
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
-import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, reorderBubbles, analyseBubble, savePageDescription, getMetadataSuggestions, getPages, correctText } from '../services/api';
-import ValidationForm from '../components/ValidationForm';
-import ApiKeyForm from '../components/ApiKeyForm';
-import { useAuth } from '../context/AuthContext';
-import { useWorker } from '../context/WorkerContext';
+import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, reorderBubbles, analyseBubble, savePageDescription, getMetadataSuggestions, getPages, correctText } from '@/lib/api';
+import ValidationForm from '@/components/ValidationForm';
+import ApiKeyForm from '@/components/ApiKeyForm';
+import { useAuth } from '@/context/AuthContext';
+import { useWorker } from '@/context/WorkerContext';
 import { DndContext, closestCenter } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
-import { SortableBubbleItem } from '../components/SortableBubbleItem';
-import DraggableWrapper from '../components/DraggableWrapper';
-import { cropImage } from '../lib/utils';
+import { SortableBubbleItem } from '@/components/SortableBubbleItem';
+import DraggableWrapper from '@/components/DraggableWrapper';
+import { cropImage } from '@/lib/utils';
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
@@ -20,10 +23,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, Send, Loader2, MousePointer2, Cpu, CloudLightning, Download, Settings2, FileText, Save, Plus, X, Search, ChevronLeft, ChevronRight, Shield, Code } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const AnnotatePage = () => {
+export default function AnnotatePage() {
     const { user, session, isGuest } = useAuth();
-    const { pageId } = useParams();
-    const navigate = useNavigate();
+    const params = useParams();
+    const pageId = params?.pageId;
+    const router = useRouter(); // Next.js router
     const { worker, modelStatus, loadModel, downloadProgress, runOcr } = useWorker();
 
     // --- 1. ALL HOOKS MUST BE DECLARED HERE (Before any return) ---
@@ -49,7 +53,14 @@ const AnnotatePage = () => {
     const [imageDimensions, setImageDimensions] = useState(null);
 
     const [debugImageUrl, setDebugImageUrl] = useState(null);
-    const [preferLocalOCR, setPreferLocalOCR] = useState(() => localStorage.getItem('preferLocalOCR') !== 'false');
+    // Safe localStorage access
+    const [preferLocalOCR, setPreferLocalOCR] = useState(false);
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            setPreferLocalOCR(localStorage.getItem('preferLocalOCR') !== 'false');
+        }
+    }, []);
 
     // -- New Hooks for Semantic Description --
     const [showDescModal, setShowDescModal] = useState(false);
@@ -295,10 +306,10 @@ const AnnotatePage = () => {
 
             switch (e.key) {
                 case 'ArrowLeft':
-                    if (navContext.prev) navigate(`/annotate/${navContext.prev.id}`);
+                    if (navContext.prev) router.push(`/annotate/${navContext.prev.id}`);
                     break;
                 case 'ArrowRight':
-                    if (navContext.next) navigate(`/annotate/${navContext.next.id}`);
+                    if (navContext.next) router.push(`/annotate/${navContext.next.id}`);
                     break;
                 case 'Escape':
                     if (isDrawing) {
@@ -315,10 +326,10 @@ const AnnotatePage = () => {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [navContext, navigate, isDrawing, pendingAnnotation, showDescModal, showApiKeyModal]);
+    }, [navContext, router, isDrawing, pendingAnnotation, showDescModal, showApiKeyModal]);
 
-    const goToPrev = () => navContext.prev && navigate(`/annotate/${navContext.prev.id}`);
-    const goToNext = () => navContext.next && navigate(`/annotate/${navContext.next.id}`);
+    const goToPrev = () => navContext.prev && router.push(`/annotate/${navContext.prev.id}`);
+    const goToNext = () => navContext.next && router.push(`/annotate/${navContext.next.id}`);
 
     useEffect(() => {
         if (rectangle && imageRef.current) {
@@ -541,7 +552,6 @@ const AnnotatePage = () => {
         }
     };
 
-    // --- Conditional Returns MUST be after all hooks ---
     if (error) return <div className="p-8 text-red-500">{error}</div>;
     if (!page) return <div className="flex h-screen items-center justify-center text-slate-500">Chargement...</div>;
 
@@ -551,7 +561,7 @@ const AnnotatePage = () => {
         <div className="flex flex-col h-[calc(100vh-64px)] bg-slate-50">
             <header className="flex-none h-16 border-b border-slate-200 bg-white px-6 flex items-center justify-between z-20 shadow-sm gap-4">
                 <div className="flex items-center gap-4">
-                    <Link to="/">
+                    <Link href="/dashboard">
                         <Button variant="ghost" size="sm">
                             <ArrowLeft className="h-4 w-4 mr-2" /> Retour
                         </Button>
@@ -1061,6 +1071,4 @@ const AnnotatePage = () => {
             </Dialog>
         </div>
     );
-};
-
-export default AnnotatePage;
+}

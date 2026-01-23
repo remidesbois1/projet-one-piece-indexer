@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { createTome } from '../services/api';
+import { useAuth } from '@/context/AuthContext';
+import { createTome } from '@/lib/api';
 
 // UI Components
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";

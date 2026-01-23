@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '@/context/AuthContext';
 // Import du hook pour le profil (rôle) et de la nouvelle fonction API
-import { useUserProfile } from '../hooks/useUserProfile';
-import { getPendingBubbles, validateBubble, rejectBubble, validateAllBubbles } from '../services/api';
+import { useUserProfile } from '@/hooks/useUserProfile';
+import { getPendingBubbles, validateBubble, rejectBubble, validateAllBubbles } from '@/lib/api';
 import BubbleReviewItem from './BubbleReviewItem';
 import ValidationForm from './ValidationForm';
 

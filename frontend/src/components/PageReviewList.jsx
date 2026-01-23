@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { getPagesForReview } from '../services/api';
-import { useAuth } from '../context/AuthContext';
-import { Link } from 'react-router-dom';
+import { getPagesForReview } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
+import Link from 'next/link';
 
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -103,7 +103,7 @@ const PageReviewList = () => {
               </CardContent>
 
               <CardFooter className="p-3 pt-0">
-                <Link to={`/moderation/page/${page.id}`} className="w-full">
+                <Link href={`/moderation/page/${page.id}`} className="w-full">
                   <Button size="sm" className="w-full bg-slate-900 hover:bg-slate-700 group-hover:translate-y-0 transition-all">
                     <ScanEye className="mr-2 h-4 w-4" />
                     Examiner

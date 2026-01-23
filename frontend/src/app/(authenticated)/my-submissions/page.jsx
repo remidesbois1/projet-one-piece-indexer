@@ -1,7 +1,9 @@
+"use client";
+
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { getMySubmissions } from '../services/api';
-import { Link } from 'react-router-dom';
+import { useAuth } from '@/context/AuthContext';
+import { getMySubmissions } from '@/lib/api';
+import Link from 'next/link';
 
 // Shadcn Components
 import {
@@ -22,7 +24,7 @@ import { ChevronLeft, ChevronRight, Inbox } from "lucide-react";
 
 const RESULTS_PER_PAGE = 15;
 
-const MySubmissionsPage = () => {
+export default function MySubmissionsPage() {
     const { session } = useAuth();
     const [submissions, setSubmissions] = useState([]);
     const [totalCount, setTotalCount] = useState(0);
@@ -49,7 +51,7 @@ const MySubmissionsPage = () => {
         if (session) {
             fetchSubmissions(1);
         }
-    }, [session?.access_token]);
+    }, [session]);
 
     const totalPages = Math.ceil(totalCount / RESULTS_PER_PAGE);
 
@@ -116,7 +118,7 @@ const MySubmissionsPage = () => {
 
                                         <TableCell>
                                             <Link
-                                                to={`/annotate/${sub.pages.id}`}
+                                                href={`/annotate/${sub.pages.id}`}
                                                 className="inline-flex items-center rounded-md bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-800 hover:bg-slate-200 transition-colors whitespace-nowrap"
                                             >
                                                 Tome {sub.pages.chapitres.tomes.numero} • Chap {sub.pages.chapitres.numero} • P{sub.pages.numero_page}
@@ -161,6 +163,4 @@ const MySubmissionsPage = () => {
             )}
         </div>
     );
-};
-
-export default MySubmissionsPage;
+}

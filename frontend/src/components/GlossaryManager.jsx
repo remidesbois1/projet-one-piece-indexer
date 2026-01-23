@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getGlossary, addGlossaryWord, deleteGlossaryWord } from '../services/api';
+import { getGlossary, addGlossaryWord, deleteGlossaryWord } from '@/lib/api';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";

@@ -3,6 +3,24 @@ const cors = require('cors');
 require('dotenv').config();
 
 const app = express();
+const rateLimit = require('express-rate-limit');
+
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const statsLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 100,
+  message: "Too many requests, please try again later.",
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use(globalLimiter);
 
 const PORT = process.env.PORT || 3001;
 
@@ -29,6 +47,11 @@ app.use(cors({
 
 app.use(express.json());
 
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  next();
+});
+
 app.get('/', (req, res) => {
   res.status(200).json({
     message: "API de l'indexeur One Piece fonctionnelle.",
@@ -45,7 +68,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/moderation', moderationRoutes);
 app.use('/api/analyse', analysisRoutes);
 app.use('/api/user', userRoutes);
-app.use('/api/stats', statRoutes);
+app.use('/api/stats', statsLimiter, statRoutes);
 app.use('/api/glossary', glossaryRoutes);
 
 app.listen(PORT, () => {
