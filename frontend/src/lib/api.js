@@ -36,8 +36,8 @@ export const updateBubbleGeometry = (id, geometry) => apiClient.put(`/bulles/${i
 export const deleteBubble = (id) => apiClient.delete(`/bulles/${id}`);
 export const reorderBubbles = (orderedBubbles) => apiClient.put('/bulles/reorder', { orderedBubbles });
 
-export const searchBubbles = (query, page = 1, limit = 10) => {
-    return apiClient.get(`/search?q=${query}&page=${page}&limit=${limit}`);
+export const searchBubbles = (query, page = 1, limit = 10, mode = 'keyword') => {
+    return apiClient.get(`/search?q=${query}&page=${page}&limit=${limit}&mode=${mode}`);
 };
 export const searchSemantic = (query, limit = 10) => apiClient.get(`/search/semantic?q=${query}&limit=${limit}`);
 

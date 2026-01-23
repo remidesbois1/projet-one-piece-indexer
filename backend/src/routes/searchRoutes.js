@@ -4,7 +4,7 @@ const { supabase } = require('../config/supabaseClient');
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 router.get('/', async (req, res) => {
-    const { q, page = 1, limit = 10 } = req.query;
+    const { q, page = 1, limit = 10, mode = 'keyword' } = req.query;
     const userApiKey = req.headers['x-google-api-key'];
 
     if (!q || q.length < 2) return res.status(400).json({ error: "Recherche trop courte" });
@@ -14,7 +14,7 @@ router.get('/', async (req, res) => {
     let totalCount = 0;
 
     try {
-        if (userApiKey) {
+        if (mode === 'semantic' && userApiKey) {
             const genAI = new GoogleGenerativeAI(userApiKey);
             const embedModel = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
 
