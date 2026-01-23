@@ -1,3 +1,4 @@
+"use client";
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 
 const WorkerContext = createContext();
@@ -12,7 +13,7 @@ export const WorkerProvider = ({ children }) => {
 
     // Initialisation unique du Worker au montage de l'app
     useEffect(() => {
-        if (!workerRef.current) {
+        if (!workerRef.current && typeof window !== 'undefined') {
             workerRef.current = new Worker(new URL('../workers/ocr.worker.js', import.meta.url), {
                 type: 'module'
             });
@@ -58,10 +59,10 @@ export const WorkerProvider = ({ children }) => {
     };
 
     return (
-        <WorkerContext.Provider value={{ 
-            worker: workerRef.current, 
-            modelStatus, 
-            loadModel, 
+        <WorkerContext.Provider value={{
+            worker: workerRef.current,
+            modelStatus,
+            loadModel,
             downloadProgress,
             runOcr
         }}>

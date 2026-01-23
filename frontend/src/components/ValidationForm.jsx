@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { createBubble, updateBubbleText } from '../services/api';
+import { useAuth } from '@/context/AuthContext';
+import { createBubble, updateBubbleText } from '@/lib/api';
 
 // UI Components
 import { Button } from "@/components/ui/button";

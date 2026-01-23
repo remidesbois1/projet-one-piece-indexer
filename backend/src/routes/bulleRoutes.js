@@ -155,10 +155,14 @@ router.get('/:id/crop', authMiddleware, async (req, res) => {
     }
 
     if (!allowedHosts.some(host => parsedUrl.hostname.endsWith(host))) {
+      console.error("SSRF Blocked:", parsedUrl.hostname, "Allowed:", allowedHosts);
       throw new Error("Sécurité : Tentative de téléchargement hors du domaine autorisé (SSRF protection).");
     }
 
-    const imageResponse = await axios({ url: imageUrl, responseType: 'arraybuffer' });
+    const imageResponse = await axios({
+      url: imageUrl,
+      responseType: 'arraybuffer'
+    });
     const imageBuffer = Buffer.from(imageResponse.data, 'binary');
     const croppedImageBuffer = await sharp(imageBuffer)
       .extract({ left: bubble.x, top: bubble.y, width: bubble.w, height: bubble.h })
@@ -167,6 +171,7 @@ router.get('/:id/crop', authMiddleware, async (req, res) => {
     res.set('Content-Type', 'image/avif');
     res.send(croppedImageBuffer);
   } catch (error) {
+    console.error("ERREUR CROP:", error);
     res.status(500).json({ error: "Une erreur est survenue lors du traitement de l'image." });
   }
 });

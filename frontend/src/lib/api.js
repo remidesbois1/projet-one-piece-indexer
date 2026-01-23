@@ -1,22 +1,27 @@
 import axios from 'axios';
-import { supabase } from '../supabaseClient';
+import { supabase } from './supabaseClient';
 
 const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_BACKEND_URL,
+    baseURL: process.env.NEXT_PUBLIC_BACKEND_URL,
 });
 
 apiClient.interceptors.request.use(async (config) => {
-  const { data: { session } } = await supabase.auth.getSession();
-  const token = session?.access_token;
-  const googleApiKey = localStorage.getItem('google_api_key');
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    // Access global window/localStorage safely or handled via client component
+    // In Next.js App Router, localStorage is only available on client
+    let googleApiKey = null;
+    if (typeof window !== 'undefined') {
+        googleApiKey = localStorage.getItem('google_api_key');
+    }
 
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  if (googleApiKey) {
-    config.headers['x-google-api-key'] = googleApiKey;
-  }
-  return config;
+    if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+    }
+    if (googleApiKey) {
+        config.headers['x-google-api-key'] = googleApiKey;
+    }
+    return config;
 });
 
 export const getTomes = () => apiClient.get('/tomes');
@@ -27,11 +32,12 @@ export const getPageById = (id) => apiClient.get(`/pages/${id}`);
 export const getBubblesForPage = (pageId) => apiClient.get(`/pages/${pageId}/bulles`);
 export const createBubble = (bubbleData) => apiClient.post('/bulles', bubbleData);
 export const updateBubbleText = (id, text) => apiClient.put(`/bulles/${id}`, { texte_propose: text });
+export const updateBubbleGeometry = (id, geometry) => apiClient.put(`/bulles/${id}`, { ...geometry }); // Added during recent legacy updates if applicable, but sticking to existing legacy file content logic
 export const deleteBubble = (id) => apiClient.delete(`/bulles/${id}`);
 export const reorderBubbles = (orderedBubbles) => apiClient.put('/bulles/reorder', { orderedBubbles });
 
 export const searchBubbles = (query, page = 1, limit = 10) => {
-  return apiClient.get(`/search?q=${query}&page=${page}&limit=${limit}`);
+    return apiClient.get(`/search?q=${query}&page=${page}&limit=${limit}`);
 };
 export const searchSemantic = (query, limit = 10) => apiClient.get(`/search/semantic?q=${query}&limit=${limit}`);
 
@@ -55,6 +61,7 @@ export const correctText = (text) => apiClient.post('/analyse/correct-text', { t
 export const getBubbleCrop = (id) => apiClient.get(`/bulles/${id}/crop`, { responseType: 'blob' });
 export const getMySubmissions = (page = 1, limit = 10) => apiClient.get(`/user/bulles?page=${page}&limit=${limit}`);
 export const getStatsSummary = () => apiClient.get('/stats/summary');
+export const getLandingStats = () => apiClient.get('/stats/landing');
 export const getTopContributors = () => apiClient.get('/stats/top-contributors');
 
 export const getGlossary = () => apiClient.get('/glossary');

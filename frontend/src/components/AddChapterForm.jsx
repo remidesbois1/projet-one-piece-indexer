@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { getTomes, uploadChapter } from '../services/api';
+import { useAuth } from '@/context/AuthContext';
+import { getTomes, uploadChapter } from '@/lib/api';
 
 // UI Components
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";

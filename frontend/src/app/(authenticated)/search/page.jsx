@@ -1,7 +1,9 @@
+"use client";
+
 import React, { useState, useEffect, useRef } from 'react';
-import { searchBubbles } from '../services/api';
-import { useDebounce } from '../hooks/useDebounce';
-import { Link } from 'react-router-dom';
+import { searchBubbles } from '@/lib/api';
+import { useDebounce } from '@/hooks/useDebounce';
+import Link from 'next/link';
 
 // Shadcn UI Components
 import { Input } from "@/components/ui/input";
@@ -14,7 +16,7 @@ import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 // Custom Components
-import ApiKeyForm from '../components/ApiKeyForm'; // Assurez-vous que le chemin est bon
+import ApiKeyForm from '@/components/ApiKeyForm';
 
 // Icons
 import { Search, X, Loader2, Sparkles, BookOpen, MapPin, Quote, Info, ArrowRight, Settings } from "lucide-react";
@@ -70,7 +72,7 @@ const ResultImage = ({ url, coords, type }) => {
 };
 
 // --- Page Principale ---
-const SearchPage = () => {
+export default function SearchPage() {
     const [query, setQuery] = useState('');
     const debouncedQuery = useDebounce(query, 400);
 
@@ -83,25 +85,28 @@ const SearchPage = () => {
     // Settings & Modal
     const [useSemantic, setUseSemantic] = useState(false);
     const [hasApiKey, setHasApiKey] = useState(false);
-    const [showApiKeyModal, setShowApiKeyModal] = useState(false); // État pour la modale
+    const [showApiKeyModal, setShowApiKeyModal] = useState(false);
 
     const abortControllerRef = useRef(null);
     const inputRef = useRef(null);
 
     useEffect(() => {
-        const key = localStorage.getItem('google_api_key');
-        setHasApiKey(!!key);
-        if (key) setUseSemantic(false);
+        if (typeof window !== 'undefined') {
+            const key = localStorage.getItem('google_api_key');
+            setHasApiKey(!!key);
+            if (key) setUseSemantic(false);
+        }
         if (inputRef.current) inputRef.current.focus();
     }, []);
 
     // --- LOGIQUE MODALE & CLÉ ---
     const handleSaveApiKey = (key) => {
-        localStorage.setItem('google_api_key', key);
-        setHasApiKey(true);
+        if (typeof window !== 'undefined') {
+            localStorage.setItem('google_api_key', key);
+            setHasApiKey(true);
+        }
         setShowApiKeyModal(false);
-        setUseSemantic(true); // On active le mode sémantique automatiquement
-        // Optionnel : Re-focus sur l'input
+        setUseSemantic(true);
         setTimeout(() => inputRef.current?.focus(), 100);
     };
 
@@ -160,10 +165,10 @@ const SearchPage = () => {
     };
 
     return (
-        <div className="min-h-screen bg-slate-50/30 pb-20">
+        <div className="min-h-screen pb-20">
 
             {/* --- HERO HEADER --- */}
-            <div className="bg-white border-b border-slate-200 pt-10 pb-8 px-4 shadow-sm relative overflow-hidden">
+            <div className="bg-white border-b border-slate-200 pt-10 pb-8 px-4 shadow-sm relative overflow-hidden -mx-4 sm:-mx-8 px-4 sm:px-8 mb-8">
 
                 <div className="container max-w-4xl mx-auto text-center space-y-6 relative z-10">
                     <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-slate-900">
@@ -247,7 +252,6 @@ const SearchPage = () => {
                             )}
                         </div>
 
-                        {/* MODIFICATION ICI : Bouton pour ouvrir la modale si pas de clé */}
                         {!hasApiKey && (
                             <button
                                 onClick={() => setShowApiKeyModal(true)}
@@ -262,7 +266,7 @@ const SearchPage = () => {
             </div>
 
             {/* --- RESULTS AREA --- */}
-            <div className="container max-w-7xl mx-auto px-4 py-8">
+            <div className="px-0"> {/* Container padding handled by layout */}
 
                 {/* Count */}
                 {results.length > 0 && (
@@ -281,7 +285,7 @@ const SearchPage = () => {
                         return (
                             <Link
                                 key={`${item.id}-${index}`}
-                                to={`/annotate/${item.page_id}`}
+                                href={`/annotate/${item.page_id}`}
                                 className="group block h-full outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-indigo-500 rounded-lg"
                             >
                                 <Card className="h-full flex flex-col overflow-hidden border-slate-200 hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
@@ -398,7 +402,7 @@ const SearchPage = () => {
             </Dialog>
         </div>
     );
-};
+}
 
 // Helper pour surligner le texte
 const highlightText = (text, highlight) => {
@@ -426,5 +430,3 @@ const highlightText = (text, highlight) => {
         </>
     );
 };
-
-export default SearchPage;

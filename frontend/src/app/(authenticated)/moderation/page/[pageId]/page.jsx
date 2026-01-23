@@ -1,13 +1,14 @@
+"use client";
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
-import { getPageById, getBubblesForPage, approvePage, rejectPage } from '../services/api';
-import { useAuth } from '../context/AuthContext';
-import ValidationForm from '../components/ValidationForm';
+import { useParams, useRouter } from 'next/navigation';
+import { getPageById, getBubblesForPage, approvePage, rejectPage } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
+import ValidationForm from '@/components/ValidationForm';
 
 // Shadcn Components
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import {
     Dialog,
@@ -15,20 +16,15 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
-import {
-    Tooltip,
-    TooltipContent,
-    TooltipProvider,
-    TooltipTrigger,
-} from "@/components/ui/tooltip";
 
 // Icons
-import { Check, X, ArrowLeft, Pencil, AlertTriangle } from "lucide-react";
+import { Check, X, ArrowLeft, Pencil } from "lucide-react";
 
-const PageReview = () => {
-    const { pageId } = useParams();
-    const navigate = useNavigate();
-    const { session, isGuest } = useAuth();
+export default function PageReview() {
+    const params = useParams();
+    const pageId = params?.pageId;
+    const router = useRouter();
+    const { session, isGuest } = useAuth(); // Assuming isGuest is available in context
 
     const [page, setPage] = useState(null);
     const [bubbles, setBubbles] = useState([]);
@@ -56,7 +52,7 @@ const PageReview = () => {
             setBubbles(sortedBubbles);
         } catch (err) {
             console.error("Erreur chargement données:", err);
-            alert("Impossible de charger la page.");
+            // alert("Impossible de charger la page.");
         } finally {
             setLoading(false);
         }
@@ -71,7 +67,7 @@ const PageReview = () => {
         if (window.confirm("Confirmer l'approbation de cette page ?")) {
             try {
                 await approvePage(pageId);
-                navigate('/moderation');
+                router.push('/moderation');
             } catch (error) {
                 alert("Erreur technique lors de l'approbation.");
                 console.error(error);
@@ -83,7 +79,7 @@ const PageReview = () => {
         if (window.confirm("Refuser cette page ?")) {
             try {
                 await rejectPage(pageId);
-                navigate('/moderation');
+                router.push('/moderation');
             } catch (error) {
                 alert("Erreur technique lors du rejet.");
                 console.error(error);
@@ -123,7 +119,7 @@ const PageReview = () => {
             {/* HEADER DE L'OUTIL */}
             <header className="flex-none h-16 border-b border-slate-200 bg-white px-6 flex items-center justify-between z-20 shadow-sm">
                 <div className="flex items-center gap-4">
-                    <Button variant="ghost" size="sm" onClick={() => navigate('/moderation')}>
+                    <Button variant="ghost" size="sm" onClick={() => router.push('/moderation')}>
                         <ArrowLeft className="h-4 w-4 mr-2" /> Retour
                     </Button>
                     <div className="h-6 w-px bg-slate-200" />
@@ -272,6 +268,4 @@ const PageReview = () => {
             </Dialog>
         </div>
     );
-};
-
-export default PageReview;
+}

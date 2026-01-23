@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { getBubbleCrop } from '../services/api';
+import { useAuth } from '@/context/AuthContext';
+import { getBubbleCrop } from '@/lib/api';
 
 // UI Components
 import { Button } from "@/components/ui/button";

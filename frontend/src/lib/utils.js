@@ -2,54 +2,50 @@ import { clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
 
 export function cn(...inputs) {
-  return twMerge(clsx(inputs))
+    return twMerge(clsx(inputs))
 }
 
-/**
- * Crop + Zoom x3 (Upscaling)
- * Permet à l'IA de mieux voir les espaces.
- */
-export async function cropImage(imageElement, rect) {
-  if (!imageElement || !rect) return null;
+export const cropImage = (imageElement, rect) => {
+    return new Promise((resolve, reject) => {
+        if (!imageElement || !rect) {
+            reject("No image or rect provided");
+            return;
+        }
 
-  const PADDING = 20;
-  const SCALE = 3; 
+        const canvas = document.createElement('canvas');
+        const scaleX = imageElement.naturalWidth / imageElement.width;
+        const scaleY = imageElement.naturalHeight / imageElement.height;
 
-  const naturalW = imageElement.naturalWidth;
-  const naturalH = imageElement.naturalHeight;
+        canvas.width = rect.w;
+        canvas.height = rect.h;
 
-  const startX = Math.max(0, rect.x - PADDING);
-  const startY = Math.max(0, rect.y - PADDING);
-  
-  const endX = Math.min(naturalW, rect.x + rect.w + PADDING);
-  const endY = Math.min(naturalH, rect.y + rect.h + PADDING);
+        const ctx = canvas.getContext('2d');
 
-  const width = endX - startX;
-  const height = endY - startY;
+        // Draw the cropped image on the canvas
+        // drawImage(image, sx, sy, sWidth, sHeight, dx, dy, dWidth, dHeight)
+        // We use the rect coordinates relative to the displayed image, scaled to natural dimensions
+        // OR if rect is already scaled (AnnotatePage seems to scale it), we use it directly.
+        // Let's check AnnotatePage logic in legacy:
+        // setRectangle({ x: unscaledRect.x * scale ... }) -> rect IS in natural coordinates.
 
-  if (width <= 0 || height <= 0) return null;
+        ctx.drawImage(
+            imageElement,
+            rect.x, // sx (already scaled)
+            rect.y, // sy
+            rect.w, // sWidth
+            rect.h, // sHeight
+            0,      // dx
+            0,      // dy
+            rect.w, // dWidth
+            rect.h  // dHeight
+        );
 
-  const canvas = document.createElement('canvas');
-  canvas.width = width * SCALE;
-  canvas.height = height * SCALE;
-  
-  const ctx = canvas.getContext('2d');
-  
-  ctx.fillStyle = "#FFFFFF";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-
-  try {
-      ctx.drawImage(
-          imageElement, 
-          startX, startY, width, height, 
-          0, 0, width * SCALE, height * SCALE 
-      );
-  } catch (e) {
-      console.error("Erreur Crop:", e);
-      return null;
-  }
-
-  return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.95));
-}
+        canvas.toBlob((blob) => {
+            if (blob) {
+                resolve(blob);
+            } else {
+                reject("Canvas to Blob failed");
+            }
+        }, 'image/jpeg', 0.95);
+    });
+};
