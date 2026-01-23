@@ -144,7 +144,7 @@ export default function SearchPage() {
         if (isNewSearch) setResults([]);
 
         try {
-            const response = await searchBubbles(searchTerm, pageToFetch, RESULTS_PER_PAGE);
+            const response = await searchBubbles(searchTerm, pageToFetch, RESULTS_PER_PAGE, useSemantic ? 'semantic' : 'keyword');
             const newResults = response.data.results;
             const total = response.data.totalCount;
 
