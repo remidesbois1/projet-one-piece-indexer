@@ -12,7 +12,7 @@ import { DndContext, closestCenter } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { SortableBubbleItem } from '@/components/SortableBubbleItem';
 import DraggableWrapper from '@/components/DraggableWrapper';
-import { cropImage } from '@/lib/utils';
+import { cropImage, getProxiedImageUrl } from '@/lib/utils';
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
@@ -712,7 +712,7 @@ export default function AnnotatePage() {
 
             {/* Image Prefetching */}
             {navContext.next && (
-                <link rel="prefetch" href={navContext.next.url_image} />
+                <link rel="prefetch" href={getProxiedImageUrl(navContext.next.url_image)} />
             )}
 
             <div className="flex flex-1 overflow-hidden">
@@ -730,7 +730,7 @@ export default function AnnotatePage() {
                     >
                         <img
                             ref={imageRef}
-                            src={page.url_image}
+                            src={getProxiedImageUrl(page.url_image)}
                             crossOrigin="anonymous"
                             alt={`Page ${page.numero_page}`}
                             className="block max-w-full h-auto pointer-events-none"

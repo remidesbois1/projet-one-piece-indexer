@@ -4,6 +4,15 @@ import { twMerge } from "tailwind-merge"
 export function cn(...inputs) {
     return twMerge(clsx(inputs))
 }
+export function getProxiedImageUrl(url) {
+    if (!url) return url;
+    // En dev, on passe par le proxy local pour éviter les erreurs CORS
+    // Surtout nécessaire pour les images qu'on manipule (crop/canvas)
+    if (process.env.NODE_ENV === 'development' && url.includes('s3.onepiece-index.com')) {
+        return url.replace('https://s3.onepiece-index.com', '/s3-proxy');
+    }
+    return url;
+}
 
 export const cropImage = (imageElement, rect) => {
     return new Promise((resolve, reject) => {

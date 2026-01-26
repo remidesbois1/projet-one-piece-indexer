@@ -5,6 +5,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useRouter } from 'next/navigation';
 import { getTomes, getChapitres, getPages } from '@/lib/api';
+import { getProxiedImageUrl } from '@/lib/utils';
 
 import {
     Sheet,
@@ -155,7 +156,7 @@ export default function HomePage() {
                             {tome.cover_url ? (
                                 <>
                                     <img
-                                        src={tome.cover_url}
+                                        src={getProxiedImageUrl(tome.cover_url)}
                                         alt={`Tome ${tome.numero}`}
                                         className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110 will-change-transform"
                                         loading="lazy"
