@@ -3,6 +3,16 @@ const cors = require('cors');
 require('dotenv').config();
 
 const app = express();
+
+app.use(cors({
+  origin: [
+    'https://onepiece-index.com',
+    'http://localhost:5173',
+    'http://localhost:3000'
+  ],
+  credentials: true
+}));
+
 const rateLimit = require('express-rate-limit');
 
 const globalLimiter = rateLimit({
@@ -36,14 +46,7 @@ const userRoutes = require('./routes/userRoutes');
 const statRoutes = require('./routes/statsRoutes')
 const glossaryRoutes = require('./routes/glossaryRoutes');
 
-app.use(cors({
-  origin: [
-    'https://onepiece-index.com',
-    'http://localhost:5173',
-    'http://localhost:3000'
-  ],
-  credentials: true
-}));
+
 
 app.use(express.json());
 
