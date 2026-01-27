@@ -56,7 +56,7 @@ export const uploadChapter = (formData) => apiClient.post('/admin/chapitres/uplo
 export const analyseBubble = (bubbleData) => apiClient.post('/analyse/bubble', bubbleData);
 export const savePageDescription = (pageId, description) => apiClient.post('/analyse/page-description', { id_page: pageId, description });
 export const getMetadataSuggestions = () => apiClient.get('/analyse/metadata-suggestions');
-export const correctText = (text) => apiClient.post('/analyse/correct-text', { text });
+
 
 export const getBubbleCrop = (id) => apiClient.get(`/bulles/${id}/crop`, { responseType: 'blob' });
 export const getMySubmissions = (page = 1, limit = 10) => apiClient.get(`/user/bulles?page=${page}&limit=${limit}`);
