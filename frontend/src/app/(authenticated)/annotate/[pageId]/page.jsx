@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, reorderBubbles, analyseBubble, savePageDescription, getMetadataSuggestions, getPages, correctText } from '@/lib/api';
+import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, reorderBubbles, analyseBubble, savePageDescription, getMetadataSuggestions, getPages } from '@/lib/api';
 import ValidationForm from '@/components/ValidationForm';
 import ApiKeyForm from '@/components/ApiKeyForm';
 import { useAuth } from '@/context/AuthContext';
@@ -211,25 +211,11 @@ export default function AnnotatePage() {
 
             if (status === 'complete') {
                 setOcrSource('local');
-                setLoadingText("Correction grammaticale...");
-
-                try {
-                    const correctionRes = await correctText(text);
-                    const finalText = correctionRes.data.correctedText;
-
-                    setPendingAnnotation(prev => ({
-                        ...prev,
-                        texte_propose: finalText
-                    }));
-                } catch (err) {
-                    console.error("Erreur correction LanguageTool:", err);
-                    setPendingAnnotation(prev => ({
-                        ...prev,
-                        texte_propose: text // Fallback au texte brut
-                    }));
-                } finally {
-                    setIsSubmitting(false);
-                }
+                setPendingAnnotation(prev => ({
+                    ...prev,
+                    texte_propose: text
+                }));
+                setIsSubmitting(false);
             }
 
             if (status === 'error') {
