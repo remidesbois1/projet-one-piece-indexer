@@ -73,6 +73,7 @@ export const uploadChapter = (formData) => apiClient.post('/admin/chapitres/uplo
 export const analyseBubble = (bubbleData) => apiClient.post('/analyse/bubble', bubbleData);
 export const savePageDescription = (pageId, description) => apiClient.post('/analyse/page-description', { id_page: pageId, description });
 export const getMetadataSuggestions = () => apiClient.get('/analyse/metadata-suggestions');
+export const generateAIDescription = (pageId) => apiClient.post('/analyse/generate-description', { id_page: pageId });
 
 
 export const getBubbleCrop = (id) => apiClient.get(`/bulles/${id}/crop`, { responseType: 'blob' });
