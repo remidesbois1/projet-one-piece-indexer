@@ -15,7 +15,7 @@ router.get('/bulles', authMiddleware, async (req, res) => {
         const { data, error, count } = await supabaseAdmin
             .from('bulles')
             .select(`
-                id, texte_propose, statut, created_at,
+                id, texte_propose, statut, created_at, commentaire_moderation,
                 pages ( id, numero_page, chapitres ( numero, tomes ( numero ) ) )
             `, { count: 'exact' })
             .eq('id_user_createur', userId)

@@ -31,9 +31,13 @@ router.put('/pages/:id/approve', authMiddleware, roleCheck(['Admin', 'Modo']), a
 });
 
 router.put('/pages/:id/reject', authMiddleware, roleCheck(['Admin', 'Modo']), async (req, res) => {
+    const { comment } = req.body;
     const { data, error } = await supabaseAdmin
         .from('pages')
-        .update({ statut: 'in_progress' })
+        .update({
+            statut: 'in_progress',
+            commentaire_moderation: comment || null
+        })
         .eq('id', req.params.id)
         .select()
         .single();

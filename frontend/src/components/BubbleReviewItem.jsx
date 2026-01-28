@@ -47,16 +47,14 @@ const BubbleReviewItem = ({ bubble, onAction, onEdit }) => {
     if (animStep !== 'idle') return;
 
     setActionType(type);
-    setAnimStep('stamped'); // 1. Affiche le tampon
+    setAnimStep('stamped');
 
-    // 2. Attend 600ms que l'utilisateur voit le tampon, puis lance la sortie
     setTimeout(() => {
       setAnimStep('leaving');
 
-      // 3. Attend la fin de l'animation de sortie (500ms) pour notifier le parent
       setTimeout(() => {
         onAction(type, bubble.id);
-      }, 500);
+      }, 50);
     }, 600);
   };
 
@@ -64,9 +62,9 @@ const BubbleReviewItem = ({ bubble, onAction, onEdit }) => {
     <div
       className={cn(
         "relative flex flex-col sm:flex-row bg-white border border-slate-200 rounded-lg overflow-hidden transition-all duration-500 ease-in-out mb-4 shadow-sm",
-        // ÉTAPE 3 : La carte disparait
-        animStep === 'leaving' && actionType === 'validate' && "translate-x-[100%] opacity-0 h-0 my-0 py-0",
-        animStep === 'leaving' && actionType === 'reject' && "translate-y-[50px] rotate-6 opacity-0 h-0 my-0 py-0",
+        animStep === 'leaving' && "max-h-0 mb-0 opacity-0 py-0 border-0",
+        animStep === 'leaving' && actionType === 'validate' && "translate-x-[100%]",
+        animStep === 'leaving' && actionType === 'reject' && "translate-y-[50px] rotate-6",
         animStep === 'idle' && "hover:shadow-md hover:border-slate-300"
       )}
     >
@@ -74,7 +72,6 @@ const BubbleReviewItem = ({ bubble, onAction, onEdit }) => {
       {/* TAMPON (Overlay) */}
       <div className={cn(
         "absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-50 border-[6px] rounded-lg px-8 py-2 text-4xl font-black uppercase tracking-widest opacity-0 scale-150 transition-all duration-300",
-        // ÉTAPE 2 : Le tampon apparait
         animStep !== 'idle' && actionType === 'validate' && "opacity-90 scale-100 rotate-[-10deg] border-green-600 text-green-600 bg-white/50 backdrop-blur-sm",
         animStep !== 'idle' && actionType === 'reject' && "opacity-90 scale-100 rotate-[10deg] border-red-600 text-red-600 bg-white/50 backdrop-blur-sm"
       )}>

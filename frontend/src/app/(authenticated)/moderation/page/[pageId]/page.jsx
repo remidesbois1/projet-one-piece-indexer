@@ -2,9 +2,10 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { getPageById, getBubblesForPage, approvePage, rejectPage } from '@/lib/api';
+import { getPageById, getBubblesForPage, approvePage, rejectPage, rejectBubble } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import ValidationForm from '@/components/ValidationForm';
+import ModerationCommentModal from '@/components/ModerationCommentModal';
 
 // Shadcn Components
 import { Button } from "@/components/ui/button";
@@ -75,15 +76,29 @@ export default function PageReview() {
         }
     };
 
-    const handleReject = async () => {
-        if (window.confirm("Refuser cette page ?")) {
-            try {
-                await rejectPage(pageId);
-                router.push('/moderation');
-            } catch (error) {
-                alert("Erreur technique lors du rejet.");
-                console.error(error);
-            }
+    const [showRejectModal, setShowRejectModal] = useState(false);
+
+    const handleReject = async (comment) => {
+        try {
+            await rejectPage(pageId, comment);
+            router.push('/moderation');
+        } catch (error) {
+            alert("Erreur technique lors du rejet.");
+            console.error(error);
+        }
+    };
+
+    const [rejectingBubbleId, setRejectingBubbleId] = useState(null);
+
+    const handleConfirmRejectBubble = async (comment) => {
+        if (!rejectingBubbleId) return;
+        try {
+            await rejectBubble(rejectingBubbleId, comment);
+            setRejectingBubbleId(null);
+            fetchPageData();
+        } catch (error) {
+            alert("Erreur technique lors du rejet de la bulle.");
+            console.error(error);
         }
     };
 
@@ -129,7 +144,7 @@ export default function PageReview() {
                     </div>
                 </div>
                 <div className="flex items-center gap-3">
-                    <Button variant="destructive" onClick={handleReject} className="gap-2">
+                    <Button variant="destructive" onClick={() => setShowRejectModal(true)} className="gap-2">
                         <X className="h-4 w-4" /> Refuser
                     </Button>
                     <Button variant="default" onClick={handleApprove} className="bg-green-600 hover:bg-green-700 gap-2">
@@ -262,10 +277,28 @@ export default function PageReview() {
                             annotationData={editingBubble}
                             onValidationSuccess={handleEditSuccess}
                             onCancel={() => setEditingBubble(null)}
+                            onReject={(id) => {
+                                setEditingBubble(null);
+                                setRejectingBubbleId(id);
+                            }}
                         />
                     )}
                 </DialogContent>
             </Dialog>
+            <ModerationCommentModal
+                isOpen={showRejectModal}
+                onClose={() => setShowRejectModal(false)}
+                onSubmit={handleReject}
+                title="Refuser cette page"
+                description="L'utilisateur verra ce commentaire sur sa page 'Mes soumissions' pour comprendre les corrections nécessaires."
+            />
+            <ModerationCommentModal
+                isOpen={!!rejectingBubbleId}
+                onClose={() => setRejectingBubbleId(null)}
+                onSubmit={handleConfirmRejectBubble}
+                title="Refuser cette bulle"
+                description="L'indexeur verra votre commentaire pour s'améliorer."
+            />
         </div>
     );
 }

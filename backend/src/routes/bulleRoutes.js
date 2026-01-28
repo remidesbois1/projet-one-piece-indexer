@@ -128,8 +128,16 @@ router.put('/:id/validate', authMiddleware, roleCheck(['Admin', 'Modo']), async 
 
 router.put('/:id/reject', authMiddleware, roleCheck(['Admin', 'Modo']), async (req, res) => {
   const { id } = req.params;
+  const { comment } = req.body;
   try {
-    const { data, error } = await supabaseAdmin.from('bulles').update({ statut: 'Rejeté' }).eq('id', id).select();
+    const { data, error } = await supabaseAdmin
+      .from('bulles')
+      .update({
+        statut: 'Rejeté',
+        commentaire_moderation: comment || null
+      })
+      .eq('id', id)
+      .select();
     if (error) throw error;
     res.status(200).json(data);
   } catch (error) {

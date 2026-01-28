@@ -32,7 +32,7 @@ export const getPageById = (id) => apiClient.get(`/pages/${id}`);
 export const getBubblesForPage = (pageId) => apiClient.get(`/pages/${pageId}/bulles`);
 export const createBubble = (bubbleData) => apiClient.post('/bulles', bubbleData);
 export const updateBubbleText = (id, text) => apiClient.put(`/bulles/${id}`, { texte_propose: text });
-export const updateBubbleGeometry = (id, geometry) => apiClient.put(`/bulles/${id}`, { ...geometry }); // Added during recent legacy updates if applicable, but sticking to existing legacy file content logic
+export const updateBubbleGeometry = (id, geometry) => apiClient.put(`/bulles/${id}`, { ...geometry });
 export const deleteBubble = (id) => apiClient.delete(`/bulles/${id}`);
 export const reorderBubbles = (orderedBubbles) => apiClient.put('/bulles/reorder', { orderedBubbles });
 
@@ -44,10 +44,10 @@ export const searchSemantic = (query, limit = 10) => apiClient.get(`/search/sema
 export const getPendingBubbles = (page = 1, limit = 5) => apiClient.get(`/bulles/pending?page=${page}&limit=${limit}`);
 export const validateBubble = (id) => apiClient.put(`/bulles/${id}/validate`, {});
 export const validateAllBubbles = () => apiClient.put('/bulles/validate-all', {});
-export const rejectBubble = (id) => apiClient.put(`/bulles/${id}/reject`, {});
+export const rejectBubble = (id, comment) => apiClient.put(`/bulles/${id}/reject`, { comment });
 export const getPagesForReview = () => apiClient.get('/moderation/pages');
 export const approvePage = (pageId) => apiClient.put(`/moderation/pages/${pageId}/approve`, {});
-export const rejectPage = (pageId) => apiClient.put(`/moderation/pages/${pageId}/reject`, {});
+export const rejectPage = (pageId, comment) => apiClient.put(`/moderation/pages/${pageId}/reject`, { comment });
 export const submitPageForReview = (pageId) => apiClient.put(`/pages/${pageId}/submit-review`, {});
 
 export const createTome = (tomeData) => apiClient.post('/admin/tomes', tomeData);
