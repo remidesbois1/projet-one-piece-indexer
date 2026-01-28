@@ -4,7 +4,7 @@ const { supabase } = require('../config/supabaseClient');
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 router.get('/', async (req, res) => {
-    const { q, page = 1, limit = 10, mode = 'keyword' } = req.query;
+    const { q, page = 1, limit = 10, mode = 'keyword', characters, arc, tome } = req.query;
     const userApiKey = req.headers['x-google-api-key'];
 
     if (!q || q.length < 2) return res.status(400).json({ error: "Recherche trop courte" });
@@ -13,6 +13,20 @@ router.get('/', async (req, res) => {
     let finalResults = [];
     let totalCount = 0;
 
+    const parseCharacters = (chars) => {
+        if (!chars) return null;
+        if (Array.isArray(chars)) return chars;
+        try {
+            return JSON.parse(chars);
+        } catch {
+            return [chars];
+        }
+    };
+
+    const filterCharacters = parseCharacters(characters);
+    const filterArc = arc && arc !== '' ? arc : null;
+    const filterTome = tome && tome !== '' ? parseInt(tome) : null;
+
     try {
         if (mode === 'semantic' && userApiKey) {
             const genAI = new GoogleGenerativeAI(userApiKey);
@@ -20,13 +34,97 @@ router.get('/', async (req, res) => {
 
             const { embedding } = await embedModel.embedContent(q);
 
-            const { data: candidates, error } = await supabase.rpc('match_pages', {
-                query_embedding: embedding.values,
-                match_threshold: 0.60,
-                match_count: 6
-            });
+            let query = supabase
+                .from('pages')
+                .select('id, url_image, description, numero_page, embedding, id_chapitre, chapitres(numero, id_tome, tomes(numero))')
+                .not('embedding', 'is', null);
 
-            if (error) throw error;
+            const { data: allPages, error: pagesError } = await query;
+            if (pagesError) throw pagesError;
+
+            let filteredPages = allPages.map(page => ({
+                id: page.id,
+                url_image: page.url_image,
+                description: page.description,
+                numero_page: page.numero_page,
+                embedding: page.embedding,
+                chapitre_numero: page.chapitres?.numero,
+                tome_numero: page.chapitres?.tomes?.numero,
+                id_tome: page.chapitres?.id_tome
+            }));
+
+            if (filterTome) {
+                filteredPages = filteredPages.filter(page => page.tome_numero === filterTome);
+            }
+
+            if (filterCharacters || filterArc) {
+                filteredPages = filteredPages.filter(page => {
+                    let desc = page.description;
+                    try {
+                        if (typeof desc === 'string') desc = JSON.parse(desc);
+                    } catch (e) {
+                        return false;
+                    }
+
+                    if (!desc?.metadata) return false;
+
+                    if (filterCharacters && filterCharacters.length > 0) {
+                        const pageChars = desc.metadata.characters || [];
+                        const hasCharacter = filterCharacters.some(char =>
+                            pageChars.some(pc => pc.toLowerCase().includes(char.toLowerCase()))
+                        );
+                        if (!hasCharacter) return false;
+                    }
+
+                    if (filterArc) {
+                        const pageArc = desc.metadata.arc || "";
+                        if (!pageArc.toLowerCase().includes(filterArc.toLowerCase())) {
+                            return false;
+                        }
+                    }
+
+                    return true;
+                });
+            }
+
+            if (filteredPages.length === 0) {
+                return res.json({ results: [], totalCount: 0 });
+            }
+
+            const calculateCosineSimilarity = (vec1, vec2) => {
+                let dotProduct = 0;
+                let norm1 = 0;
+                let norm2 = 0;
+                for (let i = 0; i < vec1.length; i++) {
+                    dotProduct += vec1[i] * vec2[i];
+                    norm1 += vec1[i] * vec1[i];
+                    norm2 += vec2[i] * vec2[i];
+                }
+                return dotProduct / (Math.sqrt(norm1) * Math.sqrt(norm2));
+            };
+
+            const candidates = filteredPages
+                .map(page => {
+                    let pageEmbedding = page.embedding;
+                    if (typeof pageEmbedding === 'string') {
+                        try {
+                            pageEmbedding = JSON.parse(pageEmbedding);
+                        } catch (e) {
+                            console.error('[ERROR] Failed to parse embedding for page', page.id);
+                            return null;
+                        }
+                    }
+
+                    const similarity = calculateCosineSimilarity(embedding.values, pageEmbedding);
+                    return {
+                        ...page,
+                        similarity
+                    };
+                })
+                .filter(page => page !== null && page.similarity >= 0.60)
+                .sort((a, b) => b.similarity - a.similarity)
+                .slice(0, 6);
+
             if (!candidates?.length) return res.json({ results: [], totalCount: 0 });
 
             const rerankModel = genAI.getGenerativeModel({
@@ -91,12 +189,65 @@ router.get('/', async (req, res) => {
         } else {
             const { data, error } = await supabase.rpc('search_bulles', {
                 search_term: q,
-                page_limit: parseInt(limit),
-                page_offset: offset
+                page_limit: 10000,
+                page_offset: 0
             });
             if (error) throw error;
 
-            finalResults = (data || []).map(b => ({
+            let filteredData = data || [];
+
+            if (filterTome) {
+                filteredData = filteredData.filter(b => b.tome_numero === filterTome);
+            }
+
+            if (filterCharacters || filterArc) {
+                const pageIds = filteredData.map(b => b.page_id);
+                if (pageIds.length > 0) {
+                    const { data: pagesData } = await supabase
+                        .from('pages')
+                        .select('id, description')
+                        .in('id', pageIds)
+                        .not('description', 'is', null);
+
+                    const validPageIds = new Set();
+                    (pagesData || []).forEach(page => {
+                        let desc = page.description;
+                        try {
+                            if (typeof desc === 'string') desc = JSON.parse(desc);
+                        } catch (e) {
+                            return;
+                        }
+
+                        if (!desc?.metadata) return;
+
+                        let isValid = true;
+
+                        if (filterCharacters && filterCharacters.length > 0) {
+                            const pageChars = desc.metadata.characters || [];
+                            const hasCharacter = filterCharacters.some(char =>
+                                pageChars.some(pc => pc.toLowerCase().includes(char.toLowerCase()))
+                            );
+                            if (!hasCharacter) isValid = false;
+                        }
+
+                        if (isValid && filterArc) {
+                            const pageArc = desc.metadata.arc || "";
+                            if (!pageArc.toLowerCase().includes(filterArc.toLowerCase())) {
+                                isValid = false;
+                            }
+                        }
+
+                        if (isValid) validPageIds.add(page.id);
+                    });
+
+                    filteredData = filteredData.filter(b => validPageIds.has(b.page_id));
+                }
+            }
+
+            totalCount = filteredData.length;
+            const paginatedData = filteredData.slice(offset, offset + parseInt(limit));
+
+            finalResults = paginatedData.map(b => ({
                 type: 'bubble',
                 id: b.id,
                 page_id: b.page_id,
@@ -105,12 +256,12 @@ router.get('/', async (req, res) => {
                 content: b.texte_propose,
                 context: `Tome ${b.tome_numero} - Chap. ${b.chapitre_numero} - Page ${b.numero_page}`
             }));
-            totalCount = data.length > 0 ? data[0].total_count : 0;
         }
 
         res.json({ results: finalResults, totalCount });
 
     } catch (error) {
+        console.error("Erreur moteur de recherche:", error);
         res.status(500).json({ error: "Erreur moteur de recherche" });
     }
 });

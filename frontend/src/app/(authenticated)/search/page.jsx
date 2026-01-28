@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import { searchBubbles } from '@/lib/api';
+import { searchBubbles, getMetadataSuggestions, getTomes } from '@/lib/api';
 import { useDebounce } from '@/hooks/useDebounce';
 import Link from 'next/link';
 
@@ -14,12 +14,15 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 // Custom Components
 import ApiKeyForm from '@/components/ApiKeyForm';
 
 // Icons
-import { Search, X, Loader2, Sparkles, BookOpen, MapPin, Quote, Info, ArrowRight, Settings } from "lucide-react";
+import { Search, X, Loader2, Sparkles, BookOpen, MapPin, Quote, Info, ArrowRight, Settings, Filter, XCircle, Check } from "lucide-react";
 
 const RESULTS_PER_PAGE = 24;
 
@@ -87,6 +90,16 @@ export default function SearchPage() {
     const [hasApiKey, setHasApiKey] = useState(false);
     const [showApiKeyModal, setShowApiKeyModal] = useState(false);
 
+    const [selectedCharacters, setSelectedCharacters] = useState([]);
+    const [selectedArc, setSelectedArc] = useState('all');
+    const [selectedTome, setSelectedTome] = useState('all');
+    const [showFilters, setShowFilters] = useState(false);
+
+    const [characterSuggestions, setCharacterSuggestions] = useState([]);
+    const [arcSuggestions, setArcSuggestions] = useState([]);
+    const [tomes, setTomes] = useState([]);
+    const [charPopoverOpen, setCharPopoverOpen] = useState(false);
+
     const abortControllerRef = useRef(null);
     const inputRef = useRef(null);
 
@@ -97,6 +110,21 @@ export default function SearchPage() {
             if (key) setUseSemantic(false);
         }
         if (inputRef.current) inputRef.current.focus();
+
+        const fetchMetadata = async () => {
+            try {
+                const [metadataRes, tomesRes] = await Promise.all([
+                    getMetadataSuggestions(),
+                    getTomes()
+                ]);
+                setCharacterSuggestions(metadataRes.data.characters || []);
+                setArcSuggestions(metadataRes.data.arcs || []);
+                setTomes(tomesRes.data || []);
+            } catch (err) {
+                console.error('Erreur chargement metadata:', err);
+            }
+        };
+        fetchMetadata();
     }, []);
 
     // --- LOGIQUE MODALE & CLÉ ---
@@ -112,7 +140,7 @@ export default function SearchPage() {
 
     // --- LOGIQUE DE DÉCLENCHEMENT ---
     useEffect(() => {
-        if (useSemantic) return; // Mode manuel pour sémantique
+        if (useSemantic) return;
 
         if (debouncedQuery.trim().length >= 2) {
             setPage(1);
@@ -122,7 +150,7 @@ export default function SearchPage() {
             setTotalCount(0);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [debouncedQuery, useSemantic]);
+    }, [debouncedQuery, useSemantic, selectedCharacters, selectedArc, selectedTome]);
 
     const handleManualSearch = () => {
         if (query.trim().length < 2) return;
@@ -144,7 +172,12 @@ export default function SearchPage() {
         if (isNewSearch) setResults([]);
 
         try {
-            const response = await searchBubbles(searchTerm, pageToFetch, RESULTS_PER_PAGE, useSemantic ? 'semantic' : 'keyword');
+            const filters = {
+                characters: selectedCharacters,
+                arc: selectedArc !== 'all' ? selectedArc : '',
+                tome: selectedTome !== 'all' ? selectedTome : ''
+            };
+            const response = await searchBubbles(searchTerm, pageToFetch, RESULTS_PER_PAGE, useSemantic ? 'semantic' : 'keyword', filters);
             const newResults = response.data.results;
             const total = response.data.totalCount;
 
@@ -262,8 +295,166 @@ export default function SearchPage() {
                             </button>
                         )}
                     </div>
+
+                    {/* === FILTRES MULTICRITÈRES === */}
+                    <div className="mt-6 space-y-3">
+                        <div className="flex items-center justify-between">
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setShowFilters(!showFilters)}
+                                className="gap-2"
+                            >
+                                <Filter className="h-4 w-4" />
+                                Filtres avancés
+                                {(selectedCharacters.length > 0 || selectedArc !== 'all' || selectedTome !== 'all') && (
+                                    <Badge variant="secondary" className="ml-1 bg-indigo-100 text-indigo-700">
+                                        {selectedCharacters.length + (selectedArc !== 'all' ? 1 : 0) + (selectedTome !== 'all' ? 1 : 0)}
+                                    </Badge>
+                                )}
+                            </Button>
+
+                            {(selectedCharacters.length > 0 || selectedArc !== 'all' || selectedTome !== 'all') && (
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                        setSelectedCharacters([]);
+                                        setSelectedArc('all');
+                                        setSelectedTome('all');
+                                    }}
+                                    className="text-xs text-slate-500 hover:text-slate-700"
+                                >
+                                    <XCircle className="h-3 w-3 mr-1" />
+                                    Réinitialiser
+                                </Button>
+                            )}
+                        </div>
+
+                        {showFilters && (
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-4 border border-slate-200 rounded-lg bg-slate-50/50 animate-in slide-in-from-top-2">
+                                <div className="space-y-2">
+                                    <Label className="text-xs font-medium text-slate-700">Personnages</Label>
+                                    <Popover open={charPopoverOpen} onOpenChange={setCharPopoverOpen}>
+                                        <PopoverTrigger asChild>
+                                            <Button
+                                                variant="outline"
+                                                role="combobox"
+                                                className="w-full justify-between text-left font-normal"
+                                            >
+                                                {selectedCharacters.length > 0
+                                                    ? `${selectedCharacters.length} sélectionné${selectedCharacters.length > 1 ? 's' : ''}`
+                                                    : "Tous les personnages"}
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-[300px] p-0">
+                                            <Command>
+                                                <CommandInput placeholder="Rechercher un personnage..." />
+                                                <CommandEmpty>Aucun personnage trouvé.</CommandEmpty>
+                                                <CommandGroup className="max-h-64 overflow-auto">
+                                                    {characterSuggestions.map((char) => (
+                                                        <CommandItem
+                                                            key={char}
+                                                            onSelect={() => {
+                                                                setSelectedCharacters(prev =>
+                                                                    prev.includes(char)
+                                                                        ? prev.filter(c => c !== char)
+                                                                        : [...prev, char]
+                                                                );
+                                                            }}
+                                                        >
+                                                            <Check
+                                                                className={`mr-2 h-4 w-4 ${selectedCharacters.includes(char) ? "opacity-100" : "opacity-0"}`}
+                                                            />
+                                                            {char}
+                                                        </CommandItem>
+                                                    ))}
+                                                </CommandGroup>
+                                            </Command>
+                                        </PopoverContent>
+                                    </Popover>
+                                    {selectedCharacters.length > 0 && (
+                                        <div className="flex flex-wrap gap-1 mt-2">
+                                            {selectedCharacters.map(char => (
+                                                <Badge
+                                                    key={char}
+                                                    variant="secondary"
+                                                    className="text-xs bg-indigo-100 text-indigo-700 gap-1 cursor-pointer hover:bg-indigo-200"
+                                                    onClick={() => setSelectedCharacters(prev => prev.filter(c => c !== char))}
+                                                >
+                                                    {char}
+                                                    <X className="h-3 w-3" />
+                                                </Badge>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label className="text-xs font-medium text-slate-700">Arc narratif</Label>
+                                    <Select value={selectedArc} onValueChange={setSelectedArc}>
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Tous les arcs" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="all">Tous les arcs</SelectItem>
+                                            {arcSuggestions.map((arc) => (
+                                                <SelectItem key={arc} value={arc}>
+                                                    {arc}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label className="text-xs font-medium text-slate-700">Tome</Label>
+                                    <Select value={selectedTome} onValueChange={setSelectedTome}>
+                                        <SelectTrigger>
+                                            <SelectValue placeholder="Tous les tomes" />
+                                        </SelectTrigger>
+                                        <SelectContent className="max-h-64">
+                                            <SelectItem value="all">Tous les tomes</SelectItem>
+                                            {tomes.map((tome) => (
+                                                <SelectItem key={tome.numero} value={tome.numero.toString()}>
+                                                    Tome {tome.numero} {tome.titre && `- ${tome.titre}`}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
+
+            {/* Active Filters Summary */}
+            {(selectedCharacters.length > 0 || selectedArc !== 'all' || selectedTome !== 'all') && (
+                <div className="px-0 mb-4">
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                        <span className="text-slate-600 font-medium">Filtres actifs :</span>
+                        {selectedCharacters.map(char => (
+                            <Badge key={char} variant="outline" className="gap-1 bg-white">
+                                {char}
+                                <X className="h-3 w-3 cursor-pointer" onClick={() => setSelectedCharacters(prev => prev.filter(c => c !== char))} />
+                            </Badge>
+                        ))}
+                        {selectedArc !== 'all' && (
+                            <Badge variant="outline" className="gap-1 bg-white">
+                                {selectedArc}
+                                <X className="h-3 w-3 cursor-pointer" onClick={() => setSelectedArc('all')} />
+                            </Badge>
+                        )}
+                        {selectedTome !== 'all' && (
+                            <Badge variant="outline" className="gap-1 bg-white">
+                                Tome {selectedTome}
+                                <X className="h-3 w-3 cursor-pointer" onClick={() => setSelectedTome('all')} />
+                            </Badge>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {/* --- RESULTS AREA --- */}
             <div className="px-0"> {/* Container padding handled by layout */}
@@ -400,7 +591,7 @@ export default function SearchPage() {
                     <ApiKeyForm onSave={handleSaveApiKey} />
                 </DialogContent>
             </Dialog>
-        </div>
+        </div >
     );
 }
 
