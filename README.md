@@ -16,7 +16,7 @@ Le projet est accessible publiquement à l'adresse suivante (accès invité pour
 ### **Frontend & IA Cliente**
 
 * **Framework :** React 19 & Vite.  
-* **OCR Local :** Florence-2-base exécuté via WebGPU (@xenova/transformers) directement dans le navigateur client.  
+* **OCR Local :** **Florence-2-base Fine-tuned** exécuté via WebGPU (@xenova/transformers) directement dans le navigateur client.
 * **State Management :** Context API & LocalStorage (persistance locale et sécurisée des clés API utilisateur).
 
 ### **Backend & Services de Traitement**
@@ -32,11 +32,9 @@ Le projet est accessible publiquement à l'adresse suivante (accès invité pour
 L'extraction de texte repose sur une architecture hybride conçue pour optimiser le ratio coût/performance tout en garantissant la qualité des données.
 
 ### **1\. Mode Local**
-
-Ce mode déporte la charge de calcul sur le client tout en assurant une normalisation côté serveur.
-
-* **Extraction :** Exécution du modèle Florence-2 (Microsoft) via l'API WebGPU du navigateur.  
-* **Post-traitement :** Le texte brut est envoyé au backend qui le traite via l'instance locale de LanguageTool et un dictionnaire terminologique spécialisé (noms propres, lieux) pour corriger les erreurs d'OCR et restaurer la casse/accentuation.
+Ce mode déporte la charge de calcul sur le client :
+* **Modèle :** `Remidesbois/florence2-onepiece-ocr`.
+* **Extraction :** Exécution via l'API WebGPU du navigateur. Grâce au fine-tuning spécialisé, le modèle capture avec précision la typographie spécifique sans nécessiter de post-traitement textuel externe lourd.
 
 ### **2\. Mode Cloud**
 
@@ -46,9 +44,30 @@ Ce mode est une alternative pour les utilisateurs ne disposant pas d'accélérat
 * **Sécurité :** L'appel API est effectué en utilisant la clé API personnelle de l'utilisateur, stockée en LocalStorage. Aucune clé n'est conservée côté serveur.
 * **Efficacité** Le résultat est souvent meilleur qu'avec Florence + les différents tweaks (Résultat parfait dans 90% des cas). Mais coûte des crédits de l'API.
 
+## **Focus : Florence-2-base Fine-tuned pour One Piece**
+
+Ce modèle est une version de `microsoft/Florence-2-base` spécialisée dans l'OCR de bulles de manga, spécifiquement entraînée sur des scans français de *One Piece*. Il a été optimisé pour une précision élevée sur les textes stylisés et intégré avec ONNX pour une exécution fluide dans le navigateur.
+
+### **Caractéristiques Clés**
+* **OCR Spécialisé :** Conçu pour gérer la typographie manga et le contexte multi-lignes des bulles de dialogue.
+* **Transformers.js Ready :** Inclut des poids ONNX optimisés pour WebGPU et WASM.
+
+### **Résultats d'Évaluation**
+Le modèle a été évalué par rapport au modèle de base sur un set de test de 150 bulles. L'utilisation du **Full Fine-Tuning (FFT)** a permis une adaptation profonde de l'encodeur de vision.
+
+| Métrique | Base Model | Fine-Tuned (FFT) | Amélioration |
+| :--- | :--- | :--- | :--- |
+| **CER** (Character Error Rate) | 78.77% | **3.13%** | **+75.64 pts** |
+| **WER** (Word Error Rate) | 99.57% | **22.34%** | **+77.23 pts** |
+
+> Florence2-Base parait désastreux pour plusieurs raisons :
+> - Output intégralement en majuscule du texte.
+> - Incompréhension totale des accents.
+> - Oublis fréquents des espaces entre les mots.
+
 ## **Moteur de recherche sémantique**
 
-Le système intègre une recherche contextuelle basée sur l'analyse multimodale (texte et image).
+Le système intègre une recherche contextuelle :
 
 ### **Indexation et vectorisation**
 
