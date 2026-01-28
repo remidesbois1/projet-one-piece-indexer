@@ -8,12 +8,26 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 // Icons
-import { Check, X, Pencil, ImageOff } from "lucide-react";
+import { Check, X, Pencil, ImageOff, History } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { getBubbleHistory } from '@/lib/api';
 
 const BubbleReviewItem = ({ bubble, onAction, onEdit }) => {
   const { session } = useAuth();
   const [imageSrc, setImageSrc] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  // History State
+  const [history, setHistory] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   // États d'animation : 'idle' -> 'stamped' -> 'leaving'
   const [animStep, setAnimStep] = useState('idle');
@@ -43,6 +57,16 @@ const BubbleReviewItem = ({ bubble, onAction, onEdit }) => {
     };
   }, [bubble.id, session]);
 
+  useEffect(() => {
+    if (isHistoryOpen) {
+      setLoadingHistory(true);
+      getBubbleHistory(bubble.id)
+        .then(res => setHistory(res.data))
+        .catch(err => console.error("History fetch error:", err))
+        .finally(() => setLoadingHistory(false));
+    }
+  }, [isHistoryOpen, bubble.id]);
+
   const handleActionSequence = (type) => {
     if (animStep !== 'idle') return;
 
@@ -56,6 +80,13 @@ const BubbleReviewItem = ({ bubble, onAction, onEdit }) => {
         onAction(type, bubble.id);
       }, 50);
     }, 600);
+  };
+
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleString('fr-FR', {
+      day: '2-digit', month: '2-digit', year: '2-digit',
+      hour: '2-digit', minute: '2-digit'
+    });
   };
 
   return (
@@ -98,8 +129,57 @@ const BubbleReviewItem = ({ bubble, onAction, onEdit }) => {
 
       {/* Colonne Contenu */}
       <div className="flex-1 p-5 flex flex-col justify-center">
-        <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">
-          Proposition de texte
+        <div className="flex justify-between items-start mb-2">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            Proposition de texte
+          </div>
+
+          {/* History Trigger */}
+          <Dialog open={isHistoryOpen} onOpenChange={setIsHistoryOpen}>
+            <DialogTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-400 hover:text-slate-600 -mt-1 -mr-1">
+                <History className="h-4 w-4" />
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md max-h-[80vh] flex flex-col">
+              <DialogHeader>
+                <DialogTitle>Historique de la bulle</DialogTitle>
+              </DialogHeader>
+              <ScrollArea className="flex-1 pr-4">
+                {loadingHistory ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-10 w-full" />
+                    <Skeleton className="h-10 w-full" />
+                  </div>
+                ) : history.length === 0 ? (
+                  <div className="text-center text-slate-500 py-4">Aucun historique disponible.</div>
+                ) : (
+                  <div className="space-y-4">
+                    {history.map((entry) => (
+                      <div key={entry.id} className="text-sm border-l-2 border-slate-200 pl-3 py-1">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="font-semibold text-slate-700 capitalize">{entry.action.replace('_', ' ')}</span>
+                          <span className="text-xs text-slate-400">{formatDate(entry.created_at)}</span>
+                        </div>
+                        <div className="text-xs text-slate-500 mb-1">
+                          Par {entry.user?.email || 'Inconnu'}
+                        </div>
+                        {entry.comment && (
+                          <div className="text-xs text-orange-600 italic bg-orange-50 p-1 rounded">"{entry.comment}"</div>
+                        )}
+                        {entry.action === 'update_text' && entry.old_data?.texte_propose && (
+                          <div className="mt-1 text-xs">
+                            <div className="line-through text-slate-400">{entry.old_data.texte_propose}</div>
+                            <div className="text-green-600">{entry.new_data.texte_propose}</div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </ScrollArea>
+            </DialogContent>
+          </Dialog>
         </div>
         <div className="bg-slate-50/80 p-3 rounded-md border border-slate-100 text-slate-800 text-base leading-relaxed font-medium font-sans">
           {bubble.texte_propose}

@@ -79,9 +79,14 @@ const Header = () => {
                         </Link>
                     )}
                     {!isGuest && isAdmin && (
-                        <Link href="/admin" className={getLinkStyle('/admin')}>
-                            Admin
-                        </Link>
+                        <>
+                            <Link href="/admin" className={getLinkStyle('/admin')}>
+                                Admin
+                            </Link>
+                            <Link href="/admin/data" className={getLinkStyle('/admin/data')}>
+                                Explorateur
+                            </Link>
+                        </>
                     )}
                 </nav>
 

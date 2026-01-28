@@ -10,6 +10,7 @@ const path = require('path');
 const mime = require('mime-types');
 
 const { supabaseAdmin } = require('../config/supabaseClient');
+const { logBubbleHistory } = require('../utils/auditLogger');
 
 const s3Client = new S3Client({
   region: 'auto',
@@ -144,4 +145,56 @@ router.post('/chapitres/upload', authMiddleware, roleCheck(['Admin']), upload.si
   }
 });
 
+router.get('/hierarchy', authMiddleware, roleCheck(['Admin', 'Modo']), async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('tomes')
+      .select(`
+        id, numero, titre,
+        chapitres (
+          id, numero, titre,
+          pages (
+            id, numero_page, statut, url_image,
+            bulles ( count )
+          )
+        )
+      `)
+      .order('numero', { ascending: true });
+
+    if (error) throw error;
+
+    // Sort nested manually if needed, or rely on client. Supabase nested order is tricky sometimes.
+    // Let's sort chapters and pages in JS to be safe
+    data.forEach(tome => {
+      tome.chapitres.sort((a, b) => a.numero - b.numero);
+      tome.chapitres.forEach(chap => {
+        chap.pages.sort((a, b) => a.numero_page - b.numero_page);
+      });
+    });
+
+    res.status(200).json(data);
+  } catch (error) {
+    console.error("Erreur hiérarchie:", error);
+    res.status(500).json({ error: "Erreur lors de la récupération des données." });
+  }
+});
+
+router.get('/pages/:id/bulles', authMiddleware, roleCheck(['Admin', 'Modo']), async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('bulles')
+      .select('id, x, y, w, h, texte_propose, statut, id_user_createur, order')
+      .eq('id_page', id)
+      .order('order', { ascending: true });
+
+    if (error) throw error;
+    res.status(200).json(data);
+  } catch (error) {
+    console.error("Erreur bulles admin:", error);
+    res.status(500).json({ error: "Erreur lors de la récupération des bulles." });
+  }
+});
+
 module.exports = router;
+
