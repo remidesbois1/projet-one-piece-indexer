@@ -67,3 +67,7 @@ export const getTopContributors = () => apiClient.get('/stats/top-contributors')
 export const getGlossary = () => apiClient.get('/glossary');
 export const addGlossaryWord = (word) => apiClient.post('/glossary', { word });
 export const deleteGlossaryWord = (word) => apiClient.delete(`/glossary/${encodeURIComponent(word)}`);
+
+export const getBubbleHistory = (id) => apiClient.get(`/bulles/${id}/history`);
+export const getAdminHierarchy = () => apiClient.get('/admin/hierarchy');
+export const getAdminBubblesForPage = (pageId) => apiClient.get(`/admin/pages/${pageId}/bulles`);

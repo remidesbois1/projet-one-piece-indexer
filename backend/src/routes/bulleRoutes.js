@@ -4,6 +4,7 @@ const { supabaseAdmin } = require('../config/supabaseClient');
 const { authMiddleware, roleCheck } = require('../middleware/auth');
 const sharp = require('sharp');
 const axios = require('axios');
+const { logBubbleHistory } = require('../utils/auditLogger');
 
 router.post('/', authMiddleware, async (req, res) => {
   const { id: userId } = req.user;
@@ -37,6 +38,11 @@ router.post('/', authMiddleware, async (req, res) => {
       }])
       .select()
       .single();
+
+    if (insertError) throw insertError;
+
+    // Audit Log: Creation
+    await logBubbleHistory(data.id, userId, 'create', null, { ...data }, 'Création initiale');
 
     if (insertError) throw insertError;
     const { error: pageUpdateError } = await supabaseAdmin
@@ -118,8 +124,12 @@ router.put('/validate-all', authMiddleware, roleCheck(['Admin']), async (req, re
 router.put('/:id/validate', authMiddleware, roleCheck(['Admin', 'Modo']), async (req, res) => {
   const { id } = req.params;
   try {
-    const { data, error } = await supabaseAdmin.from('bulles').update({ statut: 'Validé', validated_at: new Date() }).eq('id', id).select();
+    const { data, error } = await supabaseAdmin.from('bulles').update({ statut: 'Validé', validated_at: new Date() }).eq('id', id).select().single();
     if (error) throw error;
+
+    // Audit Log: Validate
+    await logBubbleHistory(id, req.user.id, 'validate', null, data, 'Validation effectuée');
+
     res.status(200).json(data);
   } catch (error) {
     res.status(500).json({ error: "Erreur lors de la validation de la bulle." });
@@ -137,8 +147,13 @@ router.put('/:id/reject', authMiddleware, roleCheck(['Admin', 'Modo']), async (r
         commentaire_moderation: comment || null
       })
       .eq('id', id)
-      .select();
+      .select()
+      .single();
     if (error) throw error;
+
+    // Audit Log: Reject
+    await logBubbleHistory(id, req.user.id, 'reject', null, data, comment || 'Rejet effectué');
+
     res.status(200).json(data);
   } catch (error) {
     res.status(500).json({ error: "Erreur lors du rejet de la bulle." });
@@ -197,7 +212,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
   try {
     const { data: existingBubble, error: findError } = await supabaseAdmin
       .from('bulles')
-      .select('id, id_user_createur')
+      .select('id, id_user_createur, texte_propose')
       .eq('id', id)
       .single();
 
@@ -218,6 +233,16 @@ router.put('/:id', authMiddleware, async (req, res) => {
       .select();
 
     if (error) throw error;
+
+    // Audit Log: Update Text
+    await logBubbleHistory(
+      id,
+      userId,
+      'update_text',
+      { texte_propose: existingBubble.texte_propose },
+      { texte_propose: texte_propose },
+      'Modification du texte'
+    );
 
     res.status(200).json(data);
 
@@ -246,6 +271,23 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     res.status(204).send();
   } catch (error) {
     res.status(500).json({ error: "Erreur lors de la suppression de la bulle." });
+  }
+});
+
+router.get('/:id/history', authMiddleware, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('bubble_history')
+      .select('*')
+      .eq('bubble_id', id)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    res.status(200).json(data);
+  } catch (error) {
+    console.error("Erreur historique:", error);
+    res.status(500).json({ error: "Impossible de récupérer l'historique." });
   }
 });
 
