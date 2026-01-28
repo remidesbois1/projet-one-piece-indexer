@@ -11,7 +11,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"; // Optionnel, s
 // Icons
 import { AlertCircle, Loader2 } from "lucide-react";
 
-const ValidationForm = ({ annotationData, onValidationSuccess, onCancel }) => {
+const ValidationForm = ({ annotationData, onValidationSuccess, onCancel, onReject }) => {
   const { session } = useAuth();
   const [text, setText] = useState('');
   const [isAiFailure, setIsAiFailure] = useState(false);
@@ -101,6 +101,17 @@ const ValidationForm = ({ annotationData, onValidationSuccess, onCancel }) => {
       </div>
 
       <div className="flex justify-end gap-3 pt-2">
+        {onReject && (
+          <Button
+            type="button"
+            variant="destructive"
+            onClick={() => onReject(annotationData.id)}
+            disabled={isSubmitting}
+          >
+            Refuser
+          </Button>
+        )}
+
         {onCancel && (
           <Button
             type="button"

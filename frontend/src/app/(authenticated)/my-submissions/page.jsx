@@ -20,7 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 
 // Icons
-import { ChevronLeft, ChevronRight, Inbox } from "lucide-react";
+import { ChevronLeft, ChevronRight, Inbox, MessageCircle } from "lucide-react";
 
 const RESULTS_PER_PAGE = 15;
 
@@ -114,6 +114,12 @@ export default function MySubmissionsPage() {
                                             >
                                                 "{sub.texte_propose}"
                                             </div>
+                                            {sub.commentaire_moderation && (
+                                                <div className="mt-2 text-xs flex gap-2 items-start text-red-600 bg-red-50 p-2 rounded border border-red-100 max-w-md">
+                                                    <MessageCircle className="h-3 w-3 mt-0.5 shrink-0" />
+                                                    <span><strong>Motif du refus :</strong> {sub.commentaire_moderation}</span>
+                                                </div>
+                                            )}
                                         </TableCell>
 
                                         <TableCell>

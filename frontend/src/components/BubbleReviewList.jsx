@@ -5,6 +5,7 @@ import { useUserProfile } from '@/hooks/useUserProfile';
 import { getPendingBubbles, validateBubble, rejectBubble, validateAllBubbles } from '@/lib/api';
 import BubbleReviewItem from './BubbleReviewItem';
 import ValidationForm from './ValidationForm';
+import ModerationCommentModal from './ModerationCommentModal';
 
 // Shadcn Components
 import { Button } from "@/components/ui/button";
@@ -57,19 +58,28 @@ const BubbleReviewList = () => {
         }
     }, [session]);
 
+    const [rejectingItem, setRejectingItem] = useState(null);
+
     const handleAction = async (action, id) => {
         if (!session) return;
         try {
             if (action === 'validate') {
                 await validateBubble(id);
+                fetchPending(currentPage);
             } else if (action === 'reject') {
-                await rejectBubble(id);
+                setRejectingItem(id);
             }
-            fetchPending(currentPage);
         } catch (err) {
             alert(`Une erreur est survenue lors de l'action.`);
             console.error(err);
         }
+    };
+
+    const handleConfirmReject = async (comment) => {
+        if (!rejectingItem) return;
+        await rejectBubble(rejectingItem, comment);
+        setRejectingItem(null);
+        fetchPending(currentPage);
     };
 
     const handleValidateAll = async () => {
@@ -195,10 +205,21 @@ const BubbleReviewList = () => {
                             annotationData={editingBubble}
                             onValidationSuccess={handleEditSuccess}
                             onCancel={() => setEditingBubble(null)}
+                            onReject={(id) => {
+                                setEditingBubble(null);
+                                setRejectingItem(id);
+                            }}
                         />
                     )}
                 </DialogContent>
             </Dialog>
+            <ModerationCommentModal
+                isOpen={!!rejectingItem}
+                onClose={() => setRejectingItem(null)}
+                onSubmit={handleConfirmReject}
+                title="Refuser cette bulle"
+                description="L'indexeur verra votre commentaire pour s'améliorer."
+            />
         </div>
     );
 };

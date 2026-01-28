@@ -696,6 +696,18 @@ export default function AnnotatePage() {
                 </div>
             )}
 
+            {page.commentaire_moderation && page.statut !== 'completed' && (
+                <div className="bg-red-50 border-b border-red-200 px-6 py-3 flex items-center gap-3 text-red-800 text-sm animate-in slide-in-from-top duration-300">
+                    <div className="h-8 w-8 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                        <X className="h-4 w-4 text-red-600" />
+                    </div>
+                    <div className="flex-1">
+                        <p className="font-bold">Cette page a été refusée par la modération</p>
+                        <p className="text-red-700/80 italic font-medium">"{page.commentaire_moderation}"</p>
+                    </div>
+                </div>
+            )}
+
             {/* Image Prefetching */}
             {navContext.next && (
                 <link rel="prefetch" href={getProxiedImageUrl(navContext.next.url_image)} />
