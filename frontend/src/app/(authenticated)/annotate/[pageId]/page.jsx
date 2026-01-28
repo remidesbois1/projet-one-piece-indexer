@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, reorderBubbles, analyseBubble, savePageDescription, getMetadataSuggestions, getPages } from '@/lib/api';
+import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, reorderBubbles, analyseBubble, savePageDescription, getMetadataSuggestions, getPages, generateAIDescription } from '@/lib/api';
 import ValidationForm from '@/components/ValidationForm';
 import ApiKeyForm from '@/components/ApiKeyForm';
 import { useAuth } from '@/context/AuthContext';
@@ -20,7 +20,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Send, Loader2, MousePointer2, Cpu, CloudLightning, Download, Settings2, FileText, Save, Plus, X, Search, ChevronLeft, ChevronRight, Shield, Code } from "lucide-react";
+import { ArrowLeft, Send, Loader2, MousePointer2, Cpu, CloudLightning, Download, Settings2, FileText, Save, Plus, X, Search, ChevronLeft, ChevronRight, Shield, Code, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function AnnotatePage() {
@@ -65,6 +65,7 @@ export default function AnnotatePage() {
     // -- New Hooks for Semantic Description --
     const [showDescModal, setShowDescModal] = useState(false);
     const [isSavingDesc, setIsSavingDesc] = useState(false);
+    const [isGeneratingAI, setIsGeneratingAI] = useState(false);
 
     // Navigation States
     const [chapterPages, setChapterPages] = useState([]);
@@ -409,6 +410,35 @@ export default function AnnotatePage() {
             alert("Erreur lors de la sauvegarde.");
         } finally {
             setIsSavingDesc(false);
+        }
+    };
+
+    const handleGenerateAI = async () => {
+        const storedKey = localStorage.getItem('google_api_key');
+        if (!storedKey) {
+            setShowApiKeyModal(true);
+            return;
+        }
+
+        setIsGeneratingAI(true);
+        try {
+            const res = await generateAIDescription(pageId);
+            const aiData = res.data;
+
+            setFormData({
+                content: aiData.content || "",
+                arc: aiData.metadata?.arc || "",
+                characters: Array.isArray(aiData.metadata?.characters) ? aiData.metadata.characters : []
+            });
+
+            setJsonInput(JSON.stringify(aiData, null, 4));
+            setJsonError(null);
+
+        } catch (error) {
+            console.error("Erreur génération AI:", error);
+            alert("Erreur lors de la génération par IA. Vérifiez votre clé API.");
+        } finally {
+            setIsGeneratingAI(false);
         }
     };
 
@@ -956,6 +986,16 @@ export default function AnnotatePage() {
                                     Définition des métadonnées pour le moteur de recherche.
                                 </DialogDescription>
                             </div>
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={handleGenerateAI}
+                                disabled={isGeneratingAI || isGuest}
+                                className="gap-2 border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100"
+                            >
+                                {isGeneratingAI ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                                Générer avec IA
+                            </Button>
                         </div>
                     </DialogHeader>
 
