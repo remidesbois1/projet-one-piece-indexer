@@ -48,6 +48,16 @@ Ce mode est une alternative pour les utilisateurs ne disposant pas d'accélérat
 
 Ce modèle est une version de `microsoft/Florence-2-base` spécialisée dans l'OCR de bulles de manga, spécifiquement entraînée sur des scans français de *One Piece*. Il a été optimisé pour une précision élevée sur les textes stylisés et intégré avec ONNX pour une exécution fluide dans le navigateur.
 
+## **Focus : Rentabilité des APIs (Pay-as-you-go)**
+
+Bien que le projet privilégie le **WebGPU** (coût nul pour l'hébergeur) et le **Free Tier** de Google, cette section détaille les coûts opérationnels théoriques.
+
+| Opération IA | Modèle utilisé | Tokens (In / Out) | Coût pour 1 000 requêtes |
+| :--- | :--- | :--- | :--- |
+| **OCR Cloud** | Gemini 2.5 Flash Lite | 350 / 10 | **0,0390 $** |
+| **Recherche sémantique (Reranking)** | Gemini 2.5 Flash Lite | 900 / 70 | **0,1180 $** |
+| **Génération Description** | Gemini 3.0 Flash | 1400 / 860 | **3,2800 $** |
+
 ### **Caractéristiques Clés**
 * **OCR Spécialisé :** Conçu pour gérer la typographie manga et le contexte multi-lignes des bulles de dialogue.
 * **Transformers.js Ready :** Inclut des poids ONNX optimisés pour WebGPU et WASM.
