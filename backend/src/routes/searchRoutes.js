@@ -266,4 +266,30 @@ router.get('/', async (req, res) => {
     }
 });
 
+router.post('/feedback', async (req, res) => {
+    const { query, doc_id, doc_text, is_relevant, model_provider } = req.body;
+
+    try {
+        const { error } = await supabase
+            .from('search_feedback')
+            .insert({
+                query,
+                doc_id: doc_id ? parseInt(String(doc_id).replace('page-', ''), 10) : null,
+                doc_text,
+                is_relevant,
+                model_provider: model_provider || 'unknown',
+            });
+
+        if (error) {
+            console.error("Feedback insert error:", error);
+            return res.status(500).json({ error: error.message });
+        }
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error("Feedback server error:", err);
+        res.status(500).json({ error: "Internal Error" });
+    }
+});
+
 module.exports = router;
