@@ -23,6 +23,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowLeft, Send, Loader2, MousePointer2, Cpu, CloudLightning, Download, Settings2, FileText, Save, Plus, X, Search, ChevronLeft, ChevronRight, Shield, Code, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 export default function AnnotatePage() {
     const { user, session, isGuest } = useAuth();
@@ -367,7 +368,15 @@ export default function AnnotatePage() {
                 setOcrSource('cloud');
             })
             .catch(error => {
+                if (error.message === "QUOTA_EXCEEDED") {
+                    toast.error("Quota API Gemini dépassé !", {
+                        description: "Votre clé a atteint sa limite gratuite (RPM/TPM). Réessayez dans une minute ou changez de clé."
+                    });
+                    return;
+                }
+
                 console.error("Cloud OCR Error:", error);
+
                 // Check for invalid API key signals from Google SDK
                 if (error.message?.includes('API key') || error.toString().includes('400')) {
                     localStorage.removeItem('google_api_key');
@@ -404,13 +413,13 @@ export default function AnnotatePage() {
         setIsSavingDesc(true);
         try {
             await savePageDescription(pageId, payload);
-            alert("Description et vecteurs enregistrés !");
+            toast.success("Description et vecteurs enregistrés !");
             setShowDescModal(false);
             const res = await getPageById(pageId);
             setPage(res.data);
         } catch (error) {
             console.error(error);
-            alert("Erreur lors de la sauvegarde.");
+            toast.error("Erreur lors de la sauvegarde.");
         } finally {
             setIsSavingDesc(false);
         }
@@ -439,8 +448,16 @@ export default function AnnotatePage() {
             setJsonError(null);
 
         } catch (error) {
-            console.error("Erreur génération AI:", error);
-            alert("Erreur lors de la génération par IA. Vérifiez votre clé API.");
+            if (error.message === "QUOTA_EXCEEDED") {
+                toast.error("Quota API Gemini dépassé !", {
+                    description: "Votre clé a atteint sa limite. Veuillez patienter."
+                });
+            } else {
+                console.error("Erreur génération AI:", error);
+                toast.error("Erreur lors de la génération par IA.", {
+                    description: "Vérifiez votre clé API."
+                });
+            }
         } finally {
             setIsGeneratingAI(false);
         }
@@ -475,7 +492,7 @@ export default function AnnotatePage() {
             try {
                 await deleteBubble(bubbleId);
                 fetchBubbles();
-            } catch (error) { alert("Erreur suppression."); }
+            } catch (error) { toast.error("Erreur suppression."); }
         }
     };
 
@@ -492,7 +509,8 @@ export default function AnnotatePage() {
             try {
                 const response = await submitPageForReview(pageId);
                 setPage(response.data);
-            } catch (error) { alert("Erreur soumission."); }
+                toast.success("Page soumise pour validation !");
+            } catch (error) { toast.error("Erreur soumission."); }
         }
     };
 

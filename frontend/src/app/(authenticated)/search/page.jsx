@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { searchBubbles, getMetadataSuggestions, getTomes } from '@/lib/api';
+import { rerankSearchResults } from '@/lib/geminiClient';
 import { useDebounce } from '@/hooks/useDebounce';
 import Link from 'next/link';
 
@@ -17,6 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { toast } from "sonner";
 
 // Custom Components
 import ApiKeyForm from '@/components/ApiKeyForm';
@@ -87,6 +89,7 @@ export default function SearchPage() {
 
     // Settings & Modal
     const [useSemantic, setUseSemantic] = useState(false);
+    const [useRerank, setUseRerank] = useState(false);
     const [hasApiKey, setHasApiKey] = useState(false);
     const [showApiKeyModal, setShowApiKeyModal] = useState(false);
 
@@ -94,6 +97,7 @@ export default function SearchPage() {
     const [selectedArc, setSelectedArc] = useState('all');
     const [selectedTome, setSelectedTome] = useState('all');
     const [showFilters, setShowFilters] = useState(false);
+
 
     const [characterSuggestions, setCharacterSuggestions] = useState([]);
     const [arcSuggestions, setArcSuggestions] = useState([]);
@@ -140,7 +144,9 @@ export default function SearchPage() {
 
     // --- LOGIQUE DE DÉCLENCHEMENT ---
     useEffect(() => {
-        if (useSemantic) return;
+
+        if (useSemantic) return; // Si sémantique activé, on attend le bouton ou Entrée
+        if (useRerank) return; // Si rerank activé, on évite le live-search pour économiser les tokens
 
         if (debouncedQuery.trim().length >= 2) {
             setPage(1);
@@ -150,7 +156,7 @@ export default function SearchPage() {
             setTotalCount(0);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [debouncedQuery, useSemantic, selectedCharacters, selectedArc, selectedTome]);
+    }, [debouncedQuery, useSemantic, useRerank, selectedCharacters, selectedArc, selectedTome]);
 
     const handleManualSearch = () => {
         if (query.trim().length < 2) return;
@@ -178,8 +184,29 @@ export default function SearchPage() {
                 tome: selectedTome !== 'all' ? selectedTome : ''
             };
             const response = await searchBubbles(searchTerm, pageToFetch, RESULTS_PER_PAGE, useSemantic ? 'semantic' : 'keyword', filters);
-            const newResults = response.data.results;
+            let newResults = response.data.results;
             const total = response.data.totalCount;
+
+            // --- RERANKING GEMINI ---
+            // On rerank seulement si on a des résultats, qu'on est sur la page 1 (ou qu'on charge tout), 
+            // et que l'option est activée.
+            if (useRerank && hasApiKey && newResults.length > 0 && pageToFetch === 1) {
+                // Petit délai artificiel ou state pour montrer "Reranking..." si besoin ?
+                // Pour l'instant on le fait direct dans le loading global
+                try {
+                    const reranked = await rerankSearchResults(newResults, searchTerm, localStorage.getItem('google_api_key'));
+                    newResults = reranked;
+                } catch (e) {
+                    if (e.message === "QUOTA_EXCEEDED") {
+                        toast.error("Quota Gemini dépassé", {
+                            description: "Le Reranking a été désactivé. Affichage des résultats classiques."
+                        });
+                        setUseRerank(false);
+                    } else {
+                        console.error("Reranking failed, using original order", e);
+                    }
+                }
+            }
 
             setResults(prev => isNewSearch ? newResults : [...prev, ...newResults]);
             setTotalCount(total);
@@ -250,21 +277,50 @@ export default function SearchPage() {
 
                     {/* CONTROLS & INFO */}
                     <div className="flex flex-col items-center gap-4">
-                        <div className="flex items-center space-x-2 bg-slate-100/50 px-4 py-2 rounded-full border border-slate-200">
-                            <Switch
-                                id="semantic-mode"
-                                checked={useSemantic}
-                                onCheckedChange={setUseSemantic}
-                                disabled={!hasApiKey}
-                                className="data-[state=checked]:bg-indigo-600"
-                            />
-                            <Label
-                                htmlFor="semantic-mode"
-                                className={`font-medium cursor-pointer select-none flex items-center gap-2 ${!hasApiKey ? "text-slate-400" : "text-slate-700"}`}
-                            >
-                                <Sparkles className={`h-4 w-4 ${useSemantic ? "text-indigo-500 fill-indigo-100" : "text-slate-400"}`} />
-                                Recherche Sémantique (IA)
-                            </Label>
+                        <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-4 bg-slate-100/50 p-1.5 pl-4 rounded-full border border-slate-200">
+                                <div className="flex items-center space-x-2">
+                                    <Switch
+                                        id="semantic-mode"
+                                        checked={useSemantic}
+                                        onCheckedChange={(checked) => {
+                                            setUseSemantic(checked);
+                                            if (!checked) setUseRerank(false);
+                                        }}
+                                        disabled={!hasApiKey}
+                                        className="data-[state=checked]:bg-indigo-600"
+                                    />
+                                    <Label
+                                        htmlFor="semantic-mode"
+                                        className={`font-medium cursor-pointer select-none flex items-center gap-2 ${!hasApiKey ? "text-slate-400" : "text-slate-700"}`}
+                                    >
+                                        <Sparkles className={`h-4 w-4 ${useSemantic ? "text-indigo-500 fill-indigo-100" : "text-slate-400"}`} />
+                                        Recherche Sémantique
+                                    </Label>
+                                </div>
+
+                                {/* Divider */}
+                                <div className="w-px h-4 bg-slate-300 mx-1" />
+
+                                <div className="flex items-center space-x-2 pr-2">
+                                    <Switch
+                                        id="rerank-mode"
+                                        checked={useRerank}
+                                        onCheckedChange={setUseRerank}
+                                        disabled={!hasApiKey || !useSemantic}
+                                        className="data-[state=checked]:bg-amber-600 scale-90"
+                                    />
+                                    <Label
+                                        htmlFor="rerank-mode"
+                                        className={`font-medium cursor-pointer select-none flex items-center gap-2 text-sm ${(!hasApiKey || !useSemantic) ? "text-slate-400" : "text-slate-600"}`}
+                                    >
+                                        <ArrowRight className={`h-3.5 w-3.5 ${useRerank ? "text-amber-600" : "text-slate-400"}`} />
+                                        Reranking
+                                    </Label>
+                                </div>
+                            </div>
+
+
                         </div>
 
                         <div className="h-8 flex items-center justify-center">
@@ -280,6 +336,15 @@ export default function SearchPage() {
                                     <Quote className="h-3.5 w-3.5" />
                                     <span>
                                         <strong>Mode Textuel :</strong> Cherche les mots exacts dans les bulles. Recherche instantanée.
+                                    </span>
+                                </div>
+                            )}
+
+                            {useRerank && (
+                                <div className="ml-3 animate-in fade-in slide-in-from-top-1 duration-300 flex items-center gap-2 text-xs text-amber-700 bg-amber-50 px-3 py-1.5 rounded-md border border-amber-100 max-w-md text-left">
+                                    <Sparkles className="h-3.5 w-3.5 flex-shrink-0 text-amber-500" />
+                                    <span>
+                                        <strong>Reranking Actif :</strong> Gemini réanalyse les résultats pour ne garder que les plus pertinents.
                                     </span>
                                 </div>
                             )}
@@ -464,7 +529,8 @@ export default function SearchPage() {
                     <div className="mb-6 flex items-baseline gap-2 text-slate-500 border-b border-slate-200 pb-2">
                         <span className="text-xl font-bold text-slate-900">{totalCount}</span>
                         <span>résultats trouvés</span>
-                        {useSemantic && <Badge variant="secondary" className="ml-2 text-[10px] bg-indigo-100 text-indigo-700 hover:bg-indigo-200">Triés par pertinence</Badge>}
+                        {useSemantic && <Badge variant="secondary" className="ml-2 text-[10px] bg-indigo-100 text-indigo-700 hover:bg-indigo-200">Sémantique</Badge>}
+                        {useRerank && <Badge variant="secondary" className="ml-2 text-[10px] bg-amber-100 text-amber-700 hover:bg-amber-200">Reranked by Gemini</Badge>}
                     </div>
                 )}
 
@@ -595,7 +661,6 @@ export default function SearchPage() {
     );
 }
 
-// Helper pour surligner le texte
 const highlightText = (text, highlight) => {
     if (!text) return "";
     if (!highlight || !highlight.trim()) return text;

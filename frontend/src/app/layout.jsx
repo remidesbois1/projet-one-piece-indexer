@@ -29,6 +29,8 @@ export const metadata = {
   manifest: '/manifest.json',
 };
 
+import { Toaster } from "@/components/ui/sonner";
+
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
@@ -36,6 +38,7 @@ export default function RootLayout({ children }) {
         <Providers>
           {children}
         </Providers>
+        <Toaster />
       </body>
     </html>
   );
