@@ -8,8 +8,6 @@ const apiClient = axios.create({
 apiClient.interceptors.request.use(async (config) => {
     const { data: { session } } = await supabase.auth.getSession();
     const token = session?.access_token;
-    // Access global window/localStorage safely or handled via client component
-    // In Next.js App Router, localStorage is only available on client
     let googleApiKey = null;
     if (typeof window !== 'undefined') {
         googleApiKey = localStorage.getItem('google_api_key');
@@ -89,3 +87,5 @@ export const deleteGlossaryWord = (word) => apiClient.delete(`/glossary/${encode
 export const getBubbleHistory = (id) => apiClient.get(`/bulles/${id}/history`);
 export const getAdminHierarchy = () => apiClient.get('/admin/hierarchy');
 export const getAdminBubblesForPage = (pageId) => apiClient.get(`/admin/pages/${pageId}/bulles`);
+
+export const submitSearchFeedback = (feedbackData) => apiClient.post('/search/feedback', feedbackData);
