@@ -3,8 +3,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, reorderBubbles, savePageDescription, getMetadataSuggestions, getPages, generateAIDescription } from '@/lib/api';
-import { analyzeBubble } from '@/lib/geminiClient';
+import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, reorderBubbles, savePageDescription, getMetadataSuggestions, getPages } from '@/lib/api';
+import { analyzeBubble, generatePageDescription } from '@/lib/geminiClient';
 import ValidationForm from '@/components/ValidationForm';
 import ApiKeyForm from '@/components/ApiKeyForm';
 import { useAuth } from '@/context/AuthContext';
@@ -425,7 +425,8 @@ export default function AnnotatePage() {
 
         setIsGeneratingAI(true);
         try {
-            const res = await generateAIDescription(pageId);
+            // Client-side generation using imageRef and local API key
+            const res = await generatePageDescription(imageRef.current, storedKey);
             const aiData = res.data;
 
             setFormData({

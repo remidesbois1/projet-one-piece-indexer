@@ -73,72 +73,7 @@ router.post('/page-description', authMiddleware, async (req, res) => {
     }
 });
 
-const analyzeFullPageWithGemini = async (imageUrl, apiKey) => {
-    try {
-        const parsedUrl = new URL(imageUrl);
-        const allowedHosts = [];
-        if (process.env.SUPABASE_URL) allowedHosts.push(new URL(process.env.SUPABASE_URL).hostname);
-        if (process.env.R2_PUBLIC_URL) {
-            try { allowedHosts.push(new URL(process.env.R2_PUBLIC_URL).hostname); } catch (e) { }
-        }
 
-        if (!allowedHosts.some(host => parsedUrl.hostname.endsWith(host))) {
-            throw new Error("Sécurité : Tentative de téléchargement hors du domaine autorisé.");
-        }
-
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
-
-        const imageResponse = await axios({ url: imageUrl, responseType: 'arraybuffer' });
-        const inputBuffer = Buffer.from(imageResponse.data);
-
-        const prompt = process.env.GEMINI_DESCRIPTION_PROMPT;
-        const imagePart = fileToGenerativePart(inputBuffer, "image/jpeg");
-
-        console.log(`[AI Description] Envoi à Gemini 3.0 Flash...`);
-        const result = await model.generateContent([prompt, imagePart]);
-        const response = await result.response;
-        let text = response.text();
-
-        text = text.replace(/```json/g, "").replace(/```/g, "").trim();
-
-        return JSON.parse(text);
-    } catch (error) {
-        console.error("[AI Description Error]", error.message);
-        throw error;
-    }
-};
-
-router.post('/generate-description', authMiddleware, async (req, res) => {
-    const { id_page } = req.body;
-    const userApiKey = req.headers['x-google-api-key'];
-
-    if (!userApiKey) {
-        return res.status(400).json({ error: 'Clé API Google manquante.' });
-    }
-
-    if (!id_page) {
-        return res.status(400).json({ error: 'ID de page manquant.' });
-    }
-
-    try {
-        const { data: pageData, error: pageError } = await supabaseAdmin
-            .from('pages')
-            .select('url_image')
-            .eq('id', id_page)
-            .single();
-
-        if (pageError || !pageData) return res.status(404).json({ error: "Page introuvable." });
-
-        const aiOutput = await analyzeFullPageWithGemini(pageData.url_image, userApiKey);
-
-        res.status(200).json(aiOutput);
-
-    } catch (error) {
-        console.error("Erreur génération AI:", error);
-        res.status(500).json({ error: "Erreur lors de la génération par IA." });
-    }
-});
 
 router.get('/metadata-suggestions', authMiddleware, async (req, res) => {
     try {
