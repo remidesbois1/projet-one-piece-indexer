@@ -3,71 +3,12 @@ const router = express.Router();
 const { authMiddleware } = require('../middleware/auth');
 
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const axios = require('axios');
-const sharp = require('sharp');
 const fs = require('fs');
 const path = require('path');
 
 const { supabaseAdmin } = require('../config/supabaseClient');
 
-function fileToGenerativePart(buffer, mimeType) {
-    return {
-        inlineData: {
-            data: buffer.toString("base64"),
-            mimeType
-        },
-    };
-}
 
-const analyzeWithGeminiVision = async (imageUrl, coords, apiKey) => {
-    try {
-        const parsedUrl = new URL(imageUrl);
-        const allowedHosts = [];
-        if (process.env.SUPABASE_URL) allowedHosts.push(new URL(process.env.SUPABASE_URL).hostname);
-        if (process.env.R2_PUBLIC_URL) {
-            try { allowedHosts.push(new URL(process.env.R2_PUBLIC_URL).hostname); } catch (e) { }
-        }
-
-        if (!allowedHosts.some(host => parsedUrl.hostname.endsWith(host))) {
-            throw new Error("Sécurité : Tentative de téléchargement hors du domaine autorisé (SSRF protection).");
-        }
-
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: "gemini-flash-lite-latest" });
-
-        const imageResponse = await axios({ url: imageUrl, responseType: 'arraybuffer' });
-
-        const inputBuffer = Buffer.from(imageResponse.data);
-        const metadata = await sharp(inputBuffer).metadata();
-
-        const cropOptions = {
-            left: Math.max(0, Math.floor(coords.x)),
-            top: Math.max(0, Math.floor(coords.y)),
-            width: Math.min(metadata.width - coords.x, Math.floor(coords.w)),
-            height: Math.min(metadata.height - coords.y, Math.floor(coords.h))
-        };
-
-        const croppedBuffer = await sharp(inputBuffer)
-            .extract(cropOptions)
-            .toFormat('png')
-            .toBuffer();
-
-        const prompt = process.env.ANALYSIS_PROMPT;
-
-        const imagePart = fileToGenerativePart(croppedBuffer, "image/png");
-
-        console.log(`[Vision] Envoi à Gemini Flash-Lite (Clé utilisateur)...`);
-        const result = await model.generateContent([prompt, imagePart]);
-        const response = await result.response;
-        let text = response.text();
-
-        return text.trim();
-
-    } catch (error) {
-        console.error("[Vision Error]", error.message);
-        return null;
-    }
-};
 
 const generateEmbedding = async (text, apiKey) => {
     try {
@@ -84,46 +25,7 @@ const generateEmbedding = async (text, apiKey) => {
 
 
 
-router.post('/bubble', authMiddleware, async (req, res) => {
-    const { id_page, x, y, w, h } = req.body;
-    const userApiKey = req.headers['x-google-api-key'];
 
-    if (!userApiKey) {
-        return res.status(400).json({ error: 'Clé API Google manquante (x-google-api-key).' });
-    }
-
-    if (id_page === undefined || x === undefined) {
-        return res.status(400).json({ error: 'Coordonnées manquantes.' });
-    }
-
-    try {
-        const { data: pageData, error: pageError } = await supabaseAdmin
-            .from('pages')
-            .select('url_image')
-            .eq('id', id_page)
-            .single();
-
-        if (pageError || !pageData) return res.status(404).json({ error: "Page introuvable." });
-
-        const resultText = await analyzeWithGeminiVision(pageData.url_image, { x, y, w, h }, userApiKey);
-
-        if (!resultText) {
-            return res.status(200).json({
-                texte_ocr_brut: null,
-                texte_propose: "<ÉCHEC LECTURE>"
-            });
-        }
-
-        res.status(200).json({
-            texte_ocr_brut: resultText,
-            texte_propose: resultText
-        });
-
-    } catch (error) {
-        console.error("Erreur serveur:", error);
-        res.status(500).json({ error: "Erreur interne." });
-    }
-});
 
 router.post('/page-description', authMiddleware, async (req, res) => {
     const { id_page, description } = req.body;

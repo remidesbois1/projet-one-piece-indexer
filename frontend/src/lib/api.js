@@ -70,7 +70,7 @@ export const submitPageForReview = (pageId) => apiClient.put(`/pages/${pageId}/s
 export const createTome = (tomeData) => apiClient.post('/admin/tomes', tomeData);
 export const uploadChapter = (formData) => apiClient.post('/admin/chapitres/upload', formData);
 
-export const analyseBubble = (bubbleData) => apiClient.post('/analyse/bubble', bubbleData);
+
 export const savePageDescription = (pageId, description) => apiClient.post('/analyse/page-description', { id_page: pageId, description });
 export const getMetadataSuggestions = () => apiClient.get('/analyse/metadata-suggestions');
 

@@ -3,7 +3,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, reorderBubbles, analyseBubble, savePageDescription, getMetadataSuggestions, getPages } from '@/lib/api';
+import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, reorderBubbles, savePageDescription, getMetadataSuggestions, getPages } from '@/lib/api';
+import { analyzeBubble } from '@/lib/geminiClient';
 import ValidationForm from '@/components/ValidationForm';
 import ApiKeyForm from '@/components/ApiKeyForm';
 import { useAuth } from '@/context/AuthContext';
@@ -359,13 +360,15 @@ export default function AnnotatePage() {
         setIsSubmitting(true);
         setDebugImageUrl(null);
 
-        analyseBubble(dataToUse)
+        analyzeBubble(imageRef.current, dataToUse, storedKey)
             .then(response => {
                 setPendingAnnotation(prev => ({ ...prev, texte_propose: response.data.texte_propose }));
                 setOcrSource('cloud');
             })
             .catch(error => {
-                if (error.response?.status === 400 && error.response?.data?.error?.includes('Clé')) {
+                console.error("Cloud OCR Error:", error);
+                // Check for invalid API key signals from Google SDK
+                if (error.message?.includes('API key') || error.toString().includes('400')) {
                     localStorage.removeItem('google_api_key');
                     setShowApiKeyModal(true);
                 }
