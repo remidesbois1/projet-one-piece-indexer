@@ -19,9 +19,9 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 
 // Icons
-import { LogOut, User, Shield, ShieldAlert, Book } from "lucide-react";
+import { LogOut, User, Shield, ShieldAlert, Book, Sparkles } from "lucide-react";
 
-const Header = () => {
+const Header = ({ onOpenApiKeyModal }) => {
     const { user, signOut, isGuest } = useAuth();
     const { profile } = useUserProfile();
     const router = useRouter();
@@ -128,6 +128,10 @@ const Header = () => {
                                         <span>Administration</span>
                                     </DropdownMenuItem>
                                 )}
+                                <DropdownMenuItem onClick={onOpenApiKeyModal} className="cursor-pointer">
+                                    <Sparkles className="mr-2 h-4 w-4 text-amber-500" />
+                                    <span>Clé API IA (Gemini)</span>
+                                </DropdownMenuItem>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem onClick={handleLogout} className="text-red-600 focus:text-red-600">
                                     <LogOut className="mr-2 h-4 w-4" />
