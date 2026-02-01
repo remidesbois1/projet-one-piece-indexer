@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { getPageById, getBubblesForPage, approvePage, rejectPage, rejectBubble } from '@/lib/api';
+import { getProxiedImageUrl } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
 import ValidationForm from '@/components/ValidationForm';
 import ModerationCommentModal from '@/components/ModerationCommentModal';
@@ -166,7 +167,8 @@ export default function PageReview() {
                     >
                         <img
                             ref={imageRef}
-                            src={page.url_image}
+                            src={getProxiedImageUrl(page.url_image)}
+                            crossOrigin="anonymous"
                             alt={`Page ${page.numero_page}`}
                             className="max-w-full h-auto block rounded-sm pointer-events-none"
                             onLoad={(e) => setImageDimensions({

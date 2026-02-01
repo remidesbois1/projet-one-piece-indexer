@@ -157,6 +157,7 @@ export default function HomePage() {
                                 <>
                                     <img
                                         src={getProxiedImageUrl(tome.cover_url)}
+                                        crossOrigin="anonymous"
                                         alt={`Tome ${tome.numero}`}
                                         className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110 will-change-transform"
                                         loading="lazy"
