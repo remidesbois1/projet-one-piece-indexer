@@ -434,7 +434,6 @@ export default function AnnotatePage() {
 
         setIsGeneratingAI(true);
         try {
-            // Client-side generation using imageRef and local API key
             const res = await generatePageDescription(imageRef.current, storedKey);
             const aiData = res.data;
 
@@ -762,7 +761,7 @@ export default function AnnotatePage() {
 
             {/* Image Prefetching */}
             {navContext.next && (
-                <link rel="prefetch" href={getProxiedImageUrl(navContext.next.url_image)} />
+                <link rel="prefetch" href={getProxiedImageUrl(navContext.next.url_image)} crossOrigin="anonymous" />
             )}
 
             <div className="flex flex-1 overflow-hidden">

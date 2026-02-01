@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { searchBubbles, getMetadataSuggestions, getTomes, submitSearchFeedback } from '@/lib/api';
+import { getProxiedImageUrl } from '@/lib/utils';
 import { rerankSearchResults } from '@/lib/geminiClient';
 import { useRerankWorker } from '@/context/RerankContext';
 import { useDebounce } from '@/hooks/useDebounce';
@@ -32,7 +33,8 @@ const ResultImage = ({ url, coords, type }) => {
         return (
             <div className="w-full aspect-[2/3] bg-slate-100 overflow-hidden relative group">
                 <img
-                    src={url}
+                    src={getProxiedImageUrl(url)}
+                    crossOrigin="anonymous"
                     alt="Page preview"
                     className="w-full h-full object-cover object-top transition-transform duration-700 group-hover:scale-105"
                     loading="lazy"
@@ -56,7 +58,8 @@ const ResultImage = ({ url, coords, type }) => {
                 }}
             >
                 <img
-                    src={url}
+                    src={getProxiedImageUrl(url)}
+                    crossOrigin="anonymous"
                     alt="Bubble crop"
                     className="max-w-none"
                     style={{
