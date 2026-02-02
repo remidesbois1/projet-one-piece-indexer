@@ -30,9 +30,11 @@ const generateEmbedding = async (text, apiKey) => {
 router.post('/page-description', authMiddleware, async (req, res) => {
     const { id_page, description } = req.body;
     const userApiKey = req.headers['x-google-api-key'];
+    const serverApiKey = process.env.GOOGLE_API_KEY;
+    const effectiveApiKey = userApiKey || serverApiKey;
 
-    if (!userApiKey) {
-        return res.status(400).json({ error: 'Clé API Google manquante.' });
+    if (!effectiveApiKey) {
+        return res.status(400).json({ error: 'Clé API Google manquante (serveur et client).' });
     }
 
     if (!id_page || !description) {
@@ -53,7 +55,7 @@ router.post('/page-description', authMiddleware, async (req, res) => {
         }
 
         console.log(`[Embedding] Génération pour la page ${id_page}...`);
-        const embeddingVector = await generateEmbedding(textToEmbed, userApiKey);
+        const embeddingVector = await generateEmbedding(textToEmbed, effectiveApiKey);
 
         const { error } = await supabaseAdmin
             .from('pages')

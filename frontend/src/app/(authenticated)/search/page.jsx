@@ -341,12 +341,11 @@ export default function SearchPage() {
                                             setUseSemantic(checked);
                                             if (!checked) setUseRerank(false);
                                         }}
-                                        disabled={!hasApiKey}
                                         className="data-[state=checked]:bg-indigo-600"
                                     />
                                     <Label
                                         htmlFor="semantic-mode"
-                                        className={`font-medium cursor-pointer select-none flex items-center gap-2 ${!hasApiKey ? "text-slate-400" : "text-slate-700"}`}
+                                        className={`font-medium cursor-pointer select-none flex items-center gap-2 text-slate-700`}
                                     >
                                         <Sparkles className={`h-4 w-4 ${useSemantic ? "text-indigo-500 fill-indigo-100" : "text-slate-400"}`} />
                                         Recherche Sémantique
@@ -457,7 +456,7 @@ export default function SearchPage() {
                             className="text-xs text-amber-700 bg-amber-50 hover:bg-amber-100 hover:text-amber-800 transition-colors inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-amber-200 cursor-pointer shadow-sm"
                         >
                             <Settings className="h-3 w-3" />
-                            Configurez votre clé API Google pour activer l'IA
+                            Clé API absente : Recherche sémantique limitée (pas de Reranking)
                         </button>
                     )}
                 </div>
@@ -744,12 +743,12 @@ export default function SearchPage() {
                                 <h3 className="text-lg font-semibold text-slate-900 mb-2">Aucun résultat trouvé</h3>
                                 <p className="text-slate-500 text-sm mb-6">
                                     Nous n'avons rien trouvé pour "{query}".
-                                    {!useSemantic && hasApiKey && " Essayez d'activer la recherche sémantique pour une recherche plus conceptuelle."}
+                                    {!useSemantic && " Essayez d'activer la recherche sémantique pour une recherche plus conceptuelle."}
                                 </p>
-                                {!useSemantic && hasApiKey && (
+                                {!useSemantic && (
                                     <Button onClick={() => setUseSemantic(true)} variant="outline" className="border-indigo-200 text-indigo-600 hover:bg-indigo-50">
                                         <Sparkles className="h-4 w-4 mr-2" />
-                                        Activer l'IA
+                                        Activer la recherche sémantique
                                     </Button>
                                 )}
                             </div>
