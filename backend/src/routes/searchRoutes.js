@@ -6,6 +6,9 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 router.get('/', async (req, res) => {
     const { q, page = 1, limit = 10, mode = 'keyword', characters, arc, tome } = req.query;
     const userApiKey = req.headers['x-google-api-key'];
+    const serverApiKey = process.env.GOOGLE_API_KEY;
+    const effectiveApiKey = userApiKey || serverApiKey;
+    const isGuest = !userApiKey && !!serverApiKey;
 
     if (!q || q.length < 2) return res.status(400).json({ error: "Recherche trop courte" });
 
@@ -28,8 +31,8 @@ router.get('/', async (req, res) => {
     const filterTome = tome && tome !== '' ? parseInt(tome) : null;
 
     try {
-        if (mode === 'semantic' && userApiKey) {
-            const genAI = new GoogleGenerativeAI(userApiKey);
+        if (mode === 'semantic' && effectiveApiKey) {
+            const genAI = new GoogleGenerativeAI(effectiveApiKey);
             const embedModel = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
 
             const { embedding } = await embedModel.embedContent(q);
@@ -127,65 +130,86 @@ router.get('/', async (req, res) => {
 
             if (!candidates?.length) return res.json({ results: [], totalCount: 0 });
 
-            const rerankModel = genAI.getGenerativeModel({
-                model: "gemini-2.5-flash-lite",
-                generationConfig: { responseMimeType: "application/json" }
-            });
+            if (isGuest) {
+                finalResults = candidates.map(c => {
+                    let snippet = c.description;
+                    try {
+                        if (typeof snippet === 'string') snippet = JSON.parse(snippet).content;
+                        else if (typeof snippet === 'object') snippet = snippet.content;
+                    } catch (e) { }
 
-            const candidatesForAI = candidates.map(c => {
-                let desc = c.description;
+                    return {
+                        type: 'semantic',
+                        id: `page-${c.id}`,
+                        page_id: c.id,
+                        url_image: c.url_image,
+                        content: snippet || "",
+                        context: `Tome ${c.tome_numero} - Chap. ${c.chapitre_numero} - Page ${c.numero_page}`,
+                        scores: { ai: 0, vector: Math.round(c.similarity * 100) },
+                        similarity: c.similarity
+                    };
+                });
+                totalCount = finalResults.length;
+            } else {
+                const rerankModel = genAI.getGenerativeModel({
+                    model: "gemini-2.5-flash-lite",
+                    generationConfig: { responseMimeType: "application/json" }
+                });
+
+                const candidatesForAI = candidates.map(c => {
+                    let desc = c.description;
+                    try {
+                        if (typeof desc === 'string') desc = JSON.parse(desc);
+                    } catch (e) { }
+
+                    const content = typeof desc === 'object'
+                        ? `${desc.content || ""} (Persos: ${desc.metadata?.characters?.join(', ')})`
+                        : String(desc);
+
+                    return { id: c.id, text: content.substring(0, 400) };
+                });
+
+                const promptTemplate = process.env.SEARCH_PROMPT;
+
+                const prompt = promptTemplate
+                    .replace('{{query}}', q)
+                    .replace('{{candidates}}', JSON.stringify(candidatesForAI));
+
+                let scores = [];
                 try {
-                    if (typeof desc === 'string') desc = JSON.parse(desc);
-                } catch (e) { }
+                    const result = await rerankModel.generateContent(prompt);
+                    scores = JSON.parse(result.response.text());
+                } catch (err) {
+                    scores = candidates.map(c => ({ i: c.id, s: c.similarity * 100 }));
+                }
 
-                const content = typeof desc === 'object'
-                    ? `${desc.content || ""} (Persos: ${desc.metadata?.characters?.join(', ')})`
-                    : String(desc);
+                finalResults = candidates.map(c => {
+                    const aiData = scores.find(s => s.i === c.id);
+                    const finalScore = aiData ? aiData.s : 0;
 
-                return { id: c.id, text: content.substring(0, 400) };
-            });
+                    let snippet = c.description;
+                    try {
+                        if (typeof snippet === 'string') snippet = JSON.parse(snippet).content;
+                        else if (typeof snippet === 'object') snippet = snippet.content;
+                    } catch (e) { }
 
-            const promptTemplate = process.env.SEARCH_PROMPT;
+                    return {
+                        type: 'semantic',
+                        id: `page-${c.id}`,
+                        page_id: c.id,
+                        url_image: c.url_image,
+                        content: snippet || "",
+                        context: `Tome ${c.tome_numero} - Chap. ${c.chapitre_numero} - Page ${c.numero_page}`,
+                        scores: { ai: finalScore, vector: Math.round(c.similarity * 100) },
+                        similarity: finalScore / 100
+                    };
+                })
+                    .filter(r => r.scores.ai >= 75)
+                    .sort((a, b) => b.scores.ai - a.scores.ai)
+                    .slice(0, parseInt(limit));
 
-            const prompt = promptTemplate
-                .replace('{{query}}', q)
-                .replace('{{candidates}}', JSON.stringify(candidatesForAI));
-
-            let scores = [];
-            try {
-                const result = await rerankModel.generateContent(prompt);
-                scores = JSON.parse(result.response.text());
-            } catch (err) {
-                scores = candidates.map(c => ({ i: c.id, s: c.similarity * 100 }));
+                totalCount = finalResults.length;
             }
-
-            finalResults = candidates.map(c => {
-                const aiData = scores.find(s => s.i === c.id);
-                const finalScore = aiData ? aiData.s : 0;
-
-                let snippet = c.description;
-                try {
-                    if (typeof snippet === 'string') snippet = JSON.parse(snippet).content;
-                    else if (typeof snippet === 'object') snippet = snippet.content;
-                } catch (e) { }
-
-                return {
-                    type: 'semantic',
-                    id: `page-${c.id}`,
-                    page_id: c.id,
-                    url_image: c.url_image,
-                    content: snippet || "",
-                    context: `Tome ${c.tome_numero} - Chap. ${c.chapitre_numero} - Page ${c.numero_page}`,
-                    scores: { ai: finalScore, vector: Math.round(c.similarity * 100) },
-                    similarity: finalScore / 100
-                };
-            })
-                .filter(r => r.scores.ai >= 75)
-                .sort((a, b) => b.scores.ai - a.scores.ai)
-                .slice(0, parseInt(limit));
-
-            totalCount = finalResults.length;
-
         } else {
             const { data, error } = await supabase.rpc('search_bulles', {
                 search_term: q,

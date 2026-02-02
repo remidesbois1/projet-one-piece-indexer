@@ -38,6 +38,7 @@ L'indexer propose deux expériences de recherche complémentaires :
 
 ### **2. Recherche Sémantique & Conceptuelle**
 * **Vecteurs :** Conversion des requêtes en vecteurs via Gemini Embeddings et comparaison cosinus avec les vecteurs stockés dans la base de données.
+* **Mode Invité :** La recherche sémantique est accessible même sans clé API utilisateur grâce à une clé d'API globale côté serveur (uniquement pour l'embedding, le reranking reste réservé aux utilisateurs avec clé).
 * **Filtrage Multicritère :** Possibilité de filtrer par personnages (Luffy, Zoro, Kaido...), arc narratif (Romance Dawn, Wano, Marineford...) et numéro de tome.
 * **Reranking Hybride :**
     * **Cloud :** Utilisation de Gemini 2.5 Flash Lite pour trier les résultats selon le contexte exact.
@@ -98,7 +99,11 @@ R2_SECRET_ACCESS_KEY=...
 R2_BUCKET_NAME=...
 LANGUAGETOOL_URL=...
 SEARCH_PROMPT="..." # Prompt expert pour le reranking
+GOOGLE_API_KEY=... # Clé API globale pour la recherche sémantique (mode invité)
 ```
+
+> [!TIP]
+> Si vous restreignez votre `GOOGLE_API_KEY` par IP, utilisez l'adresse IP publique de votre serveur backend (et non celle de Cloudflare), car les requêtes vers l'API Gemini sont émises directement par le serveur Node.js.
 
 ### **Variables d'environnement Frontend (`frontend/.env.local`)**
 ```env
