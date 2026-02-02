@@ -359,13 +359,16 @@ export default function SearchPage() {
                                     <Switch
                                         id="rerank-mode"
                                         checked={useRerank}
-                                        onCheckedChange={setUseRerank}
-                                        disabled={!useSemantic || (rerankProvider === 'gemini' && !hasApiKey)}
+                                        onCheckedChange={(checked) => {
+                                            setUseRerank(checked);
+                                            if (checked && !hasApiKey) setRerankProvider('local');
+                                        }}
+                                        disabled={!useSemantic}
                                         className="data-[state=checked]:bg-amber-600 scale-90"
                                     />
                                     <Label
                                         htmlFor="rerank-mode"
-                                        className={`font-medium cursor-pointer select-none flex items-center gap-2 text-sm ${(!hasApiKey || !useSemantic) ? "text-slate-400" : "text-slate-600"}`}
+                                        className={`font-medium cursor-pointer select-none flex items-center gap-2 text-sm ${!useSemantic ? "text-slate-400" : "text-slate-600"}`}
                                     >
                                         <ArrowRight className={`h-3.5 w-3.5 ${useRerank ? "text-amber-600" : "text-slate-400"}`} />
                                         Reranking
@@ -379,7 +382,8 @@ export default function SearchPage() {
                                     <div className="flex bg-slate-100 rounded-md p-0.5 border border-slate-200">
                                         <button
                                             onClick={() => setRerankProvider('gemini')}
-                                            className={`px-3 py-1 text-xs font-medium rounded-sm transition-all ${rerankProvider === 'gemini' ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                                            disabled={!hasApiKey}
+                                            className={`px-3 py-1 text-xs font-medium rounded-sm transition-all ${rerankProvider === 'gemini' ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:text-slate-700"} ${!hasApiKey ? "opacity-40 cursor-not-allowed" : ""}`}
                                         >
                                             Gemini (Cloud)
                                         </button>
@@ -456,7 +460,7 @@ export default function SearchPage() {
                             className="text-xs text-amber-700 bg-amber-50 hover:bg-amber-100 hover:text-amber-800 transition-colors inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-amber-200 cursor-pointer shadow-sm"
                         >
                             <Settings className="h-3 w-3" />
-                            Clé API absente : Recherche sémantique limitée (pas de Reranking)
+                            Clé API absente : Reranking Cloud (Gemini) désactivé. Utilisez le Reranking Local.
                         </button>
                     )}
                 </div>

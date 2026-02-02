@@ -38,7 +38,7 @@ L'indexer propose deux expériences de recherche complémentaires :
 
 ### **2. Recherche Sémantique & Conceptuelle**
 * **Vecteurs :** Conversion des requêtes en vecteurs via Gemini Embeddings et comparaison cosinus avec les vecteurs stockés dans la base de données.
-* **Mode Invité :** La recherche sémantique est accessible même sans clé API utilisateur grâce à une clé d'API globale côté serveur (uniquement pour l'embedding, le reranking reste réservé aux utilisateurs avec clé).
+* **Mode Invité :** La recherche sémantique est accessible à tous via une clé d'API serveur. Le **Reranking Local** (WebGPU) est également disponible pour les invités, tandis que le **Reranking Cloud** (Gemini) nécessite une clé API personnelle.
 * **Filtrage Multicritère :** Possibilité de filtrer par personnages (Luffy, Zoro, Kaido...), arc narratif (Romance Dawn, Wano, Marineford...) et numéro de tome.
 * **Reranking Hybride :**
     * **Cloud :** Utilisation de Gemini 2.5 Flash Lite pour trier les résultats selon le contexte exact.
