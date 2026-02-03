@@ -6,6 +6,7 @@ import { getProxiedImageUrl } from '@/lib/utils';
 import { rerankSearchResults } from '@/lib/geminiClient';
 import { useRerankWorker } from '@/context/RerankContext';
 import { useDebounce } from '@/hooks/useDebounce';
+import { useAuth } from '@/context/AuthContext';
 import Link from 'next/link';
 
 // Shadcn UI Components
@@ -28,12 +29,12 @@ import { Search, X, Loader2, Sparkles, BookOpen, MapPin, Quote, Info, ArrowRight
 
 const RESULTS_PER_PAGE = 24;
 
-const ResultImage = ({ url, coords, type }) => {
+const ResultImage = ({ url, pageId, token, coords, type }) => {
     if (type === 'semantic' || !coords) {
         return (
             <div className="w-full aspect-[2/3] bg-slate-100 overflow-hidden relative group">
                 <img
-                    src={getProxiedImageUrl(url)}
+                    src={getProxiedImageUrl(url, pageId, token)}
                     crossOrigin="anonymous"
                     alt="Page preview"
                     className="w-full h-full object-cover object-top transition-transform duration-700 group-hover:scale-105"
@@ -58,7 +59,7 @@ const ResultImage = ({ url, coords, type }) => {
                 }}
             >
                 <img
-                    src={getProxiedImageUrl(url)}
+                    src={getProxiedImageUrl(url, pageId, token)}
                     crossOrigin="anonymous"
                     alt="Bubble crop"
                     className="max-w-none"
@@ -78,6 +79,7 @@ const ResultImage = ({ url, coords, type }) => {
 };
 
 export default function SearchPage() {
+    const { session } = useAuth();
     const [query, setQuery] = useState('');
     const debouncedQuery = useDebounce(query, 400);
 
@@ -187,44 +189,37 @@ export default function SearchPage() {
                 arc: selectedArc !== 'all' ? selectedArc : '',
                 tome: selectedTome !== 'all' ? selectedTome : ''
             };
-            const fetchLimit = useRerank ? 6 : RESULTS_PER_PAGE;
-            const response = await searchBubbles(searchTerm, pageToFetch, fetchLimit, useSemantic ? 'semantic' : 'keyword', filters);
+            const isBackendRerank = useRerank && rerankProvider === 'gemini' && hasApiKey;
+            const isLocalRerank = useRerank && rerankProvider === 'local' && rerankStatus === 'ready';
+
+            const fetchLimit = useRerank ? 10 : RESULTS_PER_PAGE;
+
+            const response = await searchBubbles(
+                searchTerm,
+                pageToFetch,
+                fetchLimit,
+                useSemantic ? 'semantic' : 'keyword',
+                filters,
+                isBackendRerank
+            );
+
             let newResults = response.data.results;
             const total = response.data.totalCount;
 
-            if (useRerank && newResults.length > 0 && pageToFetch === 1) {
-                const canRerank = rerankProvider === 'gemini'
-                    ? (hasApiKey)
-                    : (rerankStatus === 'ready');
-
-                if (canRerank) {
-                    try {
-                        if (rerankProvider === 'gemini') {
-                            const reranked = await rerankSearchResults(newResults, searchTerm, localStorage.getItem('google_api_key'));
-                            newResults = reranked;
-                        } else if (rerankProvider === 'local') {
-                            const rankedItems = await rerankLocal(searchTerm, newResults);
-                            newResults = rankedItems
-                                .filter(item => item.score > 0.70)
-                                .map(item => ({
-                                    ...item.doc,
-                                    similarity: item.score,
-                                    type: 'semantic'
-                                }));
-                        }
-                    } catch (e) {
-                        if (e.message === "QUOTA_EXCEEDED") {
-                            toast.error("Quota Gemini dépassé", {
-                                description: "Le Reranking a été désactivé. Affichage des résultats classiques."
-                            });
-                            setUseRerank(false);
-                        } else {
-                            console.error("Reranking failed, using original order", e);
-                            toast.error(rerankProvider === 'local' ? "Erreur Reranking Local" : "Erreur Reranking", {
-                                description: e.message
-                            });
-                        }
-                    }
+            // Only perform local reranking if requested and backend didn't already handle reranking
+            if (isLocalRerank && newResults.length > 0 && pageToFetch === 1) {
+                try {
+                    const rankedItems = await rerankLocal(searchTerm, newResults);
+                    newResults = rankedItems
+                        .filter(item => item.score > 0.70)
+                        .map(item => ({
+                            ...item.doc,
+                            similarity: item.score,
+                            type: 'semantic'
+                        }));
+                } catch (e) {
+                    console.error("Local Reranking failed", e);
+                    toast.error("Erreur Reranking Local", { description: e.message });
                 }
             }
 
@@ -648,6 +643,8 @@ export default function SearchPage() {
                                             {/* Image Header */}
                                             <ResultImage
                                                 url={item.url_image}
+                                                pageId={item.page_id}
+                                                token={session?.access_token}
                                                 coords={item.coords}
                                                 type={item.type}
                                             />

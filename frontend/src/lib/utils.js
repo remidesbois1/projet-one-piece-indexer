@@ -4,7 +4,14 @@ import { twMerge } from "tailwind-merge"
 export function cn(...inputs) {
     return twMerge(clsx(inputs))
 }
-export function getProxiedImageUrl(url) {
+export function getProxiedImageUrl(url, pageId = null, token = null) {
+    if (pageId) {
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001/api';
+        let imageUrl = `${backendUrl}/pages/${pageId}/image`;
+        if (token) imageUrl += `?token=${token}`;
+        return imageUrl;
+    }
+
     if (!url) return url;
     if (url.includes('s3.onepiece-index.com')) {
         return url.replace('https://s3.onepiece-index.com', '/s3-proxy');
