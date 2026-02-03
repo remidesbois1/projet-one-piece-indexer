@@ -4,6 +4,7 @@ import React from 'react';
 import AddTomeForm from '@/components/AddTomeForm';
 import AddChapterForm from '@/components/AddChapterForm';
 import GlossaryManager from '@/components/GlossaryManager';
+import IpBanManager from '@/components/IpBanManager';
 import { Separator } from "@/components/ui/separator";
 
 export default function AdminDashboard() {
@@ -29,6 +30,10 @@ export default function AdminDashboard() {
 
             <section>
                 <GlossaryManager />
+            </section>
+
+            <section>
+                <IpBanManager />
             </section>
 
         </div>

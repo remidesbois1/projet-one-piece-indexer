@@ -88,5 +88,8 @@ export const deleteGlossaryWord = (word) => apiClient.delete(`/glossary/${encode
 export const getBubbleHistory = (id) => apiClient.get(`/bulles/${id}/history`);
 export const getAdminHierarchy = () => apiClient.get('/admin/hierarchy');
 export const getAdminBubblesForPage = (pageId) => apiClient.get(`/admin/pages/${pageId}/bulles`);
+export const getBannedIps = () => apiClient.get('/admin/banned-ips');
+export const banIp = (ip, reason) => apiClient.post('/admin/banned-ips', { ip, reason });
+export const unbanIp = (ip) => apiClient.delete(`/admin/banned-ips/${ip}`);
 
 export const submitSearchFeedback = (feedbackData) => apiClient.post('/search/feedback', feedbackData);
