@@ -761,7 +761,7 @@ export default function AnnotatePage() {
 
             {/* Image Prefetching */}
             {navContext.next && (
-                <link rel="prefetch" href={getProxiedImageUrl(navContext.next.url_image)} crossOrigin="anonymous" />
+                <link rel="prefetch" href={getProxiedImageUrl(navContext.next.url_image, navContext.next.id, session?.access_token)} crossOrigin="anonymous" />
             )}
 
             <div className="flex flex-1 overflow-hidden">
@@ -779,7 +779,7 @@ export default function AnnotatePage() {
                     >
                         <img
                             ref={imageRef}
-                            src={getProxiedImageUrl(page.url_image)}
+                            src={getProxiedImageUrl(page.url_image, pageId, session?.access_token)}
                             crossOrigin="anonymous"
                             alt={`Page ${page.numero_page}`}
                             className="block max-w-full h-auto pointer-events-none"

@@ -77,7 +77,7 @@ router.post('/page-description', authMiddleware, async (req, res) => {
 
 
 
-router.get('/metadata-suggestions', authMiddleware, async (req, res) => {
+router.get('/metadata-suggestions', async (req, res) => {
     try {
         const { data, error } = await supabaseAdmin
             .from('pages')

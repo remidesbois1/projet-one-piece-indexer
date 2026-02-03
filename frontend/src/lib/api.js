@@ -34,12 +34,13 @@ export const updateBubbleGeometry = (id, geometry) => apiClient.put(`/bulles/${i
 export const deleteBubble = (id) => apiClient.delete(`/bulles/${id}`);
 export const reorderBubbles = (orderedBubbles) => apiClient.put('/bulles/reorder', { orderedBubbles });
 
-export const searchBubbles = (query, page = 1, limit = 10, mode = 'keyword', filters = {}) => {
+export const searchBubbles = (query, page = 1, limit = 10, mode = 'keyword', filters = {}, rerank = false) => {
     const params = new URLSearchParams({
         q: query,
         page: page.toString(),
         limit: limit.toString(),
-        mode
+        mode,
+        rerank: rerank.toString()
     });
 
     if (filters.characters && filters.characters.length > 0) {
@@ -54,7 +55,7 @@ export const searchBubbles = (query, page = 1, limit = 10, mode = 'keyword', fil
 
     return apiClient.get(`/search?${params.toString()}`);
 };
-export const searchSemantic = (query, limit = 10) => apiClient.get(`/search/semantic?q=${query}&limit=${limit}`);
+export const searchSemantic = (query, limit = 6) => apiClient.get(`/search/semantic?q=${query}&limit=${limit}`);
 
 export const getPendingBubbles = (page = 1, limit = 5) => apiClient.get(`/bulles/pending?page=${page}&limit=${limit}`);
 export const validateBubble = (id) => apiClient.put(`/bulles/${id}/validate`, {});

@@ -4,7 +4,8 @@ const { supabase } = require('../config/supabaseClient');
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 router.get('/', async (req, res) => {
-    const { q, page = 1, limit = 10, mode = 'keyword', characters, arc, tome } = req.query;
+    const { q, page = 1, limit = 10, mode = 'keyword', characters, arc, tome, rerank } = req.query;
+    const shouldRerank = rerank === 'true';
     const userApiKey = req.headers['x-google-api-key'];
     const serverApiKey = process.env.GOOGLE_API_KEY;
     const effectiveApiKey = userApiKey || serverApiKey;
@@ -94,6 +95,8 @@ router.get('/', async (req, res) => {
                 return res.json({ results: [], totalCount: 0 });
             }
 
+            const candidatesQueryLimit = shouldRerank ? 10 : parseInt(limit);
+
             const calculateCosineSimilarity = (vec1, vec2) => {
                 let dotProduct = 0;
                 let norm1 = 0;
@@ -126,11 +129,11 @@ router.get('/', async (req, res) => {
                 })
                 .filter(page => page !== null && page.similarity >= 0.60)
                 .sort((a, b) => b.similarity - a.similarity)
-                .slice(0, 6);
+                .slice(0, candidatesQueryLimit);
 
             if (!candidates?.length) return res.json({ results: [], totalCount: 0 });
 
-            if (isGuest) {
+            if (!shouldRerank || isGuest) {
                 finalResults = candidates.map(c => {
                     let snippet = c.description;
                     try {
