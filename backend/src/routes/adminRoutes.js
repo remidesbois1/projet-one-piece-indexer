@@ -196,5 +196,58 @@ router.get('/pages/:id/bulles', authMiddleware, roleCheck(['Admin', 'Modo']), as
   }
 });
 
+router.get('/banned-ips', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('banned_ips')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    res.status(200).json(data);
+  } catch (error) {
+    console.error("Erreur banned_ips:", error);
+    res.status(500).json({ error: "Erreur récupération IPs." });
+  }
+});
+
+router.post('/banned-ips', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+  const { ip, reason } = req.body;
+  if (!ip) return res.status(400).json({ error: "IP requise" });
+
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('banned_ips')
+      .insert({ ip, reason })
+      .select()
+      .single();
+
+    if (error) {
+      if (error.code === '23505') return res.status(409).json({ error: "Cette IP est déjà bannie." });
+      throw error;
+    }
+    res.status(201).json(data);
+  } catch (error) {
+    console.error("Erreur ban IP:", error);
+    res.status(500).json({ error: "Erreur lors du bannissement." });
+  }
+});
+
+router.delete('/banned-ips/:ip', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+  const { ip } = req.params;
+  try {
+    const { error } = await supabaseAdmin
+      .from('banned_ips')
+      .delete()
+      .eq('ip', ip);
+
+    if (error) throw error;
+    res.status(200).json({ message: "IP débannie" });
+  } catch (error) {
+    console.error("Erreur deban IP:", error);
+    res.status(500).json({ error: "Erreur lors du débannissement." });
+  }
+});
+
 module.exports = router;
 

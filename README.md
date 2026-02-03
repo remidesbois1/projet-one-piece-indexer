@@ -50,6 +50,27 @@ L'indexer propose deux expériences de recherche complémentaires :
 
 ---
 
+## **API Publique V1 (Gratuite & Ouverte)**
+
+Le projet expose une API publique sécurisée et gratuite pour la communauté de développeurs. Elle permet d'accéder aux données indexées (tomes, chapitres, pages, bulles), pour construire des applications tierces (bots, stats, ...).
+
+**Base URL :** `https://api.onepiece-index.com/v1`
+
+| Endpoint | Méthode | Description | Paramètres |
+| :--- | :---: | :--- | :--- |
+| **`/status`** | `GET` | Vérifie l'état de l'API | - |
+| **`/stats`** | `GET` | Statistiques globales (Tomes, Chapitres, Pages, Bulles) | - |
+| **`/tomes`** | `GET` | Liste tous les tomes disponibles | - |
+| **`/tomes/:num/chapters`** | `GET` | Liste les chapitres d'un tome spécifique | - |
+| **`/chapters/:num`** | `GET` | Détails d'un chapitre (Titre, Tome, Stats) | - |
+| **`/chapters/:num/pages/:p`**| `GET` | Contenu d'une page (Image, Bulles, Arc, Persos) | - |
+| **`/quotes/random`** | `GET` | Retourne une citation (bulle) au hasard | `?min_length=15` |
+| **`/search`** | `GET` | Recherche textuelle simple dans les bulles | `?q=luffy` |
+
+> **Note :** Les images renvoyées via l'API publique comportent automatiquement un watermark pour désencourager le piratage.
+
+---
+
 ## **Pipeline d'OCR Hybride**
 
 L'extraction de texte repose sur une architecture conçue pour minimiser les coûts tout en maximisant la qualité. Elle offre le choix entre deux modèles d'OCR :

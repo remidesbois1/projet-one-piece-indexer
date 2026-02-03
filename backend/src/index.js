@@ -4,6 +4,10 @@ require('dotenv').config();
 
 const app = express();
 
+// Trust proxy is required if running behind a reverse proxy (like Nginx, Heroku, Vercel, Supabase)
+// to correctly identify the client IP for rate limiting and blocking.
+app.set('trust proxy', 1);
+
 app.use(cors({
   origin: [
     'https://onepiece-index.com',
@@ -32,6 +36,14 @@ const statsLimiter = rateLimit({
 
 app.use(globalLimiter);
 
+const publicLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later." }
+});
+
 const PORT = process.env.PORT || 3001;
 
 const tomeRoutes = require('./routes/tomeRoutes');
@@ -45,6 +57,7 @@ const analysisRoutes = require('./routes/analysisRoutes');
 const userRoutes = require('./routes/userRoutes');
 const statRoutes = require('./routes/statsRoutes')
 const glossaryRoutes = require('./routes/glossaryRoutes');
+const publicRoutes = require('./routes/v1/publicRoutes');
 
 
 
@@ -73,6 +86,9 @@ app.use('/api/analyse', analysisRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/stats', statsLimiter, statRoutes);
 app.use('/api/glossary', glossaryRoutes);
+
+// Public API v1
+app.use('/v1', publicLimiter, publicRoutes);
 
 app.listen(PORT, () => {
   console.log(`Serveur démarré, port : ${PORT}`);
