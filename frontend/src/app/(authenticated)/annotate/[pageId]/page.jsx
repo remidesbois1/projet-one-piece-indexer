@@ -496,14 +496,21 @@ export default function AnnotatePage() {
             return;
         }
 
+        const previousPage = { ...page };
+        // Mise à jour optimiste du state local
+        setPage(prev => ({
+            ...prev,
+            description: JSON.stringify(payload)
+        }));
+        setShowDescModal(false);
         setIsSavingDesc(true);
+
         try {
             await savePageDescription(pageId, payload);
             toast.success("Description et vecteurs enregistrés !");
-            setShowDescModal(false);
-            const res = await getPageById(pageId);
-            setPage(res.data);
         } catch (error) {
+            // Rollback en cas d'erreur
+            setPage(previousPage);
             console.error(error);
             toast.error("Erreur lors de la sauvegarde.");
         } finally {
@@ -574,16 +581,39 @@ export default function AnnotatePage() {
     const handleDeleteBubble = async (bubbleId) => {
         if (isGuest) return;
         if (window.confirm("Supprimer cette annotation ?")) {
+            const previousBubbles = [...existingBubbles];
+            // Mise à jour optimiste : on retire la bulle immédiatement
+            setExistingBubbles(prev => prev.filter(b => b.id !== bubbleId));
+
             try {
                 await deleteBubble(bubbleId);
-                fetchBubbles();
-            } catch (error) { toast.error("Erreur suppression."); }
+                toast.success("Annotation supprimée.");
+            } catch (error) {
+                // Rollback en cas d'erreur
+                setExistingBubbles(previousBubbles);
+                toast.error("Erreur lors de la suppression.");
+            }
         }
     };
 
-    const handleSuccess = () => {
+    const handleSuccess = (newData) => {
         setPendingAnnotation(null);
         setDebugImageUrl(null);
+
+        // Mise à jour optimiste du state local des bulles
+        if (newData) {
+            setExistingBubbles(prev => {
+                const exists = prev.find(b => b.id === newData.id);
+                if (exists) {
+                    // C'est une édition
+                    return prev.map(b => b.id === newData.id ? { ...b, ...newData } : b);
+                } else {
+                    // C'est une création (triée par défaut à la fin ou par ordre si dispo)
+                    return [...prev, newData].sort((a, b) => a.order - b.order);
+                }
+            });
+        }
+
         fetchBubbles();
 
         if (isAutoDetecting) {
@@ -683,7 +713,7 @@ export default function AnnotatePage() {
     };
 
     if (error) return <div className="p-8 text-red-500">{error}</div>;
-    if (!page) return <div className="flex h-screen items-center justify-center text-slate-500">Chargement...</div>;
+    if (!page) return null;
 
     const canEdit = !isGuest && (page.statut === 'not_started' || page.statut === 'in_progress');
 
@@ -897,9 +927,13 @@ export default function AnnotatePage() {
                 </div>
             )}
 
+            {/* Prefetch désactivé pour réduire la charge réseau */}
+            {/* 
             {navContext.next && (
                 <link rel="prefetch" href={getProxiedImageUrl(navContext.next.url_image, navContext.next.id, session?.access_token)} crossOrigin="anonymous" />
             )}
+            */}
+
 
             <div className="flex flex-1 overflow-hidden">
                 <main className="flex-1 bg-slate-200/50 overflow-auto flex justify-center p-8 relative cursor-default">

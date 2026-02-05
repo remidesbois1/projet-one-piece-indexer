@@ -125,6 +125,7 @@ export default function MySubmissionsPage() {
                                         <TableCell>
                                             <Link
                                                 href={`/annotate/${sub.pages.id}`}
+                                                prefetch={false}
                                                 className="inline-flex items-center rounded-md bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-800 hover:bg-slate-200 transition-colors whitespace-nowrap"
                                             >
                                                 Tome {sub.pages.chapitres.tomes.numero} • Chap {sub.pages.chapitres.numero} • P{sub.pages.numero_page}

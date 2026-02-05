@@ -2,14 +2,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { createBubble, updateBubbleText } from '@/lib/api';
 
-// UI Components
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Alert, AlertDescription } from "@/components/ui/alert"; // Optionnel, sinon div simple
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 // Icons
 import { AlertCircle, Loader2 } from "lucide-react";
+
+import { toast } from "sonner";
 
 const ValidationForm = ({ annotationData, onValidationSuccess, onCancel, onReject }) => {
   const { session } = useAuth();
@@ -21,7 +22,6 @@ const ValidationForm = ({ annotationData, onValidationSuccess, onCancel, onRejec
   const isEditing = annotationData && annotationData.id;
 
   useEffect(() => {
-    // Petit délai pour laisser le temps au Dialog de s'ouvrir et focus
     setTimeout(() => {
       if (textareaRef.current) {
         textareaRef.current.focus();
@@ -44,13 +44,13 @@ const ValidationForm = ({ annotationData, onValidationSuccess, onCancel, onRejec
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (text.trim() === '') {
-      // Tu pourrais utiliser un Toast ici
-      alert("Le texte ne peut pas être vide.");
+      toast.error("Le texte ne peut pas être vide.");
       return;
     }
     setIsSubmitting(true);
     try {
       if (isEditing) {
+        onValidationSuccess({ id: annotationData.id, texte_propose: text });
         await updateBubbleText(annotationData.id, text);
       } else {
         const finalBubbleData = {
@@ -59,12 +59,12 @@ const ValidationForm = ({ annotationData, onValidationSuccess, onCancel, onRejec
           w: annotationData.w, h: annotationData.h,
           texte_propose: text,
         };
-        await createBubble(finalBubbleData);
+        const response = await createBubble(finalBubbleData);
+        onValidationSuccess(response.data);
       }
-      onValidationSuccess();
     } catch (error) {
       console.error("Erreur soumission", error);
-      alert("Une erreur est survenue.");
+      toast.error("Une erreur est survenue lors de l'enregistrement.");
     } finally {
       setIsSubmitting(false);
     }
