@@ -103,7 +103,7 @@ const PageReviewList = () => {
               </CardContent>
 
               <CardFooter className="p-3 pt-0">
-                <Link href={`/moderation/page/${page.id}`} className="w-full">
+                <Link href={`/moderation/page/${page.id}`} prefetch={false} className="w-full">
                   <Button size="sm" className="w-full bg-slate-900 hover:bg-slate-700 group-hover:translate-y-0 transition-all">
                     <ScanEye className="mr-2 h-4 w-4" />
                     Examiner

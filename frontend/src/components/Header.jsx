@@ -53,7 +53,7 @@ const Header = ({ onOpenApiKeyModal }) => {
 
                 {/* LOGO */}
                 <div className="flex items-center gap-2">
-                    <Link href="/" className="flex items-center space-x-2">
+                    <Link href="/" prefetch={false} className="flex items-center space-x-2">
                         <span className="text-xl font-bold tracking-tight text-slate-900">
                             Projet Poneglyph
                         </span>
@@ -62,28 +62,28 @@ const Header = ({ onOpenApiKeyModal }) => {
 
                 {/* NAVIGATION DESKTOP */}
                 <nav className="hidden md:flex items-center gap-6">
-                    <Link href="/dashboard" className={getLinkStyle('/dashboard')}>
+                    <Link href="/dashboard" prefetch={false} className={getLinkStyle('/dashboard')}>
                         Bibliothèque
                     </Link>
-                    <Link href="/search" className={getLinkStyle('/search')}>
+                    <Link href="/search" prefetch={false} className={getLinkStyle('/search')}>
                         Recherche
                     </Link>
                     {!isGuest && (
-                        <Link href="/my-submissions" className={getLinkStyle('/my-submissions')}>
+                        <Link href="/my-submissions" prefetch={false} className={getLinkStyle('/my-submissions')}>
                             Mes Soumissions
                         </Link>
                     )}
                     {!isGuest && (isAdmin || isModo) && (
-                        <Link href="/moderation" className={getLinkStyle('/moderation')}>
+                        <Link href="/moderation" prefetch={false} className={getLinkStyle('/moderation')}>
                             Modération
                         </Link>
                     )}
                     {!isGuest && isAdmin && (
                         <>
-                            <Link href="/admin" className={getLinkStyle('/admin')}>
+                            <Link href="/admin" prefetch={false} className={getLinkStyle('/admin')}>
                                 Admin
                             </Link>
-                            <Link href="/admin/data" className={getLinkStyle('/admin/data')}>
+                            <Link href="/admin/data" prefetch={false} className={getLinkStyle('/admin/data')}>
                                 Explorateur
                             </Link>
                         </>
@@ -146,7 +146,7 @@ const Header = ({ onOpenApiKeyModal }) => {
                                     Mode Invité
                                 </Badge>
                             )}
-                            <Link href="/login">
+                            <Link href="/login" prefetch={false}>
                                 <Button size="sm">Connexion</Button>
                             </Link>
                         </div>

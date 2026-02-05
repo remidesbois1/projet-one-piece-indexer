@@ -636,6 +636,7 @@ export default function SearchPage() {
                                     <Link
                                         key={`${item.id}-${index}`}
                                         href={`/annotate/${item.page_id}`}
+                                        prefetch={false}
                                         className="group block h-full outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-indigo-500 rounded-lg"
                                     >
                                         <Card className="h-full flex flex-col overflow-hidden border-slate-200 hover:shadow-xl hover:-translate-y-1 transition-all duration-300">

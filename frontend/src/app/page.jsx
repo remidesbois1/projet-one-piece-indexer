@@ -25,12 +25,12 @@ export default function LandingPage() {
                     </div>
 
                     <div className="flex items-center gap-4">
-                        <Link href="/login">
+                        <Link href="/login" prefetch={false}>
                             <Button variant="ghost" className="text-slate-600 hover:text-slate-900">
                                 Connexion
                             </Button>
                         </Link>
-                        <Link href="/dashboard">
+                        <Link href="/dashboard" prefetch={false}>
                             <Button className="bg-slate-900 hover:bg-slate-800 text-white shadow-sm">
                                 Accéder à l'App
                             </Button>
@@ -58,7 +58,7 @@ export default function LandingPage() {
                         </p>
 
                         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-                            <Link href="/dashboard">
+                            <Link href="/dashboard" prefetch={false}>
                                 <Button size="lg" className="h-12 px-8 text-base bg-slate-900 hover:bg-slate-800 text-white min-w-[200px]">
                                     Commencer <ArrowRight className="ml-2 h-4 w-4" />
                                 </Button>
@@ -191,7 +191,7 @@ export default function LandingPage() {
                         </div>
                         <div className="flex items-center gap-6">
                             <Link href="https://github.com/remidesbois1/" className="hover:text-slate-900 transition-colors">GitHub</Link>
-                            <Link href="/login" className="hover:text-slate-900 transition-colors">Connexion</Link>
+                            <Link href="/login" prefetch={false} className="hover:text-slate-900 transition-colors">Connexion</Link>
                         </div>
                     </div>
                 </footer>

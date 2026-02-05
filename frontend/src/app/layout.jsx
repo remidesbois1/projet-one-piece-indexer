@@ -29,12 +29,24 @@ export const metadata = {
   manifest: '/manifest.json',
 };
 
+import NextTopLoader from 'nextjs-toploader';
 import { Toaster } from "@/components/ui/sonner";
 
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+        <NextTopLoader
+          color="#3b82f6" // bleu-500 par défaut ou adapter au thème
+          initialPosition={0.08}
+          crawlSpeed={200}
+          height={3}
+          crawl={true}
+          showSpinner={false}
+          easing="ease"
+          speed={200}
+          shadow="0 0 10px #3b82f6,0 0 5px #3b82f6"
+        />
         <Providers>
           {children}
         </Providers>

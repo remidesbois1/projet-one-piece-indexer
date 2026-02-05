@@ -21,7 +21,7 @@ const rateLimit = require('express-rate-limit');
 
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 300,
+  max: 1000,
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -38,7 +38,7 @@ app.use(globalLimiter);
 
 const publicLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 500,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many requests, please try again later." }
