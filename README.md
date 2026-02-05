@@ -13,10 +13,11 @@ Le projet est accessible publiquement à l'adresse suivante (accès invité pour
 * **Stockage Objets :** Cloudflare R2 pour l'hébergement des planches (compatible S3).
 * **CDN & Sécurité :** Cloudflare (Gestion DNS, protection DDoS et mise en cache).
 
-### **Frontend & IA Cliente (Edge AI)**
+### **Frontend & IA**
 
 * **Framework :** React 19 / Next.js & Vite.
 * **OCR Local :** **Florence-2-base Fine-tuned** (Remidesbois/florence2-onepiece-ocr) exécuté via WebGPU (@xenova/transformers) directement dans le navigateur.
+* **Détection de Bulles Locale :** **YOLO V8 Medium Fine-tuned** (Remidesbois/YoloPiece_BubbleDetector) exécuté via WebGPU pour une détection ultra-précise et rapide directement dans le navigateur.
 * **Reranking Local :** **mxbai-rerank-base-v1** (Mixedbread AI) via WebGPU pour une pertinence de recherche maximale sans coût serveur.
 * **State Management :** Context API & LocalStorage (persistance locale des clés API utilisateur).
 
@@ -81,6 +82,13 @@ Ce modèle spécialisé (`Remidesbois/florence2-onepiece-ocr`) capture la typogr
 * **Latence :** 1-5 secondes / OCR (suivant la puissance de la carte graphique de l'utilisateur)
 * **Entraînement :** Fine-tuned sur 600 bulles de dialogue.
 * **Métriques :** CER de 3.13% (contre 78.77% pour le modèle de base), soit une amélioration de +75 pts.
+
+### **YOLO V8 Fine-tuned (Détection)**
+Ce modèle spécialisé (`Remidesbois/YoloPiece_BubbleDetector`) détecte instantanément les bulles de dialogue sur la page avant l'OCR.
+* **Architecture :** YOLOv8/11 Medium exporté en ONNX.
+* **Exécution :** WebGPU (via ONNX Runtime Web).
+* **Entraînement :** Fine-tuned sur 1500 planches anotées manuellement.
+* **Performance :** mAP50 de 0.97, capable d'ignorer les cases et de ne capturer que le texte.
 
 ### **Google Gemini 2.5 Flash-Lite (Cloud)**
 Ce modèle est utilisé en alternative à Florence-2 pour les utilisateurs ne disposant pas d'une carte graphique compatible WebGPU.

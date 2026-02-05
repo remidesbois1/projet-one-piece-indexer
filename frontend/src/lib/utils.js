@@ -21,8 +21,19 @@ export function getProxiedImageUrl(url, pageId = null, token = null) {
 
 export const cropImage = (imageElement, rect) => {
     return new Promise((resolve, reject) => {
-        if (!imageElement || !rect) {
-            reject("No image or rect provided");
+        if (!imageElement) {
+            console.error("cropImage: imageElement is missing");
+            reject("No image provided");
+            return;
+        }
+        if (!rect) {
+            console.error("cropImage: rect is missing");
+            reject("No rect provided");
+            return;
+        }
+        if (rect.w <= 0 || rect.h <= 0) {
+            console.error("cropImage: Invalid dimensions", rect);
+            reject("Invalid rect dimensions");
             return;
         }
 

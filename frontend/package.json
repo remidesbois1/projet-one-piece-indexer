@@ -37,6 +37,7 @@
     "lucide-react": "^0.562.0",
     "next": "16.1.4",
     "next-themes": "^0.4.6",
+    "onnxruntime-web": "^1.23.2",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-zoom-pan-pinch": "^3.7.0",
