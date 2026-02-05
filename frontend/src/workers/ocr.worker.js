@@ -1,3 +1,4 @@
+
 import { AutoProcessor, Florence2ForConditionalGeneration, RawImage, Tensor, env } from '@huggingface/transformers';
 
 env.allowLocalModels = false;
@@ -46,14 +47,15 @@ self.addEventListener('message', async (event) => {
     }
 
     if (type === 'run' && imageBlob) {
+        const { requestId } = event.data;
         if (!model || !processor) {
-            self.postMessage({ status: 'error', error: 'Modèle non chargé.' });
+            self.postMessage({ status: 'error', error: 'Modèle non chargé.', requestId });
             return;
         }
 
         try {
             const debugURL = URL.createObjectURL(imageBlob);
-            self.postMessage({ status: 'debug_image', url: debugURL });
+            self.postMessage({ status: 'debug_image', url: debugURL, requestId });
 
             const image = await RawImage.fromBlob(imageBlob);
             const task = '<OCR>';
@@ -88,12 +90,12 @@ self.addEventListener('message', async (event) => {
 
             cleanText = cleanText.replace(/\s+/g, ' ').trim();
 
-            self.postMessage({ status: 'complete', text: cleanText });
+            self.postMessage({ status: 'complete', text: cleanText, requestId });
 
         } catch (err) {
             console.error("[Worker Run Error]", err);
             const errorMsg = err instanceof Error ? err.message : String(err);
-            self.postMessage({ status: 'error', error: `Erreur OCR : ${errorMsg}` });
+            self.postMessage({ status: 'error', error: `Erreur OCR : ${errorMsg}`, requestId });
         }
     }
 });

@@ -7,19 +7,16 @@ export const useWorker = () => useContext(WorkerContext);
 
 export const WorkerProvider = ({ children }) => {
     const workerRef = useRef(null);
-    const [modelStatus, setModelStatus] = useState('idle'); // 'idle', 'loading', 'ready', 'error'
+    const [modelStatus, setModelStatus] = useState('idle');
     const [downloadProgress, setDownloadProgress] = useState(0);
     const [currentFile, setCurrentFile] = useState("");
 
-    // Initialisation unique du Worker au montage de l'app
     useEffect(() => {
         if (!workerRef.current && typeof window !== 'undefined') {
             workerRef.current = new Worker(new URL('../workers/ocr.worker.js', import.meta.url), {
                 type: 'module'
             });
 
-            // Écouteur global pour mettre à jour le statut du modèle
-            // Note: Les réponses OCR spécifiques seront gérées par les pages individuelles
             workerRef.current.addEventListener('message', (e) => {
                 const { status, progress, file, error } = e.data;
 
@@ -38,10 +35,7 @@ export const WorkerProvider = ({ children }) => {
             });
         }
 
-        // Nettoyage à la fermeture de l'app (rare en SPA mais propre)
         return () => {
-            // On ne termine pas le worker ici pour qu'il survive à la navigation
-            // Sauf si le composant Provider est démonté (fermeture onglet)
         };
     }, []);
 
@@ -52,9 +46,9 @@ export const WorkerProvider = ({ children }) => {
         }
     };
 
-    const runOcr = (blob) => {
+    const runOcr = (blob, requestId = null) => {
         if (workerRef.current && modelStatus === 'ready') {
-            workerRef.current.postMessage({ type: 'run', imageBlob: blob });
+            workerRef.current.postMessage({ type: 'run', imageBlob: blob, requestId });
         }
     };
 

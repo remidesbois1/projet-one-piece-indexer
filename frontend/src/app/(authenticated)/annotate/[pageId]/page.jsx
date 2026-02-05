@@ -9,6 +9,7 @@ import ValidationForm from '@/components/ValidationForm';
 import ApiKeyForm from '@/components/ApiKeyForm';
 import { useAuth } from '@/context/AuthContext';
 import { useWorker } from '@/context/WorkerContext';
+import { useDetection } from '@/context/DetectionContext';
 import { DndContext, closestCenter } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { SortableBubbleItem } from '@/components/SortableBubbleItem';
@@ -29,14 +30,22 @@ export default function AnnotatePage() {
     const { user, session, isGuest } = useAuth();
     const params = useParams();
     const pageId = params?.pageId;
-    const router = useRouter(); // Next.js router
+    const router = useRouter();
     const { worker, modelStatus, loadModel, downloadProgress, runOcr } = useWorker();
-
-    // --- 1. ALL HOOKS MUST BE DECLARED HERE (Before any return) ---
+    const {
+        detectBubbles,
+        detectionStatus,
+        loadDetectionModel,
+        downloadProgress: detectionProgress
+    } = useDetection();
 
     const [page, setPage] = useState(null);
     const [existingBubbles, setExistingBubbles] = useState([]);
     const [error, setError] = useState(null);
+
+    const [isAutoDetecting, setIsAutoDetecting] = useState(false);
+    const detectionQueueRef = useRef([]);
+    const [queueLength, setQueueLength] = useState(0);
 
     const [hoveredBubble, setHoveredBubble] = useState(null);
     const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
@@ -55,7 +64,7 @@ export default function AnnotatePage() {
     const [imageDimensions, setImageDimensions] = useState(null);
 
     const [debugImageUrl, setDebugImageUrl] = useState(null);
-    // Safe localStorage access
+
     const [preferLocalOCR, setPreferLocalOCR] = useState(false);
 
     useEffect(() => {
@@ -64,19 +73,16 @@ export default function AnnotatePage() {
         }
     }, []);
 
-    // -- New Hooks for Semantic Description --
     const [showDescModal, setShowDescModal] = useState(false);
     const [isSavingDesc, setIsSavingDesc] = useState(false);
     const [isGeneratingAI, setIsGeneratingAI] = useState(false);
 
-    // Navigation States
     const [chapterPages, setChapterPages] = useState([]);
     const [navContext, setNavContext] = useState({ prev: null, next: null });
 
     const containerRef = useRef(null);
     const imageRef = useRef(null);
 
-    // Metadata Form States
     const [formData, setFormData] = useState({
         content: "",
         arc: "",
@@ -114,7 +120,6 @@ export default function AnnotatePage() {
         try {
             const parsed = JSON.parse(val);
 
-            // Validation de structure pour éviter de casser le format
             if (typeof parsed !== 'object' || parsed === null) {
                 throw new Error("Le JSON doit être un objet.");
             }
@@ -153,7 +158,6 @@ export default function AnnotatePage() {
 
             setFormData(newFormData);
 
-            // Sync JSON input on page load regardless of tab mode
             const jsonStructure = {
                 content: newFormData.content,
                 metadata: {
@@ -172,7 +176,6 @@ export default function AnnotatePage() {
             };
             setFormData(newFormData);
 
-            // Sync JSON input for empty page
             const jsonStructure = {
                 content: newFormData.content,
                 metadata: {
@@ -204,11 +207,33 @@ export default function AnnotatePage() {
         }
     }, [showDescModal, fetchSuggestions]);
 
+    const lastRequestId = useRef(0);
+
+    const runLocalOcr = async () => {
+        try {
+            setLoadingText("Analyse Locale...");
+            setIsSubmitting(true);
+            const requestId = Date.now();
+            lastRequestId.current = requestId;
+
+            const blob = await cropImage(imageRef.current, rectangle);
+            runOcr(blob, requestId);
+        } catch (err) {
+            console.error(err);
+            setIsSubmitting(false);
+        }
+    };
+
     useEffect(() => {
         if (!worker) return;
 
         const handleMessage = async (e) => {
-            const { status, text, error, url } = e.data;
+            const { status, text, error, url, requestId } = e.data;
+
+            if (requestId && requestId !== lastRequestId.current) {
+                console.warn(`[OCR] Ignored outdated response for ID ${requestId} (Expected: ${lastRequestId.current})`);
+                return;
+            }
 
             if (status === 'debug_image') setDebugImageUrl(url);
 
@@ -255,7 +280,6 @@ export default function AnnotatePage() {
             getPageById(pageId)
                 .then(response => {
                     setPage(response.data);
-                    // Fetch list of pages in chapter for navigation
                     if (response.data.id_chapitre) {
                         getPages(response.data.id_chapitre)
                             .then(pagesRes => {
@@ -274,17 +298,12 @@ export default function AnnotatePage() {
         }
     }, [pageId, session?.access_token, isGuest, fetchBubbles]);
 
-    // Keyboard Shortcuts
     useEffect(() => {
         const handleKeyDown = (e) => {
-            // Ignore if typing in an input or textarea
             if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
-                // Special case for Enter in Textarea within modal
                 if (e.key === 'Enter' && e.ctrlKey && pendingAnnotation) {
-                    // Logic handled by the form submit or special trigger
                 }
 
-                // Allow Escape even in inputs to close modals
                 if (e.key === 'Escape') {
                     if (pendingAnnotation) setPendingAnnotation(null);
                     if (showDescModal) setShowDescModal(null);
@@ -321,6 +340,8 @@ export default function AnnotatePage() {
     const goToNext = () => navContext.next && router.push(`/annotate/${navContext.next.id}`);
 
     useEffect(() => {
+        if (isAutoDetecting) return;
+
         if (rectangle && imageRef.current) {
             const analysisData = { id_page: parseInt(pageId, 10), ...rectangle, texte_propose: '' };
             setPendingAnnotation(analysisData);
@@ -334,19 +355,87 @@ export default function AnnotatePage() {
                 handleRetryWithCloud(analysisData);
             }
         }
-    }, [rectangle, pageId]);
+    }, [rectangle, pageId, isAutoDetecting]);
 
-    const runLocalOcr = async () => {
+    const processNextBubble = useCallback(async () => {
+        if (!imageRef.current) return;
+
+        if (detectionQueueRef.current.length === 0) {
+            setIsAutoDetecting(false);
+            setQueueLength(0);
+            setRectangle(null);
+            toast.success("Détection automatique terminée !");
+            return;
+        }
+
+        const nextBox = detectionQueueRef.current.shift();
+        setQueueLength(detectionQueueRef.current.length);
+
+        setRectangle(nextBox);
+
+        const analysisData = { id_page: parseInt(pageId, 10), ...nextBox, texte_propose: '' };
+
+        setPendingAnnotation(analysisData);
+        setDebugImageUrl(null);
+
+        if (preferLocalOCR && modelStatus === 'ready') {
+            try {
+                setLoadingText("Analyse Locale (Auto)...");
+                setIsSubmitting(true);
+                const requestId = Date.now();
+                lastRequestId.current = requestId;
+
+                const blob = await cropImage(imageRef.current, nextBox);
+                runOcr(blob, requestId);
+            } catch (err) {
+                console.error(err);
+                setIsSubmitting(false);
+            }
+        } else {
+            handleRetryWithCloud(analysisData);
+        }
+
+    }, [pageId, preferLocalOCR, modelStatus, runOcr]);
+
+    const handleExecuteDetection = async () => {
+        if (!imageRef.current) return;
+
         try {
-            setLoadingText("Analyse Locale...");
+            setLoadingText("Détection des bulles...");
             setIsSubmitting(true);
-            const blob = await cropImage(imageRef.current, rectangle);
-            runOcr(blob);
+
+            const response = await fetch(imageRef.current.src);
+            const blob = await response.blob();
+
+            const boxes = await detectBubbles(blob);
+
+            if (boxes.length === 0) {
+                toast.info("Aucune bulle détectée.");
+                setIsSubmitting(false);
+                return;
+            }
+
+            toast.success(`${boxes.length} bulles détectées !`);
+
+            detectionQueueRef.current = boxes;
+            setQueueLength(boxes.length);
+            setIsAutoDetecting(true);
+
+            setTimeout(() => {
+                processNextBubble();
+            }, 100);
+
+
         } catch (err) {
-            console.error(err);
+            console.error("Detection error:", err);
+            toast.error("Erreur lors de la détection: " + err.message);
+        } finally {
             setIsSubmitting(false);
         }
     };
+
+
+
 
     const handleRetryWithCloud = (dataOverride = null) => {
         const dataToUse = dataOverride || pendingAnnotation;
@@ -377,7 +466,6 @@ export default function AnnotatePage() {
 
                 console.error("Cloud OCR Error:", error);
 
-                // Check for invalid API key signals from Google SDK
                 if (error.message?.includes('API key') || error.toString().includes('400')) {
                     localStorage.removeItem('google_api_key');
                     setShowApiKeyModal(true);
@@ -389,9 +477,7 @@ export default function AnnotatePage() {
     const handleSaveApiKey = (key) => {
         localStorage.setItem('google_api_key', key);
         setShowApiKeyModal(false);
-        // Si on a une annotation en attente, on relance
         if (pendingAnnotation) handleRetryWithCloud();
-        // Si on était en train de sauver une description, on relance
         if (showDescModal) handleSaveDescription();
     };
 
@@ -497,9 +583,16 @@ export default function AnnotatePage() {
 
     const handleSuccess = () => {
         setPendingAnnotation(null);
-        setRectangle(null);
         setDebugImageUrl(null);
         fetchBubbles();
+
+        if (isAutoDetecting) {
+            setTimeout(() => {
+                processNextBubble();
+            }, 300);
+        } else {
+            setRectangle(null);
+        }
     };
 
     const handleSubmitPage = async () => {
@@ -706,6 +799,51 @@ export default function AnnotatePage() {
 
                     <div className="h-6 w-px bg-slate-200" />
 
+                    <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-lg border border-slate-100">
+                        {detectionStatus === 'idle' && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={loadDetectionModel}
+                                className="h-7 text-xs border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100"
+                            >
+                                <Download className="h-3 w-3 mr-1.5" />
+                                Charger Détecteur
+                            </Button>
+                        )}
+                        {detectionStatus === 'loading' && (
+                            <div className="flex flex-col w-24 gap-1 mx-2">
+                                <div className="flex justify-between text-[9px] text-slate-500">
+                                    <span>Dl...</span>
+                                    <span>{detectionProgress}%</span>
+                                </div>
+                                <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
+                                    <div
+                                        className="h-full bg-indigo-500 transition-all duration-300"
+                                        style={{ width: `${detectionProgress}%` }}
+                                    />
+                                </div>
+                            </div>
+                        )}
+                        {detectionStatus === 'ready' && (
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={!isGuest ? handleExecuteDetection : undefined}
+                                disabled={isGuest || isSubmitting || isAutoDetecting}
+                                className="h-7 text-xs bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
+                            >
+                                <Sparkles className="h-3 w-3 mr-1.5" />
+                                {isAutoDetecting ? `Détection (${queueLength})...` : "Détecter Bulles"}
+                            </Button>
+                        )}
+                        {detectionStatus === 'error' && (
+                            <Badge variant="destructive" className="text-[10px] h-7">Err Détection</Badge>
+                        )}
+                    </div>
+
+                    <div className="h-6 w-px bg-slate-200" />
+
                     <Button
                         variant="outline"
                         size="sm"
@@ -759,7 +897,6 @@ export default function AnnotatePage() {
                 </div>
             )}
 
-            {/* Image Prefetching */}
             {navContext.next && (
                 <link rel="prefetch" href={getProxiedImageUrl(navContext.next.url_image, navContext.next.id, session?.access_token)} crossOrigin="anonymous" />
             )}
@@ -794,6 +931,21 @@ export default function AnnotatePage() {
                                 <Loader2 className="h-10 w-10 animate-spin mb-2 text-slate-900" />
                                 <span>{loadingText}</span>
                             </div>
+                        )}
+
+                        {rectangle && imageDimensions && (
+                            <div
+                                style={{
+                                    left: rectangle.x * (imageDimensions.width / imageDimensions.naturalWidth),
+                                    top: rectangle.y * (imageDimensions.width / imageDimensions.naturalWidth),
+                                    width: rectangle.w * (imageDimensions.width / imageDimensions.naturalWidth),
+                                    height: rectangle.h * (imageDimensions.width / imageDimensions.naturalWidth),
+                                }}
+                                className={cn(
+                                    "absolute border-2 border-dashed transition-all duration-300 z-30 pointer-events-none",
+                                    isAutoDetecting ? "border-indigo-500 bg-indigo-500/10" : "border-red-500 bg-red-500/10"
+                                )}
+                            />
                         )}
 
                         {isDrawing && startPoint && endPoint && (
@@ -904,9 +1056,15 @@ export default function AnnotatePage() {
                 open={!!pendingAnnotation && !isSubmitting}
                 onOpenChange={(open) => {
                     if (!open) {
-                        setPendingAnnotation(null);
-                        setRectangle(null);
-                        setDebugImageUrl(null);
+                        if (!isSubmitting) {
+                            if (isAutoDetecting) {
+                                setIsAutoDetecting(false);
+                                toast.info("Détection automatique arrêtée.");
+                            }
+                            setPendingAnnotation(null);
+                            setDebugImageUrl(null);
+                            setRectangle(null);
+                        }
                     }
                 }}
             >
@@ -951,8 +1109,13 @@ export default function AnnotatePage() {
                                         onValidationSuccess={handleSuccess}
                                         onCancel={() => {
                                             setPendingAnnotation(null);
-                                            setRectangle(null);
                                             setDebugImageUrl(null);
+
+                                            if (isAutoDetecting) {
+                                                setTimeout(() => processNextBubble(), 100);
+                                            } else {
+                                                setRectangle(null);
+                                            }
                                         }}
                                     />
 
@@ -1033,7 +1196,6 @@ export default function AnnotatePage() {
                         </TabsList>
 
                         <TabsContent value="form" className="space-y-4 outline-none">
-                            {/* Contenu de la scène */}
                             <div className="flex flex-col gap-3">
                                 <Label htmlFor="scene-content" className="text-sm font-semibold text-slate-700">
                                     Contenu Sémantique
@@ -1048,7 +1210,6 @@ export default function AnnotatePage() {
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                {/* Arc Narratif */}
                                 <div className="flex flex-col gap-3">
                                     <Label className="text-sm font-semibold text-slate-700">Arc Narratif</Label>
                                     <div className="relative">
@@ -1067,7 +1228,6 @@ export default function AnnotatePage() {
                                     </div>
                                 </div>
 
-                                {/* Personnages */}
                                 <div className="flex flex-col gap-3">
                                     <Label className="text-sm font-semibold text-slate-700">Personnages</Label>
                                     <div className="flex flex-col gap-2">
