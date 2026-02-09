@@ -10,6 +10,7 @@ import ApiKeyForm from '@/components/ApiKeyForm';
 import { useAuth } from '@/context/AuthContext';
 import { useWorker } from '@/context/WorkerContext';
 import { useDetection } from '@/context/DetectionContext';
+import { useManga } from '@/context/MangaContext';
 import { DndContext, closestCenter } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { SortableBubbleItem } from '@/components/SortableBubbleItem';
@@ -99,6 +100,9 @@ export default function AnnotatePage() {
     const [tabMode, setTabMode] = useState("form");
     const [jsonInput, setJsonInput] = useState("");
     const [jsonError, setJsonError] = useState(null);
+
+    // [FIX] Get mangaSlug
+    const { mangaSlug } = useManga();
 
     useEffect(() => {
         if (tabMode === 'form') {
@@ -314,10 +318,10 @@ export default function AnnotatePage() {
 
             switch (e.key) {
                 case 'ArrowLeft':
-                    if (navContext.prev) router.push(`/annotate/${navContext.prev.id}`);
+                    if (navContext.prev) router.push(`/${mangaSlug}/annotate/${navContext.prev.id}`);
                     break;
                 case 'ArrowRight':
-                    if (navContext.next) router.push(`/annotate/${navContext.next.id}`);
+                    if (navContext.next) router.push(`/${mangaSlug}/annotate/${navContext.next.id}`);
                     break;
                 case 'Escape':
                     if (isDrawing) {
@@ -334,10 +338,10 @@ export default function AnnotatePage() {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [navContext, router, isDrawing, pendingAnnotation, showDescModal, showApiKeyModal]);
+    }, [navContext, router, isDrawing, pendingAnnotation, showDescModal, showApiKeyModal, mangaSlug]);
 
-    const goToPrev = () => navContext.prev && router.push(`/annotate/${navContext.prev.id}`);
-    const goToNext = () => navContext.next && router.push(`/annotate/${navContext.next.id}`);
+    const goToPrev = () => navContext.prev && router.push(`/${mangaSlug}/annotate/${navContext.prev.id}`);
+    const goToNext = () => navContext.next && router.push(`/${mangaSlug}/annotate/${navContext.next.id}`);
 
     useEffect(() => {
         if (isAutoDetecting) return;
@@ -721,7 +725,7 @@ export default function AnnotatePage() {
         <div className="flex flex-col h-[calc(100vh-64px)] bg-slate-50">
             <header className="flex-none h-16 border-b border-slate-200 bg-white px-6 flex items-center justify-between z-20 shadow-sm gap-4">
                 <div className="flex items-center gap-4">
-                    <Link href="/dashboard">
+                    <Link href={`/${mangaSlug}/dashboard`}>
                         <Button variant="ghost" size="sm">
                             <ArrowLeft className="h-4 w-4 mr-2" /> Retour
                         </Button>

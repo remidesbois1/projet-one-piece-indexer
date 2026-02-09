@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { getPagesForReview } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
+import { useManga } from '@/context/MangaContext';
 import Link from 'next/link';
 
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
@@ -16,6 +17,7 @@ import {
 
 const PageReviewList = () => {
   const { session } = useAuth();
+  const { mangaSlug } = useManga();
   const [pages, setPages] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -103,7 +105,7 @@ const PageReviewList = () => {
               </CardContent>
 
               <CardFooter className="p-3 pt-0">
-                <Link href={`/moderation/page/${page.id}`} prefetch={false} className="w-full">
+                <Link href={`/${mangaSlug}/moderation/page/${page.id}`} prefetch={false} className="w-full">
                   <Button size="sm" className="w-full bg-slate-900 hover:bg-slate-700 group-hover:translate-y-0 transition-all">
                     <ScanEye className="mr-2 h-4 w-4" />
                     Examiner

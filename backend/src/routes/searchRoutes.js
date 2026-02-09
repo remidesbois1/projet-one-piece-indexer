@@ -40,7 +40,7 @@ router.get('/', async (req, res) => {
 
             let query = supabase
                 .from('pages')
-                .select('id, url_image, description, numero_page, embedding, id_chapitre, chapitres(numero, id_tome, tomes(numero))')
+                .select('id, url_image, description, numero_page, embedding, id_chapitre, chapitres(numero, id_tome, tomes(numero, mangas!inner(slug)))') // [MODIFY] Joined mangas
                 .not('embedding', 'is', null);
 
             const { data: allPages, error: pagesError } = await query;
@@ -54,8 +54,15 @@ router.get('/', async (req, res) => {
                 embedding: page.embedding,
                 chapitre_numero: page.chapitres?.numero,
                 tome_numero: page.chapitres?.tomes?.numero,
-                id_tome: page.chapitres?.id_tome
+                id_tome: page.chapitres?.id_tome,
+                manga_slug: page.chapitres?.tomes?.mangas?.slug // [NEW]
             }));
+
+            // [NEW] Filter by manga slug
+            const filterManga = req.query.manga;
+            if (filterManga) {
+                filteredPages = filteredPages.filter(page => page.manga_slug === filterManga);
+            }
 
             if (filterTome) {
                 filteredPages = filteredPages.filter(page => page.tome_numero === filterTome);
@@ -222,6 +229,28 @@ router.get('/', async (req, res) => {
             if (error) throw error;
 
             let filteredData = data || [];
+
+            // [NEW] Filter by Manga (for keyword search)
+            const filterManga = req.query.manga;
+            if (filterManga) {
+                const pageIds = filteredData.map(b => b.page_id);
+                if (pageIds.length > 0) {
+                    // We need to fetch the manga slug for these pages to filter
+                    const { data: pagesMangaData, error: mangaError } = await supabase
+                        .from('pages')
+                        .select('id, chapitres!inner(tomes!inner(mangas!inner(slug)))')
+                        .in('id', pageIds);
+
+                    if (!mangaError && pagesMangaData) {
+                        const validPageIds = new Set(
+                            pagesMangaData
+                                .filter(p => p.chapitres?.tomes?.mangas?.slug === filterManga)
+                                .map(p => p.id)
+                        );
+                        filteredData = filteredData.filter(b => validPageIds.has(b.page_id));
+                    }
+                }
+            }
 
             if (filterTome) {
                 filteredData = filteredData.filter(b => b.tome_numero === filterTome);
