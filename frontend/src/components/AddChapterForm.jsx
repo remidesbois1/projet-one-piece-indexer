@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { useManga } from '@/context/MangaContext';
 import { getTomes, uploadChapter } from '@/lib/api';
 
 // UI Components
@@ -19,19 +20,19 @@ import { Loader2, UploadCloud, FileArchive, AlertCircle, CheckCircle2 } from "lu
 
 const AddChapterForm = () => {
   const { session } = useAuth();
+  const { mangaSlug } = useManga();
   const [tomes, setTomes] = useState([]);
 
   // States UI
   const [selectedTome, setSelectedTome] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [feedback, setFeedback] = useState({ type: null, message: '' }); // type: 'success' | 'error'
+  const [feedback, setFeedback] = useState({ type: null, message: '' });
 
   useEffect(() => {
     const fetchTomes = async () => {
-      if (session) {
+      if (session && mangaSlug) {
         try {
-          const response = await getTomes();
-          // On trie les tomes par numéro décroissant pour faciliter l'ajout récent
+          const response = await getTomes(mangaSlug);
           setTomes(response.data.sort((a, b) => b.numero - a.numero));
         } catch (error) {
           console.error("Impossible de charger les tomes", error);
@@ -39,7 +40,7 @@ const AddChapterForm = () => {
       }
     };
     fetchTomes();
-  }, [session]);
+  }, [session, mangaSlug]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -48,7 +49,6 @@ const AddChapterForm = () => {
 
     const formData = new FormData(event.target);
 
-    // Vérification manuelle car le Select shadcn est parfois capricieux avec FormData si mal lié
     if (!formData.get('tome_id')) {
       setFeedback({ type: 'error', message: "Veuillez sélectionner un tome." });
       setIsSubmitting(false);
@@ -60,9 +60,7 @@ const AddChapterForm = () => {
 
       setFeedback({ type: 'success', message: response.data.message || "Chapitre uploadé avec succès !" });
 
-      // Reset partiel du form
       event.target.reset();
-      // On garde le tome sélectionné pour enchainer les uploads si besoin, sinon : setSelectedTome('');
     } catch (error) {
       const errorMessage = error.response?.data?.error || "Une erreur est survenue lors de l'upload.";
       setFeedback({ type: 'error', message: errorMessage });
@@ -86,12 +84,10 @@ const AddChapterForm = () => {
       <CardContent>
         <form onSubmit={handleSubmit} id="add-chapter-form" className="space-y-6">
 
-          {/* --- LIGNE 1 : Tome & Numéro --- */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
               <Label>Appartient au Tome</Label>
 
-              {/* Select Shadcn */}
               <Select value={selectedTome} onValueChange={setSelectedTome}>
                 <SelectTrigger>
                   <SelectValue placeholder="-- Sélectionner un tome --" />
@@ -105,7 +101,6 @@ const AddChapterForm = () => {
                 </SelectContent>
               </Select>
 
-              {/* Input caché indispensable pour que FormData récupère la valeur */}
               <input type="hidden" name="tome_id" value={selectedTome} />
             </div>
 
@@ -121,7 +116,6 @@ const AddChapterForm = () => {
             </div>
           </div>
 
-          {/* --- LIGNE 2 : Titre --- */}
           <div className="space-y-2">
             <Label htmlFor="chap-titre">Titre du chapitre</Label>
             <Input
@@ -133,7 +127,6 @@ const AddChapterForm = () => {
             />
           </div>
 
-          {/* --- LIGNE 3 : Fichier --- */}
           <div className="space-y-2">
             <Label htmlFor="chap-file">Fichier source (.cbz)</Label>
             <Input
@@ -146,7 +139,6 @@ const AddChapterForm = () => {
             />
           </div>
 
-          {/* --- Feedback Message --- */}
           {feedback.message && (
             <Alert variant={feedback.type === 'error' ? "destructive" : "default"} className={feedback.type === 'success' ? "border-green-200 bg-green-50 text-green-800" : ""}>
               {feedback.type === 'error' ? <AlertCircle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4 text-green-600" />}

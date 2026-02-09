@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import { useManga } from '@/context/MangaContext';
 import { getPageById, getBubblesForPage, approvePage, rejectPage, rejectBubble } from '@/lib/api';
 import { getProxiedImageUrl } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
@@ -27,6 +28,7 @@ export default function PageReview() {
     const pageId = params?.pageId;
     const router = useRouter();
     const { session, isGuest } = useAuth(); // Assuming isGuest is available in context
+    const { mangaSlug } = useManga();
 
     const [page, setPage] = useState(null);
     const [bubbles, setBubbles] = useState([]);
@@ -69,7 +71,7 @@ export default function PageReview() {
         if (window.confirm("Confirmer l'approbation de cette page ?")) {
             try {
                 await approvePage(pageId);
-                router.push('/moderation');
+                router.push(`/${mangaSlug}/moderation`);
             } catch (error) {
                 alert("Erreur technique lors de l'approbation.");
                 console.error(error);
@@ -82,7 +84,7 @@ export default function PageReview() {
     const handleReject = async (comment) => {
         try {
             await rejectPage(pageId, comment);
-            router.push('/moderation');
+            router.push(`/${mangaSlug}/moderation`);
         } catch (error) {
             alert("Erreur technique lors du rejet.");
             console.error(error);
@@ -135,7 +137,7 @@ export default function PageReview() {
             {/* HEADER DE L'OUTIL */}
             <header className="flex-none h-16 border-b border-slate-200 bg-white px-6 flex items-center justify-between z-20 shadow-sm">
                 <div className="flex items-center gap-4">
-                    <Button variant="ghost" size="sm" onClick={() => router.push('/moderation')}>
+                    <Button variant="ghost" size="sm" onClick={() => router.push(`/${mangaSlug}/moderation`)}>
                         <ArrowLeft className="h-4 w-4 mr-2" /> Retour
                     </Button>
                     <div className="h-6 w-px bg-slate-200" />

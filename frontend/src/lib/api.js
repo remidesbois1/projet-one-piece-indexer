@@ -11,6 +11,14 @@ apiClient.interceptors.request.use(async (config) => {
     let googleApiKey = null;
     if (typeof window !== 'undefined') {
         googleApiKey = localStorage.getItem('google_api_key');
+
+        const pathSegments = window.location.pathname.split('/');
+        const possibleSlug = pathSegments[1];
+
+        const nonMangaRoutes = ['login', 'favicon.ico', 'api', '_next', 'manifest.json', ''];
+        if (possibleSlug && !nonMangaRoutes.includes(possibleSlug)) {
+            config.params = { ...config.params, manga: possibleSlug };
+        }
     }
 
     if (token) {
@@ -22,7 +30,7 @@ apiClient.interceptors.request.use(async (config) => {
     return config;
 });
 
-export const getTomes = () => apiClient.get('/tomes');
+export const getTomes = (mangaSlug) => apiClient.get('/tomes', { params: mangaSlug ? { manga: mangaSlug } : {} });
 export const getChapitres = (id_tome) => apiClient.get(`/chapitres/tome/${id_tome}`);
 export const getPages = (id_chapitre) => apiClient.get(`/pages?id_chapitre=${id_chapitre}`);
 export const getPageById = (id) => apiClient.get(`/pages/${id}`);
@@ -66,7 +74,7 @@ export const approvePage = (pageId) => apiClient.put(`/moderation/pages/${pageId
 export const rejectPage = (pageId, comment) => apiClient.put(`/moderation/pages/${pageId}/reject`, { comment });
 export const submitPageForReview = (pageId) => apiClient.put(`/pages/${pageId}/submit-review`, {});
 
-export const createTome = (tomeData) => apiClient.post('/admin/tomes', tomeData);
+export const createTome = (tomeData, mangaSlug) => apiClient.post('/admin/tomes', tomeData, { params: mangaSlug ? { manga: mangaSlug } : {} });
 export const uploadChapter = (formData) => apiClient.post('/admin/chapitres/upload', formData);
 
 

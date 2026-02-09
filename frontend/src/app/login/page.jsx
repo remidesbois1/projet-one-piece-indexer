@@ -30,7 +30,7 @@ export default function LoginPage() {
 
             if (error) throw error;
 
-            router.push('/dashboard');
+            router.push('/');
 
         } catch (error) {
             setError(error.message);
@@ -41,7 +41,7 @@ export default function LoginPage() {
 
     const handleGuestLogin = () => {
         loginAsGuest();
-        router.push('/dashboard');
+        router.push('/');
     };
 
     return (

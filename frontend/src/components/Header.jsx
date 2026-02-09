@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { useUserProfile } from '@/hooks/useUserProfile';
+import { useManga } from '@/context/MangaContext'; // [NEW]
 
 // UI Components
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,7 @@ const Header = ({ onOpenApiKeyModal }) => {
     const { profile } = useUserProfile();
     const router = useRouter();
     const pathname = usePathname();
+    const { mangaSlug } = useManga(); // [NEW] Get mangaSlug
 
     const handleLogout = async () => {
         await signOut();
@@ -37,7 +39,10 @@ const Header = ({ onOpenApiKeyModal }) => {
 
     // Fonction utilitaire pour le style des liens
     const getLinkStyle = (path) => {
-        const isActive = pathname === path;
+        // [NEW] Adjust active check to ignore manga prefix for styling if needed, 
+        // or just check if pathname ends with path
+        const fullPath = `/${mangaSlug}${path}`;
+        const isActive = pathname === fullPath;
         return `text-sm font-medium transition-colors hover:text-primary ${isActive ? "text-primary font-bold" : "text-slate-500"}`;
     };
 
@@ -47,13 +52,18 @@ const Header = ({ onOpenApiKeyModal }) => {
         return email.substring(0, 2).toUpperCase();
     };
 
+    // [NEW] Helper for Links
+    const getHref = (path) => `/${mangaSlug}${path}`;
+
+    if (!mangaSlug) return null; // Should not happen in authenticated layout
+
     return (
         <header className="sticky top-0 z-50 w-full border-b border-slate-200 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
             <div className="container mx-auto flex h-16 items-center justify-between px-4 sm:px-8 max-w-[1600px]">
 
                 {/* LOGO */}
                 <div className="flex items-center gap-2">
-                    <Link href="/" prefetch={false} className="flex items-center space-x-2">
+                    <Link href={`/`} prefetch={false} className="flex items-center space-x-2">
                         <span className="text-xl font-bold tracking-tight text-slate-900">
                             Projet Poneglyph
                         </span>
@@ -62,28 +72,28 @@ const Header = ({ onOpenApiKeyModal }) => {
 
                 {/* NAVIGATION DESKTOP */}
                 <nav className="hidden md:flex items-center gap-6">
-                    <Link href="/dashboard" prefetch={false} className={getLinkStyle('/dashboard')}>
+                    <Link href={getHref('/dashboard')} prefetch={false} className={getLinkStyle('/dashboard')}>
                         Bibliothèque
                     </Link>
-                    <Link href="/search" prefetch={false} className={getLinkStyle('/search')}>
+                    <Link href={getHref('/search')} prefetch={false} className={getLinkStyle('/search')}>
                         Recherche
                     </Link>
                     {!isGuest && (
-                        <Link href="/my-submissions" prefetch={false} className={getLinkStyle('/my-submissions')}>
+                        <Link href={getHref('/my-submissions')} prefetch={false} className={getLinkStyle('/my-submissions')}>
                             Mes Soumissions
                         </Link>
                     )}
                     {!isGuest && (isAdmin || isModo) && (
-                        <Link href="/moderation" prefetch={false} className={getLinkStyle('/moderation')}>
+                        <Link href={getHref('/moderation')} prefetch={false} className={getLinkStyle('/moderation')}>
                             Modération
                         </Link>
                     )}
                     {!isGuest && isAdmin && (
                         <>
-                            <Link href="/admin" prefetch={false} className={getLinkStyle('/admin')}>
+                            <Link href={getHref('/admin')} prefetch={false} className={getLinkStyle('/admin')}>
                                 Admin
                             </Link>
-                            <Link href="/admin/data" prefetch={false} className={getLinkStyle('/admin/data')}>
+                            <Link href={getHref('/admin/data')} prefetch={false} className={getLinkStyle('/admin/data')}>
                                 Explorateur
                             </Link>
                         </>
@@ -112,18 +122,18 @@ const Header = ({ onOpenApiKeyModal }) => {
                                     </div>
                                 </DropdownMenuLabel>
                                 <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={() => router.push('/my-submissions')}>
+                                <DropdownMenuItem onClick={() => router.push(getHref('/my-submissions'))}>
                                     <Book className="mr-2 h-4 w-4" />
                                     <span>Mes Soumissions</span>
                                 </DropdownMenuItem>
                                 {(isAdmin || isModo) && (
-                                    <DropdownMenuItem onClick={() => router.push('/moderation')}>
+                                    <DropdownMenuItem onClick={() => router.push(getHref('/moderation'))}>
                                         <Shield className="mr-2 h-4 w-4" />
                                         <span>Modération</span>
                                     </DropdownMenuItem>
                                 )}
                                 {isAdmin && (
-                                    <DropdownMenuItem onClick={() => router.push('/admin')}>
+                                    <DropdownMenuItem onClick={() => router.push(getHref('/admin'))}>
                                         <ShieldAlert className="mr-2 h-4 w-4" />
                                         <span>Administration</span>
                                     </DropdownMenuItem>
