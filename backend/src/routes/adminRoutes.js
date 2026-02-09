@@ -42,13 +42,36 @@ const upload = multer({ storage: storage });
 
 router.post('/tomes', authMiddleware, roleCheck(['Admin']), async (req, res) => {
   const { numero, titre } = req.body;
+  let { manga } = req.query;
+  if (Array.isArray(manga)) manga = manga[0];
+
   if (!numero || !titre) return res.status(400).json({ error: "Requis: numero, titre" });
+  if (!manga) return res.status(400).json({ error: "Manga contexte requis." });
+
   try {
-    const { data, error } = await supabaseAdmin.from('tomes').insert({ numero: parseInt(numero), titre }).select().single();
+    const { data: mangaData, error: mangaError } = await supabaseAdmin
+      .from('mangas')
+      .select('id')
+      .eq('slug', manga)
+      .single();
+
+    if (mangaError || !mangaData) return res.status(404).json({ error: "Manga introuvable." });
+
+    const { data, error } = await supabaseAdmin
+      .from('tomes')
+      .insert({
+        numero: parseInt(numero),
+        titre,
+        manga_id: mangaData.id
+      })
+      .select()
+      .single();
+
     if (error) throw error;
     res.status(201).json(data);
   } catch (error) {
-    if (error.code === '23505') return res.status(409).json({ error: `Le tome ${numero} existe déjà.` });
+    if (error.code === '23505') return res.status(409).json({ error: `Le tome ${numero} existe déjà pour ce manga.` });
+    console.error("Erreur création tome:", error);
     res.status(500).json({ error: "Erreur serveur." });
   }
 });
@@ -147,10 +170,13 @@ router.post('/chapitres/upload', authMiddleware, roleCheck(['Admin']), upload.si
 
 router.get('/hierarchy', authMiddleware, roleCheck(['Admin', 'Modo']), async (req, res) => {
   try {
-    const { data, error } = await supabaseAdmin
+    const { manga } = req.query; // Get manga slug
+
+    let query = supabaseAdmin
       .from('tomes')
       .select(`
         id, numero, titre,
+        mangas!inner(slug),
         chapitres (
           id, numero, titre,
           pages (
@@ -160,6 +186,12 @@ router.get('/hierarchy', authMiddleware, roleCheck(['Admin', 'Modo']), async (re
         )
       `)
       .order('numero', { ascending: true });
+
+    if (manga) {
+      query = query.eq('mangas.slug', manga);
+    }
+
+    const { data, error } = await query;
 
     if (error) throw error;
 

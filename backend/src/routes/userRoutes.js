@@ -16,7 +16,16 @@ router.get('/bulles', authMiddleware, async (req, res) => {
             .from('bulles')
             .select(`
                 id, texte_propose, statut, created_at, commentaire_moderation,
-                pages ( id, numero_page, chapitres ( numero, tomes ( numero ) ) )
+                pages ( 
+                    id, numero_page, 
+                    chapitres ( 
+                        numero, 
+                        tomes ( 
+                            numero,
+                            mangas ( titre )
+                        ) 
+                    ) 
+                )
             `, { count: 'exact' })
             .eq('id_user_createur', userId)
             .order('created_at', { ascending: false })

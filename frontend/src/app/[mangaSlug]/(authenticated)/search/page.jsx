@@ -8,6 +8,7 @@ import { useRerankWorker } from '@/context/RerankContext';
 import { useDebounce } from '@/hooks/useDebounce';
 import { useAuth } from '@/context/AuthContext';
 import Link from 'next/link';
+import { useManga } from '@/context/MangaContext';
 
 // Shadcn UI Components
 import { Input } from "@/components/ui/input";
@@ -80,6 +81,7 @@ const ResultImage = ({ url, pageId, token, coords, type }) => {
 
 export default function SearchPage() {
     const { session } = useAuth();
+    const { mangaSlug } = useManga();
     const [query, setQuery] = useState('');
     const debouncedQuery = useDebounce(query, 400);
 
@@ -281,7 +283,7 @@ export default function SearchPage() {
 
                 <div className="container max-w-4xl mx-auto text-center space-y-6 relative z-10">
                     <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-slate-900">
-                        Moteur de Recherche One Piece
+                        Moteur de Recherche
                     </h1>
 
                     {/* SEARCH INPUT AREA */}
@@ -635,7 +637,7 @@ export default function SearchPage() {
                                 return (
                                     <Link
                                         key={`${item.id}-${index}`}
-                                        href={`/annotate/${item.page_id}`}
+                                        href={`/${mangaSlug}/annotate/${item.page_id}`}
                                         prefetch={false}
                                         className="group block h-full outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-indigo-500 rounded-lg"
                                     >
