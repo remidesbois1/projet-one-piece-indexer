@@ -4,10 +4,19 @@ const { supabase } = require('../config/supabaseClient');
 
 router.get('/', async (req, res) => {
   try {
-    const { data, error } = await supabase
+    let { manga } = req.query;
+    if (Array.isArray(manga)) manga = manga[0];
+
+    let query = supabase
       .from('tomes')
-      .select('id, numero, titre, cover_url')
+      .select('id, numero, titre, cover_url, mangas!inner(slug)')
       .order('numero', { ascending: true });
+
+    if (manga) {
+      query = query.eq('mangas.slug', manga);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       throw error;

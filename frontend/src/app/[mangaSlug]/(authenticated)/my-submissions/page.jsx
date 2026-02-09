@@ -5,7 +5,6 @@ import { useAuth } from '@/context/AuthContext';
 import { getMySubmissions } from '@/lib/api';
 import Link from 'next/link';
 
-// Shadcn Components
 import {
     Table,
     TableBody,
@@ -19,7 +18,6 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 
-// Icons
 import { ChevronLeft, ChevronRight, Inbox, MessageCircle } from "lucide-react";
 
 const RESULTS_PER_PAGE = 15;
@@ -98,7 +96,8 @@ export default function MySubmissionsPage() {
                         <Table>
                             <TableHeader>
                                 <TableRow>
-                                    <TableHead className="w-[50%]">Texte Proposé</TableHead>
+                                    <TableHead className="w-[15%]">Manga</TableHead>
+                                    <TableHead className="w-[40%]">Texte Proposé</TableHead>
                                     <TableHead>Localisation</TableHead>
                                     <TableHead className="text-right">Statut</TableHead>
                                 </TableRow>
@@ -106,11 +105,16 @@ export default function MySubmissionsPage() {
                             <TableBody>
                                 {submissions.map((sub) => (
                                     <TableRow key={sub.id} className="hover:bg-slate-50/50">
-                                        {/* AJOUT : max-w sur la cellule et truncate sur le contenu */}
+                                        <TableCell>
+                                            <Badge variant="outline" className="font-normal text-slate-600 bg-slate-50">
+                                                {sub.pages?.chapitres?.tomes?.mangas?.titre || "Inconnu"}
+                                            </Badge>
+                                        </TableCell>
+
                                         <TableCell className="max-w-[200px] md:max-w-[450px]">
                                             <div
                                                 className="font-medium text-slate-700 italic truncate"
-                                                title={sub.texte_propose} // L'utilisateur peut voir le texte complet au survol
+                                                title={sub.texte_propose}
                                             >
                                                 "{sub.texte_propose}"
                                             </div>

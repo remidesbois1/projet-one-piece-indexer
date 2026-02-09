@@ -22,10 +22,13 @@ import { Badge } from "@/components/ui/badge";
 
 import { ChevronRight, ArrowLeft, BookOpen, Library, CheckCircle2, PenLine } from "lucide-react";
 
-export default function HomePage() {
+import { useManga } from '@/context/MangaContext';
+
+export default function DashboardPage() {
     const { session, isGuest } = useAuth();
     const { loading: profileLoading } = useUserProfile();
     const router = useRouter();
+    const { mangaSlug } = useManga();
 
     const [tomes, setTomes] = useState([]);
     const [chapters, setChapters] = useState([]);
@@ -297,7 +300,7 @@ export default function HomePage() {
                                             {pages.map((page) => (
                                                 <div
                                                     key={page.id}
-                                                    onClick={() => router.push(`/annotate/${page.id}`)}
+                                                    onClick={() => router.push(`/${mangaSlug}/annotate/${page.id}`)}
                                                     className={`
                             h-12 w-12 flex items-center justify-center rounded-lg border-2 text-sm font-bold cursor-pointer transition-all duration-200 shadow-sm
                             ${getPageStatusColor(page.statut)}

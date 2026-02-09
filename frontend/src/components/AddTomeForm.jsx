@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { useManga } from '@/context/MangaContext';
 import { createTome } from '@/lib/api';
 
-// UI Components
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,6 +11,7 @@ import { Loader2, PlusCircle, Book } from "lucide-react";
 
 const AddTomeForm = ({ onTomeAdded }) => {
   const { session } = useAuth();
+  const { mangaSlug } = useManga();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (event) => {
@@ -22,7 +23,7 @@ const AddTomeForm = ({ onTomeAdded }) => {
     const titre = formData.get('titre');
 
     try {
-      await createTome({ numero, titre });
+      await createTome({ numero, titre }, mangaSlug);
       alert(`Le tome ${numero} a été créé avec succès !`);
       event.target.reset();
       if (onTomeAdded) onTomeAdded();

@@ -57,6 +57,7 @@ const analysisRoutes = require('./routes/analysisRoutes');
 const userRoutes = require('./routes/userRoutes');
 const statRoutes = require('./routes/statsRoutes')
 const glossaryRoutes = require('./routes/glossaryRoutes');
+const mangaRoutes = require('./routes/mangaRoutes'); // [NEW]
 const publicRoutes = require('./routes/v1/publicRoutes');
 
 
@@ -86,6 +87,7 @@ app.use('/api/analyse', analysisRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/stats', statsLimiter, statRoutes);
 app.use('/api/glossary', glossaryRoutes);
+app.use('/api/mangas', mangaRoutes); // [NEW]
 
 // Public API v1
 app.use('/v1', publicLimiter, publicRoutes);
