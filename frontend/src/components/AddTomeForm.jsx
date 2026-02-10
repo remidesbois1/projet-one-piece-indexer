@@ -36,14 +36,14 @@ const AddTomeForm = ({ onTomeAdded }) => {
   };
 
   return (
-    <Card className="border-slate-200 shadow-sm">
+    <Card className="border-slate-200 shadow-sm border-none shadow-none bg-slate-50/50">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-xl">
-          <Book className="h-5 w-5 text-blue-600" />
-          1. Créer un Nouveau Tome
+        <CardTitle className="flex items-center gap-2 text-2xl font-bold">
+          <Book className="h-6 w-6 text-blue-600" />
+          Nouveau Tome
         </CardTitle>
-        <CardDescription>
-          Ajoutez un volume (Tome) avant de pouvoir y lier des chapitres.
+        <CardDescription className="text-base">
+          Créez un nouveau volume pour organiser vos chapitres.
         </CardDescription>
       </CardHeader>
 

@@ -12,14 +12,26 @@ const mime = require('mime-types');
 const { supabaseAdmin } = require('../config/supabaseClient');
 const { logBubbleHistory } = require('../utils/auditLogger');
 
-const s3Client = new S3Client({
+// Ensure environment variables are loaded
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config();
+}
+
+const r2Config = {
   region: 'auto',
   endpoint: process.env.R2_ENDPOINT,
-  credentials: {
+  credentials: (process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY) ? {
     accessKeyId: process.env.R2_ACCESS_KEY_ID,
     secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
-  },
-});
+  } : undefined,
+};
+
+// Log warning if variables are missing
+if (!process.env.R2_ENDPOINT || !process.env.R2_ACCESS_KEY_ID || !process.env.R2_SECRET_ACCESS_KEY) {
+  console.warn('[AdminRoutes] Warning: R2 environment variables are missing. S3 client might not work correctly.');
+}
+
+const s3Client = new S3Client(r2Config);
 const BUCKET_NAME = process.env.R2_BUCKET_NAME;
 const PUBLIC_URL_BASE = process.env.R2_PUBLIC_URL;
 
@@ -278,6 +290,88 @@ router.delete('/banned-ips/:ip', authMiddleware, roleCheck(['Admin']), async (re
   } catch (error) {
     console.error("Erreur deban IP:", error);
     res.status(500).json({ error: "Erreur lors du débannissement." });
+  }
+});
+
+router.get('/covers', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+  try {
+    const { manga } = req.query;
+    if (!manga) return res.status(400).json({ error: "Manga requis." });
+
+    const { data: tomes, error } = await supabaseAdmin
+      .from('tomes')
+      .select('id, numero, titre, cover_url, mangas!inner(slug)')
+      .eq('mangas.slug', manga)
+      .order('numero', { ascending: true });
+
+    if (error) throw error;
+
+    const { data: mangaData, error: mangaError } = await supabaseAdmin
+      .from('mangas')
+      .select('id, titre, cover_url')
+      .eq('slug', manga)
+      .single();
+
+    if (mangaError) throw mangaError;
+
+    res.status(200).json({
+      manga: mangaData,
+      tomes: tomes
+    });
+  } catch (error) {
+    console.error("Erreur covers:", error);
+    res.status(500).json({ error: "Erreur lors de la récupération des couvertures." });
+  }
+});
+
+router.post('/covers', authMiddleware, roleCheck(['Admin']), upload.single('cover'), async (req, res) => {
+  const { type, id } = req.body;
+  const file = req.file;
+
+  if (!type || !id || !file) {
+    if (file && fs.existsSync(file.path)) fs.unlinkSync(file.path);
+    return res.status(400).json({ error: "Type, id et fichier sont requis." });
+  }
+
+  try {
+    const fileBuffer = fs.readFileSync(file.path);
+    const extension = path.extname(file.originalname);
+    const safeFileName = `${type}-${id}-${Date.now()}${extension}`;
+    const storagePath = `covers/${safeFileName}`;
+    const contentType = mime.lookup(extension) || 'image/jpeg';
+
+    await s3Client.send(new PutObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: storagePath,
+      Body: fileBuffer,
+      ContentType: contentType,
+      CacheControl: 'public, max-age=31536000',
+    }));
+
+    const publicUrl = `${PUBLIC_URL_BASE}/${storagePath}`;
+
+    if (type === 'manga') {
+      const { error } = await supabaseAdmin
+        .from('mangas')
+        .update({ cover_url: publicUrl })
+        .eq('id', id);
+      if (error) throw error;
+    } else if (type === 'tome') {
+      const { error } = await supabaseAdmin
+        .from('tomes')
+        .update({ cover_url: publicUrl })
+        .eq('id', id);
+      if (error) throw error;
+    } else {
+      throw new Error("Type invalide.");
+    }
+
+    res.status(200).json({ url: publicUrl });
+  } catch (error) {
+    console.error("Erreur upload cover:", error);
+    res.status(500).json({ error: "Erreur lors de l'upload de la couverture." });
+  } finally {
+    if (file && fs.existsSync(file.path)) fs.unlinkSync(file.path);
   }
 });
 

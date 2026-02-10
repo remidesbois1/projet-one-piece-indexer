@@ -133,22 +133,27 @@ export default function DashboardPage() {
 
     return (
         <div className="w-full">
-            <header className="flex items-center justify-between mb-10 pb-4 border-b border-slate-100">
+            <header className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 pb-6 border-b border-slate-100 gap-4">
                 <div className="flex items-center gap-3">
-                    <div className="p-2 bg-slate-900 rounded-lg text-white">
+                    <div className="p-2 bg-slate-900 rounded-lg text-white shadow-lg shadow-slate-200">
                         <Library size={20} />
                     </div>
-                    <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-                        Poneglyph Archives
-                    </h1>
-                    <Badge variant="outline" className="ml-2 font-mono text-xs border-slate-200 text-slate-500">
+                    <div>
+                        <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+                            Poneglyph Archives
+                        </h1>
+                        <p className="text-xs text-slate-500 font-medium sm:hidden mt-0.5">
+                            {tomes.length} VOLUMES DISPONIBLES
+                        </p>
+                    </div>
+                    <Badge variant="outline" className="hidden sm:inline-flex ml-2 font-mono text-xs border-slate-200 text-slate-500">
                         {tomes.length} VOLUMES
                     </Badge>
                 </div>
             </header>
 
             {/* GRID DES TOMES */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 sm:gap-8">
+            <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-8">
                 {tomes.map((tome) => (
                     <Card
                         key={tome.id}

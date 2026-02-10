@@ -70,14 +70,14 @@ const AddChapterForm = () => {
   };
 
   return (
-    <Card className="border-slate-200 shadow-sm">
+    <Card className="border-slate-200 shadow-sm border-none shadow-none bg-slate-50/50">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-xl">
-          <FileArchive className="h-5 w-5 text-orange-600" />
-          2. Ajouter un Chapitre (via .cbz)
+        <CardTitle className="flex items-center gap-2 text-2xl font-bold">
+          <FileArchive className="h-6 w-6 text-orange-600" />
+          Nouveau Chapitre
         </CardTitle>
-        <CardDescription>
-          Importez un fichier compressé (.cbz ou .zip) contenant les pages du chapitre.
+        <CardDescription className="text-base">
+          Importez un chapitre via un fichier compressé (.cbz ou .zip).
         </CardDescription>
       </CardHeader>
 
