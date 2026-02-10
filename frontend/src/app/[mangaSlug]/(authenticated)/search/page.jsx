@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { searchBubbles, getMetadataSuggestions, getTomes, submitSearchFeedback } from '@/lib/api';
-import { getProxiedImageUrl } from '@/lib/utils';
+import { getProxiedImageUrl, cn } from '@/lib/utils';
 import { rerankSearchResults } from '@/lib/geminiClient';
 import { useRerankWorker } from '@/context/RerankContext';
 import { useDebounce } from '@/hooks/useDebounce';
@@ -279,58 +279,68 @@ export default function SearchPage() {
         <div className="min-h-screen pb-20">
 
             {/* --- HERO HEADER --- */}
-            <div className="bg-white border-b border-slate-200 pt-10 pb-8 px-4 shadow-sm relative overflow-hidden -mx-4 sm:-mx-8 px-4 sm:px-8 mb-8">
-
-                <div className="container max-w-4xl mx-auto text-center space-y-6 relative z-10">
-                    <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight text-slate-900">
+            <div className="bg-white border-b border-slate-200 pt-6 sm:pt-12 pb-6 sm:pb-10 px-4 shadow-sm relative overflow-hidden -mx-4 sm:-mx-8 px-4 sm:px-8 mb-4 sm:mb-8">
+                <div className="container max-w-4xl mx-auto text-center space-y-4 sm:space-y-8 relative z-10">
+                    <h1 className="text-2xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-slate-900">
                         Moteur de Recherche
                     </h1>
 
                     {/* SEARCH INPUT AREA */}
                     <div className="relative max-w-2xl mx-auto">
-                        <div className="relative flex items-center shadow-lg rounded-full group focus-within:ring-2 focus-within:ring-indigo-500/50 transition-all">
-
+                        <div className="relative flex items-center shadow-lg rounded-full group focus-within:ring-2 focus-within:ring-indigo-500/50 transition-all bg-white border border-slate-200">
                             <Input
                                 ref={inputRef}
                                 type="text"
                                 value={query}
                                 onChange={(e) => setQuery(e.target.value)}
                                 onKeyDown={handleKeyDown}
-                                placeholder={useSemantic ? "Décrivez une scène (ex: 'Luffy mange de la viande', 'Zoro perdu')..." : "Mots exacts (ex: 'Roi des pirates', 'Gomu Gomu')..."}
-                                className={`pl-6 pr-28 h-14 text-lg rounded-full border-slate-200 transition-all ${useSemantic ? "focus-visible:ring-indigo-500 bg-indigo-50/10 border-indigo-200 placeholder:text-indigo-300" : "focus-visible:ring-amber-500"}`}
+                                placeholder={useSemantic ? "Décrivez une scène..." : "Mots exacts..."}
+                                className={cn(
+                                    "pl-5 sm:pl-6 pr-20 sm:pr-28 h-12 sm:h-16 text-base sm:text-lg rounded-full border-none ring-0 focus-visible:ring-0 shadow-none",
+                                    useSemantic && "bg-indigo-50/20"
+                                )}
                             />
 
-                            {/* Right Actions */}
-                            <div className="absolute right-2 flex items-center gap-2">
+                            <div className="absolute right-1.5 sm:right-2 flex items-center gap-0.5 sm:gap-2">
                                 {query && (
                                     <button
                                         onClick={() => { setQuery(''); setResults([]); inputRef.current?.focus(); }}
-                                        className="p-2 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+                                        className="p-1.5 sm:p-2.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
                                     >
-                                        <X className="h-4 w-4" />
+                                        <X className="h-4 w-4 sm:h-5 sm:w-5" />
                                     </button>
                                 )}
 
                                 <Button
                                     size="icon"
-                                    className={`rounded-full h-10 w-10 shadow-sm transition-all ${useSemantic
-                                        ? "bg-indigo-600 hover:bg-indigo-700 text-white"
-                                        : "bg-slate-900 hover:bg-slate-800 text-white"
-                                        }`}
+                                    className={cn(
+                                        "rounded-full h-9 w-9 sm:h-12 sm:w-12 shadow-sm transition-all",
+                                        useSemantic ? "bg-indigo-600 hover:bg-indigo-700" : "bg-slate-900 hover:bg-slate-800"
+                                    )}
                                     onClick={handleManualSearch}
                                     disabled={isLoading || query.length < 2}
                                 >
-                                    {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                                    {isLoading ? <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin" /> : <Search className="h-4 w-4 sm:h-5 sm:w-5" />}
                                 </Button>
                             </div>
                         </div>
                     </div>
 
                     {/* CONTROLS & INFO */}
-                    <div className="flex flex-col items-center gap-4">
-                        <div className="flex items-center gap-4">
-                            <div className="flex items-center gap-4 bg-slate-100/50 p-1.5 pl-4 rounded-full border border-slate-200">
-                                <div className="flex items-center space-x-2">
+                    <div className="flex flex-col items-center gap-4 sm:gap-6">
+                        <div className="flex flex-col gap-4 w-full sm:w-auto items-center">
+                            {/* Mode Toggles */}
+                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-0 bg-slate-100/80 p-1 sm:p-1.5 rounded-2xl sm:rounded-full border border-slate-200 shadow-inner w-full sm:w-auto">
+                                <div className="flex items-center justify-between sm:justify-start space-x-3 px-3 py-2 sm:py-0">
+                                    <Label
+                                        htmlFor="semantic-mode"
+                                        className="font-bold cursor-pointer select-none flex items-center gap-2 text-xs sm:text-sm text-slate-700"
+                                    >
+                                        <div className={cn("p-1.5 rounded-lg transition-colors", useSemantic ? "bg-indigo-100 text-indigo-600" : "bg-slate-200 text-slate-400")}>
+                                            <Sparkles className="h-3.5 w-3.5" />
+                                        </div>
+                                        Recherche Sémantique
+                                    </Label>
                                     <Switch
                                         id="semantic-mode"
                                         checked={useSemantic}
@@ -340,19 +350,24 @@ export default function SearchPage() {
                                         }}
                                         className="data-[state=checked]:bg-indigo-600"
                                     />
-                                    <Label
-                                        htmlFor="semantic-mode"
-                                        className={`font-medium cursor-pointer select-none flex items-center gap-2 text-slate-700`}
-                                    >
-                                        <Sparkles className={`h-4 w-4 ${useSemantic ? "text-indigo-500 fill-indigo-100" : "text-slate-400"}`} />
-                                        Recherche Sémantique
-                                    </Label>
                                 </div>
 
-                                {/* Divider */}
-                                <div className="w-px h-4 bg-slate-300 mx-1" />
+                                <div className="hidden sm:block w-px h-6 bg-slate-300 mx-2" />
+                                <Separator className="sm:hidden bg-slate-200" />
 
-                                <div className="flex items-center space-x-2 pr-2">
+                                <div className="flex items-center justify-between sm:justify-start space-x-3 px-3 py-2 sm:py-0">
+                                    <Label
+                                        htmlFor="rerank-mode"
+                                        className={cn(
+                                            "font-bold cursor-pointer select-none flex items-center gap-2 text-xs sm:text-sm",
+                                            !useSemantic ? "text-slate-400" : "text-slate-700"
+                                        )}
+                                    >
+                                        <div className={cn("p-1.5 rounded-lg transition-colors", useRerank ? "bg-amber-100 text-amber-600" : "bg-slate-200 text-slate-400")}>
+                                            <Settings className="h-3.5 w-3.5" />
+                                        </div>
+                                        Amélioration IA (Rerank)
+                                    </Label>
                                     <Switch
                                         id="rerank-mode"
                                         checked={useRerank}
@@ -361,94 +376,93 @@ export default function SearchPage() {
                                             if (checked && !hasApiKey) setRerankProvider('local');
                                         }}
                                         disabled={!useSemantic}
-                                        className="data-[state=checked]:bg-amber-600 scale-90"
+                                        className="data-[state=checked]:bg-amber-600"
                                     />
-                                    <Label
-                                        htmlFor="rerank-mode"
-                                        className={`font-medium cursor-pointer select-none flex items-center gap-2 text-sm ${!useSemantic ? "text-slate-400" : "text-slate-600"}`}
-                                    >
-                                        <ArrowRight className={`h-3.5 w-3.5 ${useRerank ? "text-amber-600" : "text-slate-400"}`} />
-                                        Reranking
-                                    </Label>
                                 </div>
                             </div>
 
                             {/* RERANK OPTIONS (Provider Selector) */}
                             {useRerank && (
-                                <div className="flex items-center gap-2 animate-in fade-in slide-in-from-top-1">
-                                    <div className="flex bg-slate-100 rounded-md p-0.5 border border-slate-200">
+                                <div className="flex flex-col sm:flex-row items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
+                                    <div className="flex bg-slate-200/50 rounded-xl p-1 border border-slate-200 w-full sm:w-auto">
                                         <button
                                             onClick={() => setRerankProvider('gemini')}
                                             disabled={!hasApiKey}
-                                            className={`px-3 py-1 text-xs font-medium rounded-sm transition-all ${rerankProvider === 'gemini' ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:text-slate-700"} ${!hasApiKey ? "opacity-40 cursor-not-allowed" : ""}`}
+                                            className={cn(
+                                                "flex-1 sm:flex-none px-4 py-1.5 text-xs font-bold rounded-lg transition-all",
+                                                rerankProvider === 'gemini' ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:text-slate-700",
+                                                !hasApiKey && "opacity-40 cursor-not-allowed"
+                                            )}
                                         >
                                             Gemini (Cloud)
                                         </button>
                                         <button
                                             onClick={() => setRerankProvider('local')}
-                                            className={`px-3 py-1 text-xs font-medium rounded-sm transition-all ${rerankProvider === 'local' ? "bg-white text-emerald-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                                            className={cn(
+                                                "flex-1 sm:flex-none px-4 py-1.5 text-xs font-bold rounded-lg transition-all",
+                                                rerankProvider === 'local' ? "bg-white text-emerald-700 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                                            )}
                                         >
                                             Mixedbread (Local)
                                         </button>
                                     </div>
 
                                     {rerankProvider === 'local' && (
-                                        <>
+                                        <div className="flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100">
                                             {rerankStatus === 'idle' && (
-                                                <Button size="sm" variant="outline" onClick={loadRerankModel} className="h-7 text-xs border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 gap-1.5">
-                                                    <Download className="h-3 w-3" /> Charger Modèle
+                                                <Button size="sm" variant="ghost" onClick={loadRerankModel} className="h-6 text-[10px] uppercase tracking-wider font-bold text-emerald-700 p-0 hover:bg-transparent">
+                                                    <Download className="h-3 w-3 mr-1.5" /> Charger IA Locale
                                                 </Button>
                                             )}
                                             {rerankStatus === 'loading' && (
-                                                <div className="flex items-center gap-2 px-2">
-                                                    <div className="h-1.5 w-16 bg-slate-200 rounded-full overflow-hidden">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="h-1.5 w-20 bg-emerald-100 rounded-full overflow-hidden">
                                                         <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${rerankProgress}%` }} />
                                                     </div>
-                                                    <span className="text-[10px] text-slate-500">{rerankProgress}%</span>
+                                                    <span className="text-[10px] font-bold text-emerald-600">{rerankProgress}%</span>
                                                 </div>
                                             )}
                                             {rerankStatus === 'ready' && (
-                                                <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 text-[10px] gap-1 h-6">
-                                                    <Cpu className="h-3 w-3" /> Prêt
-                                                </Badge>
+                                                <div className="flex items-center gap-1.5 text-emerald-700 text-[10px] font-bold uppercase tracking-wider">
+                                                    <Cpu className="h-3 w-3" /> IA Locale Prête
+                                                </div>
                                             )}
                                             {rerankStatus === 'error' && (
-                                                <Badge variant="destructive" className="text-[10px] h-6">Erreur</Badge>
+                                                <Badge variant="destructive" className="text-[10px] py-0 h-5 px-1.5 font-bold">Erreur</Badge>
                                             )}
-                                        </>
+                                        </div>
                                     )}
                                 </div>
                             )}
                         </div>
 
+                        {/* DESCRIPTIVE TEXTS */}
+                        <div className="flex flex-col gap-2 max-w-lg mx-auto w-full px-2">
+                            {useSemantic ? (
+                                <div className="animate-in fade-in slide-in-from-top-1 duration-300 flex items-center gap-3 text-xs text-indigo-700 bg-indigo-50/50 px-4 py-2.5 rounded-xl border border-indigo-100 shadow-sm text-left">
+                                    <Info className="h-4 w-4 flex-shrink-0 text-indigo-500" />
+                                    <p>
+                                        <strong>Mode Conceptuel :</strong> L'IA comprend le sens de votre phrase. Parfait pour trouver des moments précis.
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="animate-in fade-in slide-in-from-top-1 duration-300 flex items-center gap-3 text-xs text-slate-600 bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-200 text-left">
+                                    <Quote className="h-4 w-4 flex-shrink-0 text-slate-400" />
+                                    <p>
+                                        <strong>Mode Textuel :</strong> Recherche directe des mots dans les dialogues. Plus rapide et précis pour des citations.
+                                    </p>
+                                </div>
+                            )}
 
-                    </div>
-
-                    <div className="h-8 flex items-center justify-center">
-                        {useSemantic ? (
-                            <div className="animate-in fade-in slide-in-from-top-1 duration-300 flex items-center gap-2 text-xs text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-md border border-indigo-100 max-w-md text-left">
-                                <Info className="h-3.5 w-3.5 flex-shrink-0" />
-                                <span>
-                                    <strong>Mode Conceptuel :</strong> Décrivez l'action, l'ambiance ou les personnages présents. Appuyez sur <strong>Entrée</strong> pour lancer l'analyse.
-                                </span>
-                            </div>
-                        ) : (
-                            <div className="animate-in fade-in slide-in-from-top-1 duration-300 flex items-center gap-2 text-xs text-slate-500 px-3 py-1.5">
-                                <Quote className="h-3.5 w-3.5" />
-                                <span>
-                                    <strong>Mode Textuel :</strong> Cherche les mots exacts dans les bulles. Recherche instantanée.
-                                </span>
-                            </div>
-                        )}
-
-                        {useRerank && (
-                            <div className="ml-3 animate-in fade-in slide-in-from-top-1 duration-300 flex items-center gap-2 text-xs text-amber-700 bg-amber-50 px-3 py-1.5 rounded-md border border-amber-100 max-w-md text-left">
-                                <Sparkles className="h-3.5 w-3.5 flex-shrink-0 text-amber-500" />
-                                <span>
-                                    <strong>Reranking Actif :</strong> L'IA réanalyse les résultats pour ne garder que les plus pertinents.
-                                </span>
-                            </div>
-                        )}
+                            {useRerank && (
+                                <div className="animate-in fade-in slide-in-from-top-1 duration-300 flex items-center gap-3 text-xs text-amber-800 bg-amber-50/50 px-4 py-2.5 rounded-xl border border-amber-100 shadow-sm text-left">
+                                    <Sparkles className="h-4 w-4 flex-shrink-0 text-amber-500" />
+                                    <p>
+                                        <strong>Reranking :</strong> Les résultats sont ré-évalués un par un par une IA pour une précision maximale.
+                                    </p>
+                                </div>
+                            )}
+                        </div>
                     </div>
 
                     {!hasApiKey && (
@@ -463,18 +477,21 @@ export default function SearchPage() {
                 </div>
 
                 {/* === FILTRES MULTICRITÈRES === */}
-                <div className="mt-6 space-y-3">
-                    <div className="flex items-center justify-between">
+                <div className="mt-4 sm:mt-8 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <Button
                             variant="outline"
                             size="sm"
                             onClick={() => setShowFilters(!showFilters)}
-                            className="gap-2"
+                            className={cn(
+                                "gap-2 h-10 w-full sm:w-auto shadow-sm transition-all",
+                                showFilters ? "bg-slate-100 border-slate-300" : "bg-white"
+                            )}
                         >
                             <Filter className="h-4 w-4" />
-                            Filtres avancés
+                            <span className="font-bold">Filtres avancés</span>
                             {(selectedCharacters.length > 0 || selectedArc !== 'all' || selectedTome !== 'all') && (
-                                <Badge variant="secondary" className="ml-1 bg-indigo-100 text-indigo-700">
+                                <Badge className="ml-1 bg-indigo-600">
                                     {selectedCharacters.length + (selectedArc !== 'all' ? 1 : 0) + (selectedTome !== 'all' ? 1 : 0)}
                                 </Badge>
                             )}
@@ -489,18 +506,18 @@ export default function SearchPage() {
                                     setSelectedArc('all');
                                     setSelectedTome('all');
                                 }}
-                                className="text-xs text-slate-500 hover:text-slate-700"
+                                className="text-xs font-bold text-slate-500 hover:text-red-600 h-8 self-end sm:self-auto"
                             >
-                                <XCircle className="h-3 w-3 mr-1" />
-                                Réinitialiser
+                                <XCircle className="h-3.5 w-3.5 mr-1.5" />
+                                Tout effacer
                             </Button>
                         )}
                     </div>
 
                     {showFilters && (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 p-4 border border-slate-200 rounded-lg bg-slate-50/50 animate-in slide-in-from-top-2">
-                            <div className="space-y-2">
-                                <Label className="text-xs font-medium text-slate-700">Personnages</Label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-5 sm:p-6 border border-slate-200 rounded-2xl bg-slate-50/80 shadow-inner animate-in slide-in-from-top-4 duration-300">
+                            <div className="flex flex-col gap-2">
+                                <Label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-1">Personnages</Label>
                                 <Popover open={charPopoverOpen} onOpenChange={setCharPopoverOpen}>
                                     <PopoverTrigger asChild>
                                         <Button
@@ -513,7 +530,7 @@ export default function SearchPage() {
                                                 : "Tous les personnages"}
                                         </Button>
                                     </PopoverTrigger>
-                                    <PopoverContent className="w-[300px] p-0">
+                                    <PopoverContent className="w-[calc(100vw-32px)] sm:w-[300px] p-0">
                                         <Command>
                                             <CommandInput placeholder="Rechercher un personnage..." />
                                             <CommandEmpty>Aucun personnage trouvé.</CommandEmpty>
@@ -592,200 +609,202 @@ export default function SearchPage() {
                         </div>
                     )}
 
-                    {/* Active Filters Summary (Moved outside filters panel) */}
+                    {/* Active Filters Summary */}
                     {(selectedCharacters.length > 0 || selectedArc !== 'all' || selectedTome !== 'all') && (
-                        <div className="px-0 mb-4">
-                            <div className="flex flex-wrap items-center gap-2 text-sm">
-                                <span className="text-slate-600 font-medium">Filtres actifs :</span>
-                                {selectedCharacters.map(char => (
-                                    <Badge key={char} variant="outline" className="gap-1 bg-white">
-                                        {char}
-                                        <X className="h-3 w-3 cursor-pointer" onClick={() => setSelectedCharacters(prev => prev.filter(c => c !== char))} />
-                                    </Badge>
-                                ))}
-                                {selectedArc !== 'all' && (
-                                    <Badge variant="outline" className="gap-1 bg-white">
-                                        {selectedArc}
-                                        <X className="h-3 w-3 cursor-pointer" onClick={() => setSelectedArc('all')} />
-                                    </Badge>
-                                )}
-                                {selectedTome !== 'all' && (
-                                    <Badge variant="outline" className="gap-1 bg-white">
-                                        Tome {selectedTome}
-                                        <X className="h-3 w-3 cursor-pointer" onClick={() => setSelectedTome('all')} />
-                                    </Badge>
-                                )}
-                            </div>
+                        <div className="flex flex-wrap items-center gap-2 text-sm pt-2">
+                            <span className="text-slate-400 text-xs font-bold uppercase tracking-wider mr-2">Filtres :</span>
+                            {selectedCharacters.map(char => (
+                                <Badge key={char} variant="secondary" className="gap-1.5 py-1 px-3 bg-white border border-slate-200 shadow-sm text-slate-700 rounded-lg">
+                                    {char}
+                                    <X className="h-3.5 w-3.5 cursor-pointer hover:text-red-500 transition-colors" onClick={() => setSelectedCharacters(prev => prev.filter(c => c !== char))} />
+                                </Badge>
+                            ))}
+                            {selectedArc !== 'all' && (
+                                <Badge variant="secondary" className="gap-1.5 py-1 px-3 bg-white border border-slate-200 shadow-sm text-slate-700 rounded-lg">
+                                    <MapPin size={12} className="text-indigo-500" />
+                                    {selectedArc}
+                                    <X className="h-3.5 w-3.5 cursor-pointer hover:text-red-500 transition-colors" onClick={() => setSelectedArc('all')} />
+                                </Badge>
+                            )}
+                            {selectedTome !== 'all' && (
+                                <Badge variant="secondary" className="gap-1.5 py-1 px-3 bg-white border border-slate-200 shadow-sm text-slate-700 rounded-lg">
+                                    <BookOpen size={12} className="text-amber-500" />
+                                    Tome {selectedTome}
+                                    <X className="h-3.5 w-3.5 cursor-pointer hover:text-red-500 transition-colors" onClick={() => setSelectedTome('all')} />
+                                </Badge>
+                            )}
                         </div>
                     )}
+                </div>
+                {results.length > 0 && (
+                    <div className="mb-6 flex items-baseline gap-2 text-slate-500 border-b border-slate-200 pb-2">
+                        <span className="text-xl font-bold text-slate-900">{totalCount}</span>
+                        <span>résultats trouvés</span>
+                        {useSemantic && <Badge variant="secondary" className="ml-2 text-[10px] bg-indigo-100 text-indigo-700 hover:bg-indigo-200">Sémantique</Badge>}
+                        {useRerank && <Badge variant="secondary" className="ml-2 text-[10px] bg-amber-100 text-amber-700 hover:bg-amber-200">Reranked by {rerankProvider === 'gemini' ? 'Gemini' : 'Mixedbread'}</Badge>}
+                    </div>
+                )}
 
-                    <div className="px-0">
-                        {results.length > 0 && (
-                            <div className="mb-6 flex items-baseline gap-2 text-slate-500 border-b border-slate-200 pb-2">
-                                <span className="text-xl font-bold text-slate-900">{totalCount}</span>
-                                <span>résultats trouvés</span>
-                                {useSemantic && <Badge variant="secondary" className="ml-2 text-[10px] bg-indigo-100 text-indigo-700 hover:bg-indigo-200">Sémantique</Badge>}
-                                {useRerank && <Badge variant="secondary" className="ml-2 text-[10px] bg-amber-100 text-amber-700 hover:bg-amber-200">Reranked by {rerankProvider === 'gemini' ? 'Gemini' : 'Mixedbread'}</Badge>}
-                            </div>
-                        )}
+                {/* Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
+                    {results.map((item, index) => {
+                        const isSemantic = item.type === 'semantic';
 
-                        {/* Grid */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                            {results.map((item, index) => {
-                                const isSemantic = item.type === 'semantic';
+                        return (
+                            <Link
+                                key={`${item.id}-${index}`}
+                                href={`/${mangaSlug}/annotate/${item.page_id}`}
+                                prefetch={false}
+                                className="group block h-full outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-indigo-500 rounded-2xl"
+                            >
+                                <Card className="h-full flex flex-col overflow-hidden border-slate-200 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 rounded-2xl shadow-sm bg-white">
 
-                                return (
-                                    <Link
-                                        key={`${item.id}-${index}`}
-                                        href={`/${mangaSlug}/annotate/${item.page_id}`}
-                                        prefetch={false}
-                                        className="group block h-full outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-indigo-500 rounded-lg"
-                                    >
-                                        <Card className="h-full flex flex-col overflow-hidden border-slate-200 hover:shadow-xl hover:-translate-y-1 transition-all duration-300">
+                                    {/* Image Header */}
+                                    <ResultImage
+                                        url={item.url_image}
+                                        pageId={item.page_id}
+                                        token={session?.access_token}
+                                        coords={item.coords}
+                                        type={item.type}
+                                    />
 
-                                            {/* Image Header */}
-                                            <ResultImage
-                                                url={item.url_image}
-                                                pageId={item.page_id}
-                                                token={session?.access_token}
-                                                coords={item.coords}
-                                                type={item.type}
-                                            />
+                                    <CardContent className="flex-1 p-4 sm:p-5 flex flex-col gap-3">
+                                        {/* Metadata Badges */}
+                                        <div className="flex flex-wrap gap-1.5 mb-1">
+                                            <Badge variant="secondary" className="text-[10px] text-slate-500 bg-slate-100 font-bold px-2 py-0.5 border-none">
+                                                Tome {item.context.match(/Tome (\d+)/)?.[1] || '?'}
+                                            </Badge>
+                                            <Badge variant="secondary" className="text-[10px] text-slate-500 bg-slate-100 font-bold px-2 py-0.5 border-none">
+                                                Ch. {item.context.match(/Chap\. (\d+)/)?.[1] || '?'}
+                                            </Badge>
+                                        </div>
 
-                                            <CardContent className="flex-1 p-5 flex flex-col gap-3">
-                                                {/* Metadata Badges */}
-                                                <div className="flex flex-wrap gap-1.5 mb-1">
-                                                    <Badge variant="outline" className="text-[10px] text-slate-500 border-slate-200 bg-slate-50 font-normal">
-                                                        Tome {item.context.match(/Tome (\d+)/)?.[1] || '?'}
-                                                    </Badge>
-                                                    <Badge variant="outline" className="text-[10px] text-slate-500 border-slate-200 bg-slate-50 font-normal">
-                                                        Ch. {item.context.match(/Chap\. (\d+)/)?.[1] || '?'}
-                                                    </Badge>
-                                                </div>
+                                        <Separator className="bg-slate-100" />
 
-                                                <Separator className="bg-slate-100" />
-
-                                                {/* Content Text */}
-                                                <div className={`text-sm leading-relaxed line-clamp-4 ${isSemantic ? "text-slate-600" : "text-slate-800 font-serif"}`}>
-                                                    {isSemantic ? (
-                                                        highlightText(item.content, query)
-                                                    ) : (
-                                                        <span className="relative inline-block pl-2">
-                                                            <span className="absolute -left-1 -top-1 text-2xl text-slate-200 font-serif select-none">“</span>
-                                                            <span className="italic relative z-10">
-                                                                {highlightText(item.content, query)}
-                                                            </span>
-                                                            <span className="absolute -bottom-3 text-2xl text-slate-200 font-serif select-none ml-1">”</span>
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </CardContent>
-
-                                            <CardFooter className="bg-slate-50 px-5 py-3 border-t border-slate-100 flex flex-col gap-2">
-                                                <div className="flex items-center justify-between w-full text-xs text-slate-400 group-hover:text-indigo-600 transition-colors font-medium">
-                                                    <span className="flex items-center gap-1.5">
-                                                        <MapPin className="h-3 w-3" />
-                                                        Page {item.context.match(/Page (\d+)/)?.[1] || '?'}
+                                        {/* Content Text */}
+                                        <div className={`text-sm leading-relaxed line-clamp-4 ${isSemantic ? "text-slate-600" : "text-slate-800 font-serif"}`}>
+                                            {isSemantic ? (
+                                                highlightText(item.content, query)
+                                            ) : (
+                                                <span className="relative inline-block pl-2">
+                                                    <span className="absolute -left-1 -top-1 text-2xl text-slate-200 font-serif select-none">“</span>
+                                                    <span className="italic relative z-10">
+                                                        {highlightText(item.content, query)}
                                                     </span>
-                                                    {item.similarity > 0 && (
-                                                        <span className={`font-mono px-1.5 py-0.5 rounded ${item.similarity > 0.8 ? "bg-green-100 text-green-700" : "bg-slate-100"}`}>
-                                                            {(item.similarity * 100).toFixed(0)}%
-                                                        </span>
-                                                    )}
+                                                    <span className="absolute -bottom-3 text-2xl text-slate-200 font-serif select-none ml-1">”</span>
+                                                </span>
+                                            )}
+                                        </div>
+                                    </CardContent>
+
+                                    <CardFooter className="bg-slate-50/50 px-4 sm:px-5 py-3 border-t border-slate-100 flex flex-col gap-3">
+                                        <div className="flex items-center justify-between w-full text-xs text-slate-500 group-hover:text-indigo-600 transition-colors font-bold">
+                                            <span className="flex items-center gap-1.5">
+                                                <div className="p-1 bg-white rounded shadow-sm border border-slate-200">
+                                                    <MapPin className="h-3 w-3 text-indigo-500" />
                                                 </div>
+                                                Page {item.context.match(/Page (\d+)/)?.[1] || '?'}
+                                            </span>
+                                            {item.similarity > 0 && (
+                                                <span className={cn(
+                                                    "px-2 py-0.5 rounded-full text-[10px] uppercase tracking-wider font-extrabold",
+                                                    item.similarity > 0.8 ? "bg-green-100 text-green-700" : "bg-slate-200 text-slate-600"
+                                                )}>
+                                                    {(item.similarity * 100).toFixed(0)}% Match
+                                                </span>
+                                            )}
+                                        </div>
 
-                                                {useRerank && (
-                                                    <div className="w-full flex items-center justify-end gap-3 pt-2 border-t border-slate-200/60 mt-2" onClick={(e) => e.preventDefault()}>
-                                                        {feedbackGiven[item.id] ? (
-                                                            <div className="flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
-                                                                <Check className="h-3 w-3" />
-                                                                <span>Feedback envoyé</span>
-                                                            </div>
-                                                        ) : (
-                                                            <>
-                                                                <span className="text-[11px] font-medium text-slate-500 mr-auto">Proposer une amélioration</span>
-                                                                <Button
-                                                                    variant="outline" size="sm"
-                                                                    className="h-7 w-8 p-0 border-slate-200 text-slate-500 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 transition-all"
-                                                                    onClick={(e) => handleFeedback(e, item, true)}
-                                                                >
-                                                                    <div className="text-sm">👍</div>
-                                                                </Button>
-                                                                <Button
-                                                                    variant="outline" size="sm"
-                                                                    className="h-7 w-8 p-0 border-slate-200 text-slate-500 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-all"
-                                                                    onClick={(e) => handleFeedback(e, item, false)}
-                                                                >
-                                                                    <div className="text-sm">👎</div>
-                                                                </Button>
-                                                            </>
-                                                        )}
+                                        {useRerank && (
+                                            <div className="w-full flex items-center justify-end gap-3 pt-2 border-t border-slate-200/60 mt-2" onClick={(e) => e.preventDefault()}>
+                                                {feedbackGiven[item.id] ? (
+                                                    <div className="flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
+                                                        <Check className="h-3 w-3" />
+                                                        <span>Feedback envoyé</span>
                                                     </div>
+                                                ) : (
+                                                    <>
+                                                        <span className="text-[11px] font-medium text-slate-500 mr-auto">Proposer une amélioration</span>
+                                                        <Button
+                                                            variant="outline" size="sm"
+                                                            className="h-7 w-8 p-0 border-slate-200 text-slate-500 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200 transition-all"
+                                                            onClick={(e) => handleFeedback(e, item, true)}
+                                                        >
+                                                            <div className="text-sm">👍</div>
+                                                        </Button>
+                                                        <Button
+                                                            variant="outline" size="sm"
+                                                            className="h-7 w-8 p-0 border-slate-200 text-slate-500 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-all"
+                                                            onClick={(e) => handleFeedback(e, item, false)}
+                                                        >
+                                                            <div className="text-sm">👎</div>
+                                                        </Button>
+                                                    </>
                                                 )}
-                                            </CardFooter>
-                                        </Card>
-                                    </Link>
-                                );
-                            })}
+                                            </div>
+                                        )}
+                                    </CardFooter>
+                                </Card>
+                            </Link>
+                        );
+                    })}
+                </div>
+
+                {/* --- LOADING & EMPTY --- */}
+                {isLoading && (
+                    <div className="flex flex-col items-center justify-center py-20 gap-3">
+                        <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
+                        <p className="text-slate-500 text-sm font-medium animate-pulse">
+                            {useSemantic ? "L'IA analyse les concepts..." : "Recherche dans les archives..."}
+                        </p>
+                    </div>
+                )}
+
+                {!isLoading && results.length === 0 && query.length >= 2 && (
+                    <div className="flex flex-col items-center justify-center py-20 text-center max-w-md mx-auto">
+                        <div className="bg-slate-100 p-4 rounded-full mb-4">
+                            <BookOpen className="h-8 w-8 text-slate-400" />
                         </div>
-
-                        {/* --- LOADING & EMPTY --- */}
-                        {isLoading && (
-                            <div className="flex flex-col items-center justify-center py-20 gap-3">
-                                <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
-                                <p className="text-slate-500 text-sm font-medium animate-pulse">
-                                    {useSemantic ? "L'IA analyse les concepts..." : "Recherche dans les archives..."}
-                                </p>
-                            </div>
-                        )}
-
-                        {!isLoading && results.length === 0 && query.length >= 2 && (
-                            <div className="flex flex-col items-center justify-center py-20 text-center max-w-md mx-auto">
-                                <div className="bg-slate-100 p-4 rounded-full mb-4">
-                                    <BookOpen className="h-8 w-8 text-slate-400" />
-                                </div>
-                                <h3 className="text-lg font-semibold text-slate-900 mb-2">Aucun résultat trouvé</h3>
-                                <p className="text-slate-500 text-sm mb-6">
-                                    Nous n'avons rien trouvé pour "{query}".
-                                    {!useSemantic && " Essayez d'activer la recherche sémantique pour une recherche plus conceptuelle."}
-                                </p>
-                                {!useSemantic && (
-                                    <Button onClick={() => setUseSemantic(true)} variant="outline" className="border-indigo-200 text-indigo-600 hover:bg-indigo-50">
-                                        <Sparkles className="h-4 w-4 mr-2" />
-                                        Activer la recherche sémantique
-                                    </Button>
-                                )}
-                            </div>
-                        )}
-
-                        {!isLoading && hasMore && (
-                            <div className="flex justify-center pt-8 pb-12">
-                                <Button
-                                    variant="outline"
-                                    onClick={loadMore}
-                                    className="group min-w-[150px] shadow-sm hover:border-indigo-300 hover:text-indigo-600 transition-all"
-                                >
-                                    Charger la suite
-                                    <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
-                                </Button>
-                            </div>
+                        <h3 className="text-lg font-semibold text-slate-900 mb-2">Aucun résultat trouvé</h3>
+                        <p className="text-slate-500 text-sm mb-6">
+                            Nous n'avons rien trouvé pour "{query}".
+                            {!useSemantic && " Essayez d'activer la recherche sémantique pour une recherche plus conceptuelle."}
+                        </p>
+                        {!useSemantic && (
+                            <Button onClick={() => setUseSemantic(true)} variant="outline" className="border-indigo-200 text-indigo-600 hover:bg-indigo-50">
+                                <Sparkles className="h-4 w-4 mr-2" />
+                                Activer la recherche sémantique
+                            </Button>
                         )}
                     </div>
+                )}
 
-                    {/* --- MODALE API KEY --- */}
-                    <Dialog open={showApiKeyModal} onOpenChange={setShowApiKeyModal}>
-                        <DialogContent className="sm:max-w-md">
-                            <DialogHeader>
-                                <DialogTitle>Configuration API IA</DialogTitle>
-                                <DialogDescription>
-                                    Ajoutez votre clé pour activer la recherche sémantique.
-                                </DialogDescription>
-                            </DialogHeader>
-                            <ApiKeyForm onSave={handleSaveApiKey} />
-                        </DialogContent>
-                    </Dialog>
-                </div>
+                {!isLoading && hasMore && (
+                    <div className="flex justify-center pt-8 pb-12">
+                        <Button
+                            variant="outline"
+                            onClick={loadMore}
+                            className="group min-w-[150px] shadow-sm hover:border-indigo-300 hover:text-indigo-600 transition-all"
+                        >
+                            Charger la suite
+                            <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
+                        </Button>
+                    </div>
+                )}
             </div>
+
+            {/* --- MODALE API KEY --- */}
+            <Dialog open={showApiKeyModal} onOpenChange={setShowApiKeyModal}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Configuration API IA</DialogTitle>
+                        <DialogDescription>
+                            Ajoutez votre clé pour activer la recherche sémantique.
+                        </DialogDescription>
+                    </DialogHeader>
+                    <ApiKeyForm onSave={handleSaveApiKey} />
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

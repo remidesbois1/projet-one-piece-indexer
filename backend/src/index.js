@@ -11,6 +11,9 @@ app.set('trust proxy', 1);
 app.use(cors({
   origin: [
     'https://onepiece-index.com',
+    'https://www.onepiece-index.com',
+    'https://poneglyph.fr',
+    'https://www.poneglyph.fr',
     'http://localhost:5173',
     'http://localhost:3000'
   ],

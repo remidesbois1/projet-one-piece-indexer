@@ -65,14 +65,14 @@ const IpBanManager = () => {
     };
 
     return (
-        <Card className="w-full border-red-200 shadow-sm overflow-hidden">
-            <CardHeader className="bg-red-50/50 border-b border-red-100">
+        <Card className="w-full border-none shadow-none bg-red-50/30 overflow-hidden">
+            <CardHeader className="bg-transparent border-none">
                 <div className="flex items-center gap-2">
-                    <ShieldAlert className="h-5 w-5 text-red-600" />
-                    <CardTitle className="text-xl text-red-900">Gestion des Bannissements IP</CardTitle>
+                    <ShieldAlert className="h-6 w-6 text-red-600" />
+                    <CardTitle className="text-2xl font-bold text-red-900">Sécurité des IPs</CardTitle>
                 </div>
-                <CardDescription>
-                    Empêche l'accès à l'API Publique pour ces IPs.
+                <CardDescription className="text-base text-red-700/70 mt-2">
+                    Bannissez les adresses IP suspectes ou abusives pour protéger votre API.
                 </CardDescription>
             </CardHeader>
 

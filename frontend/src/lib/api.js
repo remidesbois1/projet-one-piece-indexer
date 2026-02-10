@@ -100,4 +100,9 @@ export const getBannedIps = () => apiClient.get('/admin/banned-ips');
 export const banIp = (ip, reason) => apiClient.post('/admin/banned-ips', { ip, reason });
 export const unbanIp = (ip) => apiClient.delete(`/admin/banned-ips/${ip}`);
 
+export const getCovers = (mangaSlug) => apiClient.get('/admin/covers', { params: { manga: mangaSlug } });
+export const uploadCover = (formData) => apiClient.post('/admin/covers', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+});
+
 export const submitSearchFeedback = (feedbackData) => apiClient.post('/search/feedback', feedbackData);

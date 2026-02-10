@@ -80,6 +80,14 @@ export default function AnnotatePage() {
 
     const [chapterPages, setChapterPages] = useState([]);
     const [navContext, setNavContext] = useState({ prev: null, next: null });
+    const [isMobile, setIsMobile] = useState(false);
+
+    useEffect(() => {
+        const checkMobile = () => setIsMobile(window.innerWidth < 1024);
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
+    }, []);
 
     const containerRef = useRef(null);
     const imageRef = useRef(null);
@@ -578,12 +586,12 @@ export default function AnnotatePage() {
     };
 
     const handleEditBubble = (bubble) => {
-        if (isGuest) return;
+        if (isGuest || isMobile) return;
         setPendingAnnotation(bubble);
     };
 
     const handleDeleteBubble = async (bubbleId) => {
-        if (isGuest) return;
+        if (isGuest || isMobile) return;
         if (window.confirm("Supprimer cette annotation ?")) {
             const previousBubbles = [...existingBubbles];
             // Mise à jour optimiste : on retire la bulle immédiatement
@@ -630,7 +638,7 @@ export default function AnnotatePage() {
     };
 
     const handleSubmitPage = async () => {
-        if (isGuest) return;
+        if (isGuest || isMobile) return;
         if (window.confirm("Envoyer pour validation ?")) {
             try {
                 const response = await submitPageForReview(pageId);
@@ -648,7 +656,7 @@ export default function AnnotatePage() {
     };
 
     const handleMouseDown = (event) => {
-        if (isGuest) return;
+        if (isGuest || isMobile) return;
         if (page?.statut !== 'not_started' && page?.statut !== 'in_progress') return;
         if (isSubmitting || showApiKeyModal || showDescModal) return;
 
@@ -723,25 +731,33 @@ export default function AnnotatePage() {
 
     return (
         <div className="flex flex-col h-[calc(100vh-64px)] bg-slate-50">
-            <header className="flex-none h-16 border-b border-slate-200 bg-white px-6 flex items-center justify-between z-20 shadow-sm gap-4">
-                <div className="flex items-center gap-4">
-                    <Link href={`/${mangaSlug}/dashboard`}>
-                        <Button variant="ghost" size="sm">
-                            <ArrowLeft className="h-4 w-4 mr-2" /> Retour
-                        </Button>
-                    </Link>
-                    <div className="h-6 w-px bg-slate-200" />
-                    <div>
-                        <h2 className="text-lg font-bold text-slate-900 hidden md:block">
-                            Tome {page.chapitres?.tomes?.numero} - Ch.{page.chapitres?.numero}
-                        </h2>
-                        <div className="flex items-center gap-2 text-xs text-slate-500 font-mono">
-                            Page {page.numero_page}
-                            <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">{page.statut}</Badge>
+            <header className="flex-none h-auto min-h-16 border-b border-slate-200 bg-white px-4 sm:px-6 py-3 sm:py-0 flex flex-col lg:flex-row items-center justify-between z-20 shadow-sm gap-3 sm:gap-4 overflow-x-auto no-scrollbar">
+                <div className="flex items-center justify-between w-full lg:w-auto gap-4 shrink-0">
+                    <div className="flex items-center gap-2 sm:gap-4">
+                        <Link href={`/${mangaSlug}/dashboard`}>
+                            <Button variant="ghost" size="sm" className="h-8 px-2">
+                                <ArrowLeft className="h-4 w-4 sm:mr-2" />
+                                <span className="hidden sm:inline">Retour</span>
+                            </Button>
+                        </Link>
+                        <div className="h-6 w-px bg-slate-200 hidden sm:block" />
+                        <div className="flex flex-col sm:block">
+                            <h2 className="text-sm sm:text-lg font-bold text-slate-900 truncate max-w-[150px] sm:max-w-none">
+                                Tome {page.chapitres?.tomes?.numero} - Ch.{page.chapitres?.numero}
+                            </h2>
+                            <div className="flex items-center gap-2 text-[10px] sm:text-xs text-slate-500 font-mono">
+                                Page {page.numero_page}
+                                <Badge variant="outline" className="text-[9px] sm:text-[10px] px-1 py-0 h-3.5 sm:h-4 whitespace-nowrap">{page.statut}</Badge>
+                                {isMobile && (
+                                    <Badge variant="secondary" className="bg-amber-50 text-amber-700 border-amber-100 text-[9px] px-1 py-0 h-3.5 flex items-center gap-0.5">
+                                        <Shield size={8} /> Lecture seule
+                                    </Badge>
+                                )}
+                            </div>
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-1 ml-4">
+                    <div className="flex items-center gap-1">
                         <Button
                             variant="ghost"
                             size="icon"
@@ -752,7 +768,7 @@ export default function AnnotatePage() {
                         >
                             <ChevronLeft className="h-5 w-5" />
                         </Button>
-                        <span className="text-xs font-medium text-slate-400 min-w-[60px] text-center">
+                        <span className="text-[10px] sm:text-xs font-medium text-slate-400 min-w-[40px] sm:min-w-[60px] text-center">
                             {chapterPages.findIndex(p => p.id === parseInt(pageId)) + 1} / {chapterPages.length}
                         </span>
                         <Button
@@ -768,148 +784,132 @@ export default function AnnotatePage() {
                     </div>
                 </div>
 
-                <div className="flex items-center gap-3 ml-auto">
-                    <div className="flex items-center gap-3 bg-slate-50 p-1.5 rounded-lg border border-slate-100">
-                        <div className="flex items-center gap-2 px-2">
-                            <Label htmlFor="ocr-mode" className="text-xs font-medium text-slate-600 cursor-pointer">
-                                {preferLocalOCR ? "Local" : "Cloud"}
-                            </Label>
-                            <button
-                                id="ocr-mode"
-                                onClick={() => !isGuest && toggleOcrPreference()}
-                                disabled={isGuest}
-                                className={cn(
-                                    "relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus-visible:outline-none",
-                                    preferLocalOCR ? "bg-emerald-500" : "bg-blue-500",
-                                    isGuest && "opacity-50 cursor-not-allowed"
+                {!isMobile && (
+                    <div className="flex items-center gap-3 ml-auto py-2 lg:py-0">
+                        {/* GROUP: AI MODELS (OCR & DETECTION) */}
+                        <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-lg border border-slate-100">
+                            {/* OCR Toggle */}
+                            <div className="flex items-center gap-2 px-2 border-r border-slate-200 pr-3">
+                                <Label htmlFor="ocr-mode" className="text-[10px] font-bold text-slate-400 cursor-pointer uppercase tracking-tight">
+                                    OCR: {preferLocalOCR ? "Local" : "Cloud"}
+                                </Label>
+                                <button
+                                    id="ocr-mode"
+                                    onClick={() => !isGuest && toggleOcrPreference()}
+                                    disabled={isGuest}
+                                    className={cn(
+                                        "relative inline-flex h-4 w-8 items-center rounded-full transition-colors",
+                                        preferLocalOCR ? "bg-emerald-500" : "bg-blue-500",
+                                        isGuest && "opacity-50 cursor-not-allowed"
+                                    )}
+                                >
+                                    <span className={cn(
+                                        "inline-block h-2.5 w-2.5 transform rounded-full bg-white transition-transform",
+                                        preferLocalOCR ? "translate-x-4.5" : "translate-x-1"
+                                    )} />
+                                </button>
+                            </div>
+
+                            {/* OCR Local Model Status/Controls */}
+                            {preferLocalOCR ? (
+                                <div className="flex items-center px-1">
+                                    {modelStatus === 'idle' && (
+                                        <Button variant="ghost" size="sm" onClick={loadModel} className="h-7 text-[10px] gap-1.5 text-emerald-700 hover:bg-emerald-100/50">
+                                            <Download size={12} /> Charger Local
+                                        </Button>
+                                    )}
+                                    {modelStatus === 'loading' && (
+                                        <div className="flex items-center gap-2 px-2 min-w-[100px]">
+                                            <div className="h-1 flex-1 bg-slate-200 rounded-full overflow-hidden">
+                                                <div className="h-full bg-emerald-500" style={{ width: `${downloadProgress}%` }} />
+                                            </div>
+                                            <span className="text-[10px] font-mono text-emerald-600">{downloadProgress}%</span>
+                                        </div>
+                                    )}
+                                    {modelStatus === 'ready' && (
+                                        <Badge className="bg-emerald-50 text-emerald-700 border-emerald-100 h-6 text-[10px] gap-1">
+                                            <Cpu size={12} /> Prêt
+                                        </Badge>
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="px-2">
+                                    <Badge className="bg-blue-50 text-blue-700 border-blue-100 h-6 text-[10px] gap-1">
+                                        <CloudLightning size={12} /> Gemini Cloud
+                                    </Badge>
+                                </div>
+                            )}
+
+                            <div className="w-px h-4 bg-slate-200" />
+
+                            {/* Detection Tools */}
+                            <div className="flex items-center px-1">
+                                {detectionStatus === 'idle' && (
+                                    <Button variant="ghost" size="sm" onClick={loadDetectionModel} className="h-7 text-[10px] gap-1.5 text-indigo-700 hover:bg-indigo-100/50">
+                                        <Search size={12} /> IA Détecteur
+                                    </Button>
                                 )}
-                            >
-                                <span className={cn(
-                                    "inline-block h-3 w-3 transform rounded-full bg-white transition-transform",
-                                    preferLocalOCR ? "translate-x-5" : "translate-x-1"
-                                )} />
-                            </button>
+                                {detectionStatus === 'loading' && (
+                                    <div className="flex items-center gap-2 px-2 min-w-[100px]">
+                                        <div className="h-1 flex-1 bg-slate-200 rounded-full overflow-hidden">
+                                            <div className="h-full bg-indigo-500" style={{ width: `${detectionProgress}%` }} />
+                                        </div>
+                                        <span className="text-[10px] font-mono text-indigo-600">{detectionProgress}%</span>
+                                    </div>
+                                )}
+                                {detectionStatus === 'ready' && (
+                                    <Button
+                                        variant="default"
+                                        size="sm"
+                                        onClick={handleExecuteDetection}
+                                        disabled={isSubmitting || isAutoDetecting}
+                                        className="h-7 text-[10px] bg-indigo-600 hover:bg-indigo-700 gap-1.5"
+                                    >
+                                        <Sparkles size={12} />
+                                        {isAutoDetecting ? `Scan (${queueLength})` : "Scanner la page"}
+                                    </Button>
+                                )}
+                            </div>
                         </div>
 
-                        <div className="h-4 w-px bg-slate-200" />
+                        <div className="h-6 w-px bg-slate-200 mx-1" />
 
-                        {modelStatus === 'idle' && preferLocalOCR && (
+                        {/* GROUP: ACTIONS */}
+                        <div className="flex items-center gap-2">
                             <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={loadModel}
-                                className="h-7 text-xs border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100"
+                                className="h-9 gap-2 border-slate-200 text-slate-700 hover:bg-slate-50"
+                                onClick={() => setShowDescModal(true)}
                             >
-                                <Download className="h-3 w-3 mr-1.5" />
-                                Charger Modèle
+                                <FileText size={16} />
+                                <span className="hidden xl:inline">Métadonnées</span>
                             </Button>
-                        )}
 
-                        {modelStatus === 'loading' && (
-                            <div className="flex flex-col w-32 gap-1">
-                                <div className="flex justify-between text-[9px] text-slate-500">
-                                    <span>Chargement...</span>
-                                    <span>{downloadProgress}%</span>
-                                </div>
-                                <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
-                                    <div
-                                        className="h-full bg-emerald-500 transition-all duration-300"
-                                        style={{ width: `${downloadProgress}%` }}
-                                    />
-                                </div>
-                            </div>
-                        )}
-
-                        {modelStatus === 'ready' && (
-                            <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 text-[10px] gap-1 h-7">
-                                <Cpu className="h-3 w-3" /> Prêt
-                            </Badge>
-                        )}
-
-                        {modelStatus === 'error' && (
-                            <Badge variant="destructive" className="text-[10px] h-7">Erreur</Badge>
-                        )}
-                    </div>
-
-                    <div className="h-6 w-px bg-slate-200" />
-
-                    <div className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-lg border border-slate-100">
-                        {detectionStatus === 'idle' && (
                             <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={loadDetectionModel}
-                                className="h-7 text-xs border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100"
+                                variant="ghost"
+                                size="icon"
+                                className="h-9 w-9 text-slate-400 hover:text-slate-900"
+                                onClick={() => setShowApiKeyModal(true)}
                             >
-                                <Download className="h-3 w-3 mr-1.5" />
-                                Charger Détecteur
+                                <Settings2 size={16} />
                             </Button>
-                        )}
-                        {detectionStatus === 'loading' && (
-                            <div className="flex flex-col w-24 gap-1 mx-2">
-                                <div className="flex justify-between text-[9px] text-slate-500">
-                                    <span>Dl...</span>
-                                    <span>{detectionProgress}%</span>
-                                </div>
-                                <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
-                                    <div
-                                        className="h-full bg-indigo-500 transition-all duration-300"
-                                        style={{ width: `${detectionProgress}%` }}
-                                    />
-                                </div>
-                            </div>
-                        )}
-                        {detectionStatus === 'ready' && (
+
+                            <div className="h-6 w-px bg-slate-200 mx-1" />
+
                             <Button
-                                variant="secondary"
+                                variant="default"
                                 size="sm"
-                                onClick={!isGuest ? handleExecuteDetection : undefined}
-                                disabled={isGuest || isSubmitting || isAutoDetecting}
-                                className="h-7 text-xs bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
+                                className="h-9 bg-slate-900 hover:bg-slate-800 shadow-sm gap-2 px-4"
+                                onClick={handleSubmitPage}
+                                disabled={page.statut === 'pending_review' || page.statut === 'completed'}
                             >
-                                <Sparkles className="h-3 w-3 mr-1.5" />
-                                {isAutoDetecting ? `Détection (${queueLength})...` : "Détecter Bulles"}
+                                <Send size={16} />
+                                <span>Soumettre</span>
                             </Button>
-                        )}
-                        {detectionStatus === 'error' && (
-                            <Badge variant="destructive" className="text-[10px] h-7">Err Détection</Badge>
-                        )}
+                        </div>
                     </div>
-
-                    <div className="h-6 w-px bg-slate-200" />
-
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => !isGuest && setShowDescModal(true)}
-                        disabled={isGuest}
-                        className={cn(
-                            "hidden md:flex gap-2 border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100",
-                            isGuest && "opacity-50 cursor-not-allowed"
-                        )}
-                    >
-                        <FileText className="h-4 w-4" />
-                        Métadonnées
-                    </Button>
-
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => !isGuest && setShowApiKeyModal(true)}
-                        className={cn("h-9 w-9 text-slate-400 hover:text-slate-900", isGuest && "opacity-50 cursor-not-allowed")}
-                        disabled={isGuest}
-                    >
-                        <Settings2 className="h-4 w-4" />
-                    </Button>
-
-                    <Button
-                        className="bg-slate-900 hover:bg-slate-800"
-                        onClick={handleSubmitPage}
-                        disabled={!canEdit || isGuest}
-                    >
-                        <Send className="h-3 w-3 mr-2" /> Soumettre
-                    </Button>
-                </div>
+                )}
             </header>
 
             {isGuest && (
@@ -917,19 +917,22 @@ export default function AnnotatePage() {
                     <Shield className="h-4 w-4" />
                     Mode Lecture Seule : La modification des données est réservée aux utilisateurs connectés.
                 </div>
-            )}
+            )
+            }
 
-            {page.commentaire_moderation && page.statut !== 'completed' && (
-                <div className="bg-red-50 border-b border-red-200 px-6 py-3 flex items-center gap-3 text-red-800 text-sm animate-in slide-in-from-top duration-300">
-                    <div className="h-8 w-8 rounded-full bg-red-100 flex items-center justify-center shrink-0">
-                        <X className="h-4 w-4 text-red-600" />
+            {
+                page.commentaire_moderation && page.statut !== 'completed' && (
+                    <div className="bg-red-50 border-b border-red-200 px-6 py-3 flex items-center gap-3 text-red-800 text-sm animate-in slide-in-from-top duration-300">
+                        <div className="h-8 w-8 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                            <X className="h-4 w-4 text-red-600" />
+                        </div>
+                        <div className="flex-1">
+                            <p className="font-bold">Cette page a été refusée par la modération</p>
+                            <p className="text-red-700/80 italic font-medium">"{page.commentaire_moderation}"</p>
+                        </div>
                     </div>
-                    <div className="flex-1">
-                        <p className="font-bold">Cette page a été refusée par la modération</p>
-                        <p className="text-red-700/80 italic font-medium">"{page.commentaire_moderation}"</p>
-                    </div>
-                </div>
-            )}
+                )
+            }
 
             {/* Prefetch désactivé pour réduire la charge réseau */}
             {/* 
@@ -939,8 +942,8 @@ export default function AnnotatePage() {
             */}
 
 
-            <div className="flex flex-1 overflow-hidden">
-                <main className="flex-1 bg-slate-200/50 overflow-auto flex justify-center p-8 relative cursor-default">
+            <div className="flex flex-col lg:flex-row flex-1 overflow-hidden">
+                <main className="flex-1 bg-slate-200/50 overflow-auto flex justify-center p-4 sm:p-8 relative cursor-default">
                     <div
                         ref={containerRef}
                         className={cn(
@@ -1052,7 +1055,7 @@ export default function AnnotatePage() {
                     </div>
                 </main>
 
-                <aside className="w-[380px] bg-white border-l border-slate-200 flex flex-col h-full overflow-hidden z-10 shadow-lg">
+                <aside className="w-full lg:w-[380px] bg-white border-t lg:border-t-0 lg:border-l border-slate-200 flex flex-col h-[40vh] lg:h-full overflow-hidden z-10 shadow-lg shrink-0">
                     <div className="flex-none p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
                         <h3 className="font-semibold text-slate-900">Annotations</h3>
                         <Badge variant="secondary">{existingBubbles.length}</Badge>
@@ -1326,6 +1329,6 @@ export default function AnnotatePage() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
-        </div>
+        </div >
     );
 }

@@ -59,14 +59,14 @@ const GlossaryManager = () => {
     };
 
     return (
-        <Card className="w-full border-slate-200 shadow-sm overflow-hidden">
-            <CardHeader className="bg-slate-50/50 border-b border-slate-100">
+        <Card className="w-full border-none shadow-none bg-slate-50/50 overflow-hidden">
+            <CardHeader className="bg-transparent border-none">
                 <div className="flex items-center gap-2">
-                    <BookOpen className="h-5 w-5 text-indigo-600" />
-                    <CardTitle className="text-xl">Glossaire de Protection</CardTitle>
+                    <BookOpen className="h-6 w-6 text-indigo-600" />
+                    <CardTitle className="text-2xl font-bold">Glossaire de Protection</CardTitle>
                 </div>
-                <CardDescription>
-                    Les mots listés ici ne seront jamais modifiés par LanguageTool (utile pour les noms propres).
+                <CardDescription className="text-base text-slate-500 mt-2">
+                    Gérez les exceptions pour le moteur de correction linguistique.
                 </CardDescription>
             </CardHeader>
 
