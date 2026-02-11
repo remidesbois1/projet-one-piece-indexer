@@ -84,7 +84,11 @@ export const getMetadataSuggestions = () => apiClient.get('/analyse/metadata-sug
 
 
 export const getBubbleCrop = (id) => apiClient.get(`/bulles/${id}/crop`, { responseType: 'blob' });
-export const getMySubmissions = (page = 1, limit = 10) => apiClient.get(`/user/bulles?page=${page}&limit=${limit}`);
+export const getMySubmissions = (page = 1, limit = 10, mangaSlug) => {
+    const params = { page, limit };
+    if (mangaSlug) params.manga = mangaSlug;
+    return apiClient.get('/user/bulles', { params });
+};
 export const getStatsSummary = () => apiClient.get('/stats/summary');
 export const getLandingStats = () => apiClient.get('/stats/landing');
 export const getTopContributors = () => apiClient.get('/stats/top-contributors');

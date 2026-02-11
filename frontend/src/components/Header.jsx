@@ -70,7 +70,11 @@ const Header = ({ onOpenApiKeyModal }) => {
 
                 {/* LOGO */}
                 <div className="flex items-center gap-2">
-                    <Link href={`/`} prefetch={false} className="flex items-center space-x-2">
+                    <Link
+                        href={pathname === `/${mangaSlug}/dashboard` ? `/` : `/${mangaSlug}/dashboard`}
+                        prefetch={false}
+                        className="flex items-center space-x-2"
+                    >
                         <span className="text-xl font-bold tracking-tight text-slate-900">
                             Projet Poneglyph
                         </span>
