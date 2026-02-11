@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { getPagesForReview } from '@/lib/api';
+import { getPagesForReview, approveAllPages } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
+import { useUserProfile } from '@/hooks/useUserProfile';
 import { useManga } from '@/context/MangaContext';
 import Link from 'next/link';
 
@@ -12,23 +13,44 @@ import {
   CheckCircle2,
   FileText,
   ArrowRight,
-  ScanEye
+  ScanEye,
+  Clock
 } from "lucide-react";
 
 const PageReviewList = () => {
   const { session } = useAuth();
   const { mangaSlug } = useManga();
+  const { profile } = useUserProfile();
   const [pages, setPages] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
+  const fetchPages = () => {
     if (session) {
+      setIsLoading(true);
       getPagesForReview()
         .then(response => setPages(response.data))
         .catch(err => console.error("Erreur chargement pages", err))
         .finally(() => setIsLoading(false));
     }
+  };
+
+  useEffect(() => {
+    fetchPages();
   }, [session]);
+
+  const handleApproveAll = async () => {
+    if (!confirm(`Êtes-vous sûr de vouloir valider TOUTES les ${pages.length} pages en attente ?\nCette action est réservée aux administrateurs.`)) {
+      return;
+    }
+
+    try {
+      await approveAllPages();
+      fetchPages();
+    } catch (err) {
+      console.error(err);
+      alert("Une erreur est survenue lors de la validation globale.");
+    }
+  };
 
   if (isLoading) {
     return (
@@ -42,13 +64,24 @@ const PageReviewList = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-200 w-fit">
-          <Badge variant="default" className="bg-slate-900 hover:bg-slate-700">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-2 text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-200 w-fit">
+          <Badge variant="secondary" className="bg-white border-slate-200 text-slate-900">
             {pages.length}
           </Badge>
-          <span className="text-sm font-medium pr-2">page(s) à vérifier</span>
+          <span className="text-sm font-medium">page(s) à vérifier</span>
         </div>
+
+        {profile?.role === 'Admin' && pages.length > 0 && (
+          <Button
+            onClick={handleApproveAll}
+            variant="default"
+            className="bg-slate-900 hover:bg-slate-800 text-white"
+          >
+            <CheckCircle2 className="mr-2 h-4 w-4" />
+            Tout Valider (Admin)
+          </Button>
+        )}
       </div>
 
       {pages.length === 0 ? (
@@ -62,56 +95,85 @@ const PageReviewList = () => {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
           {pages.map(page => (
             <Card
               key={page.id}
-              className="group overflow-hidden border-slate-200 hover:shadow-xl hover:ring-2 hover:ring-slate-900/10 transition-all duration-300 flex flex-col"
+              className="group relative overflow-hidden border-slate-200 bg-white hover:shadow-2xl hover:shadow-slate-200/50 transition-all duration-500 flex flex-col h-full border-0 shadow-sm"
             >
-              <div className="aspect-[2/3] w-full bg-slate-100 relative overflow-hidden">
+              {/* Image Container with Hover Overlay */}
+              <div className="aspect-[2/3] w-full bg-slate-100 relative overflow-hidden shrink-0">
                 {page.url_image ? (
                   <>
                     <img
                       src={page.url_image}
                       alt={`Page ${page.numero_page}`}
-                      className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                      className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110"
                       loading="lazy"
                     />
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300" />
+                    {/* Gradient Overlay */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
                   </>
                 ) : (
-                  <div className="h-full w-full flex flex-col items-center justify-center text-slate-300 gap-2">
-                    <FileText size={48} strokeWidth={1} />
-                    <span className="text-xs font-medium uppercase tracking-widest text-slate-400">Aperçu</span>
+                  <div className="h-full w-full flex flex-col items-center justify-center text-slate-300 gap-3 bg-slate-50">
+                    <FileText size={48} strokeWidth={1} className="opacity-20" />
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Pas d'aperçu</span>
                   </div>
                 )}
 
-                <div className="absolute top-2 right-2">
-                  <Badge variant="secondary" className="bg-white/90 backdrop-blur text-slate-900 shadow-sm border-slate-200">
-                    P.{page.numero_page}
+                {/* Page Number Badge (Top Right) */}
+                <div className="absolute top-3 right-3 z-10">
+                  <Badge variant="secondary" className="bg-white/95 backdrop-blur-md text-slate-900 shadow-xl border-white font-bold px-2 py-1">
+                    Page {page.numero_page}
                   </Badge>
+                </div>
+
+                {/* Status/Type Badge (Top Left) */}
+                <div className="absolute top-3 left-3 z-10">
+                  <Badge className="bg-amber-500/90 backdrop-blur-md text-white border-0 text-[10px] font-bold tracking-tighter uppercase px-2 shadow-sm">
+                    À Vérifier
+                  </Badge>
+                </div>
+
+                {/* Hover Action Button (Centered) */}
+                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 translate-y-4 group-hover:translate-y-0 z-20">
+                  <Link href={`/${mangaSlug}/moderation/page/${page.id}`} prefetch={false}>
+                    <Button className="bg-white text-slate-900 hover:bg-slate-100 rounded-full px-6 shadow-2xl font-bold gap-2">
+                      <ScanEye className="h-4 w-4" />
+                      Ouvrir l'examen
+                    </Button>
+                  </Link>
                 </div>
               </div>
 
-              <CardContent className="p-3 bg-white relative z-10 flex-1 flex flex-col justify-between">
-                <div>
-                  <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-0.5">
-                    Tome {page.chapitres?.tomes?.numero}
+              {/* Card Content */}
+              <CardContent className="p-4 flex-1 flex flex-col gap-3">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <div className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
+                    <span className="text-[10px] uppercase font-black text-slate-400 tracking-[0.15em]">
+                      Tome {page.chapitres?.tomes?.numero || '?'}
+                    </span>
                   </div>
-                  <div className="font-bold text-slate-900 leading-tight">
-                    Chapitre {page.chapitres?.numero}
+                  <h4 className="font-extrabold text-slate-900 text-lg leading-tight group-hover:text-indigo-600 transition-colors">
+                    Chapitre {page.chapitres?.numero || '?'}
+                  </h4>
+                  {page.chapitres?.titre && (
+                    <p className="text-xs text-slate-500 italic line-clamp-1">{page.chapitres.titre}</p>
+                  )}
+                </div>
+
+                {/* Footer Meta */}
+                <div className="pt-3 mt-auto border-t border-slate-50 flex items-center justify-between text-[10px] text-slate-400 font-medium uppercase tracking-wider">
+                  <div className="flex items-center gap-1.5">
+                    <Clock className="h-3 w-3" />
+                    {page.created_at ? new Date(page.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) : 'Récemment'}
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <ArrowRight className="h-3 w-3 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
                   </div>
                 </div>
               </CardContent>
-
-              <CardFooter className="p-3 pt-0">
-                <Link href={`/${mangaSlug}/moderation/page/${page.id}`} prefetch={false} className="w-full">
-                  <Button size="sm" className="w-full bg-slate-900 hover:bg-slate-700 group-hover:translate-y-0 transition-all">
-                    <ScanEye className="mr-2 h-4 w-4" />
-                    Examiner
-                  </Button>
-                </Link>
-              </CardFooter>
             </Card>
           ))}
         </div>

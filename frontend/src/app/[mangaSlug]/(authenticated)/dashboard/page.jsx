@@ -204,9 +204,9 @@ export default function DashboardPage() {
             </div>
 
             <Sheet open={isSheetOpen} onOpenChange={handleSheetChange}>
-                <SheetContent className="w-full sm:max-w-md p-0 flex flex-col bg-white border-l border-slate-100 shadow-2xl">
+                <SheetContent className="w-full sm:max-w-md p-0 flex flex-col bg-white border-l border-slate-100 shadow-2xl h-full overflow-hidden">
 
-                    <div className="px-6 py-6 border-b border-slate-100 bg-white/80 backdrop-blur-sm sticky top-0 z-10">
+                    <div className="px-6 py-6 border-b border-slate-100 bg-white">
                         <SheetHeader className="text-left space-y-0">
                             {selectedChapter ? (
                                 <div className="space-y-2">
@@ -237,7 +237,7 @@ export default function DashboardPage() {
                         </SheetHeader>
                     </div>
 
-                    <ScrollArea className="flex-1 bg-slate-50/50">
+                    <ScrollArea className="flex-1 min-h-0 bg-slate-50/50">
                         <div className="p-6">
 
                             {!selectedChapter && (

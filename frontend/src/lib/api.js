@@ -71,6 +71,7 @@ export const validateAllBubbles = () => apiClient.put('/bulles/validate-all', {}
 export const rejectBubble = (id, comment) => apiClient.put(`/bulles/${id}/reject`, { comment });
 export const getPagesForReview = () => apiClient.get('/moderation/pages');
 export const approvePage = (pageId) => apiClient.put(`/moderation/pages/${pageId}/approve`, {});
+export const approveAllPages = () => apiClient.put('/moderation/pages/approve-all', {});
 export const rejectPage = (pageId, comment) => apiClient.put(`/moderation/pages/${pageId}/reject`, { comment });
 export const submitPageForReview = (pageId) => apiClient.put(`/pages/${pageId}/submit-review`, {});
 
