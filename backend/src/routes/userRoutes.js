@@ -5,29 +5,35 @@ const { supabaseAdmin } = require('../config/supabaseClient');
 
 router.get('/bulles', authMiddleware, async (req, res) => {
     const userId = req.user.id;
-    const { page = 1, limit = 10 } = req.query;
+    const { page = 1, limit = 10, manga } = req.query;
     const pageInt = parseInt(page);
     const limitInt = parseInt(limit);
     const rangeStart = (pageInt - 1) * limitInt;
     const rangeEnd = rangeStart + limitInt - 1;
 
     try {
-        const { data, error, count } = await supabaseAdmin
+        let query = supabaseAdmin
             .from('bulles')
             .select(`
                 id, texte_propose, statut, created_at, commentaire_moderation,
-                pages ( 
+                pages!inner ( 
                     id, numero_page, 
-                    chapitres ( 
+                    chapitres!inner ( 
                         numero, 
-                        tomes ( 
+                        tomes!inner ( 
                             numero,
-                            mangas ( titre )
+                            mangas!inner ( slug, titre )
                         ) 
                     ) 
                 )
             `, { count: 'exact' })
-            .eq('id_user_createur', userId)
+            .eq('id_user_createur', userId);
+
+        if (manga) {
+            query = query.eq('pages.chapitres.tomes.mangas.slug', manga);
+        }
+
+        const { data, error, count } = await query
             .order('created_at', { ascending: false })
             .range(rangeStart, rangeEnd);
 
