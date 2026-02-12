@@ -1,19 +1,20 @@
-import { pipeline, env } from '@huggingface/transformers';
+import { AutoProcessor, AutoTokenizer, AutoModelForVision2Seq, RawImage, env } from '@huggingface/transformers';
 
 env.allowLocalModels = false;
-env.useBrowserCache = false;
+env.useBrowserCache = true;
 
-let pipe = null;
+let model = null;
+let processor = null;
+let tokenizer = null;
 
-const MODEL_ID = 'Remidesbois/trocr-manga-fr-printed';
+const MODEL_ID = 'Remidesbois/trocr-onepiece-fr';
 
-function fixPunctuation(text) {
-    return text
-        .replace(/([A-Za-zÀ-ÿ])([!?:;]+)/g, '$1 $2')
-        .replace(/([!?:;]+)(?=[A-Za-zÀ-ÿ])/g, '$1 ')
-        .replace(/([.,…]+)(?=[A-Za-zÀ-ÿ])/g, '$1 ')
-        .replace(/ +/g, ' ')
-        .trim();
+function fixFrenchPunctuation(text) {
+    text = text.replace(/\s+([!?;:])/g, ' $1');
+    text = text.replace(/([^\s])([!?;:])/g, '$1 $2');
+    text = text.replace(/([!?])\s+([!?])/g, '$1$2');
+    text = text.replace(/\s+/g, ' ');
+    return text.trim();
 }
 
 self.addEventListener('message', async (event) => {
@@ -21,7 +22,7 @@ self.addEventListener('message', async (event) => {
 
     if (type === 'init') {
         try {
-            if (pipe) {
+            if (model && processor && tokenizer) {
                 self.postMessage({ status: 'ready' });
                 return;
             }
@@ -32,15 +33,23 @@ self.addEventListener('message', async (event) => {
                 }
             };
 
-            console.log("[Worker] Chargement de TrOCR Manga FR (WebGPU)...");
+            console.log("[Worker] Chargement de TrOCR (fp32, WebGPU)...");
 
-            pipe = await pipeline('image-to-text', MODEL_ID, {
-                dtype: 'fp32',
-                device: 'webgpu',
-                progress_callback: progressCallback,
-            });
+            [model, processor, tokenizer] = await Promise.all([
+                AutoModelForVision2Seq.from_pretrained(MODEL_ID, {
+                    dtype: 'fp32',
+                    device: 'webgpu',
+                    progress_callback: progressCallback
+                }),
+                AutoProcessor.from_pretrained(MODEL_ID, {
+                    progress_callback: progressCallback
+                }),
+                AutoTokenizer.from_pretrained(MODEL_ID, {
+                    progress_callback: progressCallback
+                })
+            ]);
 
-            console.log("[Worker] Modèle TrOCR chargé et prêt.");
+            console.log("[Worker] Modèle chargé et prêt.");
             self.postMessage({ status: 'ready' });
         } catch (err) {
             console.error("[Worker Init Error]", err);
@@ -51,31 +60,37 @@ self.addEventListener('message', async (event) => {
 
     if (type === 'run' && imageBlob) {
         const { requestId } = event.data;
-        if (!pipe) {
+        if (!model || !processor || !tokenizer) {
             self.postMessage({ status: 'error', error: 'Modèle non chargé.', requestId });
             return;
         }
 
         try {
-            const debugURL = URL.createObjectURL(imageBlob);
-            self.postMessage({ status: 'debug_image', url: debugURL, requestId });
+            const image = await RawImage.fromBlob(imageBlob);
+            const inputs = await processor(image);
 
-            const imageURL = URL.createObjectURL(imageBlob);
-
-            const output = await pipe(imageURL, {
-                max_new_tokens: 512,
-                num_beams: 5,
+            const generatedIds = await model.generate({
+                ...inputs,
+                max_new_tokens: 64,
+                num_beams: 6,
                 repetition_penalty: 1.2,
-                do_sample: false,
+                no_repeat_ngram_size: 3,
+                length_penalty: 2.0,
+                early_stopping: true,
+                decoder_start_token_id: 0,
+                eos_token_id: 2,
+                pad_token_id: 1,
             });
 
-            URL.revokeObjectURL(imageURL);
+            const raw = tokenizer.batch_decode(generatedIds, {
+                skip_special_tokens: true,
+            })[0].trim();
 
-            const raw = output?.[0]?.generated_text?.trim() || '';
-            const text = fixPunctuation(raw);
-            console.log("[Worker] Texte extrait :", text);
+            const text = fixFrenchPunctuation(raw);
 
+            console.log("[Worker] OCR result:", text);
             self.postMessage({ status: 'complete', text, requestId });
+
         } catch (err) {
             console.error("[Worker Run Error]", err);
             const errorMsg = err instanceof Error ? err.message : String(err);
