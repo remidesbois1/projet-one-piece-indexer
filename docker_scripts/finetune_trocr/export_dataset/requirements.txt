@@ -1,0 +1,8 @@
+supabase
+pillow
+pillow-avif-plugin
+pandas
+tqdm
+scikit-learn
+requests
+python-dotenv
