@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { supabase } = require('../config/supabaseClient');
+const { supabase, supabaseAdmin } = require('../config/supabaseClient');
 const { authMiddleware } = require('../middleware/auth');
 const sharp = require('sharp');
 const axios = require('axios');
@@ -45,7 +45,7 @@ router.get('/:id/bulles', async (req, res) => {
 });
 
 router.put('/:id/submit-review', authMiddleware, async (req, res) => {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
         .from('pages')
         .update({ statut: 'pending_review' })
         .eq('id', req.params.id)
