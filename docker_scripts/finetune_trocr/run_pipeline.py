@@ -2,6 +2,7 @@ import os
 import shutil
 import subprocess
 import sys
+import requests
 from huggingface_hub import HfApi, login
 from pathlib import Path
 
@@ -12,6 +13,38 @@ if missing_vars:
     print(f"Error: Missing environment variables: {', '.join(missing_vars)}")
     sys.exit(1)
 
+def terminate_runpod():
+    """
+    Terminates the current RunPod pod using the GraphQL API.
+    Requires RUNPOD_POD_ID and RUNPOD_API_KEY environment variables.
+    """
+    pod_id = os.environ.get("RUNPOD_POD_ID")
+    api_key = os.environ.get("RUNPOD_API_KEY")
+
+    if not pod_id:
+        print("ℹ️ Not running on RunPod (RUNPOD_POD_ID not found). Skipping termination.")
+        return
+    
+    if not api_key:
+        print("⚠️ Running on RunPod but RUNPOD_API_KEY is missing. Cannot terminate pod automatically.")
+        return
+
+    print(f"🛑 Initiating termination for Pod ID: {pod_id}")
+    
+    url = f"https://api.runpod.io/graphql?api_key={api_key}"
+    query = f"""
+    mutation {{
+        podTerminate(input: {{podId: "{pod_id}"}})
+    }}
+    """
+    
+    try:
+        response = requests.post(url, json={"query": query})
+        response.raise_for_status()
+        print(f"✅ Termination request sent. Response: {response.text}")
+    except Exception as e:
+        print(f"❌ Failed to terminate pod: {e}")
+
 print("🚀 Starting Automated Fine-Tuning Pipeline...")
 
 login(token=os.environ["HF_TOKEN"])
@@ -20,6 +53,7 @@ print("\n1️⃣  Downloading Dataset from Supabase...")
 result = subprocess.run([sys.executable, "export_dataset/export_trocr_dataset.py"], capture_output=False)
 if result.returncode != 0:
     print("❌ Dataset download failed.")
+    terminate_runpod() # Attempt termination even on failure if configured
     sys.exit(1)
 
 source_dataset = Path("export_dataset/trocr_dataset")
@@ -32,6 +66,7 @@ if source_dataset.exists():
     print(f"✅ Dataset moved to {target_dataset.resolve()}")
 else:
     print(f"❌ Dataset not found at {source_dataset}. processing failed.")
+    terminate_runpod()
     sys.exit(1)
 
 print("\n2️⃣  Starting Fine-Tuning (25 epochs)...")
@@ -43,17 +78,20 @@ else:
     result = subprocess.run([sys.executable, "finetunescript.py"], capture_output=False)
     if result.returncode != 0:
         print("❌ Fine-tuning failed.")
+        terminate_runpod()
         sys.exit(1)
 
 print("\n3️⃣  Exporting Model to ONNX...")
 model_dir = Path("outputs_trocr_manga/final_manga_model")
 if not model_dir.exists():
     print(f"❌ Model directory not found: {model_dir}")
+    terminate_runpod()
     sys.exit(1)
 
 result = subprocess.run([sys.executable, "export_onnx.py"], capture_output=False)
 if result.returncode != 0:
     print("❌ ONNX Export failed.")
+    terminate_runpod()
     sys.exit(1)
 
 print("\n4️⃣  Uploading to Hugging Face...")
@@ -76,6 +114,7 @@ try:
     print("✅ Root files uploaded.")
 except Exception as e:
     print(f"❌ Failed to upload root files: {e}")
+    terminate_runpod()
     sys.exit(1)
 
 onnx_dir = Path("onnx_export/onnx")
@@ -91,9 +130,11 @@ if onnx_dir.exists():
         print("✅ ONNX files uploaded.")
     except Exception as e:
         print(f"❌ Failed to upload ONNX files: {e}")
+        terminate_runpod()
         sys.exit(1)
 else:
     print(f"❌ ONNX directory not found: {onnx_dir}")
+    terminate_runpod()
     sys.exit(1)
 
 
@@ -114,3 +155,6 @@ else:
     print(f"⚠️ Logs directory not found: {logs_dir}")
 
 print("\n🎉 Pipeline Completed Successfully!")
+
+# Terminate Pod at the very end
+terminate_runpod()
