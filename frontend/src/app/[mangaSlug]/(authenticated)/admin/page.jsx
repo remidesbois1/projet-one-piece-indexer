@@ -6,6 +6,7 @@ import AddChapterForm from '@/components/AddChapterForm';
 import GlossaryManager from '@/components/GlossaryManager';
 import IpBanManager from '@/components/IpBanManager';
 import CoverManager from '@/components/CoverManager';
+import AiModelManager from '@/components/AiModelManager';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
     BookPlus,
@@ -13,7 +14,8 @@ import {
     ShieldAlert,
     Settings2,
     Image as ImageIcon,
-    Languages
+    Languages,
+    Cpu
 } from "lucide-react";
 
 import { useSearchParams } from 'next/navigation';
@@ -40,7 +42,7 @@ export default function AdminDashboard() {
                 window.history.pushState(null, '', `?${params.toString()}`);
             }} className="w-full">
                 <div className="sticky top-0 z-20 bg-white pt-2 pb-6">
-                    <TabsList className="grid w-full grid-cols-2 lg:grid-cols-4 h-auto p-1 bg-slate-100/80 border border-slate-200">
+                    <TabsList className="grid w-full grid-cols-2 lg:grid-cols-5 h-auto p-1 bg-slate-100/80 border border-slate-200">
                         <TabsTrigger value="content" className="py-3 px-4 data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all focus-visible:ring-0">
                             <Library className="h-4 w-4 mr-2" />
                             <span className="font-medium">Bibliothèque</span>
@@ -52,6 +54,10 @@ export default function AdminDashboard() {
                         <TabsTrigger value="glossary" className="py-3 px-4 data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all focus-visible:ring-0">
                             <Languages className="h-4 w-4 mr-2" />
                             <span className="font-medium">Glossaire</span>
+                        </TabsTrigger>
+                        <TabsTrigger value="ai" className="py-3 px-4 data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all focus-visible:ring-0">
+                            <Cpu className="h-4 w-4 mr-2" />
+                            <span className="font-medium">IA</span>
                         </TabsTrigger>
                         <TabsTrigger value="security" className="py-3 px-4 data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all focus-visible:ring-0 text-red-600 data-[state=active]:text-red-700">
                             <ShieldAlert className="h-4 w-4 mr-2" />
@@ -73,6 +79,10 @@ export default function AdminDashboard() {
 
                     <TabsContent value="glossary" className="m-0 p-8 outline-none">
                         <GlossaryManager />
+                    </TabsContent>
+
+                    <TabsContent value="ai" className="m-0 p-8 outline-none">
+                        <AiModelManager />
                     </TabsContent>
 
                     <TabsContent value="security" className="m-0 p-8 outline-none">

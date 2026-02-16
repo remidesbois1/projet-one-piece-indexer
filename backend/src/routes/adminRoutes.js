@@ -375,5 +375,209 @@ router.post('/covers', authMiddleware, roleCheck(['Admin']), upload.single('cove
   }
 });
 
+const AI_MODEL_KEYS = ['model_ocr', 'model_reranking', 'model_description'];
+const DEFAULT_MODELS = {
+  model_ocr: 'gemini-2.5-flash-lite',
+  model_reranking: 'gemini-2.5-flash-lite',
+  model_description: 'gemini-3-flash-preview'
+};
+
+let aiModelsCache = null;
+let aiModelsCacheTime = 0;
+const CACHE_TTL = 60 * 1000;
+
+async function getAiModelsFromDb() {
+  const now = Date.now();
+  if (aiModelsCache && (now - aiModelsCacheTime) < CACHE_TTL) {
+    return aiModelsCache;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('app_settings')
+    .select('key, value')
+    .in('key', AI_MODEL_KEYS);
+
+  if (error) throw error;
+
+  const models = { ...DEFAULT_MODELS };
+  (data || []).forEach(row => {
+    models[row.key] = row.value;
+  });
+
+  aiModelsCache = models;
+  aiModelsCacheTime = now;
+  return models;
+}
+
+router.get('/ai-models', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+  try {
+    const models = await getAiModelsFromDb();
+    res.json(models);
+  } catch (error) {
+    console.error("Erreur get AI models:", error);
+    res.status(500).json({ error: "Erreur récupération des modèles IA." });
+  }
+});
+
+router.put('/ai-models', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+  const { model_ocr, model_reranking, model_description } = req.body;
+
+  try {
+    const updates = [];
+    if (model_ocr) updates.push({ key: 'model_ocr', value: model_ocr });
+    if (model_reranking) updates.push({ key: 'model_reranking', value: model_reranking });
+    if (model_description) updates.push({ key: 'model_description', value: model_description });
+
+    for (const { key, value } of updates) {
+      const { error } = await supabaseAdmin
+        .from('app_settings')
+        .upsert({ key, value }, { onConflict: 'key' });
+      if (error) throw error;
+    }
+
+    aiModelsCache = null;
+    const models = await getAiModelsFromDb();
+    res.json(models);
+  } catch (error) {
+    console.error("Erreur update AI models:", error);
+    res.status(500).json({ error: "Erreur mise à jour des modèles IA." });
+  }
+});
+
+router.get('/ai-models/public', async (req, res) => {
+  try {
+    const models = await getAiModelsFromDb();
+    res.json(models);
+  } catch (error) {
+    console.error("Erreur get public AI models:", error);
+    res.status(500).json({ error: "Erreur récupération des modèles IA." });
+  }
+});
+
+let availableModelsCache = null;
+let availableModelsCacheTime = 0;
+const AVAILABLE_CACHE_TTL = 60 * 60 * 1000;
+
+router.get('/ai-models/available', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+  try {
+    const now = Date.now();
+    if (availableModelsCache && (now - availableModelsCacheTime) < AVAILABLE_CACHE_TTL) {
+      return res.json(availableModelsCache);
+    }
+
+    const apiKey = process.env.GOOGLE_API_KEY;
+    if (!apiKey) return res.status(500).json({ error: "GOOGLE_API_KEY non configurée sur le serveur." });
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}&pageSize=100`
+    );
+    if (!response.ok) throw new Error(`Google API error: ${response.status}`);
+
+    const data = await response.json();
+    const models = (data.models || [])
+      .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
+      .map(m => ({
+        id: m.name.replace('models/', ''),
+        displayName: m.displayName,
+        description: m.description,
+        inputTokenLimit: m.inputTokenLimit,
+        outputTokenLimit: m.outputTokenLimit,
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+
+    availableModelsCache = models;
+    availableModelsCacheTime = now;
+    res.json(models);
+  } catch (error) {
+    console.error("Erreur list available models:", error);
+    res.status(500).json({ error: "Erreur récupération des modèles disponibles." });
+  }
+});
+
+let freeTierCache = null;
+let freeTierCacheTime = 0;
+const FREE_TIER_CACHE_TTL = 24 * 60 * 60 * 1000;
+
+async function pingModel(modelId, apiKey) {
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: "1" }] }],
+          generationConfig: { maxOutputTokens: 1 }
+        })
+      }
+    );
+
+    if (response.ok) return { id: modelId, freeTier: true };
+
+    if (response.status === 429) {
+      const body = await response.json();
+      const msg = body.error?.message || '';
+      if (msg.includes('limit: 0')) {
+        return { id: modelId, freeTier: false };
+      }
+      return { id: modelId, freeTier: true };
+    }
+
+    return { id: modelId, freeTier: null };
+  } catch {
+    return { id: modelId, freeTier: null };
+  }
+}
+
+async function processInBatches(items, fn, concurrency = 5) {
+  const results = [];
+  for (let i = 0; i < items.length; i += concurrency) {
+    const batch = items.slice(i, i + concurrency);
+    const batchResults = await Promise.all(batch.map(fn));
+    results.push(...batchResults);
+  }
+  return results;
+}
+
+router.get('/ai-models/check-availability', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+  try {
+    const now = Date.now();
+    if (freeTierCache && (now - freeTierCacheTime) < FREE_TIER_CACHE_TTL) {
+      return res.json(freeTierCache);
+    }
+
+    const apiKey = process.env.GOOGLE_API_KEY;
+    if (!apiKey) return res.status(500).json({ error: "GOOGLE_API_KEY non configurée sur le serveur." });
+
+    let models = availableModelsCache;
+    if (!models) {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}&pageSize=100`
+      );
+      if (!response.ok) throw new Error(`Google API error: ${response.status}`);
+      const data = await response.json();
+      models = (data.models || [])
+        .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
+        .map(m => ({ id: m.name.replace('models/', '') }));
+    }
+
+    const results = await processInBatches(
+      models.map(m => m.id),
+      (id) => pingModel(id, apiKey),
+      5
+    );
+
+    const availability = {};
+    results.forEach(r => { availability[r.id] = r.freeTier; });
+
+    freeTierCache = availability;
+    freeTierCacheTime = now;
+    res.json(availability);
+  } catch (error) {
+    console.error("Erreur check availability:", error);
+    res.status(500).json({ error: "Erreur vérification disponibilité." });
+  }
+});
+
 module.exports = router;
 

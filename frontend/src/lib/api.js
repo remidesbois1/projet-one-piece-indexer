@@ -111,3 +111,9 @@ export const uploadCover = (formData) => apiClient.post('/admin/covers', formDat
 });
 
 export const submitSearchFeedback = (feedbackData) => apiClient.post('/search/feedback', feedbackData);
+
+export const getAiModels = () => apiClient.get('/admin/ai-models');
+export const updateAiModels = (models) => apiClient.put('/admin/ai-models', models);
+export const getPublicAiModels = () => apiClient.get('/admin/ai-models/public');
+export const getAvailableAiModels = () => apiClient.get('/admin/ai-models/available');
+export const checkAiModelsAvailability = () => apiClient.get('/admin/ai-models/check-availability');

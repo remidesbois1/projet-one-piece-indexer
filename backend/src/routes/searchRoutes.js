@@ -1,7 +1,29 @@
 const express = require('express');
 const router = express.Router();
-const { supabase } = require('../config/supabaseClient');
+const { supabase, supabaseAdmin } = require('../config/supabaseClient');
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+
+const AI_MODEL_KEYS = ['model_ocr', 'model_reranking', 'model_description'];
+const DEFAULT_MODELS = {
+    model_ocr: 'gemini-2.5-flash-lite',
+    model_reranking: 'gemini-2.5-flash-lite',
+    model_description: 'gemini-3-flash-preview'
+};
+let aiModelsCache = null;
+let aiModelsCacheTime = 0;
+const CACHE_TTL = 60 * 1000;
+
+async function getAiModels() {
+    const now = Date.now();
+    if (aiModelsCache && (now - aiModelsCacheTime) < CACHE_TTL) return aiModelsCache;
+    const { data, error } = await supabaseAdmin.from('app_settings').select('key, value').in('key', AI_MODEL_KEYS);
+    if (error) return { ...DEFAULT_MODELS };
+    const models = { ...DEFAULT_MODELS };
+    (data || []).forEach(row => { models[row.key] = row.value; });
+    aiModelsCache = models;
+    aiModelsCacheTime = now;
+    return models;
+}
 
 router.get('/', async (req, res) => {
     const { q, page = 1, limit = 10, mode = 'keyword', characters, arc, tome, rerank } = req.query;
@@ -161,8 +183,9 @@ router.get('/', async (req, res) => {
                 });
                 totalCount = finalResults.length;
             } else {
+                const aiModels = await getAiModels();
                 const rerankModel = genAI.getGenerativeModel({
-                    model: "gemini-2.5-flash-lite",
+                    model: aiModels.model_reranking,
                     generationConfig: { responseMimeType: "application/json" }
                 });
 
