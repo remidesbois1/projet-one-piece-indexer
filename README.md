@@ -1,14 +1,14 @@
-# **One Piece Indexer : Projet Poneglyph**
+# **Projet Poneglyph**
 
-Le **Projet Poneglyph** est une plateforme de haute performance dédiée à la numérisation, l'indexation sémantique et la recherche contextuelle du manga One Piece. En combinant l'intelligence artificielle déportée (WebGPU) et une infrastructure hybride optimisée, le système permet une exploration technique et sémantique inédite de l'œuvre d'Eiichiro Oda.
+Le **Projet Poneglyph** est une plateforme de haute performance dédiée à la numérisation, l'indexation sémantique et la recherche contextuelle de mangas et bandes dessinées. En combinant l'intelligence artificielle déportée (WebGPU) et une infrastructure hybride optimisée, le système permet une exploration technique et sémantique inédite du neuvième art.
 
-Le projet est accessible publiquement à l'adresse suivante (accès invité pour la recherche et la consultation) : [**onepiece-index.com**](https://onepiece-index.com).
+Le projet est accessible publiquement à l'adresse suivante (accès invité pour la recherche et la consultation) : [**poneglyph.fr**](https://poneglyph.fr).
 
 ## **Architecture Technique**
 
 ### **Infrastructure Core**
 
-* **Hébergement :** VPS Cloud (Hetzner CX23 \- 2 vCPU, 4 Go RAM).
+* **Hébergement :** VPS Cloud (Hetzner CX23 - 2 vCPU, 4 Go RAM).
 * **Orchestration :** Coolify (Gestion des conteneurs, CI/CD et Reverse Proxy).
 * **Stockage Objets :** Cloudflare R2 pour l'hébergement des planches (compatible S3).
 * **CDN & Sécurité :** Cloudflare (Gestion DNS, protection DDoS et mise en cache).
@@ -16,7 +16,7 @@ Le projet est accessible publiquement à l'adresse suivante (accès invité pour
 ### **Frontend & IA**
 
 * **Framework :** React 19 / Next.js & Vite.
-* **OCR Local :** **Florence-2-base Fine-tuned** (Remidesbois/florence2-onepiece-ocr) exécuté via WebGPU (@xenova/transformers) directement dans le navigateur.
+* **OCR Local :** **TrOCR Fine-tuned** (Remidesbois/trocr-onepiece-fr) exécuté via WebGPU (@xenova/transformers) directement dans le navigateur.
 * **Détection de Bulles Locale :** **YOLO V8 Medium Fine-tuned** (Remidesbois/YoloPiece_BubbleDetector) exécuté via WebGPU pour une détection ultra-précise et rapide directement dans le navigateur.
 * **Reranking Local :** **mxbai-rerank-base-v1** (Mixedbread AI) via WebGPU pour une pertinence de recherche maximale sans coût serveur.
 * **State Management :** Context API & LocalStorage (persistance locale des clés API utilisateur).
@@ -31,7 +31,7 @@ Le projet est accessible publiquement à l'adresse suivante (accès invité pour
 
 ## **Moteur de Recherche Multi-Modal**
 
-L'indexer propose deux expériences de recherche complémentaires :
+L'indexer propose deux expériences de recherche :
 
 ### **1. Recherche par Mots-Clés**
 * Recherche instantanée via full-text search PostgreSQL.
@@ -39,70 +39,65 @@ L'indexer propose deux expériences de recherche complémentaires :
 
 ### **2. Recherche Sémantique & Conceptuelle**
 * **Vecteurs :** Conversion des requêtes en vecteurs via Gemini Embeddings et comparaison cosinus avec les vecteurs stockés dans la base de données.
-* **Mode Invité :** La recherche sémantique est accessible à tous via une clé d'API serveur. Le **Reranking Local** (WebGPU) est également disponible pour les invités, tandis que le **Reranking Cloud** (Gemini) nécessite une clé API personnelle.
-* **Filtrage Multicritère :** Possibilité de filtrer par personnages (Luffy, Zoro, Kaido...), arc narratif (Romance Dawn, Wano, Marineford...) et numéro de tome.
+* **Mode Invité :** La recherche sémantique est accessible à tous via une clé d'API serveur. Le **Reranking Local** (WebGPU) est également disponible pour les invités, tandis que le **Reranking Cloud** (Gemini) nécessite de renseigner sa propre clé d'API Google.
+* **Filtrage Multicritère :** Possibilité de filtrer par titres, arcs narratifs, personnages identifiés et numéros de volumes.
 * **Reranking Hybride :**
     * **Cloud :** Utilisation de Gemini 2.5 Flash Lite pour trier les résultats selon le contexte exact.
     * **Local :** Utilisation du modèle Mixedbread via WebGPU pour le reranking des résultats gratuitement.
 
 ### **3. Système de Feedback**
 * Thumbs Up/Down sur chaque résultat de recherche pour collecter des données de pertinence.
-* Objectif : Fine-tuning futur d'un modèle de ranking spécialisé pour One Piece.
+* Objectif : Entraînement futur d'un modèle de reranking spécialisé.
 
 ---
 
-## **API Publique V1 (Gratuite & Ouverte)**
+## **API Publique V1**
 
-Le projet expose une API publique sécurisée et gratuite pour la communauté de développeurs. Elle permet d'accéder aux données indexées (tomes, chapitres, pages, bulles), pour construire des applications tierces (bots, stats, ...).
+Le projet expose une API publique sécurisée et gratuite. Elle permet d'accéder aux données indexées (tomes, chapitres, pages, bulles), pour construire des applications tierces (bots, statistiques, outils d'analyse).
 
-**Base URL :** `https://api.onepiece-index.com/v1`
+**Base URL :** `https://api.poneglyph.fr/v1`
 
 | Endpoint | Méthode | Description | Paramètres |
 | :--- | :---: | :--- | :--- |
 | **`/status`** | `GET` | Vérifie l'état de l'API | - |
-| **`/stats`** | `GET` | Statistiques globales (Tomes, Chapitres, Pages, Bulles) | - |
-| **`/tomes`** | `GET` | Liste tous les tomes disponibles | - |
-| **`/tomes/:num/chapters`** | `GET` | Liste les chapitres d'un tome spécifique | - |
-| **`/chapters/:num`** | `GET` | Détails d'un chapitre (Titre, Tome, Stats) | - |
-| **`/chapters/:num/pages/:p`**| `GET` | Contenu d'une page (Image, Bulles, Arc, Persos) | - |
-| **`/quotes/random`** | `GET` | Retourne une citation (bulle) au hasard | `?min_length=15` |
-| **`/search`** | `GET` | Recherche textuelle simple dans les bulles | `?q=luffy` |
+| **`/stats`** | `GET` | Statistiques globales (Œuvres, Tomes, Pages, Bulles) | - |
+| **`/series`** | `GET` | Liste toutes les séries disponibles | - |
+| **`/tomes/:id`** | `GET` | Détails d'un volume spécifique | - |
+| **`/pages/:id`** | `GET` | Contenu d'une page (Image, Bulles, Métadonnées) | - |
+| **`/quotes/random`** | `GET` | Retourne une citation au hasard | `?min_length=15` |
+| **`/search`** | `GET` | Recherche textuelle simple dans les bulles | `?q=requete` |
 
-> **Note :** Les images renvoyées via l'API publique comportent automatiquement un watermark pour désencourager le piratage.
+> **Note :** Les images renvoyées via l'API publique comportent automatiquement un watermark et une qualité réduite pour prévenir l'utilisation du service à des fins de lecture illégale.
 
 ---
 
 ## **Pipeline d'OCR Hybride**
 
-L'extraction de texte repose sur une architecture conçue pour minimiser les coûts tout en maximisant la qualité. Elle offre le choix entre deux modèles d'OCR :
+L'extraction de texte repose sur une architecture conçue pour minimiser les coûts tout en maximisant la qualité, adaptée aux spécificités de la BD et du Manga.
 
-### **Florence-2 Fine-tuned (Local)**
-Ce modèle spécialisé (`Remidesbois/florence2-onepiece-ocr`) capture la typographie spécifique de One Piece.
+### **TrOCR Fine-tuned (Local)**
+Ce modèle spécialisé (`Remidesbois/trocr-onepiece-fr`) est optimisé pour le français et particulièrement les polices d'écriture de One Piece.
 * **Coût :** 0 $ / OCR
-* **Latence :** 1-5 secondes / OCR (suivant la puissance de la carte graphique de l'utilisateur)
-* **Entraînement :** Fine-tuned sur 600 bulles de dialogue.
-* **Métriques :** CER de 3.13% (contre 78.77% pour le modèle de base), soit une amélioration de +75 pts.
+* **Latence :** 0.5-5 secondes / OCR (dépend de la puissance GPU client)
+* **Métriques :** CER (Character Error Rate) de **2.90%** et WER (Word Error Rate) de **9.2%**.
+* **Avantage :** Excellente gestion des déformations de texte et des styles de bulles variés.
+
+> **Note :** Ce modèle spécifique a été entraîné sur des bulles de One Piece. Des modèles spécialisés pour d'autres licences majeures seront intégrés ultérieurement pour garantir une précision optimale sur chaque style graphique.
 
 ### **YOLO V8 Fine-tuned (Détection)**
-Ce modèle spécialisé (`Remidesbois/YoloPiece_BubbleDetector`) détecte instantanément les bulles de dialogue sur la page avant l'OCR.
+Détecte instantanément les zones de texte sur la planche avant le passage de l'OCR.
 * **Architecture :** YOLOv8/11 Medium exporté en ONNX.
 * **Exécution :** WebGPU (via ONNX Runtime Web).
-* **Entraînement :** Fine-tuned sur 1500 planches anotées manuellement.
-* **Performance :** mAP50 de 0.97, capable d'ignorer les cases et de ne capturer que le texte.
+* **Performance :** mAP50 de 0.97, capable d'isoler le texte du dessin de fond.
+
+> **Note :** Comme le modèle d'OCR, le détecteur de bulles a été principalement entraîné sur One Piece. Ses résultats restent pertinents sur d'autres mangas, mais des modèles spécialisés par oeuvre sont prévus.
 
 ### **Google Gemini 2.5 Flash-Lite (Cloud)**
-Ce modèle est utilisé en alternative à Florence-2 pour les utilisateurs ne disposant pas d'une carte graphique compatible WebGPU.
+Alternative à TrOCR pour les configurations ne supportant pas WebGPU.
 * **Coût :** ~0,00004 $ / OCR
-* **Latence :** 1-2 secondes / OCR
-* **Qualité :** 99% de précision : Gemini est excellent pour l'OCR des bulles.
+* **Qualité :** Précision quasi-parfaite (99%) grâce à la compréhension contextuelle du LLM.
 
-
-### **Éditeur de Métadonnées Avancé**
-* **Toggle JSON/Formulaire :** Interface flexible pour l'édition des descriptions.
-* **Génération de descriptions adaptées :** Utilisation de Gemini-3-Flash pour générer des descriptions denses en mots-clés et contextuelles à partir de l'image.
-* **Coût :** 0,00328 $ / description
-* **Latence :** 4-8 secondes / description
-* **Glossaire Intelligent :** Correction automatique des noms propres via un glossaire intégré.
+> **Note :** C'est grâce à la précision exceptionnelle de Gemini que j'ai pu générer un corpus de données d'entraînement suffisant et fiable. Ce processus de "distillation" a permis d'entraîner le modèle TrOCR local pour qu'il atteigne des performances proches du cloud sans en supporter les coûts récurrents.
 
 ---
 
@@ -110,11 +105,23 @@ Ce modèle est utilisé en alternative à Florence-2 pour les utilisateurs ne di
 
 Le projet est conçu avec une approche **FinOps** pour maintenir un coût de fonctionnement minimal (≈ 4.50 € / mois).
 
-* **Watermarking Dynamique :** Les images originales sont protégées par un watermark automatique pour les utilisateurs non connectés, pour décourager l'utilisation du site comme une plateforme de lecture illégale.
-* **Pas de Rétention de Clés :** Les clés API Google des utilisateurs sont stockées uniquement dans leur navigateur (LocalStorage).
-* **Architecture Serverless-First :** Déportation maximale de l'intelligence artificielle côté client.
+* **Watermarking dynamique :** Protection automatique des visuels pour encourager l'achat des œuvres originales.
+* **Confidentialité des clés :** Les clés API personnelles restent dans le LocalStorage de l'utilisateur.
+* **Edge Computing :** Déportation maximale de la charge d'inférence IA sur le matériel de l'utilisateur final.
 
 ---
+
+## **Pipeline de Fine-Tuning continu (MLOps)**
+
+Le projet inclut un système d'amélioration continue du modèle d'OCR pour s'adapter dynamiquement aux nouvelles données indexées.
+
+### **Automatisation Docker**
+Un script dédié est disponible dans le répertoire `/script_docker` pour lancer un container Docker optimisé pour l'entraînement :
+* **Extraction :** Récupère automatiquement les dernières bulles validées depuis la base de données Supabase.
+* **Fine-Tuning :** Lance un entraînement incrémental du modèle **TrOCR** sur les nouvelles données.
+* **Publication :** Une fois l'entraînement terminé et les métriques validées (CER/WER), le modèle est automatiquement poussé vers le **Hugging Face Hub** (`Remidesbois/trocr-onepiece-fr`).
+
+Cette approche permet au projet de gagner en précision au fur et à mesure que la communauté valide ou corrige les transcriptions via l'interface d'édition.
 
 ## **Installation et Configuration**
 
@@ -126,22 +133,21 @@ SUPABASE_SERVICE_ROLE_KEY=...
 R2_ACCESS_KEY_ID=...
 R2_SECRET_ACCESS_KEY=...
 R2_BUCKET_NAME=...
-LANGUAGETOOL_URL=...
-SEARCH_PROMPT="..." # Prompt expert pour le reranking
-GOOGLE_API_KEY=... # Clé API globale pour la recherche sémantique (mode invité)
+SEARCH_PROMPT="..." 
+GOOGLE_API_KEY=...
 ```
 
-> [!TIP]
-> Si vous restreignez votre `GOOGLE_API_KEY` par IP, utilisez l'adresse IP publique de votre serveur backend (et non celle de Cloudflare), car les requêtes vers l'API Gemini sont émises directement par le serveur Node.js.
-
 ### **Variables d'environnement Frontend (`frontend/.env.local`)**
+
 ```env
 VITE_BACKEND_URL=http://localhost:3001/api
 VITE_SUPABASE_URL=...
 VITE_SUPABASE_ANON_KEY=...
+
 ```
 
 ### **Démarrage**
+
 ```bash
 # Backend
 cd backend && npm install && npm run dev
@@ -152,5 +158,7 @@ cd frontend && npm install && npm run dev
 
 ---
 
-## **Contributeurs**
-Développé avec passion pour la communauté One Piece. Toute contribution ou retour sur l'exactitude de l'OCR est la bienvenue !
+## **Remerciements Spéciaux**
+
+Un immense merci à **Chip Huyen** pour son ouvrage **"AI Engineering"**. La lecture de son livre a été une source d'inspiration majeure et a fourni des clés méthodologiques essentielles pour l'orchestration, l'optimisation des performances et la mise en place de l'infrastructure hybride de ce projet.
+> *AI Engineering by Chip Huyen (O’Reilly). Copyright 2025 Developer Experience Advisory LLC, 978-1-098-16630-4.*
