@@ -78,7 +78,8 @@ L'extraction de texte repose sur une architecture conçue pour minimiser les co�
 Ce modèle spécialisé (`Remidesbois/trocr-onepiece-fr`) est optimisé pour le français et particulièrement les polices d'écriture de One Piece.
 * **Coût :** 0 $ / OCR
 * **Latence :** 0.5-5 secondes / OCR (dépend de la puissance GPU client)
-* **Métriques :** CER (Character Error Rate) de **2.90%** et WER (Word Error Rate) de **9.2%**.
+* **Métriques :** CER (Character Error Rate) de **2.90%** et WER (Word Error Rate) de **9.2%**. 
+* **Post-traitement :** Modification regex automatique du résultat OCR pour atteindre un résultat final de : **1.31%** de CER et **3.71%** de WER.
 * **Avantage :** Excellente gestion des déformations de texte et des styles de bulles variés.
 
 > **Note :** Ce modèle spécifique a été entraîné sur des bulles de One Piece. Des modèles spécialisés pour d'autres licences majeures seront intégrés ultérieurement pour garantir une précision optimale sur chaque style graphique.

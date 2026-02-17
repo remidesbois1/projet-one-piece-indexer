@@ -10,11 +10,22 @@ let tokenizer = null;
 const MODEL_ID = 'Remidesbois/trocr-onepiece-fr';
 
 function fixFrenchPunctuation(text) {
-    text = text.replace(/\s+([!?;:])/g, ' $1');
-    text = text.replace(/([^\s])([!?;:])/g, '$1 $2');
-    text = text.replace(/([!?])\s+([!?])/g, '$1$2');
-    text = text.replace(/\s+/g, ' ');
-    return text.trim();
+    if (!text) return "";
+
+    // post-treatment
+
+    text = text.replace(/"/g, '');
+    text = text.replace(/’/g, "'");
+    text = text.replace(/([^\s!?;:])([!?;:])/g, '$1 $2');
+    text = text.replace(/([.,!?:;])(?=[a-zA-Z])/g, '$1 ');
+    text = text.replace(/\bI'\b/g, "l'");
+    text = text.replace(/\bI\b/g, "Il");
+    text = text.replace(/([?!])\s+(\1)/g, '$1$1');
+    text = text.replace(/([?!])\s+(\1)/g, '$1$1');
+    text = text.replace(/\? !/g, '?!').replace(/! \?/g, '!?');
+    text = text.replace(/\s+/g, ' ').trim();
+
+    return text;
 }
 
 self.addEventListener('message', async (event) => {
