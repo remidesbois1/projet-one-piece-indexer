@@ -18,14 +18,14 @@ Le projet est accessible publiquement à l'adresse suivante (accès invité pour
 * **Framework :** React 19 / Next.js & Vite.
 * **OCR Local :** **TrOCR Fine-tuned** (Remidesbois/trocr-onepiece-fr) exécuté via WebGPU (@xenova/transformers) directement dans le navigateur.
 * **Détection de Bulles Locale :** **YOLO V8 Medium Fine-tuned** (Remidesbois/YoloPiece_BubbleDetector) exécuté via WebGPU pour une détection ultra-précise et rapide directement dans le navigateur.
-* **Reranking Local :** **mxbai-rerank-base-v1** (Mixedbread AI) via WebGPU pour une pertinence de recherche maximale sans coût serveur.
+
 * **State Management :** Context API & LocalStorage (persistance locale des clés API utilisateur).
 
 ### **Backend & Services**
 
 * **Serveur API :** Node.js / Express.
 * **Base de Données :** Supabase (PostgreSQL) avec l'extension **pgvector** pour la recherche vectorielle.
-* **LLM & Embeddings :** Google Gemini 2.5 Flash-Lite & gemini-embedding-001.
+* **LLM & Embeddings :** Google Gemini 2.5 Flash-Lite & Voyage AI (voyage-4-large).
 
 ---
 
@@ -38,12 +38,11 @@ L'indexer propose deux expériences de recherche :
 * Indexation précise au niveau de chaque bulle de dialogue.
 
 ### **2. Recherche Sémantique & Conceptuelle**
-* **Vecteurs :** Conversion des requêtes en vecteurs via Gemini Embeddings et comparaison cosinus avec les vecteurs stockés dans la base de données.
-* **Mode Invité :** La recherche sémantique est accessible à tous via une clé d'API serveur. Le **Reranking Local** (WebGPU) est également disponible pour les invités, tandis que le **Reranking Cloud** (Gemini) nécessite de renseigner sa propre clé d'API Google.
+* **Vecteurs :** Conversion des requêtes en vecteurs via Voyage AI (voyage-4-large) et comparaison cosinus avec les vecteurs stockés dans la base de données.
+* **Mode Invité :** La recherche sémantique est accessible à tous. Le reranking est effectué côté serveur via Voyage AI pour une précision optimale.
 * **Filtrage Multicritère :** Possibilité de filtrer par titres, arcs narratifs, personnages identifiés et numéros de volumes.
-* **Reranking Hybride :**
-    * **Cloud :** Utilisation de Gemini 2.5 Flash Lite pour trier les résultats selon le contexte exact.
-    * **Local :** Utilisation du modèle Mixedbread via WebGPU pour le reranking des résultats gratuitement.
+* **Reranking :**
+    * **Cloud :** Utilisation du modèle **rerank-2.5** de Voyage AI pour réordonner les résultats sémantiques avec une grande précision.
 
 ### **3. Système de Feedback**
 * Thumbs Up/Down sur chaque résultat de recherche pour collecter des données de pertinence.
@@ -135,6 +134,7 @@ R2_SECRET_ACCESS_KEY=...
 R2_BUCKET_NAME=...
 SEARCH_PROMPT="..." 
 GOOGLE_API_KEY=...
+VOYAGE_API_KEY=...
 ```
 
 ### **Variables d'environnement Frontend (`frontend/.env.local`)**

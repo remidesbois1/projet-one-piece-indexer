@@ -1,12 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const { supabase, supabaseAdmin } = require('../config/supabaseClient');
-const { GoogleGenerativeAI } = require("@google/generative-ai");
 
-const AI_MODEL_KEYS = ['model_ocr', 'model_reranking', 'model_description'];
+const { generateVoyageEmbedding, rerankVoyage } = require('../utils/voyageClient');
+
+const AI_MODEL_KEYS = ['model_ocr', 'model_description'];
 const DEFAULT_MODELS = {
     model_ocr: 'gemini-2.5-flash-lite',
-    model_reranking: 'gemini-2.5-flash-lite',
     model_description: 'gemini-3-flash-preview'
 };
 let aiModelsCache = null;
@@ -28,10 +28,6 @@ async function getAiModels() {
 router.get('/', async (req, res) => {
     const { q, page = 1, limit = 10, mode = 'keyword', characters, arc, tome, rerank } = req.query;
     const shouldRerank = rerank === 'true';
-    const userApiKey = req.headers['x-google-api-key'];
-    const serverApiKey = process.env.GOOGLE_API_KEY;
-    const effectiveApiKey = userApiKey || serverApiKey;
-    const isGuest = !userApiKey && !!serverApiKey;
 
     if (!q || q.length < 2) return res.status(400).json({ error: "Recherche trop courte" });
 
@@ -54,16 +50,13 @@ router.get('/', async (req, res) => {
     const filterTome = tome && tome !== '' ? parseInt(tome) : null;
 
     try {
-        if (mode === 'semantic' && effectiveApiKey) {
-            const genAI = new GoogleGenerativeAI(effectiveApiKey);
-            const embedModel = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
-
-            const { embedding } = await embedModel.embedContent(q);
+        if (mode === 'semantic') {
+            const embedding = await generateVoyageEmbedding(q, "query");
 
             let query = supabase
                 .from('pages')
-                .select('id, url_image, description, numero_page, embedding, id_chapitre, chapitres(numero, id_tome, tomes(numero, mangas!inner(slug)))') // [MODIFY] Joined mangas
-                .not('embedding', 'is', null);
+                .select('id, url_image, description, numero_page, embedding_voyage, id_chapitre, chapitres(numero, id_tome, tomes(numero, mangas!inner(slug)))') // [MODIFY] Joined mangas
+                .not('embedding_voyage', 'is', null);
 
             const { data: allPages, error: pagesError } = await query;
             if (pagesError) throw pagesError;
@@ -73,14 +66,13 @@ router.get('/', async (req, res) => {
                 url_image: page.url_image,
                 description: page.description,
                 numero_page: page.numero_page,
-                embedding: page.embedding,
+                embedding: page.embedding_voyage,
                 chapitre_numero: page.chapitres?.numero,
                 tome_numero: page.chapitres?.tomes?.numero,
                 id_tome: page.chapitres?.id_tome,
-                manga_slug: page.chapitres?.tomes?.mangas?.slug // [NEW]
+                manga_slug: page.chapitres?.tomes?.mangas?.slug
             }));
 
-            // [NEW] Filter by manga slug
             const filterManga = req.query.manga;
             if (filterManga) {
                 filteredPages = filteredPages.filter(page => page.manga_slug === filterManga);
@@ -124,7 +116,7 @@ router.get('/', async (req, res) => {
                 return res.json({ results: [], totalCount: 0 });
             }
 
-            const candidatesQueryLimit = shouldRerank ? 10 : parseInt(limit);
+            const candidatesQueryLimit = shouldRerank ? Math.max(50, parseInt(limit)) : parseInt(limit);
 
             const calculateCosineSimilarity = (vec1, vec2) => {
                 let dotProduct = 0;
@@ -138,31 +130,33 @@ router.get('/', async (req, res) => {
                 return dotProduct / (Math.sqrt(norm1) * Math.sqrt(norm2));
             };
 
-            const candidates = filteredPages
+            const allCandidates = filteredPages
                 .map(page => {
                     let pageEmbedding = page.embedding;
                     if (typeof pageEmbedding === 'string') {
                         try {
                             pageEmbedding = JSON.parse(pageEmbedding);
                         } catch (e) {
-                            console.error('[ERROR] Failed to parse embedding for page', page.id);
                             return null;
                         }
                     }
 
-                    const similarity = calculateCosineSimilarity(embedding.values, pageEmbedding);
+                    const similarity = calculateCosineSimilarity(embedding, pageEmbedding);
                     return {
                         ...page,
                         similarity
                     };
                 })
-                .filter(page => page !== null && page.similarity >= 0.60)
-                .sort((a, b) => b.similarity - a.similarity)
+                .filter(p => p !== null)
+                .sort((a, b) => b.similarity - a.similarity);
+
+            const candidates = allCandidates
+                .filter(page => page !== null && page.similarity >= 0.45)
                 .slice(0, candidatesQueryLimit);
 
             if (!candidates?.length) return res.json({ results: [], totalCount: 0 });
 
-            if (!shouldRerank || isGuest) {
+            if (!shouldRerank) {
                 finalResults = candidates.map(c => {
                     let snippet = c.description;
                     try {
@@ -183,13 +177,7 @@ router.get('/', async (req, res) => {
                 });
                 totalCount = finalResults.length;
             } else {
-                const aiModels = await getAiModels();
-                const rerankModel = genAI.getGenerativeModel({
-                    model: aiModels.model_reranking,
-                    generationConfig: { responseMimeType: "application/json" }
-                });
-
-                const candidatesForAI = candidates.map(c => {
+                const documents = candidates.map(c => {
                     let desc = c.description;
                     try {
                         if (typeof desc === 'string') desc = JSON.parse(desc);
@@ -199,20 +187,18 @@ router.get('/', async (req, res) => {
                         ? `${desc.content || ""} (Persos: ${desc.metadata?.characters?.join(', ')})`
                         : String(desc);
 
-                    return { id: c.id, text: content.substring(0, 400) };
+                    return content;
                 });
-
-                const promptTemplate = process.env.SEARCH_PROMPT;
-
-                const prompt = promptTemplate
-                    .replace('{{query}}', q)
-                    .replace('{{candidates}}', JSON.stringify(candidatesForAI));
 
                 let scores = [];
                 try {
-                    const result = await rerankModel.generateContent(prompt);
-                    scores = JSON.parse(result.response.text());
+                    const results = await rerankVoyage(q, documents);
+                    scores = results.map(r => ({
+                        i: candidates[r.index].id,
+                        s: r.relevance_score * 100
+                    }));
                 } catch (err) {
+                    console.error("Voyage rerank error, falling back to vector similarity:", err);
                     scores = candidates.map(c => ({ i: c.id, s: c.similarity * 100 }));
                 }
 
@@ -237,7 +223,7 @@ router.get('/', async (req, res) => {
                         similarity: finalScore / 100
                     };
                 })
-                    .filter(r => r.scores.ai >= 75)
+                    .filter(r => r.scores.ai >= 80)
                     .sort((a, b) => b.scores.ai - a.scores.ai)
                     .slice(0, parseInt(limit));
 
@@ -253,12 +239,10 @@ router.get('/', async (req, res) => {
 
             let filteredData = data || [];
 
-            // [NEW] Filter by Manga (for keyword search)
             const filterManga = req.query.manga;
             if (filterManga) {
                 const pageIds = filteredData.map(b => b.page_id);
                 if (pageIds.length > 0) {
-                    // We need to fetch the manga slug for these pages to filter
                     const { data: pagesMangaData, error: mangaError } = await supabase
                         .from('pages')
                         .select('id, chapitres!inner(tomes!inner(mangas!inner(slug)))')

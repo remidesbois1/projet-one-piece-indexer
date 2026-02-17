@@ -17,13 +17,7 @@ const MODEL_ROLES = [
         icon: Eye,
         color: 'blue'
     },
-    {
-        key: 'model_reranking',
-        label: 'Reranking',
-        description: 'Réordonnancement intelligent des résultats de recherche.',
-        icon: Sparkles,
-        color: 'amber'
-    },
+
     {
         key: 'model_description',
         label: 'Description de page',
@@ -74,7 +68,6 @@ export default function AiModelManager() {
             const res = await checkAiModelsAvailability();
             setAvailability(res.data);
         } catch {
-            // silently fail
         } finally {
             setCheckingAvailability(false);
         }
@@ -82,7 +75,7 @@ export default function AiModelManager() {
 
     const hasChanges = models && draft && (
         models.model_ocr !== draft.model_ocr ||
-        models.model_reranking !== draft.model_reranking ||
+
         models.model_description !== draft.model_description
     );
 

@@ -10,32 +10,12 @@ const { supabaseAdmin } = require('../config/supabaseClient');
 
 
 
-const generateEmbedding = async (text, apiKey) => {
-    try {
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
-
-        const result = await model.embedContent(text);
-        return result.embedding.values;
-    } catch (error) {
-        console.error("[Embedding Error]", error.message);
-        throw error;
-    }
-};
-
-
+const { generateVoyageEmbedding } = require('../utils/voyageClient');
 
 
 
 router.post('/page-description', authMiddleware, async (req, res) => {
     const { id_page, description } = req.body;
-    const userApiKey = req.headers['x-google-api-key'];
-    const serverApiKey = process.env.GOOGLE_API_KEY;
-    const effectiveApiKey = userApiKey || serverApiKey;
-
-    if (!effectiveApiKey) {
-        return res.status(400).json({ error: 'Clé API Google manquante (serveur et client).' });
-    }
 
     if (!id_page || !description) {
         return res.status(400).json({ error: 'Données manquantes (id_page ou description).' });
@@ -55,19 +35,19 @@ router.post('/page-description', authMiddleware, async (req, res) => {
         }
 
         console.log(`[Embedding] Génération pour la page ${id_page}...`);
-        const embeddingVector = await generateEmbedding(textToEmbed, effectiveApiKey);
+        const embeddingVector = await generateVoyageEmbedding(textToEmbed, "document");
 
         const { error } = await supabaseAdmin
             .from('pages')
             .update({
                 description: description,
-                embedding: embeddingVector
+                embedding_voyage: embeddingVector
             })
             .eq('id', id_page);
 
         if (error) throw error;
 
-        res.status(200).json({ success: true, message: "Description et vecteurs mis à jour." });
+        res.status(200).json({ success: true, message: "Description et vecteurs (Voyage) mis à jour." });
 
     } catch (error) {
         console.error("Erreur sauvegarde description:", error);

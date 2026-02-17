@@ -2,7 +2,7 @@
 
 import { AuthProvider } from '@/context/AuthContext';
 import { WorkerProvider } from '@/context/WorkerContext';
-import { RerankProvider } from '@/context/RerankContext';
+
 import { DetectionProvider } from '@/context/DetectionContext';
 
 export function Providers({ children }) {
@@ -10,9 +10,7 @@ export function Providers({ children }) {
         <AuthProvider>
             <WorkerProvider>
                 <DetectionProvider>
-                    <RerankProvider>
-                        {children}
-                    </RerankProvider>
+                    {children}
                 </DetectionProvider>
             </WorkerProvider>
         </AuthProvider>

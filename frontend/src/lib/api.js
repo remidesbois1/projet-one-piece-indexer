@@ -10,7 +10,6 @@ apiClient.interceptors.request.use(async (config) => {
     const token = session?.access_token;
     let googleApiKey = null;
     if (typeof window !== 'undefined') {
-        googleApiKey = localStorage.getItem('google_api_key');
 
         const pathSegments = window.location.pathname.split('/');
         const possibleSlug = pathSegments[1];
@@ -24,9 +23,7 @@ apiClient.interceptors.request.use(async (config) => {
     if (token) {
         config.headers.Authorization = `Bearer ${token}`;
     }
-    if (googleApiKey) {
-        config.headers['x-google-api-key'] = googleApiKey;
-    }
+
     return config;
 });
 

@@ -29,7 +29,6 @@ function setCachedModels(models) {
 
 const DEFAULT_MODELS = {
     model_ocr: 'gemini-2.5-flash-lite',
-    model_reranking: 'gemini-2.5-flash-lite',
     model_description: 'gemini-3-flash-preview'
 };
 
@@ -153,75 +152,4 @@ export async function generatePageDescription(imageSource, apiKey) {
     }
 }
 
-export async function rerankSearchResults(results, query, apiKey) {
-    if (!apiKey) throw new Error("Clé API manquante");
-    if (!results || results.length === 0) return [];
 
-    const config = await getAiModelConfig();
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: config.model_reranking });
-
-    const documents = results.map((r) => ({
-        id: r.id,
-        content: r.content,
-        context: r.context
-    }));
-
-    const prompt = `
-    Expert One Piece. Score les candidats pour : "${query}"
-
-Règles de notation AGRESSIVES (Polarise les résultats) :
-
-90-100 (L'ÉLU) : Personnage + Action exacts.
-
-70-85 (PROCHE) : Très forte ressemblance thématique.
-
-45-60 (DOUTE) : Lien partiel ou incertain.
-
-<40 (SANCTION) : Mauvaise action (max 30), mauvais personnage (max 20), ou simple décor (0).
-
-Instruction : Isole l'élu du bruit. Sois impitoyable sur les erreurs de personnage/action. Output : UNIQUEMENT un JSON minifié [{"i":id,"s":score}]. Aucune prose.
-
-Candidats : ${JSON.stringify(documents)}
-    `;
-
-    try {
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        const text = response.text();
-
-        const jsonStr = text.replace(/```json/g, '').replace(/```/g, '').trim();
-
-        let rankedIds;
-        try {
-            rankedIds = JSON.parse(jsonStr);
-        } catch (e) {
-            console.error("Failed to parse Gemini rerank response:", text);
-            return results;
-        }
-
-        if (!Array.isArray(rankedIds)) return results;
-
-        const sortedResults = [];
-        const resultMap = new Map(results.map(r => [r.id, r]));
-
-        rankedIds.forEach(id => {
-            if (resultMap.has(id)) {
-                sortedResults.push(resultMap.get(id));
-                resultMap.delete(id);
-            }
-        });
-
-        resultMap.forEach(item => sortedResults.push(item));
-
-        return sortedResults;
-
-    } catch (error) {
-        if (error.message?.includes('429') || error.message?.includes('quota') || error.toString().includes('429')) {
-            throw new Error("QUOTA_EXCEEDED");
-        }
-
-        console.error("Gemini Rerank Error:", error);
-        return results;
-    }
-}

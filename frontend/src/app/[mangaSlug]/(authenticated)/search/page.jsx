@@ -3,8 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { searchBubbles, getMetadataSuggestions, getTomes, submitSearchFeedback } from '@/lib/api';
 import { getProxiedImageUrl, cn } from '@/lib/utils';
-import { rerankSearchResults } from '@/lib/geminiClient';
-import { useRerankWorker } from '@/context/RerankContext';
+
 import { useDebounce } from '@/hooks/useDebounce';
 import { useAuth } from '@/context/AuthContext';
 import Link from 'next/link';
@@ -18,15 +17,15 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
 
-import ApiKeyForm from '@/components/ApiKeyForm';
 
-import { Search, X, Loader2, Sparkles, BookOpen, MapPin, Quote, Info, ArrowRight, Settings, Filter, XCircle, Check, Cpu, Download } from "lucide-react";
+
+import { Search, X, Loader2, Sparkles, BookOpen, MapPin, Quote, Info, ArrowRight, Settings, Filter, XCircle, Check } from "lucide-react";
 
 const RESULTS_PER_PAGE = 24;
 
@@ -92,15 +91,13 @@ export default function SearchPage() {
     const [hasMore, setHasMore] = useState(false);
 
     const [useSemantic, setUseSemantic] = useState(false);
-    const [useRerank, setUseRerank] = useState(false);
-    const [rerankProvider, setRerankProvider] = useState('gemini');
-    const [hasApiKey, setHasApiKey] = useState(false);
-    const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+
+
 
     // Track which items have received feedback to prevent duplicates
     const [feedbackGiven, setFeedbackGiven] = useState({});
 
-    const { rerank: rerankLocal, loadModel: loadRerankModel, modelStatus: rerankStatus, downloadProgress: rerankProgress } = useRerankWorker();
+
 
     const [selectedCharacters, setSelectedCharacters] = useState([]);
     const [selectedArc, setSelectedArc] = useState('all');
@@ -117,11 +114,7 @@ export default function SearchPage() {
     const inputRef = useRef(null);
 
     useEffect(() => {
-        if (typeof window !== 'undefined') {
-            const key = localStorage.getItem('google_api_key');
-            setHasApiKey(!!key);
-            if (key) setUseSemantic(false);
-        }
+
         if (inputRef.current) inputRef.current.focus();
 
         const fetchMetadata = async () => {
@@ -140,19 +133,11 @@ export default function SearchPage() {
         fetchMetadata();
     }, []);
 
-    const handleSaveApiKey = (key) => {
-        if (typeof window !== 'undefined') {
-            localStorage.setItem('google_api_key', key);
-            setHasApiKey(true);
-        }
-        setShowApiKeyModal(false);
-        setUseSemantic(true);
-        setTimeout(() => inputRef.current?.focus(), 100);
-    };
+
 
     useEffect(() => {
         if (useSemantic) return;
-        if (useRerank) return;
+
 
         if (debouncedQuery.trim().length >= 2) {
             setPage(1);
@@ -161,7 +146,7 @@ export default function SearchPage() {
             setResults([]);
             setTotalCount(0);
         }
-    }, [debouncedQuery, useSemantic, useRerank, selectedCharacters, selectedArc, selectedTome]);
+    }, [debouncedQuery, useSemantic, selectedCharacters, selectedArc, selectedTome]);
 
     const handleManualSearch = () => {
         if (query.trim().length < 2) return;
@@ -191,45 +176,25 @@ export default function SearchPage() {
                 arc: selectedArc !== 'all' ? selectedArc : '',
                 tome: selectedTome !== 'all' ? selectedTome : ''
             };
-            const isBackendRerank = useRerank && rerankProvider === 'gemini' && hasApiKey;
-            const isLocalRerank = useRerank && rerankProvider === 'local' && rerankStatus === 'ready';
-
-            const fetchLimit = useRerank ? 10 : RESULTS_PER_PAGE;
-
             const response = await searchBubbles(
                 searchTerm,
                 pageToFetch,
-                fetchLimit,
+                RESULTS_PER_PAGE,
                 useSemantic ? 'semantic' : 'keyword',
                 filters,
-                isBackendRerank
+                useSemantic // semantic mode now implies rerank
             );
 
             let newResults = response.data.results;
             const total = response.data.totalCount;
 
-            // Only perform local reranking if requested and backend didn't already handle reranking
-            if (isLocalRerank && newResults.length > 0 && pageToFetch === 1) {
-                try {
-                    const rankedItems = await rerankLocal(searchTerm, newResults);
-                    newResults = rankedItems
-                        .filter(item => item.score > 0.70)
-                        .map(item => ({
-                            ...item.doc,
-                            similarity: item.score,
-                            type: 'semantic'
-                        }));
-                } catch (e) {
-                    console.error("Local Reranking failed", e);
-                    toast.error("Erreur Reranking Local", { description: e.message });
-                }
-            }
+
 
 
 
             setResults(prev => isNewSearch ? newResults : [...prev, ...newResults]);
 
-            if (useRerank && pageToFetch === 1) {
+            if (useSemantic && pageToFetch === 1) {
                 setTotalCount(newResults.length);
                 setHasMore(false);
             } else {
@@ -264,7 +229,7 @@ export default function SearchPage() {
                 doc_id: item.id,
                 doc_text: item.content,
                 is_relevant: isRelevant,
-                model_provider: rerankProvider
+                model_provider: 'voyage'
             });
 
             setFeedbackGiven(prev => ({ ...prev, [item.id]: true }));
@@ -351,89 +316,7 @@ export default function SearchPage() {
                                         className="data-[state=checked]:bg-indigo-600"
                                     />
                                 </div>
-
-                                <div className="hidden sm:block w-px h-6 bg-slate-300 mx-2" />
-                                <Separator className="sm:hidden bg-slate-200" />
-
-                                <div className="flex items-center justify-between sm:justify-start space-x-3 px-3 py-2 sm:py-0">
-                                    <Label
-                                        htmlFor="rerank-mode"
-                                        className={cn(
-                                            "font-bold cursor-pointer select-none flex items-center gap-2 text-xs sm:text-sm",
-                                            !useSemantic ? "text-slate-400" : "text-slate-700"
-                                        )}
-                                    >
-                                        <div className={cn("p-1.5 rounded-lg transition-colors", useRerank ? "bg-amber-100 text-amber-600" : "bg-slate-200 text-slate-400")}>
-                                            <Settings className="h-3.5 w-3.5" />
-                                        </div>
-                                        Amélioration IA (Rerank)
-                                    </Label>
-                                    <Switch
-                                        id="rerank-mode"
-                                        checked={useRerank}
-                                        onCheckedChange={(checked) => {
-                                            setUseRerank(checked);
-                                            if (checked && !hasApiKey) setRerankProvider('local');
-                                        }}
-                                        disabled={!useSemantic}
-                                        className="data-[state=checked]:bg-amber-600"
-                                    />
-                                </div>
                             </div>
-
-                            {/* RERANK OPTIONS (Provider Selector) */}
-                            {useRerank && (
-                                <div className="flex flex-col sm:flex-row items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
-                                    <div className="flex bg-slate-200/50 rounded-xl p-1 border border-slate-200 w-full sm:w-auto">
-                                        <button
-                                            onClick={() => setRerankProvider('gemini')}
-                                            disabled={!hasApiKey}
-                                            className={cn(
-                                                "flex-1 sm:flex-none px-4 py-1.5 text-xs font-bold rounded-lg transition-all",
-                                                rerankProvider === 'gemini' ? "bg-white text-indigo-700 shadow-sm" : "text-slate-500 hover:text-slate-700",
-                                                !hasApiKey && "opacity-40 cursor-not-allowed"
-                                            )}
-                                        >
-                                            Gemini (Cloud)
-                                        </button>
-                                        <button
-                                            onClick={() => setRerankProvider('local')}
-                                            className={cn(
-                                                "flex-1 sm:flex-none px-4 py-1.5 text-xs font-bold rounded-lg transition-all",
-                                                rerankProvider === 'local' ? "bg-white text-emerald-700 shadow-sm" : "text-slate-500 hover:text-slate-700"
-                                            )}
-                                        >
-                                            Mixedbread (Local)
-                                        </button>
-                                    </div>
-
-                                    {rerankProvider === 'local' && (
-                                        <div className="flex items-center gap-2 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100">
-                                            {rerankStatus === 'idle' && (
-                                                <Button size="sm" variant="ghost" onClick={loadRerankModel} className="h-6 text-[10px] uppercase tracking-wider font-bold text-emerald-700 p-0 hover:bg-transparent">
-                                                    <Download className="h-3 w-3 mr-1.5" /> Charger IA Locale
-                                                </Button>
-                                            )}
-                                            {rerankStatus === 'loading' && (
-                                                <div className="flex items-center gap-3">
-                                                    <div className="h-1.5 w-20 bg-emerald-100 rounded-full overflow-hidden">
-                                                        <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${rerankProgress}%` }} />
-                                                    </div>
-                                                    <span className="text-[10px] font-bold text-emerald-600">{rerankProgress}%</span>
-                                                </div>
-                                            )}
-                                            {rerankStatus === 'ready' && (
-                                                <div className="flex items-center gap-1.5 text-emerald-700 text-[10px] font-bold uppercase tracking-wider">
-                                                    <Cpu className="h-3 w-3" /> IA Locale Prête
-                                                </div>
-                                            )}
-                                            {rerankStatus === 'error' && (
-                                                <Badge variant="destructive" className="text-[10px] py-0 h-5 px-1.5 font-bold">Erreur</Badge>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
                         </div>
 
                         {/* DESCRIPTIVE TEXTS */}
@@ -454,26 +337,11 @@ export default function SearchPage() {
                                 </div>
                             )}
 
-                            {useRerank && (
-                                <div className="animate-in fade-in slide-in-from-top-1 duration-300 flex items-center gap-3 text-xs text-amber-800 bg-amber-50/50 px-4 py-2.5 rounded-xl border border-amber-100 shadow-sm text-left">
-                                    <Sparkles className="h-4 w-4 flex-shrink-0 text-amber-500" />
-                                    <p>
-                                        <strong>Reranking :</strong> Les résultats sont ré-évalués un par un par une IA pour une précision maximale.
-                                    </p>
-                                </div>
-                            )}
+
                         </div>
                     </div>
 
-                    {!hasApiKey && (
-                        <button
-                            onClick={() => setShowApiKeyModal(true)}
-                            className="text-xs text-amber-700 bg-amber-50 hover:bg-amber-100 hover:text-amber-800 transition-colors inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-amber-200 cursor-pointer shadow-sm"
-                        >
-                            <Settings className="h-3 w-3" />
-                            Clé API absente : Reranking Cloud (Gemini) désactivé. Utilisez le Reranking Local.
-                        </button>
-                    )}
+
                 </div>
 
                 {/* === FILTRES MULTICRITÈRES === */}
@@ -640,8 +508,7 @@ export default function SearchPage() {
                     <div className="mb-6 flex items-baseline gap-2 text-slate-500 border-b border-slate-200 pb-2">
                         <span className="text-xl font-bold text-slate-900">{totalCount}</span>
                         <span>résultats trouvés</span>
-                        {useSemantic && <Badge variant="secondary" className="ml-2 text-[10px] bg-indigo-100 text-indigo-700 hover:bg-indigo-200">Sémantique</Badge>}
-                        {useRerank && <Badge variant="secondary" className="ml-2 text-[10px] bg-amber-100 text-amber-700 hover:bg-amber-200">Reranked by {rerankProvider === 'gemini' ? 'Gemini' : 'Mixedbread'}</Badge>}
+                        {useSemantic && <Badge variant="secondary" className="ml-2 text-[10px] bg-indigo-100 text-indigo-700 hover:bg-indigo-200">Sémantique (Rerank)</Badge>}
                     </div>
                 )}
 
@@ -715,7 +582,7 @@ export default function SearchPage() {
                                             )}
                                         </div>
 
-                                        {useRerank && (
+                                        {useSemantic && (
                                             <div className="w-full flex items-center justify-end gap-3 pt-2 border-t border-slate-200/60 mt-2" onClick={(e) => e.preventDefault()}>
                                                 {feedbackGiven[item.id] ? (
                                                     <div className="flex items-center gap-1.5 text-xs text-emerald-600 font-medium">
@@ -751,61 +618,57 @@ export default function SearchPage() {
                 </div>
 
                 {/* --- LOADING & EMPTY --- */}
-                {isLoading && (
-                    <div className="flex flex-col items-center justify-center py-20 gap-3">
-                        <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
-                        <p className="text-slate-500 text-sm font-medium animate-pulse">
-                            {useSemantic ? "L'IA analyse les concepts..." : "Recherche dans les archives..."}
-                        </p>
-                    </div>
-                )}
-
-                {!isLoading && results.length === 0 && query.length >= 2 && (
-                    <div className="flex flex-col items-center justify-center py-20 text-center max-w-md mx-auto">
-                        <div className="bg-slate-100 p-4 rounded-full mb-4">
-                            <BookOpen className="h-8 w-8 text-slate-400" />
+                {
+                    isLoading && (
+                        <div className="flex flex-col items-center justify-center py-20 gap-3">
+                            <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
+                            <p className="text-slate-500 text-sm font-medium animate-pulse">
+                                {useSemantic ? "L'IA analyse les concepts..." : "Recherche dans les archives..."}
+                            </p>
                         </div>
-                        <h3 className="text-lg font-semibold text-slate-900 mb-2">Aucun résultat trouvé</h3>
-                        <p className="text-slate-500 text-sm mb-6">
-                            Nous n'avons rien trouvé pour "{query}".
-                            {!useSemantic && " Essayez d'activer la recherche sémantique pour une recherche plus conceptuelle."}
-                        </p>
-                        {!useSemantic && (
-                            <Button onClick={() => setUseSemantic(true)} variant="outline" className="border-indigo-200 text-indigo-600 hover:bg-indigo-50">
-                                <Sparkles className="h-4 w-4 mr-2" />
-                                Activer la recherche sémantique
+                    )
+                }
+
+                {
+                    !isLoading && results.length === 0 && query.length >= 2 && (
+                        <div className="flex flex-col items-center justify-center py-20 text-center max-w-md mx-auto">
+                            <div className="bg-slate-100 p-4 rounded-full mb-4">
+                                <BookOpen className="h-8 w-8 text-slate-400" />
+                            </div>
+                            <h3 className="text-lg font-semibold text-slate-900 mb-2">Aucun résultat trouvé</h3>
+                            <p className="text-slate-500 text-sm mb-6">
+                                Nous n'avons rien trouvé pour "{query}".
+                                {!useSemantic && " Essayez d'activer la recherche sémantique pour une recherche plus conceptuelle."}
+                            </p>
+                            {!useSemantic && (
+                                <Button onClick={() => setUseSemantic(true)} variant="outline" className="border-indigo-200 text-indigo-600 hover:bg-indigo-50">
+                                    <Sparkles className="h-4 w-4 mr-2" />
+                                    Activer la recherche sémantique
+                                </Button>
+                            )}
+                        </div>
+                    )
+                }
+
+                {
+                    !isLoading && hasMore && (
+                        <div className="flex justify-center pt-8 pb-12">
+                            <Button
+                                variant="outline"
+                                onClick={loadMore}
+                                className="group min-w-[150px] shadow-sm hover:border-indigo-300 hover:text-indigo-600 transition-all"
+                            >
+                                Charger la suite
+                                <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
                             </Button>
-                        )}
-                    </div>
-                )}
+                        </div>
+                    )
+                }
+            </div >
 
-                {!isLoading && hasMore && (
-                    <div className="flex justify-center pt-8 pb-12">
-                        <Button
-                            variant="outline"
-                            onClick={loadMore}
-                            className="group min-w-[150px] shadow-sm hover:border-indigo-300 hover:text-indigo-600 transition-all"
-                        >
-                            Charger la suite
-                            <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
-                        </Button>
-                    </div>
-                )}
-            </div>
 
-            {/* --- MODALE API KEY --- */}
-            <Dialog open={showApiKeyModal} onOpenChange={setShowApiKeyModal}>
-                <DialogContent className="sm:max-w-md">
-                    <DialogHeader>
-                        <DialogTitle>Configuration API IA</DialogTitle>
-                        <DialogDescription>
-                            Ajoutez votre clé pour activer la recherche sémantique.
-                        </DialogDescription>
-                    </DialogHeader>
-                    <ApiKeyForm onSave={handleSaveApiKey} />
-                </DialogContent>
-            </Dialog>
-        </div>
+
+        </div >
     );
 }
 
