@@ -22,19 +22,48 @@ router.post('/page-description', authMiddleware, async (req, res) => {
     }
 
     try {
+        const { data: glossaryData } = await supabaseAdmin.from('glossary').select('*');
+        const glossaryDict = glossaryData || [];
+
         let textToEmbed = "";
+        let jsonDesc = description;
+
         if (typeof description === 'string') {
             try {
-                const jsonDesc = JSON.parse(description);
-                textToEmbed = `${jsonDesc.content || ""} ${(jsonDesc.metadata?.characters || []).join(" ")} ${jsonDesc.metadata?.arc || ""}`;
+                jsonDesc = JSON.parse(description);
             } catch (e) {
-                textToEmbed = description;
+                return res.status(400).json({ error: "Invalid JSON description format." });
             }
-        } else {
-            textToEmbed = `${description.content || ""} ${(description.metadata?.characters || []).join(" ")} ${description.metadata?.arc || ""}`;
         }
 
-        console.log(`[Embedding] Génération pour la page ${id_page}...`);
+        if (typeof jsonDesc !== 'object' || jsonDesc === null) {
+            return res.status(400).json({ error: "Description must be a valid JSON object." });
+        }
+
+        const charactersList = jsonDesc.metadata?.characters || [];
+        const arc = jsonDesc.metadata?.arc || "";
+
+        let enrichedKeywords = new Set();
+
+        charactersList.forEach(charName => {
+            if (!charName) return;
+            const lowerChar = charName.toLowerCase().trim();
+
+            const entry = glossaryData.find(g =>
+                g.aliases && g.aliases.some(alias => alias.toLowerCase() === lowerChar)
+            );
+
+            if (entry && Array.isArray(entry.aliases)) {
+                entry.aliases.forEach(a => enrichedKeywords.add(a));
+            }
+        });
+
+        const keywordsString = Array.from(enrichedKeywords).join(" ");
+        const charactersString = charactersList.join(" ");
+
+        textToEmbed = `${jsonDesc.content || ""} ${charactersString} ${arc} ${keywordsString}`;
+
+        console.log(`[Embedding] Génération pour la page ${id_page}... (Texte enrichi de ${Math.round(textToEmbed.length)} chars)`);
         const embeddingVector = await generateVoyageEmbedding(textToEmbed, "document");
 
         const { error } = await supabaseAdmin

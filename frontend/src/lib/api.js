@@ -92,8 +92,9 @@ export const getLandingStats = () => apiClient.get('/stats/landing');
 export const getTopContributors = () => apiClient.get('/stats/top-contributors');
 
 export const getGlossary = () => apiClient.get('/glossary');
-export const addGlossaryWord = (word) => apiClient.post('/glossary', { word });
-export const deleteGlossaryWord = (word) => apiClient.delete(`/glossary/${encodeURIComponent(word)}`);
+export const addGlossaryEntry = (aliases) => apiClient.post('/glossary', { aliases });
+export const updateGlossaryEntry = (id, aliases) => apiClient.put(`/glossary/${id}`, { aliases });
+export const deleteGlossaryEntry = (id) => apiClient.delete(`/glossary/${id}`);
 
 export const getBubbleHistory = (id) => apiClient.get(`/bulles/${id}/history`);
 export const getAdminHierarchy = () => apiClient.get('/admin/hierarchy');
