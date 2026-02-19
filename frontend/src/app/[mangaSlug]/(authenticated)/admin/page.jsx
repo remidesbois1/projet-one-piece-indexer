@@ -15,13 +15,17 @@ import {
     Settings2,
     Image as ImageIcon,
     Languages,
-    Cpu
+    Cpu,
+    Upload
 } from "lucide-react";
 
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useParams } from 'next/navigation';
+import Link from 'next/link';
+import { Button } from "@/components/ui/button";
 
 export default function AdminDashboard() {
     const searchParams = useSearchParams();
+    const params = useParams();
     const currentTab = searchParams.get('tab') || 'content';
 
     return (
@@ -71,6 +75,24 @@ export default function AdminDashboard() {
                         <AddTomeForm />
                         <div className="h-px bg-slate-200 mx-4" />
                         <AddChapterForm />
+                        <div className="h-px bg-slate-200 mx-4" />
+                        <div className="flex items-center justify-between rounded-xl bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-200 p-6">
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                                    <Upload className="h-5 w-5 text-indigo-600" />
+                                    Upload Tome complet
+                                </h3>
+                                <p className="text-sm text-slate-500 mt-1">
+                                    Importez un CBZ, organisez les pages et assignez-les à des chapitres.
+                                </p>
+                            </div>
+                            <Link href={`/${params.mangaSlug}/admin/upload-tome`}>
+                                <Button className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg">
+                                    <Upload className="h-4 w-4 mr-2" />
+                                    Ouvrir
+                                </Button>
+                            </Link>
+                        </div>
                     </TabsContent>
 
                     <TabsContent value="covers" className="m-0 p-8 outline-none">

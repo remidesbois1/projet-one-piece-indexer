@@ -115,3 +115,9 @@ export const updateAiModels = (models) => apiClient.put('/admin/ai-models', mode
 export const getPublicAiModels = () => apiClient.get('/admin/ai-models/public');
 export const getAvailableAiModels = () => apiClient.get('/admin/ai-models/available');
 export const checkAiModelsAvailability = () => apiClient.get('/admin/ai-models/check-availability');
+
+export const uploadPageToR2 = (formData) => apiClient.post('/admin/upload/page', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 60000,
+});
+export const batchCreatePages = (data) => apiClient.post('/admin/tomes/batch-pages', data);

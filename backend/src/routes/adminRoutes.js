@@ -579,5 +579,84 @@ router.get('/ai-models/check-availability', authMiddleware, roleCheck(['Admin'])
   }
 });
 
+router.post('/upload/page', authMiddleware, roleCheck(['Admin']), upload.single('file'), async (req, res) => {
+  const { key } = req.body;
+  const file = req.file;
+
+  if (!key || !file) {
+    if (file && fs.existsSync(file.path)) fs.unlinkSync(file.path);
+    return res.status(400).json({ error: "key et file sont requis." });
+  }
+
+  try {
+    const fileBuffer = fs.readFileSync(file.path);
+    const contentType = file.mimetype || 'image/avif';
+
+    await s3Client.send(new PutObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: key,
+      Body: fileBuffer,
+      ContentType: contentType,
+      CacheControl: 'public, max-age=31536000',
+    }));
+
+    const publicUrl = `${PUBLIC_URL_BASE}/${key}`;
+    res.json({ url: publicUrl });
+  } catch (error) {
+    console.error("Erreur upload page:", error);
+    res.status(500).json({ error: "Erreur upload vers R2." });
+  } finally {
+    if (file && fs.existsSync(file.path)) fs.unlinkSync(file.path);
+  }
+});
+
+router.post('/tomes/batch-pages', authMiddleware, roleCheck(['Admin']), express.json({ limit: '10mb' }), async (req, res) => {
+  const { tome_id, chapters } = req.body;
+
+  if (!tome_id || !chapters || !Array.isArray(chapters) || chapters.length === 0) {
+    return res.status(400).json({ error: "tome_id et chapters sont requis." });
+  }
+
+  try {
+    const results = [];
+
+    for (const chapter of chapters) {
+      const { data: newChap, error: chapError } = await supabaseAdmin
+        .from('chapitres')
+        .insert({ id_tome: tome_id, numero: parseInt(chapter.numero), titre: chapter.titre })
+        .select()
+        .single();
+
+      if (chapError) {
+        if (chapError.code === '23505') {
+          results.push({ numero: chapter.numero, error: `Le chapitre ${chapter.numero} existe déjà.` });
+          continue;
+        }
+        throw chapError;
+      }
+
+      const pagesToInsert = chapter.pages.map(p => ({
+        id_chapitre: newChap.id,
+        numero_page: p.numero_page,
+        url_image: p.url_image,
+        statut: 'not_started'
+      }));
+
+      const { error: pagesError } = await supabaseAdmin
+        .from('pages')
+        .insert(pagesToInsert);
+
+      if (pagesError) throw pagesError;
+
+      results.push({ numero: chapter.numero, id: newChap.id, pages: pagesToInsert.length });
+    }
+
+    res.status(201).json({ message: "Batch créé avec succès.", results });
+  } catch (error) {
+    console.error("Erreur batch-pages:", error);
+    res.status(500).json({ error: "Erreur lors de la création batch.", details: error.message });
+  }
+});
+
 module.exports = router;
 
