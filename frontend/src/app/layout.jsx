@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "One Piece Indexer",
-  description: "Indexer for One Piece pages",
+  title: "Projet Poneglyph",
+  description: "Indexer for Mangas",
   icons: {
     icon: [
       { url: '/favicon.ico' },

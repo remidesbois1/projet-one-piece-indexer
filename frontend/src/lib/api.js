@@ -121,3 +121,5 @@ export const uploadPageToR2 = (formData) => apiClient.post('/admin/upload/page',
     timeout: 60000,
 });
 export const batchCreatePages = (data) => apiClient.post('/admin/tomes/batch-pages', data);
+export const getAllMangas = () => apiClient.get('/admin/mangas/all');
+export const toggleMangaEnabled = (id) => apiClient.patch(`/admin/mangas/${id}/toggle`);

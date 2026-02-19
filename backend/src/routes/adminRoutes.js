@@ -52,6 +52,22 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage: storage });
 
+router.get('/mangas/all', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+  const { data, error } = await supabaseAdmin.from('mangas').select('*').order('titre');
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
+router.patch('/mangas/:id/toggle', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+  const { id } = req.params;
+  const { data: manga, error: fetchErr } = await supabaseAdmin.from('mangas').select('enabled').eq('id', id).single();
+  if (fetchErr || !manga) return res.status(404).json({ error: "Manga introuvable." });
+
+  const { data, error } = await supabaseAdmin.from('mangas').update({ enabled: !manga.enabled }).eq('id', id).select().single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
 router.post('/tomes', authMiddleware, roleCheck(['Admin']), async (req, res) => {
   const { numero, titre } = req.body;
   let { manga } = req.query;

@@ -29,6 +29,7 @@ export function MangaProvider({ children }) {
                 .from('mangas')
                 .select('*')
                 .eq('slug', slug)
+                .eq('enabled', true)
                 .single();
 
             if (error || !data) {

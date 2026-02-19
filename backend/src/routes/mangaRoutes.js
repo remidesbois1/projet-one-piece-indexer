@@ -8,6 +8,7 @@ router.get('/', async (req, res) => {
         const { data, error } = await supabase
             .from('mangas')
             .select('*')
+            .eq('enabled', true)
             .order('titre', { ascending: true });
 
         if (error) throw error;
@@ -27,6 +28,7 @@ router.get('/:slug', async (req, res) => {
             .from('mangas')
             .select('*')
             .eq('slug', slug)
+            .eq('enabled', true)
             .single();
 
         if (error) throw error;

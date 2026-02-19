@@ -1,6 +1,6 @@
 "use client";
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import AddTomeForm from '@/components/AddTomeForm';
 import AddChapterForm from '@/components/AddChapterForm';
 import GlossaryManager from '@/components/GlossaryManager';
@@ -8,25 +8,52 @@ import IpBanManager from '@/components/IpBanManager';
 import CoverManager from '@/components/CoverManager';
 import AiModelManager from '@/components/AiModelManager';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
 import {
-    BookPlus,
     Library,
     ShieldAlert,
-    Settings2,
     Image as ImageIcon,
     Languages,
     Cpu,
-    Upload
+    Upload,
+    BookOpen,
+    Eye,
+    EyeOff
 } from "lucide-react";
 
 import { useSearchParams, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from "@/components/ui/button";
+import { getAllMangas, toggleMangaEnabled } from '@/lib/api';
 
 export default function AdminDashboard() {
     const searchParams = useSearchParams();
     const params = useParams();
     const currentTab = searchParams.get('tab') || 'content';
+
+    const [mangas, setMangas] = useState([]);
+    const [mangasLoading, setMangasLoading] = useState(false);
+    const [togglingId, setTogglingId] = useState(null);
+
+    useEffect(() => {
+        if (currentTab === 'mangas') {
+            setMangasLoading(true);
+            getAllMangas().then(({ data }) => setMangas(data || [])).finally(() => setMangasLoading(false));
+        }
+    }, [currentTab]);
+
+    const handleToggle = async (id) => {
+        setTogglingId(id);
+        try {
+            const { data } = await toggleMangaEnabled(id);
+            setMangas(prev => prev.map(m => m.id === id ? data : m));
+        } catch (e) {
+            console.error("Toggle error:", e);
+        } finally {
+            setTogglingId(null);
+        }
+    };
 
     return (
         <div className="container max-w-5xl mx-auto py-10 px-4 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -46,10 +73,14 @@ export default function AdminDashboard() {
                 window.history.pushState(null, '', `?${params.toString()}`);
             }} className="w-full">
                 <div className="sticky top-0 z-20 bg-white pt-2 pb-6">
-                    <TabsList className="grid w-full grid-cols-2 lg:grid-cols-5 h-auto p-1 bg-slate-100/80 border border-slate-200">
+                    <TabsList className="grid w-full grid-cols-2 lg:grid-cols-6 h-auto p-1 bg-slate-100/80 border border-slate-200">
                         <TabsTrigger value="content" className="py-3 px-4 data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all focus-visible:ring-0">
                             <Library className="h-4 w-4 mr-2" />
                             <span className="font-medium">Bibliothèque</span>
+                        </TabsTrigger>
+                        <TabsTrigger value="mangas" className="py-3 px-4 data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all focus-visible:ring-0">
+                            <BookOpen className="h-4 w-4 mr-2" />
+                            <span className="font-medium">Mangas</span>
                         </TabsTrigger>
                         <TabsTrigger value="covers" className="py-3 px-4 data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all focus-visible:ring-0">
                             <ImageIcon className="h-4 w-4 mr-2" />
@@ -93,6 +124,58 @@ export default function AdminDashboard() {
                                 </Button>
                             </Link>
                         </div>
+                    </TabsContent>
+
+                    <TabsContent value="mangas" className="m-0 p-8 outline-none">
+                        <Card className="border-slate-200">
+                            <CardHeader>
+                                <CardTitle className="flex items-center gap-2">
+                                    <BookOpen className="h-5 w-5 text-indigo-600" />
+                                    Visibilité des Mangas
+                                </CardTitle>
+                                <CardDescription>
+                                    Activez ou désactivez les mangas. Un manga désactivé est invisible pour les utilisateurs.
+                                </CardDescription>
+                            </CardHeader>
+                            <CardContent className="space-y-2">
+                                {mangasLoading ? (
+                                    <div className="flex justify-center py-8">
+                                        <div className="h-6 w-6 animate-spin border-2 border-slate-200 border-t-indigo-600 rounded-full" />
+                                    </div>
+                                ) : mangas.length === 0 ? (
+                                    <p className="text-sm text-slate-500 text-center py-4">Aucun manga trouvé.</p>
+                                ) : (
+                                    mangas.map(manga => (
+                                        <div key={manga.id} className={`flex items-center justify-between p-4 rounded-xl border transition-all ${manga.enabled ? 'border-slate-200 bg-white' : 'border-red-100 bg-red-50/50'}`}>
+                                            <div className="flex items-center gap-3">
+                                                {manga.cover_url ? (
+                                                    <img src={manga.cover_url} alt={manga.titre} className="h-12 w-9 object-cover rounded-md border border-slate-200" />
+                                                ) : (
+                                                    <div className="h-12 w-9 rounded-md bg-slate-100 flex items-center justify-center">
+                                                        <BookOpen className="h-4 w-4 text-slate-400" />
+                                                    </div>
+                                                )}
+                                                <div>
+                                                    <p className="font-semibold text-slate-900">{manga.titre}</p>
+                                                    <p className="text-xs text-slate-500">/{manga.slug}</p>
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                                <span className={`text-xs font-medium flex items-center gap-1 ${manga.enabled ? 'text-emerald-600' : 'text-red-500'}`}>
+                                                    {manga.enabled ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                                                    {manga.enabled ? 'Visible' : 'Masqué'}
+                                                </span>
+                                                <Switch
+                                                    checked={manga.enabled}
+                                                    disabled={togglingId === manga.id}
+                                                    onCheckedChange={() => handleToggle(manga.id)}
+                                                />
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </CardContent>
+                        </Card>
                     </TabsContent>
 
                     <TabsContent value="covers" className="m-0 p-8 outline-none">

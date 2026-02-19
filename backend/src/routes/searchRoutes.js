@@ -25,6 +25,39 @@ async function getAiModels() {
     return models;
 }
 
+let glossaryCache = null;
+let glossaryCacheTime = 0;
+
+async function getGlossary() {
+    const now = Date.now();
+    if (glossaryCache && (now - glossaryCacheTime) < CACHE_TTL * 5) return glossaryCache;
+    const { data } = await supabase.from('glossary').select('aliases');
+    glossaryCache = (data || []).map(r => r.aliases).filter(a => Array.isArray(a) && a.length > 1);
+    glossaryCacheTime = now;
+    return glossaryCache;
+}
+
+async function enrichQueryWithGlossary(query) {
+    const glossary = await getGlossary();
+    const words = query.split(/\s+/);
+    const result = [];
+
+    for (const word of words) {
+        result.push(word);
+        const lower = word.toLowerCase();
+        for (const group of glossary) {
+            if (group.some(alias => alias.toLowerCase() === lower)) {
+                group.forEach(alias => {
+                    if (alias.toLowerCase() !== lower) result.push(alias);
+                });
+                break;
+            }
+        }
+    }
+
+    return result.join(' ');
+}
+
 router.get('/', async (req, res) => {
     const { q, page = 1, limit = 10, mode = 'keyword', characters, arc, tome, rerank } = req.query;
     const shouldRerank = rerank === 'true';
@@ -51,110 +84,51 @@ router.get('/', async (req, res) => {
 
     try {
         if (mode === 'semantic') {
-            const embedding = await generateVoyageEmbedding(q, "query");
-
-            let query = supabase
-                .from('pages')
-                .select('id, url_image, description, numero_page, embedding_voyage, id_chapitre, chapitres(numero, id_tome, tomes(numero, mangas!inner(slug)))') // [MODIFY] Joined mangas
-                .not('embedding_voyage', 'is', null);
-
-            const { data: allPages, error: pagesError } = await query;
-            if (pagesError) throw pagesError;
-
-            let filteredPages = allPages.map(page => ({
-                id: page.id,
-                url_image: page.url_image,
-                description: page.description,
-                numero_page: page.numero_page,
-                embedding: page.embedding_voyage,
-                chapitre_numero: page.chapitres?.numero,
-                tome_numero: page.chapitres?.tomes?.numero,
-                id_tome: page.chapitres?.id_tome,
-                manga_slug: page.chapitres?.tomes?.mangas?.slug
-            }));
-
+            const enrichedQuery = await enrichQueryWithGlossary(q);
+            const embedding = await generateVoyageEmbedding(enrichedQuery, "query");
+            const candidatesQueryLimit = shouldRerank ? Math.max(50, parseInt(limit)) : parseInt(limit);
             const filterManga = req.query.manga;
+
+            const { data: matchedPages, error: matchError } = await supabase.rpc('match_pages', {
+                query_embedding: embedding,
+                match_threshold: 0.30,
+                match_count: 200,
+            });
+            if (matchError) throw matchError;
+
+            let filteredPages = matchedPages || [];
+
             if (filterManga) {
-                filteredPages = filteredPages.filter(page => page.manga_slug === filterManga);
+                filteredPages = filteredPages.filter(p => p.manga_slug === filterManga);
             }
-
             if (filterTome) {
-                filteredPages = filteredPages.filter(page => page.tome_numero === filterTome);
+                filteredPages = filteredPages.filter(p => p.tome_numero === filterTome);
             }
-
             if (filterCharacters || filterArc) {
                 filteredPages = filteredPages.filter(page => {
                     let desc = page.description;
                     try {
                         if (typeof desc === 'string') desc = JSON.parse(desc);
-                    } catch (e) {
-                        return false;
-                    }
-
+                    } catch (e) { return false; }
                     if (!desc?.metadata) return false;
 
                     if (filterCharacters && filterCharacters.length > 0) {
                         const pageChars = desc.metadata.characters || [];
-                        const hasCharacter = filterCharacters.some(char =>
+                        if (!filterCharacters.some(char =>
                             pageChars.some(pc => pc.toLowerCase().includes(char.toLowerCase()))
-                        );
-                        if (!hasCharacter) return false;
+                        )) return false;
                     }
-
                     if (filterArc) {
                         const pageArc = desc.metadata.arc || "";
-                        if (!pageArc.toLowerCase().includes(filterArc.toLowerCase())) {
-                            return false;
-                        }
+                        if (!pageArc.toLowerCase().includes(filterArc.toLowerCase())) return false;
                     }
-
                     return true;
                 });
             }
 
-            if (filteredPages.length === 0) {
-                return res.json({ results: [], totalCount: 0 });
-            }
+            const candidates = filteredPages.slice(0, candidatesQueryLimit);
 
-            const candidatesQueryLimit = shouldRerank ? Math.max(50, parseInt(limit)) : parseInt(limit);
-
-            const calculateCosineSimilarity = (vec1, vec2) => {
-                let dotProduct = 0;
-                let norm1 = 0;
-                let norm2 = 0;
-                for (let i = 0; i < vec1.length; i++) {
-                    dotProduct += vec1[i] * vec2[i];
-                    norm1 += vec1[i] * vec1[i];
-                    norm2 += vec2[i] * vec2[i];
-                }
-                return dotProduct / (Math.sqrt(norm1) * Math.sqrt(norm2));
-            };
-
-            const allCandidates = filteredPages
-                .map(page => {
-                    let pageEmbedding = page.embedding;
-                    if (typeof pageEmbedding === 'string') {
-                        try {
-                            pageEmbedding = JSON.parse(pageEmbedding);
-                        } catch (e) {
-                            return null;
-                        }
-                    }
-
-                    const similarity = calculateCosineSimilarity(embedding, pageEmbedding);
-                    return {
-                        ...page,
-                        similarity
-                    };
-                })
-                .filter(p => p !== null)
-                .sort((a, b) => b.similarity - a.similarity);
-
-            const candidates = allCandidates
-                .filter(page => page !== null && page.similarity >= 0.45)
-                .slice(0, candidatesQueryLimit);
-
-            if (!candidates?.length) return res.json({ results: [], totalCount: 0 });
+            if (!candidates.length) return res.json({ results: [], totalCount: 0 });
 
             if (!shouldRerank) {
                 finalResults = candidates.map(c => {
@@ -186,7 +160,6 @@ router.get('/', async (req, res) => {
                     const content = typeof desc === 'object'
                         ? `${desc.content || ""} (Persos: ${desc.metadata?.characters?.join(', ')})`
                         : String(desc);
-
                     return content;
                 });
 
@@ -223,7 +196,7 @@ router.get('/', async (req, res) => {
                         similarity: finalScore / 100
                     };
                 })
-                    .filter(r => r.scores.ai >= 80)
+                    .filter(r => r.scores.ai >= 70)
                     .sort((a, b) => b.scores.ai - a.scores.ai)
                     .slice(0, parseInt(limit));
 

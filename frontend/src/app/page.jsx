@@ -12,7 +12,7 @@ export default function LandingPage() {
     useEffect(() => {
         const fetchMangas = async () => {
             try {
-                const { data, error } = await supabase.from('mangas').select('*').order('titre');
+                const { data, error } = await supabase.from('mangas').select('*').eq('enabled', true).order('titre');
                 if (data) setMangas(data);
             } catch (e) {
                 console.error(e);
