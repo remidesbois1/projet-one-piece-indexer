@@ -8,6 +8,82 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 
+const PONEGLYPH_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+function generateSlots(count, seed = 0) {
+    const slots = [];
+    for (let i = 0; i < count; i++) {
+        const s = (seed + i) * 2654435761;
+        const hash = (v) => ((s * (v + 1)) >>> 0) / 4294967296;
+        slots.push({
+            x: 2 + hash(1) * 96,
+            y: 2 + hash(2) * 96,
+            size: 28 + Math.floor(hash(3) * 36),
+            rotate: Math.floor(hash(4) * 80) - 40,
+            char: PONEGLYPH_LETTERS[Math.floor(hash(5) * 26)],
+            opacity: 0,
+        });
+    }
+    return slots;
+}
+
+function PoneglyphGlyphs({ count = 20, seed = 0 }) {
+    const [glyphs, setGlyphs] = useState(() => generateSlots(count, seed));
+
+    useEffect(() => {
+        const timers = [];
+
+        glyphs.forEach((_, i) => {
+            const cycle = () => {
+                const delay = 500 + Math.random() * 3500;
+                const fadeIn = setTimeout(() => {
+                    setGlyphs(prev => prev.map((g, idx) =>
+                        idx === i ? { ...g, opacity: 1, char: PONEGLYPH_LETTERS[Math.floor(Math.random() * 26)] } : g
+                    ));
+                    const stayDuration = 2500 + Math.random() * 4500;
+                    const fadeOut = setTimeout(() => {
+                        setGlyphs(prev => prev.map((g, idx) =>
+                            idx === i ? { ...g, opacity: 0 } : g
+                        ));
+                        const nextTimer = setTimeout(cycle, 1000 + Math.random() * 2000);
+                        timers.push(nextTimer);
+                    }, stayDuration);
+                    timers.push(fadeOut);
+                }, delay);
+                timers.push(fadeIn);
+            };
+            cycle();
+        });
+
+        return () => timers.forEach(t => clearTimeout(t));
+    }, []);
+
+    return (
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            {glyphs.map((g, i) => (
+                <span
+                    key={i}
+                    className="absolute select-none"
+                    style={{
+                        fontFamily: "'Poneglyph', serif",
+                        fontSize: `${g.size}px`,
+                        left: `${g.x}%`,
+                        top: `${g.y}%`,
+                        transform: `rotate(${g.rotate}deg)`,
+                        opacity: g.opacity * 0.13,
+                        transition: 'opacity 2.5s ease-in-out',
+                        color: '#2F7AAF',
+                        lineHeight: 1,
+                    }}
+                >
+                    {g.char}
+                </span>
+            ))}
+        </div>
+    );
+}
+
+
 function useInView(ref, options = {}) {
     const [isInView, setIsInView] = useState(false);
     useEffect(() => {
@@ -29,7 +105,7 @@ function FeatureCard({ icon: Icon, title, description, delay, badge, details }) 
     return (
         <div
             ref={ref}
-            className="group relative bg-white rounded-2xl border border-slate-200 p-6 transition-all duration-500 hover:shadow-lg hover:shadow-indigo-100/50 hover:-translate-y-1"
+            className="group relative bg-white rounded-2xl border border-slate-200 p-6 transition-all duration-500 hover:shadow-lg hover:shadow-[#2F7AAF]/10 hover:-translate-y-1"
             style={{
                 opacity: isInView ? 1 : 0,
                 transform: isInView ? 'translateY(0)' : 'translateY(30px)',
@@ -37,12 +113,12 @@ function FeatureCard({ icon: Icon, title, description, delay, badge, details }) 
             }}
         >
             <div className="flex items-start gap-4 mb-3">
-                <div className="h-11 w-11 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0 group-hover:bg-indigo-100 transition-colors duration-300">
-                    <Icon className="h-5 w-5 text-indigo-600" />
+                <div className="h-11 w-11 rounded-xl bg-[#2F7AAF]/10 flex items-center justify-center shrink-0 group-hover:bg-[#2F7AAF]/15 transition-colors duration-300">
+                    <Icon className="h-5 w-5 text-[#2F7AAF]" />
                 </div>
                 <div>
                     <h3 className="text-base font-semibold text-slate-900">{title}</h3>
-                    {badge && <span className="inline-block mt-1 px-2 py-0.5 text-[11px] font-medium rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100">{badge}</span>}
+                    {badge && <span className="inline-block mt-1 px-2 py-0.5 text-[11px] font-medium rounded-full bg-[#2F7AAF]/10 text-[#2F7AAF] border border-[#2F7AAF]/20">{badge}</span>}
                 </div>
             </div>
             <p className="text-sm text-slate-500 leading-relaxed mb-3">{description}</p>
@@ -71,7 +147,7 @@ function StatItem({ value, label, delay }) {
                 transition: `opacity 0.5s ${delay}ms, transform 0.5s ${delay}ms`,
             }}
         >
-            <div className="text-3xl md:text-4xl font-bold text-indigo-600 mb-1">{value}</div>
+            <div className="text-3xl md:text-4xl font-bold text-[#2F7AAF] mb-1">{value}</div>
             <div className="text-sm text-slate-500">{label}</div>
         </div>
     );
@@ -88,7 +164,7 @@ function MangaCard({ manga, index }) {
     return (
         <Link href={`/${manga.slug}/dashboard`} className="group block">
             <div
-                className="bg-white rounded-2xl overflow-hidden border border-slate-200 shadow-sm hover:shadow-xl hover:shadow-indigo-100/40 transition-all duration-500 hover:-translate-y-1.5 h-full flex flex-col"
+                className="bg-white rounded-2xl overflow-hidden border border-slate-200 shadow-sm hover:shadow-xl hover:shadow-[#2F7AAF]/10 transition-all duration-500 hover:-translate-y-1.5 h-full flex flex-col"
                 style={{
                     opacity: isVisible ? 1 : 0,
                     transform: isVisible ? 'translateY(0)' : 'translateY(30px)',
@@ -116,7 +192,7 @@ function MangaCard({ manga, index }) {
                     <p className="text-slate-500 text-sm line-clamp-2 mb-4 flex-1 leading-relaxed">
                         {manga.description || "Aucune description disponible pour ce manga."}
                     </p>
-                    <div className="flex items-center text-indigo-600 text-sm font-medium group-hover:gap-2 transition-all duration-300">
+                    <div className="flex items-center text-[#2F7AAF] text-sm font-medium group-hover:gap-2 transition-all duration-300">
                         Explorer <ArrowRight className="ml-1.5 h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
                     </div>
                 </div>
@@ -176,26 +252,27 @@ export default function LandingPage() {
 
     return (
         <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
-            <header className="w-full border-b border-slate-200 bg-white/80 backdrop-blur-sm sticky top-0 z-50">
-                <div className="container mx-auto px-6 h-16 flex items-center justify-between max-w-7xl">
-                    <div className="flex items-center gap-3">
-                        <img src="/favicon-96x96.png" alt="Projet Poneglyph Logo" className="h-9 w-9" />
+            <header className="w-full border-b border-slate-200/80 bg-white/85 backdrop-blur-md sticky top-0 z-50">
+                <div className="container mx-auto px-6 h-14 flex items-center justify-between max-w-7xl">
+                    <a href="#" className="flex items-center gap-2.5 group">
+                        <img src="/favicon-96x96.png" alt="Logo" className="h-8 w-8 transition-transform duration-200 group-hover:scale-105" />
                         <span className="text-lg font-bold text-slate-900 tracking-tight">Projet Poneglyph</span>
-                    </div>
-                    <nav className="hidden md:flex items-center gap-8 text-sm text-slate-500">
-                        <a href="#features" className="hover:text-slate-900 transition-colors">Fonctionnalités</a>
-                        <a href="#mangas" className="hover:text-slate-900 transition-colors">Mangas</a>
-                        <a href="#about" className="hover:text-slate-900 transition-colors">À propos</a>
+                    </a>
+                    <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-500">
+                        <a href="#features" className="hover:text-slate-900 transition-colors duration-200">Fonctionnalités</a>
+                        <a href="#mangas" className="hover:text-slate-900 transition-colors duration-200">Mangas</a>
+                        <a href="#about" className="hover:text-slate-900 transition-colors duration-200">À propos</a>
                     </nav>
                 </div>
             </header>
 
             <section className="relative overflow-hidden">
                 <div className="absolute inset-0 -z-10">
-                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[600px] bg-indigo-100/40 rounded-full blur-3xl" />
-                    <div className="absolute top-20 right-0 w-[400px] h-[400px] bg-violet-100/30 rounded-full blur-3xl" />
+                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[600px] bg-[#2F7AAF]/10 rounded-full blur-3xl" />
+                    <div className="absolute top-20 right-0 w-[400px] h-[400px] bg-[#2F7AAF]/8 rounded-full blur-3xl" />
                     <div className="absolute top-40 left-0 w-[300px] h-[300px] bg-sky-100/30 rounded-full blur-3xl" />
                 </div>
+                <PoneglyphGlyphs />
 
                 <div
                     ref={heroRef}
@@ -206,27 +283,26 @@ export default function LandingPage() {
                         transition: 'opacity 0.7s, transform 0.7s',
                     }}
                 >
-                    <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-indigo-200 bg-indigo-50 text-indigo-700 text-xs font-medium mb-8">
+                    <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full border border-[#2F7AAF]/25 bg-[#2F7AAF]/8 text-[#2F7AAF] text-xs font-medium mb-8">
                         <span className="relative flex h-2 w-2">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75" />
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500" />
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#2F7AAF] opacity-75" />
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-[#2F7AAF]" />
                         </span>
-                        Projet open-source actif
+                        Projet Communautaire & Open-Source
                     </div>
 
                     <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight mb-6 leading-[1.1]">
-                        L'index sémantique
+                        Retrouvez la page
                         <br />
-                        <span className="text-indigo-600">de vos mangas</span>
+                        <span className="text-[#2F7AAF]">que vous cherchez</span>
                     </h1>
                     <p className="text-lg md:text-xl text-slate-500 max-w-2xl mx-auto mb-10 leading-relaxed">
-                        Recherche intelligente, OCR, indexation collaborative et bien plus.
-                        Retrouvez n'importe quelle scène en quelques mots.
+                        Une citation ? Un combat ? Un moment émouvant ? Décrivez ce que vous cherchez pour tomber pile sur la bonne page, sans avoir à feuilleter des dizaines de tomes.
                     </p>
 
                     <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
                         <a href="#mangas">
-                            <Button size="lg" className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 h-12 text-base shadow-lg shadow-indigo-200 cursor-pointer">
+                            <Button size="lg" className="bg-[#2F7AAF] hover:bg-[#2a6591] text-white px-8 h-12 text-base shadow-lg shadow-[#2F7AAF]/25 cursor-pointer">
                                 Explorer les mangas
                                 <ArrowRight className="ml-2 h-4 w-4" />
                             </Button>
@@ -259,20 +335,9 @@ export default function LandingPage() {
                 </div>
             </section>
 
-            <section className="py-16 bg-slate-50">
-                <div className="container mx-auto px-6 max-w-5xl">
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-8">
-                        <StatItem value="1.31%" label="CER (post-traitement)" delay={0} />
-                        <StatItem value="0.97" label="mAP50 détection" delay={80} />
-                        <StatItem value="0$" label="Coût OCR local" delay={160} />
-                        <StatItem value="~4.50€" label="Coût mensuel total" delay={240} />
-                        <StatItem value="2048d" label="Vecteurs Voyage AI" delay={320} />
-                    </div>
-                </div>
-            </section>
-
-            <section id="mangas" className="py-20">
-                <div className="container mx-auto px-6 max-w-6xl">
+            <section id="mangas" className="py-20 relative overflow-hidden">
+                <PoneglyphGlyphs count={14} seed={42} />
+                <div className="container mx-auto px-6 max-w-6xl relative z-10">
                     <div className="text-center mb-14">
                         <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-slate-900 mb-4">
                             Mangas disponibles
@@ -284,7 +349,7 @@ export default function LandingPage() {
 
                     {loading ? (
                         <div className="flex justify-center p-12">
-                            <div className="h-8 w-8 animate-spin border-4 border-slate-200 border-t-indigo-600 rounded-full" />
+                            <div className="h-8 w-8 animate-spin border-4 border-slate-200 border-t-[#2F7AAF] rounded-full" />
                         </div>
                     ) : (
                         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-7">
@@ -304,24 +369,27 @@ export default function LandingPage() {
 
             <section id="about" className="py-20 bg-white border-t border-slate-100">
                 <div className="container mx-auto px-6 max-w-4xl">
-                    <div className="bg-gradient-to-br from-indigo-50 via-white to-violet-50 rounded-3xl border border-indigo-100 p-10 md:p-14 text-center">
-                        <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-slate-900 mb-4">
-                            Un projet communautaire
-                        </h2>
-                        <p className="text-slate-500 max-w-2xl mx-auto mb-4 leading-relaxed">
-                            Projet Poneglyph est un outil open-source conçu pour les passionnés de manga.
-                            Grâce à l'intelligence artificielle et à la contribution de sa communauté,
-                            chaque page est transcrite, indexée et rendue recherchable.
-                        </p>
-                        <div className="flex items-start gap-3 text-left max-w-2xl mx-auto mt-6 p-4 rounded-xl bg-white/60 border border-slate-200">
-                            <ShieldCheck className="h-5 w-5 text-slate-400 shrink-0 mt-0.5" />
-                            <p className="text-slate-400 text-xs leading-relaxed">
-                                Ce projet est une démonstration technique à but éducatif et de recherche.
-                                Afin de respecter les droits d'auteur et prévenir toute utilisation à des fins de lecture illégale,
-                                les images accessibles publiquement sont systématiquement réduites en qualité et marquées d'un filigrane visible.
-                                Ces dégradations volontaires garantissent que l'expérience ne peut se substituer à l'achat
-                                et à la lecture de l'œuvre originale. Toutes les images restent la propriété de leurs ayants droit respectifs.
+                    <div className="relative rounded-3xl p-10 md:p-14 text-center overflow-hidden" style={{ background: 'linear-gradient(145deg, #1e293b, #0f172a)' }}>
+                        <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M30 5L45 20L30 35L15 20Z' fill='none' stroke='%23fff' stroke-width='0.5'/%3E%3Cpath d='M10 40L20 30L30 40L20 50Z' fill='none' stroke='%23fff' stroke-width='0.5'/%3E%3Cpath d='M40 45L50 35L55 45L50 55Z' fill='none' stroke='%23fff' stroke-width='0.5'/%3E%3C/svg%3E")`, backgroundSize: '60px 60px' }} />
+                        <div className="relative z-10">
+                            <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-white mb-4">
+                                Un projet communautaire
+                            </h2>
+                            <p className="text-slate-300 max-w-2xl mx-auto mb-6 leading-relaxed">
+                                Projet Poneglyph est un outil open-source conçu pour les passionnés de manga.
+                                Grâce à l'intelligence artificielle et à la contribution de sa communauté,
+                                chaque page est transcrite, indexée et rendue recherchable.
                             </p>
+                            <div className="flex items-start gap-3 text-left max-w-2xl mx-auto p-4 rounded-xl bg-white/5 border border-white/10">
+                                <ShieldCheck className="h-5 w-5 text-amber-400/70 shrink-0 mt-0.5" />
+                                <p className="text-slate-400 text-xs leading-relaxed">
+                                    Ce projet est une démonstration technique à but éducatif et de recherche.
+                                    Afin de respecter les droits d'auteur et prévenir toute utilisation à des fins de lecture illégale,
+                                    les images accessibles publiquement sont systématiquement réduites en qualité et marquées d'un filigrane visible.
+                                    Ces dégradations volontaires garantissent que l'expérience ne peut se substituer à l'achat
+                                    et à la lecture de l'œuvre originale. Toutes les images restent la propriété de leurs ayants droit respectifs.
+                                </p>
+                            </div>
                         </div>
                     </div>
                 </div>

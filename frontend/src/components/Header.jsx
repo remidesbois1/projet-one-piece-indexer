@@ -46,11 +46,9 @@ const Header = ({ onOpenApiKeyModal }) => {
 
     // Fonction utilitaire pour le style des liens
     const getLinkStyle = (path) => {
-        // [NEW] Adjust active check to ignore manga prefix for styling if needed, 
-        // or just check if pathname ends with path
         const fullPath = `/${mangaSlug}${path}`;
         const isActive = pathname === fullPath;
-        return `text-sm font-medium transition-colors hover:text-primary ${isActive ? "text-primary font-bold" : "text-slate-500"}`;
+        return `text-sm font-medium transition-colors duration-200 ${isActive ? "text-[#2F7AAF] font-semibold" : "text-slate-500 hover:text-slate-900"}`;
     };
 
     // Initiales pour l'avatar (ex: "john.doe@gmail.com" -> "JO")
@@ -65,17 +63,17 @@ const Header = ({ onOpenApiKeyModal }) => {
     if (!mangaSlug) return null; // Should not happen in authenticated layout
 
     return (
-        <header className="sticky top-0 z-50 w-full border-b border-slate-200 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
-            <div className="container mx-auto flex h-16 items-center justify-between px-4 sm:px-8 max-w-[1600px]">
+        <header className="sticky top-0 z-50 w-full border-b border-slate-200/80 bg-white/85 backdrop-blur-md">
+            <div className="container mx-auto flex h-14 items-center justify-between px-4 sm:px-8 max-w-[1600px]">
 
-                {/* LOGO */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2.5">
                     <Link
                         href={pathname === `/${mangaSlug}/dashboard` ? `/` : `/${mangaSlug}/dashboard`}
                         prefetch={false}
-                        className="flex items-center space-x-2"
+                        className="flex items-center gap-2.5 group"
                     >
-                        <span className="text-xl font-bold tracking-tight text-slate-900">
+                        <img src="/favicon-96x96.png" alt="Logo" className="h-8 w-8 transition-transform duration-200 group-hover:scale-105" />
+                        <span className="text-lg font-bold tracking-tight text-slate-900">
                             Projet Poneglyph
                         </span>
                     </Link>
@@ -224,7 +222,7 @@ const Header = ({ onOpenApiKeyModal }) => {
                                             <>
                                                 <p className="px-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 mt-6">Espace Travail</p>
                                                 <Link href={getHref('/my-submissions')} prefetch={false} className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-50 text-slate-700 font-medium transition-all group">
-                                                    <div className="p-1.5 bg-indigo-50 rounded border border-indigo-100 shadow-sm text-indigo-600 ">
+                                                    <div className="p-1.5 bg-[#2F7AAF]/10 rounded border border-[#2F7AAF]/20 shadow-sm text-[#2F7AAF]">
                                                         <FileText size={18} />
                                                     </div>
                                                     Mes Soumissions
