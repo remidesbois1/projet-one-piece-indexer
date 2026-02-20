@@ -92,6 +92,25 @@ export default function AnnotatePage() {
     const containerRef = useRef(null);
     const imageRef = useRef(null);
 
+    useEffect(() => {
+        const imgEl = imageRef.current;
+        if (!imgEl) return;
+
+        const observer = new ResizeObserver((entries) => {
+            const entry = entries[0];
+            if (entry && imgEl.naturalWidth) {
+                setImageDimensions({
+                    width: imgEl.offsetWidth,
+                    naturalWidth: imgEl.naturalWidth,
+                    naturalHeight: imgEl.naturalHeight
+                });
+            }
+        });
+
+        observer.observe(imgEl);
+        return () => observer.disconnect();
+    }, [pageId, page]);
+
     const [formData, setFormData] = useState({
         content: "",
         arc: "",
@@ -730,367 +749,375 @@ export default function AnnotatePage() {
     const canEdit = !isGuest && (page.statut === 'not_started' || page.statut === 'in_progress');
 
     return (
-        <div className="flex flex-col h-[calc(100vh-64px)] bg-slate-50">
-            <header className="flex-none h-auto min-h-16 border-b border-slate-200 bg-white px-4 sm:px-6 py-3 sm:py-0 flex flex-col lg:flex-row items-center justify-between z-20 shadow-sm gap-3 sm:gap-4 overflow-x-auto no-scrollbar">
-                <div className="flex items-center justify-between w-full lg:w-auto gap-4 shrink-0">
-                    <div className="flex items-center gap-2 sm:gap-4">
-                        <Link href={`/${mangaSlug}/dashboard`}>
-                            <Button variant="ghost" size="sm" className="h-8 px-2">
-                                <ArrowLeft className="h-4 w-4 sm:mr-2" />
-                                <span className="hidden sm:inline">Retour</span>
-                            </Button>
-                        </Link>
-                        <div className="h-6 w-px bg-slate-200 hidden sm:block" />
-                        <div className="flex flex-col sm:block">
-                            <h2 className="text-sm sm:text-lg font-bold text-slate-900 truncate max-w-[150px] sm:max-w-none">
-                                Tome {page.chapitres?.tomes?.numero} - Ch.{page.chapitres?.numero}
-                            </h2>
-                            <div className="flex items-center gap-2 text-[10px] sm:text-xs text-slate-500 font-mono">
-                                Page {page.numero_page}
-                                <Badge variant="outline" className="text-[9px] sm:text-[10px] px-1 py-0 h-3.5 sm:h-4 whitespace-nowrap">{page.statut}</Badge>
-                                {isMobile && (
-                                    <Badge variant="secondary" className="bg-amber-50 text-amber-700 border-amber-100 text-[9px] px-1 py-0 h-3.5 flex items-center gap-0.5">
-                                        <Shield size={8} /> Lecture seule
-                                    </Badge>
-                                )}
-                            </div>
-                        </div>
-                    </div>
+        <div className="flex flex-col lg:flex-row h-[calc(100vh-64px)] bg-slate-50 overflow-hidden -mx-4 sm:-mx-8 -my-6 relative">
 
-                    <div className="flex items-center gap-1">
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            disabled={!navContext.prev}
-                            onClick={goToPrev}
-                            title="Page précédente (←)"
-                        >
-                            <ChevronLeft className="h-5 w-5" />
-                        </Button>
-                        <span className="text-[10px] sm:text-xs font-medium text-slate-400 min-w-[40px] sm:min-w-[60px] text-center">
-                            {chapterPages.findIndex(p => p.id === parseInt(pageId)) + 1} / {chapterPages.length}
-                        </span>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            disabled={!navContext.next}
-                            onClick={goToNext}
-                            title="Page suivante (→)"
-                        >
-                            <ChevronRight className="h-5 w-5" />
-                        </Button>
+            {/* Colonne de navigation verticale (Desktop) */}
+            <div className="hidden lg:flex w-[280px] shrink-0 h-full flex-col border-r border-slate-200 bg-white z-40 relative shadow-sm">
+
+                {/* En-tête / Infos */}
+                <div className="p-4 border-b border-slate-100 flex-none space-y-4 z-10">
+                    <Link href={`/${mangaSlug}/dashboard`} className="inline-flex items-center text-[11px] font-bold text-slate-400 hover:text-slate-700 uppercase tracking-wider transition-colors">
+                        <ArrowLeft size={12} className="mr-2" />
+                        Retours
+                    </Link>
+
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <div className="flex items-baseline gap-1.5">
+                                <h2 className="text-xl font-black text-slate-900 tracking-tight">
+                                    Ch.{page.chapitres?.numero}
+                                </h2>
+                                <span className="text-xs font-bold text-slate-400">Vol.{page.chapitres?.tomes?.numero}</span>
+                            </div>
+                            <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mt-0.5">Page {page.numero_page} sur {chapterPages.length}</div>
+                        </div>
+                        <Badge variant="secondary" className="bg-slate-50 text-slate-600 border border-slate-200/60 font-bold px-2 py-0.5 text-[10px] uppercase tracking-wide">
+                            {page.statut.replace(/_/g, ' ')}
+                        </Badge>
                     </div>
                 </div>
 
-                {!isMobile && (
-                    <div className="flex items-center gap-3 ml-auto py-2 lg:py-0">
-                        {/* GROUP: AI MODELS (OCR & DETECTION) */}
-                        <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-lg border border-slate-100">
-                            {/* OCR Toggle */}
-                            <div className="flex items-center gap-2 px-2 border-r border-slate-200 pr-3">
-                                <Label htmlFor="ocr-mode" className="text-[10px] font-bold text-slate-400 cursor-pointer uppercase tracking-tight">
-                                    OCR: {preferLocalOCR ? "Local" : "Cloud"}
-                                </Label>
-                                <button
-                                    id="ocr-mode"
-                                    onClick={() => !isGuest && toggleOcrPreference()}
-                                    disabled={isGuest}
-                                    className={cn(
-                                        "relative inline-flex h-4 w-8 items-center rounded-full transition-colors",
-                                        preferLocalOCR ? "bg-emerald-500" : "bg-blue-500",
-                                        isGuest && "opacity-50 cursor-not-allowed"
-                                    )}
-                                >
-                                    <span className={cn(
-                                        "inline-block h-2.5 w-2.5 transform rounded-full bg-white transition-transform",
-                                        preferLocalOCR ? "translate-x-4.5" : "translate-x-1"
-                                    )} />
-                                </button>
+                {/* Content Block - Fixed items */}
+                <div className="flex-1 flex flex-col p-4 gap-3 overflow-hidden bg-slate-50/50">
+
+                    {/* Navigation Block */}
+                    <div className="flex-none p-3 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-2">
+                        <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-0.5">Navigation</h3>
+                        <div className="flex gap-2">
+                            <Button variant="outline" size="sm" disabled={!navContext.prev} onClick={goToPrev} className="flex-1 h-8 text-[11px] font-bold bg-white border-slate-200 hover:bg-slate-50 text-slate-600">
+                                <ChevronLeft size={14} className="mr-1" /> Préc
+                            </Button>
+                            <Button variant="outline" size="sm" disabled={!navContext.next} onClick={goToNext} className="flex-1 h-8 text-[11px] font-bold bg-white border-slate-200 hover:bg-slate-50 text-slate-600">
+                                Suiv <ChevronRight size={14} className="ml-1" />
+                            </Button>
+                        </div>
+                    </div>
+
+                    {/* Moteur OCR Block */}
+                    <div className="flex-none p-3 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-3">
+                        <div className="flex items-center justify-between pl-0.5">
+                            <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Moteur OCR</h3>
+                            <button
+                                onClick={() => !isGuest && toggleOcrPreference()}
+                                disabled={isGuest}
+                                className={cn(
+                                    "relative inline-flex h-4 w-7 items-center rounded-full transition-colors focus:outline-none",
+                                    preferLocalOCR ? "bg-emerald-500" : "bg-blue-500",
+                                    isGuest && "opacity-50 cursor-not-allowed"
+                                )}
+                            >
+                                <span className={cn(
+                                    "inline-block h-3 w-3 transform rounded-full bg-white transition-transform shadow-sm",
+                                    preferLocalOCR ? "translate-x-3.5" : "translate-x-0.5"
+                                )} />
+                            </button>
+                        </div>
+
+                        <div className="flex items-center gap-2.5 bg-slate-50 p-2 rounded-lg border border-slate-100/80">
+                            <div className={cn("p-1.5 rounded-md", preferLocalOCR ? "bg-emerald-100/50 text-emerald-600" : "bg-blue-100/50 text-blue-600")}>
+                                {preferLocalOCR ? <Cpu size={14} /> : <CloudLightning size={14} />}
                             </div>
+                            <div className="flex flex-col">
+                                <span className="text-[11px] font-bold text-slate-800 leading-tight">{preferLocalOCR ? "Mode Local" : "Cloud API"}</span>
+                                <span className="text-[9px] font-bold text-slate-400 mt-0.5">{preferLocalOCR ? "Inférence locale" : "API Gemini Distante"}</span>
+                            </div>
+                        </div>
 
-                            {/* OCR Local Model Status/Controls */}
-                            {preferLocalOCR ? (
-                                <div className="flex items-center px-1">
-                                    {modelStatus === 'idle' && (
-                                        <Button variant="ghost" size="sm" onClick={loadModel} className="h-7 text-[10px] gap-1.5 text-emerald-700 hover:bg-emerald-100/50">
-                                            <Download size={12} /> Charger Local
-                                        </Button>
-                                    )}
-                                    {modelStatus === 'loading' && (
-                                        <div className="flex items-center gap-2 px-2 min-w-[100px]">
-                                            <div className="h-1 flex-1 bg-slate-200 rounded-full overflow-hidden">
-                                                <div className="h-full bg-emerald-500" style={{ width: `${downloadProgress}%` }} />
-                                            </div>
-                                            <span className="text-[10px] font-mono text-emerald-600">{downloadProgress}%</span>
-                                        </div>
-                                    )}
-                                    {modelStatus === 'ready' && (
-                                        <Badge className="bg-emerald-50 text-emerald-700 border-emerald-100 h-6 text-[10px] gap-1">
-                                            <Cpu size={12} /> Prêt
-                                        </Badge>
-                                    )}
-                                </div>
-                            ) : (
-                                <div className="px-2">
-                                    <Badge className="bg-blue-50 text-blue-700 border-blue-100 h-6 text-[10px] gap-1">
-                                        <CloudLightning size={12} /> Gemini Cloud
-                                    </Badge>
-                                </div>
-                            )}
-
-                            <div className="w-px h-4 bg-slate-200" />
-
-                            {/* Detection Tools */}
-                            <div className="flex items-center px-1">
-                                {detectionStatus === 'idle' && (
-                                    <Button variant="ghost" size="sm" onClick={loadDetectionModel} className="h-7 text-[10px] gap-1.5 text-indigo-700 hover:bg-indigo-100/50">
-                                        <Search size={12} /> IA Détecteur
+                        {preferLocalOCR && (
+                            <div className="">
+                                {modelStatus === 'idle' && (
+                                    <Button variant="outline" size="sm" onClick={loadModel} className="w-full h-8 text-[11px] font-bold bg-white border border-slate-200 hover:bg-slate-50 text-slate-600">
+                                        <Download size={12} className="mr-1.5" /> Charger le modèle
                                     </Button>
                                 )}
-                                {detectionStatus === 'loading' && (
-                                    <div className="flex items-center gap-2 px-2 min-w-[100px]">
-                                        <div className="h-1 flex-1 bg-slate-200 rounded-full overflow-hidden">
-                                            <div className="h-full bg-indigo-500" style={{ width: `${detectionProgress}%` }} />
+                                {modelStatus === 'loading' && (
+                                    <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
+                                        <div className="flex justify-between text-[9px] font-bold text-slate-500 mb-1.5">
+                                            <span>Installation...</span>
+                                            <span>{Math.round(downloadProgress)}%</span>
                                         </div>
-                                        <span className="text-[10px] font-mono text-indigo-600">{detectionProgress}%</span>
+                                        <div className="h-1 w-full bg-slate-200 rounded-full overflow-hidden">
+                                            <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${downloadProgress}%` }} />
+                                        </div>
                                     </div>
                                 )}
-                                {detectionStatus === 'ready' && (
-                                    <Button
-                                        variant="default"
-                                        size="sm"
-                                        onClick={handleExecuteDetection}
-                                        disabled={isSubmitting || isAutoDetecting}
-                                        className="h-7 text-[10px] bg-indigo-600 hover:bg-indigo-700 gap-1.5"
-                                    >
-                                        <Sparkles size={12} />
-                                        {isAutoDetecting ? `Scan (${queueLength})` : "Scanner la page"}
-                                    </Button>
+                                {modelStatus === 'ready' && (
+                                    <div className="flex items-center justify-center gap-1.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 py-1.5 rounded-md border border-emerald-100/50">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-sm" /> Modèle opérationnel
+                                    </div>
                                 )}
                             </div>
-                        </div>
+                        )}
+                    </div>
 
-                        <div className="h-6 w-px bg-slate-200 mx-1" />
+                    {/* Détection Auto Block */}
+                    <div className="flex-none p-3 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-3">
+                        <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-0.5">Scanner Vision</h3>
 
-                        {/* GROUP: ACTIONS */}
-                        <div className="flex items-center gap-2">
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-9 gap-2 border-slate-200 text-slate-700 hover:bg-slate-50"
-                                onClick={() => setShowDescModal(true)}
-                            >
-                                <FileText size={16} />
-                                <span className="hidden xl:inline">Métadonnées</span>
+                        {detectionStatus === 'idle' && (
+                            <Button variant="outline" size="sm" onClick={loadDetectionModel} className="w-full h-8 text-[11px] font-bold bg-white border border-slate-200 hover:bg-slate-50 text-slate-600">
+                                <Download size={12} className="mr-1.5" /> Activer l'IA Vision
                             </Button>
-
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-9 w-9 text-slate-400 hover:text-slate-900"
-                                onClick={() => setShowApiKeyModal(true)}
-                            >
-                                <Settings2 size={16} />
-                            </Button>
-
-                            <div className="h-6 w-px bg-slate-200 mx-1" />
-
+                        )}
+                        {detectionStatus === 'loading' && (
+                            <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
+                                <div className="flex justify-between text-[9px] font-bold text-slate-500 mb-1.5">
+                                    <span>Téléchargement...</span>
+                                    <span>{Math.round(detectionProgress)}%</span>
+                                </div>
+                                <div className="h-1 w-full bg-slate-200 rounded-full overflow-hidden">
+                                    <div className="h-full bg-indigo-500 transition-all duration-300" style={{ width: `${detectionProgress}%` }} />
+                                </div>
+                            </div>
+                        )}
+                        {detectionStatus === 'ready' && (
                             <Button
                                 variant="default"
-                                size="sm"
-                                className="h-9 bg-slate-900 hover:bg-slate-800 shadow-sm gap-2 px-4"
-                                onClick={handleSubmitPage}
-                                disabled={page.statut === 'pending_review' || page.statut === 'completed'}
+                                onClick={handleExecuteDetection}
+                                disabled={isSubmitting || isAutoDetecting}
+                                className="w-full h-8 bg-indigo-600 hover:bg-indigo-700 text-[11px] font-bold shadow-sm"
                             >
-                                <Send size={16} />
-                                <span>Soumettre</span>
+                                <Sparkles size={12} className={cn("mr-1.5", isAutoDetecting && "animate-pulse")} />
+                                {isAutoDetecting ? `Analyse en cours (${queueLength})` : "Scanner la page"}
                             </Button>
+                        )}
+                    </div>
+                </div>
+
+                {/* Actions Bottom */}
+                <div className="flex-none p-4 border-t border-slate-100 bg-white flex flex-col gap-2.5 z-10">
+                    <div className="grid grid-cols-2 gap-2">
+                        <Button variant="outline" size="sm" className="h-8 text-[11px] font-bold text-slate-600 bg-slate-50 border-slate-200/60 hover:bg-slate-100 hover:text-slate-900 w-full" onClick={() => setShowDescModal(true)}>
+                            <FileText size={12} className="mr-1.5" /> Meta
+                        </Button>
+                        <Button variant="outline" size="sm" className="h-8 text-[11px] font-bold text-slate-600 bg-slate-50 border-slate-200/60 hover:bg-slate-100 hover:text-slate-900 w-full" onClick={() => setShowApiKeyModal(true)}>
+                            <Settings2 size={12} className="mr-1.5" /> Clés API
+                        </Button>
+                    </div>
+
+                    <Button
+                        variant="default"
+                        className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-[11px] uppercase tracking-wider font-bold shadow-md"
+                        disabled={page.statut === 'pending_review' || page.statut === 'completed'}
+                        onClick={handleSubmitPage}
+                    >
+                        <Send size={12} className="mr-1.5" /> Validation Finale
+                    </Button>
+                </div>
+            </div>
+
+            {/* Conteneur principal qui remplace l'ancienne empilation */}
+            <div className="flex flex-col flex-1 overflow-hidden min-w-0 bg-slate-50 relative">
+                {/* Header Mobile */}
+                <header className="lg:hidden flex-none h-auto min-h-16 border-b border-slate-200 bg-white px-4 py-3 flex items-center justify-between z-20 shadow-sm">
+                    <div className="flex items-center gap-3 shrink-0">
+                        <Link href={`/${mangaSlug}/dashboard`}>
+                            <Button variant="ghost" size="icon" className="h-9 w-9">
+                                <ArrowLeft className="h-5 w-5" />
+                            </Button>
+                        </Link>
+                        <div className="flex flex-col">
+                            <h2 className="text-sm font-bold text-slate-900 truncate max-w-[120px]">
+                                T.{page.chapitres?.tomes?.numero} - Ch.{page.chapitres?.numero}
+                            </h2>
+                            <span className="text-[10px] text-slate-500">Page {page.numero_page}</span>
                         </div>
                     </div>
-                )}
-            </header>
 
-            {isGuest && (
-                <div className="bg-amber-50 border-b border-amber-200 px-6 py-2 flex items-center justify-center gap-2 text-amber-800 text-sm font-medium">
-                    <Shield className="h-4 w-4" />
-                    Mode Lecture Seule : La modification des données est réservée aux utilisateurs connectés.
-                </div>
-            )
-            }
+                    <div className="flex items-center gap-2">
+                        <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => setShowDescModal(true)}>
+                            <FileText size={16} />
+                        </Button>
+                        <Button variant="default" size="sm" className="h-9" disabled={page.statut === 'pending_review' || page.statut === 'completed'} onClick={handleSubmitPage}>
+                            <Send size={14} className="mr-2" /> Soumettre
+                        </Button>
+                    </div>
+                </header>
 
-            {
-                page.commentaire_moderation && page.statut !== 'completed' && (
-                    <div className="bg-red-50 border-b border-red-200 px-6 py-3 flex items-center gap-3 text-red-800 text-sm animate-in slide-in-from-top duration-300">
-                        <div className="h-8 w-8 rounded-full bg-red-100 flex items-center justify-center shrink-0">
-                            <X className="h-4 w-4 text-red-600" />
-                        </div>
-                        <div className="flex-1">
-                            <p className="font-bold">Cette page a été refusée par la modération</p>
-                            <p className="text-red-700/80 italic font-medium">"{page.commentaire_moderation}"</p>
-                        </div>
+                {isGuest && (
+                    <div className="bg-amber-50 border-b border-amber-200 px-6 py-2 flex items-center justify-center gap-2 text-amber-800 text-sm font-medium">
+                        <Shield className="h-4 w-4" />
+                        Mode Lecture Seule : La modification des données est réservée aux utilisateurs connectés.
                     </div>
                 )
-            }
+                }
 
-            {/* Prefetch désactivé pour réduire la charge réseau */}
-            {/* 
+                {
+                    page.commentaire_moderation && page.statut !== 'completed' && (
+                        <div className="bg-red-50 border-b border-red-200 px-6 py-3 flex items-center gap-3 text-red-800 text-sm animate-in slide-in-from-top duration-300">
+                            <div className="h-8 w-8 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                                <X className="h-4 w-4 text-red-600" />
+                            </div>
+                            <div className="flex-1">
+                                <p className="font-bold">Cette page a été refusée par la modération</p>
+                                <p className="text-red-700/80 italic font-medium">"{page.commentaire_moderation}"</p>
+                            </div>
+                        </div>
+                    )
+                }
+
+                {/* Prefetch désactivé pour réduire la charge réseau */}
+                {/* 
             {navContext.next && (
                 <link rel="prefetch" href={getProxiedImageUrl(navContext.next.url_image, navContext.next.id, session?.access_token)} crossOrigin="anonymous" />
             )}
             */}
 
 
-            <div className="flex flex-col lg:flex-row flex-1 overflow-hidden">
-                <main className="flex-1 bg-slate-200/50 overflow-auto flex justify-center p-4 sm:p-8 relative cursor-default">
-                    <div
-                        ref={containerRef}
-                        className={cn(
-                            "relative inline-block bg-white shadow-xl select-none max-w-none h-fit",
-                            canEdit ? "cursor-crosshair" : "cursor-default"
-                        )}
-                        onMouseDown={handleMouseDown}
-                        onMouseMove={handleMouseMove}
-                        onMouseUp={handleMouseUp}
-                        onMouseLeave={handleMouseUp}
-                    >
-                        <img
-                            ref={imageRef}
-                            src={getProxiedImageUrl(page.url_image, pageId, session?.access_token)}
-                            crossOrigin="anonymous"
-                            alt={`Page ${page.numero_page}`}
-                            className="block max-w-full h-auto pointer-events-none"
-                            onLoad={(e) => setImageDimensions({
-                                width: e.target.offsetWidth,
-                                naturalWidth: e.target.naturalWidth
-                            })}
-                        />
-
-                        {isSubmitting && (
-                            <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] z-50 flex flex-col items-center justify-center text-slate-800 font-semibold">
-                                <Loader2 className="h-10 w-10 animate-spin mb-2 text-slate-900" />
-                                <span>{loadingText}</span>
-                            </div>
-                        )}
-
-                        {rectangle && imageDimensions && (
-                            <div
-                                style={{
-                                    left: rectangle.x * (imageDimensions.width / imageDimensions.naturalWidth),
-                                    top: rectangle.y * (imageDimensions.width / imageDimensions.naturalWidth),
-                                    width: rectangle.w * (imageDimensions.width / imageDimensions.naturalWidth),
-                                    height: rectangle.h * (imageDimensions.width / imageDimensions.naturalWidth),
-                                }}
-                                className={cn(
-                                    "absolute border-2 border-dashed transition-all duration-300 z-30 pointer-events-none",
-                                    isAutoDetecting ? "border-indigo-500 bg-indigo-500/10" : "border-red-500 bg-red-500/10"
-                                )}
+                <div className="flex flex-col lg:flex-row flex-1 overflow-hidden min-h-0">
+                    <main className="flex-1 min-h-0 bg-slate-200/50 overflow-hidden flex items-center justify-center p-2 sm:p-4 relative cursor-default">
+                        <div
+                            ref={containerRef}
+                            className={cn(
+                                "relative inline-flex flex-col min-w-0 min-h-0 max-w-full max-h-full bg-white shadow-xl select-none",
+                                canEdit ? "cursor-crosshair" : "cursor-default"
+                            )}
+                            style={{
+                                aspectRatio: imageDimensions?.naturalWidth ? `${imageDimensions.naturalWidth} / ${imageDimensions.naturalHeight}` : 'auto'
+                            }}
+                            onMouseDown={handleMouseDown}
+                            onMouseMove={handleMouseMove}
+                            onMouseUp={handleMouseUp}
+                            onMouseLeave={handleMouseUp}
+                        >
+                            <img
+                                ref={imageRef}
+                                src={getProxiedImageUrl(page.url_image, pageId, session?.access_token)}
+                                crossOrigin="anonymous"
+                                alt={`Page ${page.numero_page}`}
+                                className="block w-full h-full object-contain pointer-events-none"
+                                onLoad={(e) => setImageDimensions({
+                                    width: e.target.offsetWidth,
+                                    naturalWidth: e.target.naturalWidth,
+                                    naturalHeight: e.target.naturalHeight
+                                })}
                             />
-                        )}
 
-                        {isDrawing && startPoint && endPoint && (
-                            <div
-                                style={{
-                                    left: Math.min(startPoint.x, endPoint.x),
-                                    top: Math.min(startPoint.y, endPoint.y),
-                                    width: Math.abs(startPoint.x - endPoint.x),
-                                    height: Math.abs(startPoint.y - endPoint.y),
-                                }}
-                                className="absolute border-2 border-dashed border-red-500 bg-red-500/10 pointer-events-none z-20"
-                            />
-                        )}
+                            {isSubmitting && (
+                                <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] z-50 flex flex-col items-center justify-center text-slate-800 font-semibold">
+                                    <Loader2 className="h-10 w-10 animate-spin mb-2 text-slate-900" />
+                                    <span>{loadingText}</span>
+                                </div>
+                            )}
 
-                        {imageDimensions && existingBubbles.map((bubble, index) => {
-                            const scale = imageDimensions.width / imageDimensions.naturalWidth;
-                            if (!scale) return null;
-
-                            const style = {
-                                left: `${bubble.x * scale}px`,
-                                top: `${bubble.y * scale}px`,
-                                width: `${bubble.w * scale}px`,
-                                height: `${bubble.h * scale}px`,
-                            };
-
-                            const colorClass = bubble.statut === 'Validé'
-                                ? "border-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20"
-                                : "border-amber-500 bg-amber-500/10 hover:bg-amber-500/20";
-
-                            return (
+                            {rectangle && imageDimensions && (
                                 <div
-                                    key={bubble.id}
-                                    style={style}
-                                    className={cn("absolute border-2 z-10 transition-colors cursor-pointer group", colorClass)}
-                                    onMouseEnter={() => setHoveredBubble(bubble)}
-                                    onMouseLeave={() => setHoveredBubble(null)}
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleEditBubble(bubble);
+                                    style={{
+                                        left: rectangle.x * (imageDimensions.width / imageDimensions.naturalWidth),
+                                        top: rectangle.y * (imageDimensions.width / imageDimensions.naturalWidth),
+                                        width: rectangle.w * (imageDimensions.width / imageDimensions.naturalWidth),
+                                        height: rectangle.h * (imageDimensions.width / imageDimensions.naturalWidth),
+                                    }}
+                                    className={cn(
+                                        "absolute border-2 border-dashed transition-all duration-300 z-30 pointer-events-none",
+                                        isAutoDetecting ? "border-indigo-500 bg-indigo-500/10" : "border-red-500 bg-red-500/10"
+                                    )}
+                                />
+                            )}
+
+                            {isDrawing && startPoint && endPoint && (
+                                <div
+                                    style={{
+                                        left: Math.min(startPoint.x, endPoint.x),
+                                        top: Math.min(startPoint.y, endPoint.y),
+                                        width: Math.abs(startPoint.x - endPoint.x),
+                                        height: Math.abs(startPoint.y - endPoint.y),
+                                    }}
+                                    className="absolute border-2 border-dashed border-red-500 bg-red-500/10 pointer-events-none z-20"
+                                />
+                            )}
+
+                            {imageDimensions && existingBubbles.map((bubble, index) => {
+                                const scale = imageDimensions.width / imageDimensions.naturalWidth;
+                                if (!scale) return null;
+
+                                const style = {
+                                    left: `${bubble.x * scale}px`,
+                                    top: `${bubble.y * scale}px`,
+                                    width: `${bubble.w * scale}px`,
+                                    height: `${bubble.h * scale}px`,
+                                };
+
+                                const colorClass = bubble.statut === 'Validé'
+                                    ? "border-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20"
+                                    : "border-amber-500 bg-amber-500/10 hover:bg-amber-500/20";
+
+                                return (
+                                    <div
+                                        key={bubble.id}
+                                        style={style}
+                                        className={cn("absolute border-2 z-10 transition-colors cursor-pointer group", colorClass)}
+                                        onMouseEnter={() => setHoveredBubble(bubble)}
+                                        onMouseLeave={() => setHoveredBubble(null)}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleEditBubble(bubble);
+                                        }}
+                                    >
+                                        <div className={cn(
+                                            "absolute -top-6 -left-[2px] text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm",
+                                            bubble.statut === 'Validé' ? "bg-emerald-500" : "bg-amber-500"
+                                        )}>
+                                            #{index + 1}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+
+                            {hoveredBubble && (
+                                <div
+                                    className="fixed z-50 pointer-events-none bg-slate-900/95 text-white p-3 rounded-lg shadow-xl border border-slate-700 backdrop-blur-sm max-w-[300px]"
+                                    style={{
+                                        left: 0, top: 0,
+                                        transform: `translate(${mousePos.x + 20 + containerRef.current?.getBoundingClientRect().left}px, ${mousePos.y + 20 + containerRef.current?.getBoundingClientRect().top}px)`
                                     }}
                                 >
-                                    <div className={cn(
-                                        "absolute -top-6 -left-[2px] text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm",
-                                        bubble.statut === 'Validé' ? "bg-emerald-500" : "bg-amber-500"
-                                    )}>
-                                        #{index + 1}
+                                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                                        Bulle #{existingBubbles.findIndex(b => b.id === hoveredBubble.id) + 1}
                                     </div>
+                                    <p className="text-sm font-medium leading-relaxed">{hoveredBubble.texte_propose}</p>
                                 </div>
-                            );
-                        })}
-
-                        {hoveredBubble && (
-                            <div
-                                className="fixed z-50 pointer-events-none bg-slate-900/95 text-white p-3 rounded-lg shadow-xl border border-slate-700 backdrop-blur-sm max-w-[300px]"
-                                style={{
-                                    left: 0, top: 0,
-                                    transform: `translate(${mousePos.x + 20 + containerRef.current?.getBoundingClientRect().left}px, ${mousePos.y + 20 + containerRef.current?.getBoundingClientRect().top}px)`
-                                }}
-                            >
-                                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                                    Bulle #{existingBubbles.findIndex(b => b.id === hoveredBubble.id) + 1}
-                                </div>
-                                <p className="text-sm font-medium leading-relaxed">{hoveredBubble.texte_propose}</p>
-                            </div>
-                        )}
-                    </div>
-                </main>
-
-                <aside className="w-full lg:w-[380px] bg-white border-t lg:border-t-0 lg:border-l border-slate-200 flex flex-col h-[40vh] lg:h-full overflow-hidden z-10 shadow-lg shrink-0">
-                    <div className="flex-none p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
-                        <h3 className="font-semibold text-slate-900">Annotations</h3>
-                        <Badge variant="secondary">{existingBubbles.length}</Badge>
-                    </div>
-                    <ScrollArea className="flex-1 w-full h-full">
-                        <div className="flex flex-col w-full max-w-full px-4 py-4 pb-20 overflow-x-hidden">
-                            {existingBubbles.length === 0 ? (
-                                <div className="flex flex-col items-center justify-center py-10 text-center border-2 border-dashed border-slate-200 rounded-lg bg-slate-50/50 text-slate-500">
-                                    <MousePointer2 className="h-8 w-8 mb-2 text-slate-300" />
-                                    <p className="text-sm font-medium">Aucune annotation</p>
-                                    <p className="text-xs mt-1">Dessinez un rectangle sur l'image<br />pour commencer.</p>
-                                </div>
-                            ) : (
-                                <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                                    <SortableContext items={existingBubbles.map(b => b.id)} strategy={verticalListSortingStrategy}>
-                                        <ul className="flex flex-col gap-3 w-full max-w-full">
-                                            {existingBubbles.map((bubble, index) => (
-                                                <SortableBubbleItem
-                                                    key={bubble.id}
-                                                    id={bubble.id}
-                                                    bubble={bubble}
-                                                    index={index}
-                                                    user={user}
-                                                    onEdit={handleEditBubble}
-                                                    onDelete={handleDeleteBubble}
-                                                    disabled={!canEdit}
-                                                />
-                                            ))}
-                                        </ul>
-                                    </SortableContext>
-                                </DndContext>
                             )}
                         </div>
-                    </ScrollArea>
-                </aside>
+                    </main>
+
+                    <aside className="w-full lg:w-[380px] bg-white border-t lg:border-t-0 lg:border-l border-slate-200 flex flex-col h-[40vh] lg:h-full overflow-hidden z-10 shadow-lg shrink-0">
+                        <div className="flex-none p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                            <h3 className="font-semibold text-slate-900">Annotations</h3>
+                            <Badge variant="secondary">{existingBubbles.length}</Badge>
+                        </div>
+                        <ScrollArea className="flex-1 w-full h-full">
+                            <div className="flex flex-col w-full max-w-full px-4 py-4 pb-20 overflow-x-hidden">
+                                {existingBubbles.length === 0 ? (
+                                    <div className="flex flex-col items-center justify-center py-10 text-center border-2 border-dashed border-slate-200 rounded-lg bg-slate-50/50 text-slate-500">
+                                        <MousePointer2 className="h-8 w-8 mb-2 text-slate-300" />
+                                        <p className="text-sm font-medium">Aucune annotation</p>
+                                        <p className="text-xs mt-1">Dessinez un rectangle sur l'image<br />pour commencer.</p>
+                                    </div>
+                                ) : (
+                                    <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                                        <SortableContext items={existingBubbles.map(b => b.id)} strategy={verticalListSortingStrategy}>
+                                            <ul className="flex flex-col gap-3 w-full max-w-full">
+                                                {existingBubbles.map((bubble, index) => (
+                                                    <SortableBubbleItem
+                                                        key={bubble.id}
+                                                        id={bubble.id}
+                                                        bubble={bubble}
+                                                        index={index}
+                                                        user={user}
+                                                        onEdit={handleEditBubble}
+                                                        onDelete={handleDeleteBubble}
+                                                        disabled={!canEdit}
+                                                    />
+                                                ))}
+                                            </ul>
+                                        </SortableContext>
+                                    </DndContext>
+                                )}
+                            </div>
+                        </ScrollArea>
+                    </aside>
+                </div>
             </div>
 
             <Dialog
