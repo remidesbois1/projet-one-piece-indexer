@@ -61,14 +61,29 @@ async function rerankGemini(query, candidates, userApiKey) {
 
         let parsedScores = [];
         try {
-            const jsonMatch = responseText.match(/\[.*\]/s);
+            const cleanText = responseText.replace(/```json|```/gi, '').trim();
+            const jsonMatch = cleanText.match(/\[.*\]/s);
+
             if (jsonMatch) {
                 parsedScores = JSON.parse(jsonMatch[0]);
             } else {
-                parsedScores = JSON.parse(responseText);
+                parsedScores = JSON.parse(cleanText);
+            }
+
+            if (!Array.isArray(parsedScores)) {
+                if (parsedScores !== null && typeof parsedScores === 'object') {
+                    const arrayValue = Object.values(parsedScores).find(val => Array.isArray(val));
+                    if (arrayValue) {
+                        parsedScores = arrayValue;
+                    } else {
+                        throw new Error("No array found in parsed JSON");
+                    }
+                } else {
+                    throw new Error("Parsed JSON is not an array or object");
+                }
             }
         } catch (parseError) {
-            console.warn("Failed to parse Gemini reranker JSON output:", responseText);
+            console.warn("Failed to parse Gemini reranker JSON output:", responseText, parseError.message);
             parsedScores = candidates.map(c => ({ i: c.id, s: 0 }));
         }
 
