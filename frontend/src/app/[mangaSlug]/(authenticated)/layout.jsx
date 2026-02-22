@@ -21,7 +21,8 @@ export default function AuthenticatedLayout({ children }) {
 
     useEffect(() => {
         if (!loading && !session && !isGuest) {
-            router.push('/login');
+            const currentUrl = encodeURIComponent(window.location.pathname + window.location.search);
+            router.push(`/login?next=${currentUrl}`);
         }
     }, [session, loading, isGuest, router]);
 

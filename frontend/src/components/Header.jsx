@@ -1,7 +1,7 @@
 "use client";
 import React from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useManga } from '@/context/MangaContext'; // [NEW]
@@ -35,6 +35,14 @@ const Header = ({ onOpenApiKeyModal }) => {
     const router = useRouter();
     const pathname = usePathname();
     const { mangaSlug } = useManga(); // [NEW] Get mangaSlug
+    const searchParams = useSearchParams();
+
+    const [loginUrl, setLoginUrl] = React.useState('/login');
+    React.useEffect(() => {
+        if (typeof window !== 'undefined') {
+            setLoginUrl(`/login?next=${encodeURIComponent(window.location.pathname + window.location.search)}`);
+        }
+    }, [pathname, searchParams]);
 
     const handleLogout = async () => {
         await signOut();
@@ -168,7 +176,7 @@ const Header = ({ onOpenApiKeyModal }) => {
                                         Mode Invité
                                     </Badge>
                                 )}
-                                <Link href="/login" prefetch={false}>
+                                <Link href={loginUrl} prefetch={false}>
                                     <Button size="sm">Connexion</Button>
                                 </Link>
                             </div>
@@ -290,7 +298,7 @@ const Header = ({ onOpenApiKeyModal }) => {
                                             Déconnexion
                                         </Button>
                                     ) : (
-                                        <Link href="/login" prefetch={false} className="block w-full">
+                                        <Link href={loginUrl} prefetch={false} className="block w-full">
                                             <Button className="w-full gap-2 h-11 shadow-xl bg-slate-900 hover:bg-slate-800">
                                                 <User size={18} />
                                                 Se Connecter

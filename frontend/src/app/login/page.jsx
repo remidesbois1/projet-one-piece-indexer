@@ -1,7 +1,7 @@
 "use client";
 import React, { useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,8 @@ export default function LoginPage() {
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const searchParams = useSearchParams();
+    const nextUrl = searchParams.get('next') || '/';
 
     const handleLogin = async (event) => {
         event.preventDefault();
@@ -30,7 +32,7 @@ export default function LoginPage() {
 
             if (error) throw error;
 
-            router.push('/');
+            router.push(nextUrl);
 
         } catch (error) {
             setError(error.message);
@@ -41,7 +43,7 @@ export default function LoginPage() {
 
     const handleGuestLogin = () => {
         loginAsGuest();
-        router.push('/');
+        router.push(nextUrl);
     };
 
     return (
