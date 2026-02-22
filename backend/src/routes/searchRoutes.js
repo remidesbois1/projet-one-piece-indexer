@@ -3,6 +3,7 @@ const router = express.Router();
 const { supabase, supabaseAdmin } = require('../config/supabaseClient');
 
 const { generateVoyageEmbedding, rerankVoyage } = require('../utils/voyageClient');
+const { generateGeminiEmbedding, rerankGemini } = require('../utils/geminiClient');
 
 const AI_MODEL_KEYS = ['model_ocr', 'model_description'];
 const DEFAULT_MODELS = {
@@ -59,7 +60,7 @@ async function enrichQueryWithGlossary(query) {
 }
 
 router.get('/', async (req, res) => {
-    const { q, page = 1, limit = 10, mode = 'keyword', characters, arc, tome, rerank } = req.query;
+    const { q, page = 1, limit = 10, mode = 'keyword', characters, arc, tome, rerank, modelProvider = 'voyage' } = req.query;
     const shouldRerank = rerank === 'true';
 
     if (!q || q.length < 2) return res.status(400).json({ error: "Recherche trop courte" });
@@ -84,17 +85,31 @@ router.get('/', async (req, res) => {
 
     try {
         if (mode === 'semantic') {
+            const userGeminiKey = req.headers['x-user-gemini-key'];
             const enrichedQuery = await enrichQueryWithGlossary(q);
-            const embedding = await generateVoyageEmbedding(enrichedQuery, "query");
             const candidatesQueryLimit = shouldRerank ? Math.max(50, parseInt(limit)) : parseInt(limit);
             const filterManga = req.query.manga;
 
-            const { data: matchedPages, error: matchError } = await supabase.rpc('match_pages', {
-                query_embedding: embedding,
-                match_threshold: 0.30,
-                match_count: 200,
-            });
-            if (matchError) throw matchError;
+            let matchedPages;
+            if (modelProvider === 'gemini') {
+                const embedding = await generateGeminiEmbedding(enrichedQuery, "RETRIEVAL_QUERY");
+                const { data, error } = await supabase.rpc('match_pages_gemini', {
+                    query_embedding: embedding,
+                    match_threshold: 0.30,
+                    match_count: 200,
+                });
+                if (error) throw error;
+                matchedPages = data;
+            } else {
+                const embedding = await generateVoyageEmbedding(enrichedQuery, "query");
+                const { data, error } = await supabase.rpc('match_pages', {
+                    query_embedding: embedding,
+                    match_threshold: 0.30,
+                    match_count: 200,
+                });
+                if (error) throw error;
+                matchedPages = data;
+            }
 
             let filteredPages = matchedPages || [];
 
@@ -165,13 +180,24 @@ router.get('/', async (req, res) => {
 
                 let scores = [];
                 try {
-                    const results = await rerankVoyage(q, documents);
-                    scores = results.map(r => ({
-                        i: candidates[r.index].id,
-                        s: r.relevance_score * 100
-                    }));
+                    if (modelProvider === 'gemini') {
+                        if (!userGeminiKey) {
+                            return res.status(403).json({ error: "Une clé API Gemini est requise pour utiliser le moteur Gemini." });
+                        }
+                        const results = await rerankGemini(q, candidates.map((c, idx) => ({ id: c.id, content: documents[idx] })), userGeminiKey);
+                        scores = results.map(r => ({
+                            i: typeof r.i === 'string' && r.i.startsWith('page-') ? parseInt(r.i.replace('page-', ''), 10) : r.i,
+                            s: typeof r.s === 'number' ? r.s : parseFloat(r.s) || 0
+                        }));
+                    } else {
+                        const results = await rerankVoyage(q, documents);
+                        scores = results.map(r => ({
+                            i: candidates[r.index].id,
+                            s: r.relevance_score * 100
+                        }));
+                    }
                 } catch (err) {
-                    console.error("Voyage rerank error, falling back to vector similarity:", err);
+                    console.error(`${modelProvider} rerank error, falling back to vector similarity:`, err);
                     scores = candidates.map(c => ({ i: c.id, s: c.similarity * 100 }));
                 }
 

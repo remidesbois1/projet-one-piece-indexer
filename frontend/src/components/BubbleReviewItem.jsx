@@ -2,12 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { getBubbleCrop } from '@/lib/api';
 
-// UI Components
+
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
-// Icons
+
 import { Check, X, Pencil, ImageOff, History } from "lucide-react";
 import {
   Dialog,
@@ -24,14 +24,14 @@ const BubbleReviewItem = ({ bubble, onAction, onEdit }) => {
   const [imageSrc, setImageSrc] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // History State
+  
   const [history, setHistory] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
-  // États d'animation : 'idle' -> 'stamped' -> 'leaving'
+  
   const [animStep, setAnimStep] = useState('idle');
-  const [actionType, setActionType] = useState(null); // 'validate' ou 'reject'
+  const [actionType, setActionType] = useState(null); 
 
   useEffect(() => {
     let isMounted = true;
@@ -100,7 +100,7 @@ const BubbleReviewItem = ({ bubble, onAction, onEdit }) => {
       )}
     >
 
-      {/* TAMPON (Overlay) */}
+      
       <div className={cn(
         "absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-50 border-[6px] rounded-lg px-8 py-2 text-4xl font-black uppercase tracking-widest opacity-0 scale-150 transition-all duration-300",
         animStep !== 'idle' && actionType === 'validate' && "opacity-90 scale-100 rotate-[-10deg] border-green-600 text-green-600 bg-white/50 backdrop-blur-sm",
@@ -109,7 +109,7 @@ const BubbleReviewItem = ({ bubble, onAction, onEdit }) => {
         {actionType === 'validate' ? 'VALIDÉ' : 'REJETÉ'}
       </div>
 
-      {/* Colonne Image */}
+      
       <div className="w-full sm:w-[200px] bg-slate-50 border-b sm:border-b-0 sm:border-r border-slate-100 flex items-center justify-center p-4 shrink-0">
         {isLoading ? (
           <Skeleton className="h-24 w-full rounded" />
@@ -127,14 +127,14 @@ const BubbleReviewItem = ({ bubble, onAction, onEdit }) => {
         )}
       </div>
 
-      {/* Colonne Contenu */}
+      
       <div className="flex-1 p-5 flex flex-col justify-center">
         <div className="flex justify-between items-start mb-2">
           <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
             Proposition de texte
           </div>
 
-          {/* History Trigger */}
+          
           <Dialog open={isHistoryOpen} onOpenChange={setIsHistoryOpen}>
             <DialogTrigger asChild>
               <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-400 hover:text-slate-600 -mt-1 -mr-1">
@@ -186,7 +186,7 @@ const BubbleReviewItem = ({ bubble, onAction, onEdit }) => {
         </div>
       </div>
 
-      {/* Colonne Actions */}
+      
       <div className="flex sm:flex-col items-center justify-center gap-2 p-4 bg-slate-50/50 border-t sm:border-t-0 sm:border-l border-slate-100 min-w-[140px]">
 
         <Button

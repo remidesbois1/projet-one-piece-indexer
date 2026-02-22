@@ -34,7 +34,7 @@ export function MangaProvider({ children }) {
 
             if (error || !data) {
                 console.error("Manga not found:", slug);
-                router.push('/'); // Redirect to home if invalid manga
+                router.push('/'); 
                 return;
             }
             setCurrentManga(data);

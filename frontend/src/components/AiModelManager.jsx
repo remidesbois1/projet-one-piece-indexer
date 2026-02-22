@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { getAiModels, updateAiModels, getAvailableAiModels, checkAiModelsAvailability } from '@/lib/api';
+import { getAiModels, updateAiModels, getAvailableAiModels, checkAiModelsAvailability, getEmbeddingStats, triggerGeminiBackfill, triggerVoyageBackfill } from '@/lib/api';
 import { invalidateModelCache } from '@/lib/geminiClient';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -38,9 +38,13 @@ export default function AiModelManager() {
     const [draft, setDraft] = useState(null);
     const [availableModels, setAvailableModels] = useState([]);
     const [availability, setAvailability] = useState(null);
+    const [embeddingStats, setEmbeddingStats] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [loadingStats, setLoadingStats] = useState(true);
     const [checkingAvailability, setCheckingAvailability] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [triggeringGeminiBackfill, setTriggeringGeminiBackfill] = useState(false);
+    const [triggeringVoyageBackfill, setTriggeringVoyageBackfill] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
 
     useEffect(() => {
@@ -49,18 +53,22 @@ export default function AiModelManager() {
 
     const loadData = async () => {
         setLoading(true);
+        setLoadingStats(true);
         try {
-            const [settingsRes, availableRes] = await Promise.all([
+            const [settingsRes, availableRes, statsRes] = await Promise.all([
                 getAiModels(),
-                getAvailableAiModels()
+                getAvailableAiModels(),
+                getEmbeddingStats().catch(() => ({ data: [] }))
             ]);
             setModels(settingsRes.data);
             setDraft(settingsRes.data);
             setAvailableModels(availableRes.data);
+            setEmbeddingStats(statsRes.data);
         } catch (error) {
             toast.error("Erreur lors du chargement des modèles IA.");
         } finally {
             setLoading(false);
+            setLoadingStats(false);
         }
 
         setCheckingAvailability(true);
@@ -98,6 +106,30 @@ export default function AiModelManager() {
 
     const handleReset = () => {
         setDraft(models);
+    };
+
+    const handleTriggerGeminiBackfill = async () => {
+        setTriggeringGeminiBackfill(true);
+        try {
+            await triggerGeminiBackfill();
+            toast.success("Backfill Gemini démarré", { description: "Le processus tourne en arrière-plan. Revenez plus tard pour voir la progression." });
+        } catch (error) {
+            toast.error("Erreur lors du démarrage du backfill Gemini.");
+        } finally {
+            setTriggeringGeminiBackfill(false);
+        }
+    };
+
+    const handleTriggerVoyageBackfill = async () => {
+        setTriggeringVoyageBackfill(true);
+        try {
+            await triggerVoyageBackfill();
+            toast.success("Backfill Voyage démarré", { description: "Le processus tourne en arrière-plan. Revenez plus tard." });
+        } catch (error) {
+            toast.error("Erreur lors du démarrage du backfill Voyage.");
+        } finally {
+            setTriggeringVoyageBackfill(false);
+        }
     };
 
     const filteredModels = availableModels.filter(m =>
@@ -259,6 +291,96 @@ export default function AiModelManager() {
                     Modifications non sauvegardées. Les changements s'appliqueront à tous les utilisateurs après sauvegarde.
                 </div>
             )}
+
+            
+            <div className="pt-8 border-t border-slate-200 mt-12">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+                    <div>
+                        <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                            <Sparkles className="h-5 w-5 text-indigo-600" />
+                            État des Embeddings
+                        </h2>
+                        <p className="text-sm text-slate-500 mt-1">
+                            Visualisez la complétion sémantique. Grise (Pas de description), Voyage (Bleu), Gemini (Jaune), Les Deux (Vert), Aucun (Rouge).
+                        </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 w-full sm:w-auto mt-2 sm:mt-0">
+                        <Button
+                            onClick={handleTriggerVoyageBackfill}
+                            disabled={triggeringVoyageBackfill || loadingStats}
+                            variant="outline"
+                            className="text-slate-700 bg-white"
+                        >
+                            {triggeringVoyageBackfill ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
+                            Générer Voyage
+                        </Button>
+                        <Button
+                            onClick={handleTriggerGeminiBackfill}
+                            disabled={triggeringGeminiBackfill || loadingStats}
+                            className="bg-slate-900 hover:bg-slate-800 text-white"
+                        >
+                            {triggeringGeminiBackfill ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
+                            Générer Gemini
+                        </Button>
+                    </div>
+                </div>
+
+                {loadingStats ? (
+                    <div className="flex justify-center py-10">
+                        <Loader2 className="animate-spin h-6 w-6 text-slate-400" />
+                    </div>
+                ) : !embeddingStats || embeddingStats.length === 0 ? (
+                    <div className="text-center py-10 text-slate-500 text-sm bg-slate-50 rounded-xl border border-slate-100">
+                        Aucune donnée d'embedding trouvée.
+                    </div>
+                ) : (
+                    <div className="space-y-4">
+                        <div className="flex flex-wrap gap-4 text-sm mb-4 bg-white p-4 rounded-xl border shadow-sm">
+                            <div className="flex items-center gap-2">
+                                <div className="w-3 h-3 rounded bg-blue-500"></div>
+                                <span className="text-slate-600">Voyage: <span className="font-semibold text-slate-900">{embeddingStats.filter(s => s.has_description && s.has_voyage && !s.has_gemini).length}</span></span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <div className="w-3 h-3 rounded bg-yellow-400"></div>
+                                <span className="text-slate-600">Gemini: <span className="font-semibold text-slate-900">{embeddingStats.filter(s => s.has_description && !s.has_voyage && s.has_gemini).length}</span></span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <div className="w-3 h-3 rounded bg-emerald-500"></div>
+                                <span className="text-slate-600">Les Deux: <span className="font-semibold text-slate-900">{embeddingStats.filter(s => s.has_description && s.has_voyage && s.has_gemini).length}</span></span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <div className="w-3 h-3 rounded bg-red-400"></div>
+                                <span className="text-slate-600">Aucun: <span className="font-semibold text-slate-900">{embeddingStats.filter(s => s.has_description && !s.has_voyage && !s.has_gemini).length}</span></span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <div className="w-3 h-3 rounded bg-slate-300"></div>
+                                <span className="text-slate-600">Sans description: <span className="font-semibold text-slate-900">{embeddingStats.filter(s => !s.has_description).length}</span></span>
+                            </div>
+                            <div className="ml-auto text-slate-500 font-medium">
+                                Total: {embeddingStats.length} pages
+                            </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-1 p-4 bg-slate-50 rounded-xl border border-slate-200 max-h-[400px] overflow-y-auto">
+                            {embeddingStats.map(page => {
+                                let colorClass = "bg-red-400";
+                                if (!page.has_description) colorClass = "bg-slate-300";
+                                else if (page.has_voyage && page.has_gemini) colorClass = "bg-emerald-500";
+                                else if (page.has_voyage) colorClass = "bg-blue-500";
+                                else if (page.has_gemini) colorClass = "bg-yellow-400";
+
+                                return (
+                                    <div
+                                        key={page.id}
+                                        title={`Page ${page.id} (Tome/Chap: ${page.chapitre_id} | Num: ${page.numero})`}
+                                        className={cn("w-3 h-3 rounded-sm opacity-80 hover:opacity-100 transition-opacity cursor-help", colorClass)}
+                                    />
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+            </div>
         </div>
     );
 }

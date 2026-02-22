@@ -28,18 +28,18 @@ export const SortableBubbleItem = ({ bubble, index, user, onEdit, onDelete, disa
             ref={setNodeRef} 
             style={style} 
             className={cn(
-                // TRANSITION VERS GRID : C'est plus robuste que Flex pour l'overflow
-                // grid-cols-[auto_auto_1fr_auto] : 
-                // 1. Grip (auto)
-                // 2. Numéro (auto)
-                // 3. Texte (1fr = tout l'espace restant)
-                // 4. Actions (auto)
+                
+                
+                
+                
+                
+                
                 "group grid grid-cols-[auto_auto_1fr_auto] items-center gap-3 p-3 bg-white border border-slate-200 rounded-lg shadow-sm transition-all w-full max-w-full box-border",
                 isDragging && "opacity-50 border-dashed border-slate-400 bg-slate-50",
                 !isDragging && "hover:border-slate-300 hover:shadow-md"
             )}
         >
-            {/* 1. Poignée de drag */}
+            
             <div 
                 {...attributes} 
                 {...listeners} 
@@ -51,12 +51,12 @@ export const SortableBubbleItem = ({ bubble, index, user, onEdit, onDelete, disa
                 <GripVertical className="h-5 w-5" />
             </div>
             
-            {/* 2. Numéro */}
+            
             <span className="flex items-center justify-center h-6 w-6 rounded-full bg-slate-100 text-slate-700 text-xs font-bold flex-shrink-0">
                 {index + 1}
             </span>
             
-            {/* 3. Texte : min-w-0 est OBLIGATOIRE même en Grid pour que le truncate fonctionne */}
+            
             <div className="min-w-0">
                 <span 
                     className="text-sm text-slate-700 truncate font-medium block w-full" 
@@ -66,8 +66,8 @@ export const SortableBubbleItem = ({ bubble, index, user, onEdit, onDelete, disa
                 </span>
             </div>
 
-            {/* 4. Actions */}
-            <div className="flex justify-end min-w-[60px]"> {/* min-w réserve la place pour éviter le saut au survol */}
+            
+            <div className="flex justify-end min-w-[60px]"> 
                 {!disabled && bubble.statut === 'Proposé' && user && bubble.id_user_createur === user.id && (
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <Button

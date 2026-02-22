@@ -6,7 +6,7 @@ import { useUserProfile } from '@/hooks/useUserProfile';
 import { useManga } from '@/context/MangaContext';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 
-// Mock the hooks
+
 vi.mock('@/context/AuthContext');
 vi.mock('@/hooks/useUserProfile');
 vi.mock('@/context/MangaContext');
@@ -16,7 +16,7 @@ vi.mock('next/navigation', () => ({
     useSearchParams: vi.fn(),
 }));
 
-// Mock ResizeObserver (needed by some Radix UI components)
+
 global.ResizeObserver = class {
     observe() { }
     unobserve() { }
@@ -27,11 +27,11 @@ describe('Header Links Access Roles', () => {
     beforeEach(() => {
         vi.clearAllMocks();
 
-        // Default mocks that apply to all test cases
+        
         useManga.mockReturnValue({ mangaSlug: 'test-manga' });
         usePathname.mockReturnValue('/test-manga/dashboard');
 
-        // Mock useSearchParams to return something realistic
+        
         const mockSearchParams = new URLSearchParams();
         useSearchParams.mockReturnValue(mockSearchParams);
         useRouter.mockReturnValue({ push: vi.fn() });
@@ -43,15 +43,15 @@ describe('Header Links Access Roles', () => {
 
         render(<Header onOpenApiKeyModal={vi.fn()} />);
 
-        // Only checking within the desktop nav for simplicity
-        const nav = screen.getByRole('navigation', { hidden: true }); // Desktop nav doesn't have a specific role sometimes but let's query the text
+        
+        const nav = screen.getByRole('navigation', { hidden: true }); 
 
-        // Public links
+        
         expect(screen.queryAllByText('Bibliothèque').length).toBeGreaterThan(0);
         expect(screen.queryAllByText('Recherche').length).toBeGreaterThan(0);
 
-        // Authenticated links should not be present in the desktop nav (which doesn't hide text, while mobile nav might conditionally render)
-        // Check exact texts for the links
+        
+        
         expect(screen.queryByText('Mes Soumissions')).not.toBeInTheDocument();
         expect(screen.queryByText('Modération')).not.toBeInTheDocument();
         expect(screen.queryByText('Admin')).not.toBeInTheDocument();
@@ -64,14 +64,14 @@ describe('Header Links Access Roles', () => {
 
         render(<Header onOpenApiKeyModal={vi.fn()} />);
 
-        // Public and User links
+        
         expect(screen.queryAllByText('Bibliothèque').length).toBeGreaterThan(0);
         expect(screen.queryAllByText('Recherche').length).toBeGreaterThan(0);
 
-        // "Mes Soumissions" appears in desktop nav, mobile nav, and dropdown menu. We check if it's there at all.
+        
         expect(screen.queryAllByText('Mes Soumissions').length).toBeGreaterThan(0);
 
-        // Elevated privileges shouldn't be there
+        
         expect(screen.queryByText('Modération')).not.toBeInTheDocument();
         expect(screen.queryByText('Admin')).not.toBeInTheDocument();
         expect(screen.queryByText('Explorateur')).not.toBeInTheDocument();
@@ -86,7 +86,7 @@ describe('Header Links Access Roles', () => {
         expect(screen.queryAllByText('Mes Soumissions').length).toBeGreaterThan(0);
         expect(screen.queryAllByText('Modération').length).toBeGreaterThan(0);
 
-        // Admin limits
+        
         expect(screen.queryByText('Admin')).not.toBeInTheDocument();
         expect(screen.queryByText('Explorateur')).not.toBeInTheDocument();
     });

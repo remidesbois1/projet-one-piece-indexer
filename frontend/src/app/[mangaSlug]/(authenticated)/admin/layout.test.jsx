@@ -5,7 +5,7 @@ import { useUserProfile } from '@/hooks/useUserProfile';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter, useParams } from 'next/navigation';
 
-// Mock the hooks
+
 vi.mock('@/hooks/useUserProfile');
 vi.mock('@/context/AuthContext');
 vi.mock('next/navigation', () => ({

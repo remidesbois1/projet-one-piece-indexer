@@ -1,4 +1,4 @@
-/* Variables (à adapter si définies globalement) */
+
 :root {
     --color-navy: #1a2b4c;
     --color-bg-overlay: rgba(0, 0, 0, 0.4);
@@ -20,7 +20,7 @@
     font-family: 'Inter', system-ui, sans-serif;
 }
 
-/* Conteneur de la modale (la "fenêtre" déplaçable) */
+
 .modalContent {
     background: var(--color-white);
     border-radius: 8px;
@@ -28,16 +28,16 @@
     min-width: 400px;
     max-width: 90%;
     max-height: 90%;
-    overflow: hidden; /* Pour gérer le contenu interne qui pourrait déborder */
+    overflow: hidden; 
     display: flex;
     flex-direction: column;
-    position: relative; /* Nécessaire pour les coordonnées de déplacement */
-    /* Styles par défaut centrés. Ils seront écrasés par les styles de déplacement */
+    position: relative; 
+    
     top: 0;
     left: 0;
 }
 
-/* En-tête de la modale, souvent la zone de drag */
+
 .modalHeader {
     display: flex;
     justify-content: space-between;
@@ -45,12 +45,12 @@
     padding: 1rem 1.5rem;
     border-bottom: 1px solid #e5e7eb;
     background-color: #f9fafb;
-    cursor: grab; /* Curseur pour indiquer que c'est déplaçable */
-    user-select: none; /* Empêche la sélection de texte pendant le drag */
+    cursor: grab; 
+    user-select: none; 
 }
 
 .modalHeader.isDragging {
-    cursor: grabbing; /* Curseur pendant le drag */
+    cursor: grabbing; 
 }
 
 .modalTitle {
@@ -60,7 +60,7 @@
     color: var(--color-navy);
 }
 
-/* Bouton de fermeture */
+
 .closeButton {
     background: transparent;
     border: none;
@@ -73,12 +73,12 @@
 }
 
 .closeButton:hover {
-    color: #ef4444; /* Rouge doux au survol */
+    color: #ef4444; 
 }
 
-/* Corps de la modale */
+
 .modalBody {
     padding: 1.5rem;
-    overflow-y: auto; /* Permet le défilement du contenu si trop grand */
+    overflow-y: auto; 
     flex-grow: 1;
 }

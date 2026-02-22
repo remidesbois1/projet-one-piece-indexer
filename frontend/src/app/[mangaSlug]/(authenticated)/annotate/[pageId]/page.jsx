@@ -67,10 +67,16 @@ export default function AnnotatePage() {
     const [debugImageUrl, setDebugImageUrl] = useState(null);
 
     const [preferLocalOCR, setPreferLocalOCR] = useState(false);
+    const [geminiKey, setGeminiKey] = useState(null);
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
             setPreferLocalOCR(localStorage.getItem('preferLocalOCR') !== 'false');
+
+            const loadKey = () => setGeminiKey(localStorage.getItem('google_api_key'));
+            loadKey();
+            window.addEventListener('storage', loadKey);
+            return () => window.removeEventListener('storage', loadKey);
         }
     }, []);
 
@@ -128,7 +134,6 @@ export default function AnnotatePage() {
     const [jsonInput, setJsonInput] = useState("");
     const [jsonError, setJsonError] = useState(null);
 
-    // [FIX] Get mangaSlug
     const { mangaSlug } = useManga();
 
     useEffect(() => {
@@ -528,7 +533,6 @@ export default function AnnotatePage() {
         }
 
         const previousPage = { ...page };
-        // Mise à jour optimiste du state local
         setPage(prev => ({
             ...prev,
             description: JSON.stringify(payload)
@@ -540,7 +544,7 @@ export default function AnnotatePage() {
             await savePageDescription(pageId, payload);
             toast.success("Description et vecteurs enregistrés !");
         } catch (error) {
-            // Rollback en cas d'erreur
+
             setPage(previousPage);
             console.error(error);
             toast.error("Erreur lors de la sauvegarde.");
@@ -613,14 +617,12 @@ export default function AnnotatePage() {
         if (isGuest || isMobile) return;
         if (window.confirm("Supprimer cette annotation ?")) {
             const previousBubbles = [...existingBubbles];
-            // Mise à jour optimiste : on retire la bulle immédiatement
             setExistingBubbles(prev => prev.filter(b => b.id !== bubbleId));
 
             try {
                 await deleteBubble(bubbleId);
                 toast.success("Annotation supprimée.");
             } catch (error) {
-                // Rollback en cas d'erreur
                 setExistingBubbles(previousBubbles);
                 toast.error("Erreur lors de la suppression.");
             }
@@ -631,15 +633,12 @@ export default function AnnotatePage() {
         setPendingAnnotation(null);
         setDebugImageUrl(null);
 
-        // Mise à jour optimiste du state local des bulles
         if (newData) {
             setExistingBubbles(prev => {
                 const exists = prev.find(b => b.id === newData.id);
                 if (exists) {
-                    // C'est une édition
                     return prev.map(b => b.id === newData.id ? { ...b, ...newData } : b);
                 } else {
-                    // C'est une création (triée par défaut à la fin ou par ordre si dispo)
                     return [...prev, newData].sort((a, b) => a.order - b.order);
                 }
             });
@@ -751,10 +750,8 @@ export default function AnnotatePage() {
     return (
         <div className="flex flex-col lg:flex-row h-[calc(100vh-64px)] bg-slate-50 overflow-hidden -mx-4 sm:-mx-8 -my-6 relative">
 
-            {/* Colonne de navigation verticale (Desktop) */}
             <div className="hidden lg:flex w-[280px] shrink-0 h-full flex-col border-r border-slate-200 bg-white z-40 relative shadow-sm">
 
-                {/* En-tête / Infos */}
                 <div className="p-4 border-b border-slate-100 flex-none space-y-4 z-10">
                     <Link href={`/${mangaSlug}/dashboard`} className="inline-flex items-center text-[11px] font-bold text-slate-400 hover:text-slate-700 uppercase tracking-wider transition-colors">
                         <ArrowLeft size={12} className="mr-2" />
@@ -777,10 +774,8 @@ export default function AnnotatePage() {
                     </div>
                 </div>
 
-                {/* Content Block - Fixed items */}
                 <div className="flex-1 flex flex-col p-4 gap-3 overflow-hidden bg-slate-50/50">
 
-                    {/* Navigation Block */}
                     <div className="flex-none p-3 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-2">
                         <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-0.5">Navigation</h3>
                         <div className="flex gap-2">
@@ -793,7 +788,6 @@ export default function AnnotatePage() {
                         </div>
                     </div>
 
-                    {/* Moteur OCR Block */}
                     <div className="flex-none p-3 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-3">
                         <div className="flex items-center justify-between pl-0.5">
                             <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Moteur OCR</h3>
@@ -848,9 +842,31 @@ export default function AnnotatePage() {
                                 )}
                             </div>
                         )}
+
+                        {!preferLocalOCR && !geminiKey && (
+                            <div className="animate-in fade-in slide-in-from-top-1 duration-300 mt-1 flex flex-col gap-2 bg-amber-50 border border-amber-200/60 p-2.5 rounded-lg">
+                                <div className="flex items-start gap-2">
+                                    <div className="bg-amber-100 p-1 rounded-full shrink-0 mt-0.5">
+                                        <Shield className="h-3 w-3 text-amber-600" />
+                                    </div>
+                                    <div className="text-[10px] leading-tight text-amber-800">
+                                        <span className="font-bold block mb-0.5">Clé API Requise</span>
+                                        Les appels Gemini Distants nécessitent votre clé. En l'absence de clé, l'extraction de texte sera ignorée.
+                                    </div>
+                                </div>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => window.dispatchEvent(new Event('open-api-key-modal'))}
+                                    className="h-7 text-[10px] font-bold text-amber-700 bg-amber-100/50 hover:bg-amber-100 border-amber-200 w-full"
+                                >
+                                    Configurer ma clé
+                                </Button>
+                            </div>
+                        )}
                     </div>
 
-                    {/* Détection Auto Block */}
+
                     <div className="flex-none p-3 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-3">
                         <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-0.5">Scanner Vision</h3>
 
@@ -884,7 +900,7 @@ export default function AnnotatePage() {
                     </div>
                 </div>
 
-                {/* Actions Bottom */}
+
                 <div className="flex-none p-4 border-t border-slate-100 bg-white flex flex-col gap-2.5 z-10">
                     <div className="grid grid-cols-2 gap-2">
                         <Button variant="outline" size="sm" className="h-8 text-[11px] font-bold text-slate-600 bg-slate-50 border-slate-200/60 hover:bg-slate-100 hover:text-slate-900 w-full" onClick={() => setShowDescModal(true)}>
@@ -906,9 +922,9 @@ export default function AnnotatePage() {
                 </div>
             </div>
 
-            {/* Conteneur principal qui remplace l'ancienne empilation */}
+
             <div className="flex flex-col flex-1 overflow-hidden min-w-0 bg-slate-50 relative">
-                {/* Header Mobile */}
+
                 <header className="lg:hidden flex-none h-auto min-h-16 border-b border-slate-200 bg-white px-4 py-3 flex items-center justify-between z-20 shadow-sm">
                     <div className="flex items-center gap-3 shrink-0">
                         <Link href={`/${mangaSlug}/dashboard`}>
@@ -956,12 +972,8 @@ export default function AnnotatePage() {
                     )
                 }
 
-                {/* Prefetch désactivé pour réduire la charge réseau */}
-                {/* 
-            {navContext.next && (
-                <link rel="prefetch" href={getProxiedImageUrl(navContext.next.url_image, navContext.next.id, session?.access_token)} crossOrigin="anonymous" />
-            )}
-            */}
+
+
 
 
                 <div className="flex flex-col lg:flex-row flex-1 overflow-hidden min-h-0">

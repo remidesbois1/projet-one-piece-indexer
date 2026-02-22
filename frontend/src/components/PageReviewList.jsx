@@ -101,7 +101,7 @@ const PageReviewList = () => {
               key={page.id}
               className="group relative overflow-hidden border-slate-200 bg-white hover:shadow-2xl hover:shadow-slate-200/50 transition-all duration-500 flex flex-col h-full border-0 shadow-sm"
             >
-              {/* Image Container with Hover Overlay */}
+              
               <div className="aspect-[2/3] w-full bg-slate-100 relative overflow-hidden shrink-0">
                 {page.url_image ? (
                   <>
@@ -111,7 +111,7 @@ const PageReviewList = () => {
                       className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110"
                       loading="lazy"
                     />
-                    {/* Gradient Overlay */}
+                    
                     <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
                   </>
                 ) : (
@@ -121,21 +121,21 @@ const PageReviewList = () => {
                   </div>
                 )}
 
-                {/* Page Number Badge (Top Right) */}
+                
                 <div className="absolute top-3 right-3 z-10">
                   <Badge variant="secondary" className="bg-white/95 backdrop-blur-md text-slate-900 shadow-xl border-white font-bold px-2 py-1">
                     Page {page.numero_page}
                   </Badge>
                 </div>
 
-                {/* Status/Type Badge (Top Left) */}
+                
                 <div className="absolute top-3 left-3 z-10">
                   <Badge className="bg-amber-500/90 backdrop-blur-md text-white border-0 text-[10px] font-bold tracking-tighter uppercase px-2 shadow-sm">
                     À Vérifier
                   </Badge>
                 </div>
 
-                {/* Hover Action Button (Centered) */}
+                
                 <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300 translate-y-4 group-hover:translate-y-0 z-20">
                   <Link href={`/${mangaSlug}/moderation/page/${page.id}`} prefetch={false}>
                     <Button className="bg-white text-slate-900 hover:bg-slate-100 rounded-full px-6 shadow-2xl font-bold gap-2">
@@ -146,7 +146,7 @@ const PageReviewList = () => {
                 </div>
               </div>
 
-              {/* Card Content */}
+              
               <CardContent className="p-4 flex-1 flex flex-col gap-3">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
@@ -163,7 +163,7 @@ const PageReviewList = () => {
                   )}
                 </div>
 
-                {/* Footer Meta */}
+                
                 <div className="pt-3 mt-auto border-t border-slate-50 flex items-center justify-between text-[10px] text-slate-400 font-medium uppercase tracking-wider">
                   <div className="flex items-center gap-1.5">
                     <Clock className="h-3 w-3" />

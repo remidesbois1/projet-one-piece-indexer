@@ -7,10 +7,10 @@ export const useDetection = () => useContext(DetectionContext);
 
 export const DetectionProvider = ({ children }) => {
     const workerRef = useRef(null);
-    const [detectionStatus, setDetectionStatus] = useState('idle'); // 'idle', 'loading', 'ready', 'error'
+    const [detectionStatus, setDetectionStatus] = useState('idle'); 
     const [downloadProgress, setDownloadProgress] = useState(0);
 
-    // Initialisation unique du Worker au montage de l'app
+    
     useEffect(() => {
         if (!workerRef.current && typeof window !== 'undefined') {
             workerRef.current = new Worker(new URL('../workers/detection.worker.js', import.meta.url), {
@@ -43,7 +43,7 @@ export const DetectionProvider = ({ children }) => {
         }
     };
 
-    // Returns a promise that resolves with boxes
+    
     const detectBubbles = (blob) => {
         return new Promise((resolve, reject) => {
             if (!workerRef.current || detectionStatus !== 'ready') {

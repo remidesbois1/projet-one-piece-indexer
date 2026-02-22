@@ -12,7 +12,7 @@ import ModerationCommentModal from '@/components/ModerationCommentModal';
 import ApiKeyForm from '@/components/ApiKeyForm';
 import { toast } from "sonner";
 
-// Shadcn Components
+
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
@@ -28,14 +28,14 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-// Icons
+
 import { Check, X, ArrowLeft, Pencil, FileText, Settings2, Save, Plus, Loader2, Sparkles, Code } from "lucide-react";
 
 export default function PageReview() {
     const params = useParams();
     const pageId = params?.pageId;
     const router = useRouter();
-    const { session, isGuest } = useAuth(); // Assuming isGuest is available in context
+    const { session, isGuest } = useAuth();
     const { mangaSlug } = useManga();
 
     const [page, setPage] = useState(null);
@@ -51,7 +51,7 @@ export default function PageReview() {
     const [hoveredBubble, setHoveredBubble] = useState(null);
     const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
 
-    // Metadata States
+
     const [showDescModal, setShowDescModal] = useState(false);
     const [isSavingDesc, setIsSavingDesc] = useState(false);
     const [isGeneratingAI, setIsGeneratingAI] = useState(false);
@@ -75,9 +75,7 @@ export default function PageReview() {
             const sortedBubbles = bubblesRes.data.sort((a, b) => a.order - b.order);
             setBubbles(sortedBubbles);
         } catch (err) {
-            console.error("Erreur chargement données:", err);
-            // alert("Impossible de charger la page.");
-        } finally {
+
             setLoading(false);
         }
     }, [pageId, session, isGuest]);
@@ -87,7 +85,6 @@ export default function PageReview() {
         fetchPageData();
     }, [fetchPageData]);
 
-    // Metadata Handlers (from AnnotatePage)
     useEffect(() => {
         if (tabMode === 'form') {
             const jsonStructure = {
@@ -285,7 +282,7 @@ export default function PageReview() {
     return (
         <div className="flex flex-col h-[calc(100vh-64px)] bg-slate-50">
 
-            {/* HEADER DE L'OUTIL */}
+
             <header className="flex-none h-auto min-h-16 border-b border-slate-200 bg-white px-4 sm:px-6 py-3 sm:py-0 flex flex-col lg:flex-row items-center justify-between z-20 shadow-sm gap-3 sm:gap-4 overflow-x-auto no-scrollbar">
                 <div className="flex items-center justify-between w-full lg:w-auto gap-4 shrink-0">
                     <div className="flex items-center gap-2 sm:gap-4">
@@ -341,10 +338,10 @@ export default function PageReview() {
                 </div>
             </header>
 
-            {/* CONTENU PRINCIPAL (Split View) */}
+
             <div className="flex flex-1 overflow-hidden">
 
-                {/* ZONE IMAGE (Scrollable) */}
+
                 <main className="flex-1 bg-slate-200/50 overflow-auto flex justify-center p-4 sm:p-8 relative">
                     <div
                         ref={imageContainerRef}
@@ -364,7 +361,7 @@ export default function PageReview() {
                             })}
                         />
 
-                        {/* OVERLAYS DES BULLES */}
+
                         {imageDimensions && bubbles.map((bubble, index) => {
                             const scale = imageDimensions.width / imageDimensions.naturalWidth;
                             if (!scale || isNaN(scale)) return null;
@@ -390,13 +387,13 @@ export default function PageReview() {
                             );
                         })}
 
-                        {/* TOOLTIP FLOTTANT SUIVEUR */}
+
                         {hoveredBubble && (
                             <div
                                 className="fixed z-50 pointer-events-none bg-slate-900/95 text-white p-3 rounded-lg shadow-xl border border-slate-700 backdrop-blur-sm max-w-[300px]"
                                 style={{
                                     left: 0, top: 0,
-                                    // On utilise fixed + translate pour suivre la souris sans lag
+
                                     transform: `translate(${mousePos.x + 20 + imageContainerRef.current?.getBoundingClientRect().left}px, ${mousePos.y + 20 + imageContainerRef.current?.getBoundingClientRect().top}px)`
                                 }}
                             >
@@ -411,10 +408,10 @@ export default function PageReview() {
                     </div>
                 </main>
 
-                {/* SIDEBAR DROITE (Liste des textes) */}
+
                 <aside className="w-full lg:w-[400px] bg-white border-l border-slate-200 flex flex-col h-full overflow-hidden z-10 shadow-lg">
 
-                    {/* Header fixe de la sidebar */}
+
                     <div className="flex-none p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
                         <h3 className="font-semibold text-slate-900">Textes détectés</h3>
                         <Badge variant="secondary" className="bg-slate-200 text-slate-700">
@@ -422,10 +419,10 @@ export default function PageReview() {
                         </Badge>
                     </div>
 
-                    {/* LISTE SCROLLABLE */}
+
                     <ScrollArea className="flex-1 w-full min-h-0">
                         <div className="p-0 pb-20">
-                            {/* Section Métadonnées Sémantiques (Aperçu) */}
+
                             {formData.content && (
                                 <div className="p-4 bg-indigo-50/30 border-b border-indigo-100/50">
                                     <div className="flex items-center gap-2 mb-2">
@@ -480,7 +477,7 @@ export default function PageReview() {
                 </aside>
             </div>
 
-            {/* MODAL D'ÉDITION */}
+
             <Dialog open={!!editingBubble} onOpenChange={(open) => !open && setEditingBubble(null)}>
                 <DialogContent className="sm:max-w-lg">
                     <DialogHeader>
@@ -500,7 +497,7 @@ export default function PageReview() {
                 </DialogContent>
             </Dialog>
 
-            {/* MODAL DESCRIPTION SÉMANTIQUE */}
+
             <Dialog open={showDescModal} onOpenChange={setShowDescModal}>
                 <DialogContent className="max-w-3xl">
                     <DialogHeader>
@@ -631,7 +628,7 @@ export default function PageReview() {
                 </DialogContent>
             </Dialog>
 
-            {/* MODAL CONFIG API */}
+
             <Dialog open={showApiKeyModal} onOpenChange={setShowApiKeyModal}>
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>

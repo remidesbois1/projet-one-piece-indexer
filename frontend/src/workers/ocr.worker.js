@@ -12,8 +12,6 @@ const MODEL_ID = 'Remidesbois/trocr-onepiece-fr';
 function fixFrenchPunctuation(text) {
     if (!text) return "";
 
-    // post-treatment
-
     text = text.replace(/"/g, '');
     text = text.replace(/’/g, "'");
     text = text.replace(/([^\s!?;:])([!?;:])/g, '$1 $2');

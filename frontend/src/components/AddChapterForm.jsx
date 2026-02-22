@@ -3,7 +3,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useManga } from '@/context/MangaContext';
 import { getTomes, uploadChapter } from '@/lib/api';
 
-// UI Components
+
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,7 +23,7 @@ const AddChapterForm = () => {
   const { mangaSlug } = useManga();
   const [tomes, setTomes] = useState([]);
 
-  // States UI
+  
   const [selectedTome, setSelectedTome] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState({ type: null, message: '' });

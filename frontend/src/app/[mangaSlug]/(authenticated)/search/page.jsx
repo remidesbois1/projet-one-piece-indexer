@@ -9,7 +9,7 @@ import { useAuth } from '@/context/AuthContext';
 import Link from 'next/link';
 import { useManga } from '@/context/MangaContext';
 
-// Shadcn UI Components
+
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
@@ -25,7 +25,7 @@ import { toast } from "sonner";
 
 
 
-import { Search, X, Loader2, Sparkles, BookOpen, MapPin, Quote, Info, ArrowRight, Settings, Filter, XCircle, Check } from "lucide-react";
+import { Search, X, Loader2, Sparkles, BookOpen, MapPin, Quote, Info, ArrowRight, Settings, Filter, XCircle, Check, Key } from "lucide-react";
 
 const RESULTS_PER_PAGE = 24;
 
@@ -91,10 +91,11 @@ export default function SearchPage() {
     const [hasMore, setHasMore] = useState(false);
 
     const [useSemantic, setUseSemantic] = useState(false);
+    const [modelProvider, setModelProvider] = useState('voyage');
+    const [geminiKey, setGeminiKey] = useState(null);
 
 
-
-    // Track which items have received feedback to prevent duplicates
+    
     const [feedbackGiven, setFeedbackGiven] = useState({});
 
 
@@ -114,7 +115,6 @@ export default function SearchPage() {
     const inputRef = useRef(null);
 
     useEffect(() => {
-
         if (inputRef.current) inputRef.current.focus();
 
         const fetchMetadata = async () => {
@@ -131,6 +131,13 @@ export default function SearchPage() {
             }
         };
         fetchMetadata();
+
+        if (typeof window !== 'undefined') {
+            const loadKey = () => setGeminiKey(localStorage.getItem('google_api_key'));
+            loadKey();
+            window.addEventListener('storage', loadKey);
+            return () => window.removeEventListener('storage', loadKey);
+        }
     }, []);
 
 
@@ -150,6 +157,7 @@ export default function SearchPage() {
 
     const handleManualSearch = () => {
         if (query.trim().length < 2) return;
+        if (useSemantic && modelProvider === 'gemini' && !geminiKey) return;
         setPage(1);
         fetchResults(query, 1, true);
     };
@@ -182,7 +190,8 @@ export default function SearchPage() {
                 RESULTS_PER_PAGE,
                 useSemantic ? 'semantic' : 'keyword',
                 filters,
-                useSemantic // semantic mode now implies rerank
+                useSemantic, 
+                modelProvider
             );
 
             let newResults = response.data.results;
@@ -229,7 +238,7 @@ export default function SearchPage() {
                 doc_id: item.id,
                 doc_text: item.content,
                 is_relevant: isRelevant,
-                model_provider: 'voyage'
+                model_provider: modelProvider
             });
 
             setFeedbackGiven(prev => ({ ...prev, [item.id]: true }));
@@ -243,14 +252,14 @@ export default function SearchPage() {
     return (
         <div className="min-h-screen pb-20">
 
-            {/* --- HERO HEADER --- */}
+            
             <div className="bg-white border-b border-slate-200 pt-6 sm:pt-12 pb-6 sm:pb-10 px-4 shadow-sm relative overflow-hidden -mx-4 sm:-mx-8 px-4 sm:px-8 mb-4 sm:mb-8">
                 <div className="container max-w-4xl mx-auto text-center space-y-4 sm:space-y-8 relative z-10">
                     <h1 className="text-2xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-slate-900">
                         Moteur de Recherche
                     </h1>
 
-                    {/* SEARCH INPUT AREA */}
+                    
                     <div className="relative max-w-2xl mx-auto">
                         <div className="relative flex items-center shadow-lg rounded-full group focus-within:ring-2 focus-within:ring-indigo-500/50 transition-all bg-white border border-slate-200">
                             <Input
@@ -280,10 +289,11 @@ export default function SearchPage() {
                                     size="icon"
                                     className={cn(
                                         "rounded-full h-9 w-9 sm:h-12 sm:w-12 shadow-sm transition-all",
-                                        useSemantic ? "bg-indigo-600 hover:bg-indigo-700" : "bg-slate-900 hover:bg-slate-800"
+                                        useSemantic ? "bg-indigo-600 hover:bg-indigo-700" : "bg-slate-900 hover:bg-slate-800",
+                                        (useSemantic && modelProvider === 'gemini' && !geminiKey) && "opacity-50 cursor-not-allowed bg-slate-300 hover:bg-slate-300 text-slate-500"
                                     )}
                                     onClick={handleManualSearch}
-                                    disabled={isLoading || query.length < 2}
+                                    disabled={isLoading || query.length < 2 || (useSemantic && modelProvider === 'gemini' && !geminiKey)}
                                 >
                                     {isLoading ? <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin" /> : <Search className="h-4 w-4 sm:h-5 sm:w-5" />}
                                 </Button>
@@ -291,11 +301,11 @@ export default function SearchPage() {
                         </div>
                     </div>
 
-                    {/* CONTROLS & INFO */}
+                    
                     <div className="flex flex-col items-center gap-4 sm:gap-6">
                         <div className="flex flex-col gap-4 w-full sm:w-auto items-center">
-                            {/* Mode Toggles */}
-                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-0 bg-slate-100/80 p-1 sm:p-1.5 rounded-2xl sm:rounded-full border border-slate-200 shadow-inner w-full sm:w-auto">
+                            
+                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4 bg-slate-100/80 p-1 sm:p-1.5 rounded-2xl sm:rounded-full border border-slate-200 shadow-inner w-full sm:w-auto">
                                 <div className="flex items-center justify-between sm:justify-start space-x-3 px-3 py-2 sm:py-0">
                                     <Label
                                         htmlFor="semantic-mode"
@@ -311,23 +321,75 @@ export default function SearchPage() {
                                         checked={useSemantic}
                                         onCheckedChange={(checked) => {
                                             setUseSemantic(checked);
-                                            if (!checked) setUseRerank(false);
                                         }}
                                         className="data-[state=checked]:bg-indigo-600"
                                     />
                                 </div>
+
+                                {useSemantic && (
+                                    <>
+                                        <div className="hidden sm:block w-px h-6 bg-slate-200"></div>
+                                        <div className="flex items-center justify-between sm:justify-start space-x-3 px-3 py-2 sm:py-0">
+                                            <Label
+                                                className="font-bold cursor-pointer select-none flex items-center gap-2 text-xs sm:text-sm text-slate-700"
+                                            >
+                                                Moteur IA :
+                                            </Label>
+                                            <div className="flex items-center bg-white rounded-full p-0.5 shadow-sm border border-slate-200">
+                                                <button
+                                                    onClick={() => setModelProvider('voyage')}
+                                                    className={cn(
+                                                        "flex items-center justify-center rounded-full px-3 py-1 text-xs font-bold transition-all",
+                                                        modelProvider === 'voyage' ? "bg-slate-900 text-white shadow" : "text-slate-500 hover:text-slate-700"
+                                                    )}
+                                                >
+                                                    Voyage
+                                                </button>
+                                                <button
+                                                    onClick={() => setModelProvider('gemini')}
+                                                    className={cn(
+                                                        "flex items-center justify-center rounded-full px-3 py-1 text-xs font-bold transition-all",
+                                                        modelProvider === 'gemini' ? "bg-indigo-600 text-white shadow" : "text-slate-500 hover:text-slate-700"
+                                                    )}
+                                                >
+                                                    Gemini
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
                             </div>
                         </div>
 
-                        {/* DESCRIPTIVE TEXTS */}
+                        
                         <div className="flex flex-col gap-2 max-w-lg mx-auto w-full px-2">
                             {useSemantic ? (
-                                <div className="animate-in fade-in slide-in-from-top-1 duration-300 flex items-center gap-3 text-xs text-indigo-700 bg-indigo-50/50 px-4 py-2.5 rounded-xl border border-indigo-100 shadow-sm text-left">
-                                    <Info className="h-4 w-4 flex-shrink-0 text-indigo-500" />
-                                    <p>
-                                        <strong>Mode Conceptuel :</strong> L'IA comprend le sens de votre phrase. Parfait pour trouver des moments précis.
-                                    </p>
-                                </div>
+                                modelProvider === 'gemini' && !geminiKey ? (
+                                    <div className="animate-in fade-in slide-in-from-top-1 duration-300 flex flex-col sm:flex-row items-start sm:items-center gap-4 text-amber-800 bg-amber-50 px-5 py-4 rounded-xl border border-amber-200 shadow-sm text-left">
+                                        <div className="bg-amber-100 p-2 rounded-full shrink-0">
+                                            <Key className="h-5 w-5 text-amber-600" />
+                                        </div>
+                                        <div className="flex-1">
+                                            <strong className="block text-sm mb-1">Clé API Requise</strong>
+                                            <p className="text-xs text-amber-700/90 leading-relaxed mb-3">
+                                                Le modèle Gemini nécessite votre propre clé API Google pour fonctionner.
+                                            </p>
+                                            <button
+                                                onClick={() => window.dispatchEvent(new Event('open-api-key-modal'))}
+                                                className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-700 hover:text-amber-900 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
+                                            >
+                                                Ajouter ma clé <ArrowRight className="h-3.5 w-3.5" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="animate-in fade-in slide-in-from-top-1 duration-300 flex items-center gap-3 text-xs text-indigo-700 bg-indigo-50/50 px-4 py-2.5 rounded-xl border border-indigo-100 shadow-sm text-left">
+                                        <Info className="h-4 w-4 flex-shrink-0 text-indigo-500" />
+                                        <p>
+                                            <strong>Mode Conceptuel :</strong> L'IA comprend le sens de votre phrase. Parfait pour trouver des moments précis.
+                                        </p>
+                                    </div>
+                                )
                             ) : (
                                 <div className="animate-in fade-in slide-in-from-top-1 duration-300 flex items-center gap-3 text-xs text-slate-600 bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-200 text-left">
                                     <Quote className="h-4 w-4 flex-shrink-0 text-slate-400" />
@@ -336,15 +398,13 @@ export default function SearchPage() {
                                     </p>
                                 </div>
                             )}
-
-
                         </div>
                     </div>
 
 
                 </div>
 
-                {/* === FILTRES MULTICRITÈRES === */}
+                
                 <div className="mt-4 sm:mt-8 space-y-4">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <Button
@@ -477,7 +537,7 @@ export default function SearchPage() {
                         </div>
                     )}
 
-                    {/* Active Filters Summary */}
+                    
                     {(selectedCharacters.length > 0 || selectedArc !== 'all' || selectedTome !== 'all') && (
                         <div className="flex flex-wrap items-center gap-2 text-sm pt-2">
                             <span className="text-slate-400 text-xs font-bold uppercase tracking-wider mr-2">Filtres :</span>
@@ -512,7 +572,7 @@ export default function SearchPage() {
                     </div>
                 )}
 
-                {/* Grid */}
+                
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
                     {results.map((item, index) => {
                         const isSemantic = item.type === 'semantic';
@@ -526,7 +586,7 @@ export default function SearchPage() {
                             >
                                 <Card className="h-full flex flex-col overflow-hidden border-slate-200 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 rounded-2xl shadow-sm bg-white">
 
-                                    {/* Image Header */}
+                                    
                                     <ResultImage
                                         url={item.url_image}
                                         pageId={item.page_id}
@@ -536,7 +596,7 @@ export default function SearchPage() {
                                     />
 
                                     <CardContent className="flex-1 p-4 sm:p-5 flex flex-col gap-3">
-                                        {/* Metadata Badges */}
+                                        
                                         <div className="flex flex-wrap gap-1.5 mb-1">
                                             <Badge variant="secondary" className="text-[10px] text-slate-500 bg-slate-100 font-bold px-2 py-0.5 border-none">
                                                 Tome {item.context.match(/Tome (\d+)/)?.[1] || '?'}
@@ -548,7 +608,7 @@ export default function SearchPage() {
 
                                         <Separator className="bg-slate-100" />
 
-                                        {/* Content Text */}
+                                        
                                         <div className={`text-sm leading-relaxed line-clamp-4 ${isSemantic ? "text-slate-600" : "text-slate-800 font-serif"}`}>
                                             {isSemantic ? (
                                                 highlightText(item.content, query)
@@ -617,7 +677,7 @@ export default function SearchPage() {
                     })}
                 </div>
 
-                {/* --- LOADING & EMPTY --- */}
+                
                 {
                     isLoading && (
                         <div className="flex flex-col items-center justify-center py-20 gap-3">

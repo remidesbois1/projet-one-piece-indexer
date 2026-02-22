@@ -11,6 +11,8 @@ const mime = require('mime-types');
 
 const { supabaseAdmin } = require('../config/supabaseClient');
 const { logBubbleHistory } = require('../utils/auditLogger');
+const { generateGeminiEmbedding } = require('../utils/geminiClient');
+const { generateVoyageEmbedding } = require('../utils/voyageClient');
 
 // Ensure environment variables are loaded
 if (process.env.NODE_ENV !== 'production') {
@@ -672,6 +674,190 @@ router.post('/tomes/batch-pages', authMiddleware, roleCheck(['Admin']), express.
     console.error("Erreur batch-pages:", error);
     res.status(500).json({ error: "Erreur lors de la création batch.", details: error.message });
   }
+});
+
+router.get('/ai-models/embedding-stats', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('pages')
+      .select('id, description, embedding_voyage, embedding_gemini, id_chapitre, numero_page, statut')
+      .order('id_chapitre', { ascending: true })
+      .order('numero_page', { ascending: true });
+
+    if (error) throw error;
+
+    const stats = data.map(page => ({
+      id: page.id,
+      chapitre_id: page.id_chapitre,
+      numero: page.numero_page,
+      has_voyage: page.embedding_voyage !== null,
+      has_gemini: page.embedding_gemini !== null,
+      has_description: page.description !== null && page.description !== '',
+      statut: page.statut
+    }));
+
+    res.json(stats);
+  } catch (error) {
+    console.error("Erreur embedding-stats:", error);
+    res.status(500).json({ error: "Erreur lors de la récupération des statistiques d'embeddings." });
+  }
+});
+
+router.post('/ai-models/trigger-backfill', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+  // We trigger this asynchronously and return immediately to avoid timeout
+  res.json({ message: "Processus de backfill démarré en tâche de fond." });
+
+  (async () => {
+    try {
+      console.log("[Backfill] Démarrage du backfill Gemini...");
+
+      // Step 1: Get pages where embedding_gemini is null and we have either a description or validated bulles.
+      // Easiest is to get all pages without gemini embedding. 
+      const { data: pagesToProcess, error: pagesError } = await supabaseAdmin
+        .from('pages')
+        .select(`
+            id,
+            description,
+            bulles ( texte_propose, statut )
+        `)
+        .is('embedding_gemini', null);
+
+      if (pagesError) throw pagesError;
+
+      let processed = 0;
+      let errors = 0;
+
+      for (const page of pagesToProcess) {
+        let contentToEmbed = "";
+
+        if (page.description) {
+          let desc = page.description;
+          try {
+            if (typeof desc === 'string') desc = JSON.parse(desc).content;
+            else if (typeof desc === 'object') desc = desc.content;
+          } catch (e) { }
+          if (desc) contentToEmbed += desc + " ";
+        }
+
+        if (page.bulles && page.bulles.length > 0) {
+          const texts = page.bulles
+            .filter(b => b.statut === 'validated' && b.texte_propose)
+            .map(b => b.texte_propose)
+            .join(' ');
+          if (texts) contentToEmbed += texts;
+        }
+
+        contentToEmbed = contentToEmbed.trim();
+
+        if (contentToEmbed.length > 0) {
+          try {
+            // Call Gemini for embedding (using backend key implicitly stored in env)
+            // Need to use process.env.GOOGLE_API_KEY inside generateGeminiEmbedding, which it does.
+            const embedding = await generateGeminiEmbedding(contentToEmbed, "RETRIEVAL_DOCUMENT");
+
+            // Save it back to supabase
+            const { error: updateError } = await supabaseAdmin
+              .from('pages')
+              .update({ embedding_gemini: embedding })
+              .eq('id', page.id);
+
+            if (updateError) {
+              console.error(`[Backfill] Erreur Update Supabase pour la page ${page.id}:`, updateError);
+              errors++;
+            } else {
+              processed++;
+            }
+          } catch (embedError) {
+            console.error(`[Backfill] Erreur Gemini Embedding pour la page ${page.id}:`, embedError.message);
+            errors++;
+          }
+          // Small delay to prevent rate limits
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+
+      console.log(`[Backfill] Terminé. Traitées: ${processed}, Erreurs: ${errors}`);
+    } catch (e) {
+      console.error("[Backfill] Erreur globale lors du backfill:", e);
+    }
+  })();
+});
+
+router.post('/ai-models/trigger-backfill-voyage', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+  // We trigger this asynchronously and return immediately to avoid timeout
+  res.json({ message: "Processus de backfill Voyage démarré en tâche de fond." });
+
+  (async () => {
+    try {
+      console.log("[Backfill Voyage] Démarrage du backfill Voyage...");
+
+      const { data: pagesToProcess, error: pagesError } = await supabaseAdmin
+        .from('pages')
+        .select(`
+            id,
+            description,
+            bulles ( texte_propose, statut )
+        `)
+        .is('embedding_voyage', null);
+
+      if (pagesError) throw pagesError;
+
+      let processed = 0;
+      let errors = 0;
+
+      for (const page of pagesToProcess) {
+        let contentToEmbed = "";
+
+        if (page.description) {
+          let desc = page.description;
+          try {
+            if (typeof desc === 'string') desc = JSON.parse(desc).content;
+            else if (typeof desc === 'object') desc = desc.content;
+          } catch (e) { }
+          if (desc) contentToEmbed += desc + " ";
+        }
+
+        if (page.bulles && page.bulles.length > 0) {
+          const texts = page.bulles
+            .filter(b => b.statut === 'validated' && b.texte_propose)
+            .map(b => b.texte_propose)
+            .join(' ');
+          if (texts) contentToEmbed += texts;
+        }
+
+        contentToEmbed = contentToEmbed.trim();
+
+        if (contentToEmbed.length > 0) {
+          try {
+            // Call Voyage for embedding
+            const embedding = await generateVoyageEmbedding(contentToEmbed, "document");
+
+            // Save it back to supabase
+            const { error: updateError } = await supabaseAdmin
+              .from('pages')
+              .update({ embedding_voyage: embedding })
+              .eq('id', page.id);
+
+            if (updateError) {
+              console.error(`[Backfill Voyage] Erreur Update Supabase pour la page ${page.id}:`, updateError);
+              errors++;
+            } else {
+              processed++;
+            }
+          } catch (embedError) {
+            console.error(`[Backfill Voyage] Erreur Voyage Embedding pour la page ${page.id}:`, embedError.message);
+            errors++;
+          }
+          // Small delay to prevent rate limits
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+
+      console.log(`[Backfill Voyage] Terminé. Traitées: ${processed}, Erreurs: ${errors}`);
+    } catch (e) {
+      console.error("[Backfill Voyage] Erreur globale lors du backfill:", e);
+    }
+  })();
 });
 
 module.exports = router;

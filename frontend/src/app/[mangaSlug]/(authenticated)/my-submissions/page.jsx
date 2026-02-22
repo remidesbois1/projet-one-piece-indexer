@@ -146,7 +146,7 @@ export default function MySubmissionsPage() {
                 </CardContent>
             </Card>
 
-            {/* Pagination */}
+            
             {totalPages > 1 && (
                 <div className="flex justify-center items-center gap-4 mt-6">
                     <Button

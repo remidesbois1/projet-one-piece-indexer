@@ -4,7 +4,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 export default function Loading() {
     return (
         <div className="flex flex-col h-[calc(100vh-140px)] bg-slate-50 -mt-6 -mx-4 sm:-mx-8">
-            {/* Header Skeleton */}
+            
             <div className="flex-none h-16 border-b border-slate-200 bg-white px-6 flex items-center justify-between shadow-sm">
                 <div className="flex items-center gap-4">
                     <Skeleton className="h-8 w-24" />
@@ -19,14 +19,14 @@ export default function Loading() {
                 </div>
             </div>
 
-            {/* Main Content Skeleton */}
+            
             <div className="flex flex-1 overflow-hidden">
-                {/* Left Side: Image Area */}
+                
                 <div className="flex-1 bg-slate-200/50 flex justify-center p-8">
                     <Skeleton className="w-full max-w-[800px] h-full shadow-xl rounded-sm" />
                 </div>
 
-                {/* Right Side: Sidebar Area */}
+                
                 <div className="w-[450px] border-l border-slate-200 bg-white flex flex-col p-6 space-y-6">
                     <div className="space-y-2">
                         <Skeleton className="h-6 w-40" />

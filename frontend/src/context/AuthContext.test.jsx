@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AuthProvider, useAuth } from './AuthContext';
 import { supabase } from '@/lib/supabaseClient';
 
-// Mock Supabase Client
+
 vi.mock('@/lib/supabaseClient', () => ({
     supabase: {
         auth: {
@@ -15,7 +15,7 @@ vi.mock('@/lib/supabaseClient', () => ({
     }
 }));
 
-// Test component to extract hook values
+
 const TestComponent = () => {
     const auth = useAuth();
     return (
@@ -36,13 +36,13 @@ describe('AuthContext', () => {
     beforeEach(() => {
         vi.clearAllMocks();
 
-        // Setup default Supabase mock responses
+        
         supabase.auth.getSession.mockResolvedValue({ data: { session: null } });
         supabase.auth.onAuthStateChange.mockReturnValue({
             data: { subscription: { unsubscribe: vi.fn() } }
         });
 
-        // Mock localStorage
+        
         getItemSpy = vi.spyOn(Storage.prototype, 'getItem').mockReturnValue(null);
         setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
         removeItemSpy = vi.spyOn(Storage.prototype, 'removeItem');
@@ -61,7 +61,7 @@ describe('AuthContext', () => {
             </AuthProvider>
         );
 
-        // Wait for effect to load session
+        
         expect(await screen.findByTestId('isGuest')).toHaveTextContent('false');
         expect(screen.getByTestId('userEmail')).toHaveTextContent('none');
     });
@@ -83,7 +83,7 @@ describe('AuthContext', () => {
     });
 
     it('restores guest mode from localStorage', async () => {
-        getItemSpy.mockReturnValue('true'); // Simulate guest_mode='true' in localStorage
+        getItemSpy.mockReturnValue('true'); 
 
         render(
             <AuthProvider>
@@ -101,7 +101,7 @@ describe('AuthContext', () => {
             </AuthProvider>
         );
 
-        await screen.findByTestId('isGuest'); // wait for load
+        await screen.findByTestId('isGuest'); 
 
         act(() => {
             screen.getByTestId('loginGuestBtn').click();
@@ -118,7 +118,7 @@ describe('AuthContext', () => {
             </AuthProvider>
         );
 
-        await screen.findByTestId('isGuest'); // wait for load
+        await screen.findByTestId('isGuest'); 
 
         act(() => {
             screen.getByTestId('signOutBtn').click();

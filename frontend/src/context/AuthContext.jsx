@@ -10,7 +10,7 @@ export function AuthProvider({ children }) {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        // Check localStorage only on client
+        
         if (typeof window !== 'undefined') {
             setIsGuest(localStorage.getItem('guest_mode') === 'true');
         }

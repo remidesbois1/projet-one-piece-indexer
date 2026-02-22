@@ -4,7 +4,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 export default function Loading() {
     return (
         <div className="min-h-screen pb-20 space-y-8">
-            {/* Hero Search Area Skeleton */}
+            
             <div className="bg-white border-b border-slate-200 pt-10 pb-8 px-4 shadow-sm -mx-4 sm:-mx-8 mb-8">
                 <div className="container max-w-4xl mx-auto text-center space-y-6">
                     <Skeleton className="h-10 w-2/3 mx-auto" />

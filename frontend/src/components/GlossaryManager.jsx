@@ -16,10 +16,8 @@ const GlossaryManager = () => {
     const [searchTerm, setSearchTerm] = useState("");
     const [currentPage, setCurrentPage] = useState(1);
 
-    // Form state
     const [newAliases, setNewAliases] = useState("");
 
-    // Editing state
     const [editingId, setEditingId] = useState(null);
     const [editAliases, setEditAliases] = useState("");
 
@@ -40,7 +38,6 @@ const GlossaryManager = () => {
         fetchGlossary();
     }, []);
 
-    // Filter Logic
     const filteredItems = items.filter(item =>
         item.aliases && item.aliases.some(a => a.toLowerCase().includes(searchTerm.toLowerCase()))
     );
@@ -125,7 +122,7 @@ const GlossaryManager = () => {
             </CardHeader>
 
             <CardContent className="p-6">
-                {/* Add Form */}
+
                 <div className="mb-8 p-4 bg-slate-50 rounded-lg border border-slate-200">
                     <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
                         <Plus className="h-4 w-4" /> Ajouter une entrée
@@ -145,7 +142,7 @@ const GlossaryManager = () => {
                     </form>
                 </div>
 
-                {/* Search Bar */}
+
                 <div className="flex items-center gap-2 mb-4">
                     <div className="relative flex-1 max-w-sm">
                         <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
@@ -163,7 +160,7 @@ const GlossaryManager = () => {
 
                 {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
 
-                {/* Table */}
+
                 <div className="rounded-md border border-slate-200 overflow-hidden">
                     <Table>
                         <TableHeader className="bg-slate-50">
@@ -237,7 +234,7 @@ const GlossaryManager = () => {
                     </Table>
                 </div>
 
-                {/* Pagination */}
+
                 {totalPages > 1 && (
                     <div className="flex items-center justify-end space-x-2 py-4">
                         <Button

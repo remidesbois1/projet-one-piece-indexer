@@ -37,7 +37,7 @@ export default function RootLayout({ children }) {
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <NextTopLoader
-          color="#3b82f6" // bleu-500 par défaut ou adapter au thème
+          color="#3b82f6" 
           initialPosition={0.08}
           crawlSpeed={200}
           height={3}

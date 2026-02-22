@@ -4,9 +4,9 @@ import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { useUserProfile } from '@/hooks/useUserProfile';
-import { useManga } from '@/context/MangaContext'; // [NEW]
+import { useManga } from '@/context/MangaContext'; 
 
-// UI Components
+
 import { Button } from "@/components/ui/button";
 import {
     DropdownMenu,
@@ -26,7 +26,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 
-// Icons
+
 import { LogOut, User, Shield, ShieldAlert, Book, Sparkles, Menu, Search, FileText, Image as ImageIcon, Languages, Settings2, Library } from "lucide-react";
 
 const Header = ({ onOpenApiKeyModal }) => {
@@ -34,7 +34,7 @@ const Header = ({ onOpenApiKeyModal }) => {
     const { profile } = useUserProfile();
     const router = useRouter();
     const pathname = usePathname();
-    const { mangaSlug } = useManga(); // [NEW] Get mangaSlug
+    const { mangaSlug } = useManga(); 
     const searchParams = useSearchParams();
 
     const [loginUrl, setLoginUrl] = React.useState('/login');
@@ -52,23 +52,23 @@ const Header = ({ onOpenApiKeyModal }) => {
     const isAdmin = profile?.role === 'Admin';
     const isModo = profile?.role === 'Modo';
 
-    // Fonction utilitaire pour le style des liens
+    
     const getLinkStyle = (path) => {
         const fullPath = `/${mangaSlug}${path}`;
         const isActive = pathname === fullPath;
         return `text-sm font-medium transition-colors duration-200 ${isActive ? "text-[#2F7AAF] font-semibold" : "text-slate-500 hover:text-slate-900"}`;
     };
 
-    // Initiales pour l'avatar (ex: "john.doe@gmail.com" -> "JO")
+    
     const getInitials = (email) => {
         if (!email) return "U";
         return email.substring(0, 2).toUpperCase();
     };
 
-    // [NEW] Helper for Links
+    
     const getHref = (path) => `/${mangaSlug}${path}`;
 
-    if (!mangaSlug) return null; // Should not happen in authenticated layout
+    if (!mangaSlug) return null; 
 
     return (
         <header className="sticky top-0 z-50 w-full border-b border-slate-200/80 bg-white/85 backdrop-blur-md">
@@ -87,7 +87,7 @@ const Header = ({ onOpenApiKeyModal }) => {
                     </Link>
                 </div>
 
-                {/* NAVIGATION DESKTOP */}
+                
                 <nav className="hidden md:flex items-center gap-6">
                     <Link href={getHref('/dashboard')} prefetch={false} className={getLinkStyle('/dashboard')}>
                         Bibliothèque
@@ -117,10 +117,10 @@ const Header = ({ onOpenApiKeyModal }) => {
                     )}
                 </nav>
 
-                {/* USER SECTION */}
-                {/* USER SECTION & MOBILE MENU */}
+                
+                
                 <div className="flex items-center gap-2 sm:gap-4">
-                    {/* DESKTOP USER DROPDOWN */}
+                    
                     <div className="hidden md:block">
                         {user && !isGuest ? (
                             <DropdownMenu>
@@ -183,7 +183,7 @@ const Header = ({ onOpenApiKeyModal }) => {
                         )}
                     </div>
 
-                    {/* MOBILE HAMBURGER MENU */}
+                    
                     <div className="md:hidden">
                         <Sheet>
                             <SheetTrigger asChild>

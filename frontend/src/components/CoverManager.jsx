@@ -12,7 +12,7 @@ const CoverManager = () => {
     const { mangaSlug } = useManga();
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState(null);
-    const [uploading, setUploading] = useState(null); // id of item being uploaded
+    const [uploading, setUploading] = useState(null); 
 
     const fetchCovers = async () => {
         try {
@@ -75,7 +75,7 @@ const CoverManager = () => {
             </CardHeader>
 
             <CardContent className="p-6 space-y-8">
-                {/* Manga Cover */}
+                
                 <div className="space-y-4">
                     <h3 className="font-semibold text-slate-900">Couverture du Manga</h3>
                     <div className="flex items-start gap-6">
@@ -128,7 +128,7 @@ const CoverManager = () => {
 
                 <Separator className="bg-slate-100" />
 
-                {/* Tome Covers */}
+                
                 <div className="space-y-4">
                     <h3 className="font-semibold text-slate-900">Couvertures des Tomes</h3>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">

@@ -12,7 +12,7 @@ describe('Utils', () => {
         });
 
         it('resolves Tailwind conflicts (tailwind-merge behavior)', () => {
-            // tailwind-merge should resolve conflicting padding classes by keeping the last one
+            
             expect(cn('p-4 p-2', 'p-8')).toBe('p-8');
             expect(cn('bg-red-500 text-white', 'bg-blue-500')).toBe('text-white bg-blue-500');
         });
@@ -63,8 +63,8 @@ describe('Utils', () => {
             await expect(cropImage({}, { x: 0, y: 0, w: 100, h: -10 })).rejects.toEqual('Invalid rect dimensions');
         });
 
-        // Note: We don't thoroughly test Canvas API success path here 
-        // because JSDOM does not fully implement Canvas.
-        // It's mostly a wrapper mock test.
+        
+        
+        
     });
 });

@@ -24,6 +24,11 @@ export default function AuthenticatedLayout({ children }) {
             const currentUrl = encodeURIComponent(window.location.pathname + window.location.search);
             router.push(`/login?next=${currentUrl}`);
         }
+
+        const handleOpenModal = () => setShowApiKeyModal(true);
+        window.addEventListener('open-api-key-modal', handleOpenModal);
+
+        return () => window.removeEventListener('open-api-key-modal', handleOpenModal);
     }, [session, loading, isGuest, router]);
 
     if (loading) {
@@ -41,7 +46,7 @@ export default function AuthenticatedLayout({ children }) {
     }
 
     if (!session && !isGuest) {
-        return null; // Sera redirigé par useEffect
+        return null;
     }
 
     return (

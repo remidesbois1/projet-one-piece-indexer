@@ -24,13 +24,14 @@ import {
     Search,
     Loader2
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import Image from "next/image";
+import { cn, getProxiedImageUrl } from "@/lib/utils";
 
 export default function AdminDataPage() {
     const [hierarchy, setHierarchy] = useState([]);
     const [loading, setLoading] = useState(true);
 
-    // Selection state
+    
     const [selectedTome, setSelectedTome] = useState(null);
     const [selectedChapter, setSelectedChapter] = useState(null);
     const [selectedPage, setSelectedPage] = useState(null);
@@ -39,7 +40,7 @@ export default function AdminDataPage() {
     const [loadingBubbles, setLoadingBubbles] = useState(false);
 
 
-    // History Modal State
+    
     const [historyBubble, setHistoryBubble] = useState(null);
     const [history, setHistory] = useState([]);
     const [loadingHistory, setLoadingHistory] = useState(false);
@@ -130,7 +131,7 @@ export default function AdminDataPage() {
             </div>
 
             <div className="flex-1 flex overflow-hidden min-h-0">
-                {/* COL 1: Volumes & Chapters */}
+                
                 <div className="w-1/4 min-w-[250px] border-r bg-slate-50 flex flex-col min-h-0">
                     <div className="p-3 font-semibold text-slate-700 border-b bg-slate-100 shrink-0">
                         Volumes
@@ -186,7 +187,7 @@ export default function AdminDataPage() {
                     </ScrollArea>
                 </div>
 
-                {/* COL 2: Pages List */}
+                
                 <div className="w-1/4 min-w-[250px] border-r bg-white flex flex-col min-h-0">
                     <div className="p-3 font-semibold text-slate-700 border-b bg-slate-50 flex justify-between shrink-0">
                         <span>Pages</span>
@@ -213,13 +214,20 @@ export default function AdminDataPage() {
                                     >
                                         <div className="w-full aspect-[2/3] bg-slate-100 mb-2 rounded overflow-hidden relative">
                                             {page.url_image ? (
-                                                <img src={page.url_image} alt="" className="w-full h-full object-cover" loading="lazy" />
+                                                <Image
+                                                    src={getProxiedImageUrl(page.url_image)}
+                                                    alt={`Page ${page.numero_page}`}
+                                                    fill
+                                                    sizes="(max-width: 768px) 50vw, 20vw"
+                                                    className="object-cover"
+                                                    loading="lazy"
+                                                />
                                             ) : (
                                                 <div className="w-full h-full flex items-center justify-center">
                                                     <ImageOff className="h-6 w-6 text-slate-300" />
                                                 </div>
                                             )}
-                                            {/* Status Badge Over Image */}
+                                            
                                             <div className="absolute top-1 right-1">
                                                 <Badge className={cn(
                                                     "text-[9px] px-1 h-4",
@@ -239,13 +247,13 @@ export default function AdminDataPage() {
                     </ScrollArea>
                 </div>
 
-                {/* COL 3: Bubbles Detail */}
+                
                 <div className="flex-1 bg-slate-50/50 flex flex-col min-h-0">
                     <div className="p-3 font-semibold text-slate-700 border-b bg-white flex justify-between shrink-0">
                         <span>Détail Bubbles</span>
                         {selectedPage && <span className="text-xs font-normal text-slate-500 self-center">Page {selectedPage.numero_page}</span>}
                     </div>
-                    {/* Use relative container + absolute ScrollArea to guarantee height constraint */}
+                    
                     <div className="flex-1 relative">
                         <ScrollArea className="absolute inset-0 h-full w-full">
                             <div className="p-4">
@@ -260,7 +268,7 @@ export default function AdminDataPage() {
                                     <div className="text-center text-slate-500 py-8">Aucune bulle sur cette page.</div>
                                 ) : (
                                     <div className="space-y-4">
-                                        {/* Header Stats */}
+                                        
                                         <div className="grid grid-cols-4 gap-4 mb-6">
                                             <div className="bg-white p-3 rounded border shadow-sm flex flex-col items-center">
                                                 <span className="text-xs text-slate-500 uppercase">Total</span>
@@ -280,7 +288,7 @@ export default function AdminDataPage() {
                                             </div>
                                         </div>
 
-                                        {/* Table-like list */}
+                                        
                                         <div className="bg-white border rounded-md shadow-sm overflow-hidden">
                                             <div className="grid grid-cols-12 bg-slate-100 p-2 text-xs font-semibold text-slate-600 border-b">
                                                 <div className="col-span-1 text-center">#</div>
@@ -370,7 +378,7 @@ export default function AdminDataPage() {
                                                 </div>
 
                                                 <div className="text-sm mt-2 text-slate-600">
-                                                    {/* User display logic fallback if email is null */}
+                                                    
                                                     <div className="flex items-center gap-1 text-xs text-slate-400 mb-2">
                                                         <UserIconDisplay email={entry.user?.email} id={entry.user_id} />
                                                     </div>
@@ -408,7 +416,7 @@ export default function AdminDataPage() {
 }
 
 function UserIconDisplay({ email, id }) {
-    // If email exists, show it. Otherwise show ID.
+    
     return (
         <>
             <span className="w-4 h-4 bg-slate-200 rounded-full flex items-center justify-center text-[10px] font-bold text-slate-500">

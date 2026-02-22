@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
-// Import du hook pour le profil (rôle) et de la nouvelle fonction API
+
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { getPendingBubbles, validateBubble, rejectBubble, validateAllBubbles } from '@/lib/api';
 import BubbleReviewItem from './BubbleReviewItem';
 import ValidationForm from './ValidationForm';
 import ModerationCommentModal from './ModerationCommentModal';
 
-// Shadcn Components
+
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -18,7 +18,7 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog";
 
-// Icons
+
 import { CheckCircle2, AlertCircle, ChevronLeft, ChevronRight } from "lucide-react";
 
 const RESULTS_PER_PAGE = 5;

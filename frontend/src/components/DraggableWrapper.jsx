@@ -4,12 +4,12 @@ import { GripHorizontal } from "lucide-react";
 const DraggableWrapper = ({ children, title, onClose, className }) => {
     const [isDragging, setIsDragging] = useState(false);
     
-    // On stocke le décalage (translation) courant
+    
     const [translate, setTranslate] = useState({ x: 0, y: 0 });
     
-    // On stocke la position de la souris au début du drag
+    
     const dragStartPos = useRef({ x: 0, y: 0 });
-    // On stocke la translation qu'on avait au début du drag
+    
     const translateStart = useRef({ x: 0, y: 0 });
 
     const handleMouseDown = (e) => {
@@ -17,7 +17,7 @@ const DraggableWrapper = ({ children, title, onClose, className }) => {
         e.preventDefault();
 
         setIsDragging(true);
-        // On mémorise où est la souris et où était la fenêtre
+        
         dragStartPos.current = { x: e.clientX, y: e.clientY };
         translateStart.current = { ...translate };
     };
@@ -26,11 +26,11 @@ const DraggableWrapper = ({ children, title, onClose, className }) => {
         const handleMouseMove = (e) => {
             if (!isDragging) return;
             
-            // Delta = position souris actuelle - position souris départ
+            
             const dx = e.clientX - dragStartPos.current.x;
             const dy = e.clientY - dragStartPos.current.y;
 
-            // Nouvelle translation = Ancienne translation + Delta
+            
             setTranslate({
                 x: translateStart.current.x + dx,
                 y: translateStart.current.y + dy
@@ -56,14 +56,14 @@ const DraggableWrapper = ({ children, title, onClose, className }) => {
         <div 
             style={{ 
                 transform: `translate(${translate.x}px, ${translate.y}px)`,
-                // On s'assure que le style ne passe jamais en fixed/absolute
+                
                 position: 'relative', 
                 zIndex: 51,
                 touchAction: 'none'
             }}
             className={`bg-white rounded-lg shadow-xl border border-slate-200 flex flex-col overflow-hidden ${className}`}
         >
-            {/* Header Draggable */}
+            
             <div 
                 onMouseDown={handleMouseDown}
                 className="drag-handle flex items-center justify-between px-4 py-3 bg-slate-50 border-b border-slate-100 cursor-grab active:cursor-grabbing select-none transition-colors hover:bg-slate-100"
@@ -79,7 +79,7 @@ const DraggableWrapper = ({ children, title, onClose, className }) => {
                 )}
             </div>
             
-            {/* Contenu */}
+            
             <div className="p-0">
                 {children}
             </div>
