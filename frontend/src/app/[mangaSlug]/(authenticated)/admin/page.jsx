@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from 'react';
 import AddTomeForm from '@/components/AddTomeForm';
 import AddChapterForm from '@/components/AddChapterForm';
-import GlossaryManager from '@/components/GlossaryManager';
 import IpBanManager from '@/components/IpBanManager';
 import CoverManager from '@/components/CoverManager';
 import AiModelManager from '@/components/AiModelManager';
@@ -14,7 +13,6 @@ import {
     Library,
     ShieldAlert,
     Image as ImageIcon,
-    Languages,
     Cpu,
     Upload,
     BookOpen,
@@ -73,7 +71,7 @@ export default function AdminDashboard() {
                 window.history.pushState(null, '', `?${params.toString()}`);
             }} className="w-full">
                 <div className="sticky top-0 z-20 bg-white pt-2 pb-6">
-                    <TabsList className="grid w-full grid-cols-2 lg:grid-cols-6 h-auto p-1 bg-slate-100/80 border border-slate-200">
+                    <TabsList className="grid w-full grid-cols-2 lg:grid-cols-5 h-auto p-1 bg-slate-100/80 border border-slate-200">
                         <TabsTrigger value="content" className="py-3 px-4 data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all focus-visible:ring-0">
                             <Library className="h-4 w-4 mr-2" />
                             <span className="font-medium">Bibliothèque</span>
@@ -85,10 +83,6 @@ export default function AdminDashboard() {
                         <TabsTrigger value="covers" className="py-3 px-4 data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all focus-visible:ring-0">
                             <ImageIcon className="h-4 w-4 mr-2" />
                             <span className="font-medium">Apparence</span>
-                        </TabsTrigger>
-                        <TabsTrigger value="glossary" className="py-3 px-4 data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all focus-visible:ring-0">
-                            <Languages className="h-4 w-4 mr-2" />
-                            <span className="font-medium">Glossaire</span>
                         </TabsTrigger>
                         <TabsTrigger value="ai" className="py-3 px-4 data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all focus-visible:ring-0">
                             <Cpu className="h-4 w-4 mr-2" />
@@ -182,9 +176,6 @@ export default function AdminDashboard() {
                         <CoverManager />
                     </TabsContent>
 
-                    <TabsContent value="glossary" className="m-0 p-8 outline-none">
-                        <GlossaryManager />
-                    </TabsContent>
 
                     <TabsContent value="ai" className="m-0 p-8 outline-none">
                         <AiModelManager />

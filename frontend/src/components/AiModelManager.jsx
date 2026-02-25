@@ -1,11 +1,11 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { getAiModels, updateAiModels, getAvailableAiModels, checkAiModelsAvailability, getEmbeddingStats, triggerGeminiBackfill, triggerVoyageBackfill } from '@/lib/api';
+import { getAiModels, updateAiModels, getAvailableAiModels, getEmbeddingStats, triggerGeminiBackfill, triggerVoyageBackfill, triggerNormalizeDescriptions } from '@/lib/api';
 import { invalidateModelCache } from '@/lib/geminiClient';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Save, RotateCcw, Cpu, Eye, MessageSquareText, Sparkles, Search, Ban, CheckCircle2 } from 'lucide-react';
+import { Loader2, Save, RotateCcw, Cpu, Eye, MessageSquareText, Sparkles, Search, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 
@@ -17,7 +17,6 @@ const MODEL_ROLES = [
         icon: Eye,
         color: 'blue'
     },
-
     {
         key: 'model_description',
         label: 'Description de page',
@@ -37,14 +36,13 @@ export default function AiModelManager() {
     const [models, setModels] = useState(null);
     const [draft, setDraft] = useState(null);
     const [availableModels, setAvailableModels] = useState([]);
-    const [availability, setAvailability] = useState(null);
     const [embeddingStats, setEmbeddingStats] = useState(null);
     const [loading, setLoading] = useState(true);
     const [loadingStats, setLoadingStats] = useState(true);
-    const [checkingAvailability, setCheckingAvailability] = useState(false);
     const [saving, setSaving] = useState(false);
     const [triggeringGeminiBackfill, setTriggeringGeminiBackfill] = useState(false);
     const [triggeringVoyageBackfill, setTriggeringVoyageBackfill] = useState(false);
+    const [triggeringNormalize, setTriggeringNormalize] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
 
     useEffect(() => {
@@ -70,20 +68,10 @@ export default function AiModelManager() {
             setLoading(false);
             setLoadingStats(false);
         }
-
-        setCheckingAvailability(true);
-        try {
-            const res = await checkAiModelsAvailability();
-            setAvailability(res.data);
-        } catch {
-        } finally {
-            setCheckingAvailability(false);
-        }
     };
 
     const hasChanges = models && draft && (
         models.model_ocr !== draft.model_ocr ||
-
         models.model_description !== draft.model_description
     );
 
@@ -129,6 +117,23 @@ export default function AiModelManager() {
             toast.error("Erreur lors du démarrage du backfill Voyage.");
         } finally {
             setTriggeringVoyageBackfill(false);
+        }
+    };
+
+    const handleTriggerNormalize = async () => {
+        const geminiKey = typeof window !== 'undefined' ? localStorage.getItem('google_api_key') : null;
+        if (!geminiKey) {
+            toast.error("Clé API Gemini requise", { description: "Configurez votre clé dans la page de recherche avant d'utiliser cette fonctionnalité." });
+            return;
+        }
+        setTriggeringNormalize(true);
+        try {
+            await triggerNormalizeDescriptions();
+            toast.success("Normalisation démarrée", { description: "Les noms de personnages sont en cours de normalisation et les embeddings seront régénérés. Suivez la progression dans la console serveur." });
+        } catch (error) {
+            toast.error("Erreur lors du démarrage de la normalisation.");
+        } finally {
+            setTriggeringNormalize(false);
         }
     };
 
@@ -182,32 +187,6 @@ export default function AiModelManager() {
                 </div>
             </div>
 
-            {availability && (
-                <div className="flex items-center gap-4 text-xs text-slate-500">
-                    <div className="flex items-center gap-1.5">
-                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-                        Free Tier
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                        <Ban className="h-3.5 w-3.5 text-red-400" />
-                        Quota 0 (payant requis)
-                    </div>
-                    {checkingAvailability && (
-                        <div className="flex items-center gap-1.5 text-slate-400">
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                            Vérification...
-                        </div>
-                    )}
-                </div>
-            )}
-
-            {!availability && checkingAvailability && (
-                <div className="flex items-center gap-2 text-xs text-slate-400 p-3 bg-slate-50 rounded-lg border border-slate-100">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Vérification de la disponibilité free tier pour chaque modèle... (peut prendre quelques secondes)
-                </div>
-            )}
-
             {availableModels.length > 10 && (
                 <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -250,32 +229,19 @@ export default function AiModelManager() {
                             <div className="flex flex-wrap gap-2 max-h-[200px] overflow-y-auto pr-1">
                                 {modelsList.map(m => {
                                     const isActive = currentValue === m.id;
-                                    const freeTier = availability?.[m.id];
-                                    const isUnavailable = freeTier === false;
                                     return (
                                         <button
                                             key={m.id}
                                             onClick={() => setDraft(prev => ({ ...prev, [role.key]: m.id }))}
-                                            title={`${m.displayName || m.id}${isUnavailable ? ' — ⚠️ Quota 0 sur le free tier' : ''}${m.description ? `\n${m.description}` : ''}`}
+                                            title={`${m.displayName || m.id}${m.description ? `\n${m.description}` : ''}`}
                                             className={cn(
                                                 "px-3 py-1.5 rounded-lg text-sm font-medium transition-all border inline-flex items-center gap-1.5",
                                                 isActive
                                                     ? `${colors.activeBg} ${colors.activeText} border-transparent shadow-sm`
-                                                    : isUnavailable
-                                                        ? 'bg-red-50/50 text-slate-400 border-red-200/60 hover:border-red-300'
-                                                        : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:shadow-sm'
+                                                    : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300 hover:shadow-sm'
                                             )}
                                         >
-                                            {availability && !isActive && (
-                                                freeTier === true
-                                                    ? <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />
-                                                    : freeTier === false
-                                                        ? <Ban className="h-3 w-3 text-red-400 shrink-0" />
-                                                        : null
-                                            )}
-                                            <span className={isUnavailable && !isActive ? 'line-through decoration-red-300' : ''}>
-                                                {m.id}
-                                            </span>
+                                            {m.id}
                                         </button>
                                     );
                                 })}
@@ -292,7 +258,7 @@ export default function AiModelManager() {
                 </div>
             )}
 
-            
+
             <div className="pt-8 border-t border-slate-200 mt-12">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
                     <div>
@@ -321,6 +287,14 @@ export default function AiModelManager() {
                         >
                             {triggeringGeminiBackfill ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
                             Générer Gemini
+                        </Button>
+                        <Button
+                            onClick={handleTriggerNormalize}
+                            disabled={triggeringNormalize || loadingStats}
+                            className="bg-red-600 hover:bg-red-700 text-white"
+                        >
+                            {triggeringNormalize ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Zap className="h-4 w-4 mr-2" />}
+                            Normaliser + Re-embed
                         </Button>
                     </div>
                 </div>

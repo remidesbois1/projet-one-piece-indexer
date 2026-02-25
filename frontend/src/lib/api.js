@@ -100,10 +100,6 @@ export const getStatsSummary = () => apiClient.get('/stats/summary');
 export const getLandingStats = () => apiClient.get('/stats/landing');
 export const getTopContributors = () => apiClient.get('/stats/top-contributors');
 
-export const getGlossary = () => apiClient.get('/glossary');
-export const addGlossaryEntry = (aliases) => apiClient.post('/glossary', { aliases });
-export const updateGlossaryEntry = (id, aliases) => apiClient.put(`/glossary/${id}`, { aliases });
-export const deleteGlossaryEntry = (id) => apiClient.delete(`/glossary/${id}`);
 
 export const getBubbleHistory = (id) => apiClient.get(`/bulles/${id}/history`);
 export const getAdminHierarchy = () => apiClient.get('/admin/hierarchy');
@@ -123,11 +119,18 @@ export const getAiModels = () => apiClient.get('/admin/ai-models');
 export const updateAiModels = (models) => apiClient.put('/admin/ai-models', models);
 export const getPublicAiModels = () => apiClient.get('/admin/ai-models/public');
 export const getAvailableAiModels = () => apiClient.get('/admin/ai-models/available');
-export const checkAiModelsAvailability = () => apiClient.get('/admin/ai-models/check-availability');
 
 export const getEmbeddingStats = () => apiClient.get('/admin/ai-models/embedding-stats');
 export const triggerGeminiBackfill = () => apiClient.post('/admin/ai-models/trigger-backfill');
 export const triggerVoyageBackfill = () => apiClient.post('/admin/ai-models/trigger-backfill-voyage');
+export const triggerNormalizeDescriptions = () => {
+    let headers = {};
+    if (typeof window !== 'undefined') {
+        const geminiKey = localStorage.getItem('google_api_key');
+        if (geminiKey) headers['x-user-gemini-key'] = geminiKey;
+    }
+    return apiClient.post('/admin/ai-models/normalize-descriptions', {}, { headers });
+};
 
 export const uploadPageToR2 = (formData) => apiClient.post('/admin/upload/page', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },

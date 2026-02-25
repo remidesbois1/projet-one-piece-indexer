@@ -49,10 +49,16 @@ L'indexer propose deux expériences de recherche distinctes :
 
 ### **2. Recherche Sémantique & Conceptuelle**
 
-* **Vecteurs :** Conversion des requêtes en vecteurs via Voyage AI (`voyage-4-large`) et comparaison cosinus.
-* **Mode Invité :** Accessible à tous, avec reranking côté serveur pour une précision optimale.
-* **Filtrage Multicritère :** Titres, arcs narratifs, personnages, volumes.
-* **Reranking Cloud :** Utilisation du modèle **rerank-2.5** de Voyage AI pour réordonner les résultats sémantiques.
+L'Indexer utilise une architecture de recherche hybride et parallélisée pour une précision maximale :
+
+* **Normalisation (Gemini) :** Réécriture de la requête de l'utilisateur par Gemini 2.5 Flash-Lite pour corriger les fautes et standardiser les noms de personnages.
+* **Récupération Parallèle :** 
+    * Vectorisation simultanée par **Voyage AI** (`voyage-4-large`) et **Gemini** (gemini-embedding-001).
+    * Bonus de score (**1.15x**) appliqué aux pages identifiées par les deux moteurs pour prioriser le consensus.
+* **Reranking LLM :** Validation finale de la pertinence par un LLM (Gemini 2.5 Flash-Lite) ou un reranker dédié.
+* **Filtrage Multicritère :** Arcs narratifs, personnages, volumes et mangas.
+
+> En cas de clé API manquante, le système utilise uniquement Voyage AI à travers la clé côté serveur.
 
 ### **3. Système de Feedback (RLHF Lite)**
 

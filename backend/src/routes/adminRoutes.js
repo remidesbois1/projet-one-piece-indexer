@@ -859,6 +859,113 @@ router.post('/ai-models/trigger-backfill-voyage', authMiddleware, roleCheck(['Ad
     }
   })();
 });
+router.post('/ai-models/normalize-descriptions', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+  const userGeminiKey = req.headers['x-user-gemini-key'];
+  if (!userGeminiKey) {
+    return res.status(403).json({ error: "Une clé API Gemini est requise." });
+  }
+
+  res.json({ message: "Normalisation des descriptions démarrée en tâche de fond." });
+
+  (async () => {
+    try {
+      const { GoogleGenerativeAI } = require('@google/generative-ai');
+      console.log("[Normalize] Démarrage de la normalisation des noms de personnages...");
+
+      const { data: pages, error: pagesError } = await supabaseAdmin
+        .from('pages')
+        .select('id, description')
+        .not('description', 'is', null);
+
+      if (pagesError) throw pagesError;
+
+      const pagesWithDesc = pages.filter(p => {
+        if (!p.description) return false;
+        try {
+          const d = typeof p.description === 'string' ? JSON.parse(p.description) : p.description;
+          return d.metadata?.characters?.length > 0;
+        } catch { return false; }
+      });
+
+      console.log(`[Normalize] ${pagesWithDesc.length} pages avec personnages à traiter.`);
+
+      const genAI = new GoogleGenerativeAI(userGeminiKey);
+      const model = genAI.getGenerativeModel({
+        model: 'gemini-2.5-flash-lite',
+        systemInstruction: `Tu es un expert One Piece. On te donne une description JSON d'une page de manga.
+Ta SEULE mission : remplacer les noms de personnages français/incorrects par les noms officiels.
+Exemples : Pipo → Usopp, Chapeau de Paille → Luffy (ou Mugiwara), Hermep → Helmeppo, Kobby → Koby, Sanji la jambe noire → Sanji, Zorro → Zoro, Patty → Paty, Pépé → Zeff, Sandy → Sanji, Baggy → Buggy.
+NE CHANGE RIEN D'AUTRE. Garde exactement la même structure JSON. Renvoie UNIQUEMENT le JSON modifié, sans markdown ni explication.`
+      });
+
+      let processed = 0, errors = 0;
+
+      for (const page of pagesWithDesc) {
+        try {
+          let desc = typeof page.description === 'string' ? JSON.parse(page.description) : page.description;
+          const descStr = JSON.stringify(desc);
+
+          const result = await model.generateContent({
+            contents: [{ role: 'user', parts: [{ text: descStr }] }],
+            generationConfig: { temperature: 0.0, maxOutputTokens: 2048 }
+          });
+
+          let responseText = result.response.text().trim();
+          responseText = responseText.replace(/```json|```/gi, '').trim();
+          const normalizedDesc = JSON.parse(responseText);
+
+          const normalizedStr = JSON.stringify(normalizedDesc);
+          const { error: updateError } = await supabaseAdmin
+            .from('pages')
+            .update({ description: normalizedStr, embedding_voyage: null, embedding_gemini: null })
+            .eq('id', page.id);
+
+          if (updateError) {
+            console.error(`[Normalize] Erreur update page ${page.id}:`, updateError);
+            errors++;
+            continue;
+          }
+
+          let contentToEmbed = normalizedDesc.content || '';
+          if (normalizedDesc.metadata?.characters) {
+            contentToEmbed += ' ' + normalizedDesc.metadata.characters.join(' ');
+          }
+          contentToEmbed = contentToEmbed.trim();
+
+          if (contentToEmbed.length > 0) {
+            try {
+              const [voyageEmb, geminiEmb] = await Promise.all([
+                generateVoyageEmbedding(contentToEmbed, "document"),
+                generateGeminiEmbedding(contentToEmbed, "RETRIEVAL_DOCUMENT")
+              ]);
+
+              await supabaseAdmin
+                .from('pages')
+                .update({ embedding_voyage: voyageEmb, embedding_gemini: geminiEmb })
+                .eq('id', page.id);
+            } catch (embErr) {
+              console.error(`[Normalize] Erreur embedding page ${page.id}:`, embErr.message);
+              errors++;
+            }
+          }
+
+          processed++;
+          console.log(`[Normalize] Page ${page.id} traitée (${processed}/${pagesWithDesc.length})`);
+          await new Promise(resolve => setTimeout(resolve, 300));
+        } catch (err) {
+          console.error(`[Normalize] Erreur page ${page.id}:`, err.message);
+          errors++;
+          await new Promise(resolve => setTimeout(resolve, 300));
+        }
+      }
+
+      console.log(`[Normalize] Terminé. Traitées: ${processed}, Erreurs: ${errors}`);
+    } catch (e) {
+      console.error("[Normalize] Erreur globale:", e);
+    }
+  })();
+});
 
 module.exports = router;
+
 

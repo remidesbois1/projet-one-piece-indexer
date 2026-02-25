@@ -31,6 +31,34 @@ async function generateGeminiEmbedding(text, taskType = "RETRIEVAL_QUERY") {
     }
 }
 
+async function normalizeQuery(query, userApiKey) {
+    const apiKey = userApiKey || process.env.GOOGLE_API_KEY;
+    if (!apiKey) return query;
+
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({
+        model: GEMINI_RERANK_MODEL,
+        systemInstruction: `Tu es un expert en indexation One Piece. Ta mission est de transformer la requête de l'utilisateur en une version normalisée optimisée pour la recherche vectorielle.
+Règles :
+Remplace les noms français par les noms officiels (ex: Hermep -> Helmeppo, Kobby -> Koby, Pipo -> Usopp).
+Corrige l'orthographe.
+Conserve les verbes d'action.
+Réponds UNIQUEMENT par la nouvelle requête, sans phrase ni ponctuation inutile.`
+    });
+
+    try {
+        const result = await model.generateContent({
+            contents: [{ role: 'user', parts: [{ text: query }] }],
+            generationConfig: { temperature: 0.0, maxOutputTokens: 50 }
+        });
+        const normalized = result.response.text().trim();
+        return normalized || query;
+    } catch (error) {
+        console.error('normalizeQuery error, using raw query:', error.message);
+        return query;
+    }
+}
+
 async function rerankGemini(query, candidates, userApiKey) {
     const apiKey = userApiKey || process.env.GOOGLE_API_KEY;
     if (!apiKey) {
@@ -72,11 +100,15 @@ async function rerankGemini(query, candidates, userApiKey) {
 
             if (!Array.isArray(parsedScores)) {
                 if (parsedScores !== null && typeof parsedScores === 'object') {
-                    const arrayValue = Object.values(parsedScores).find(val => Array.isArray(val));
-                    if (arrayValue) {
-                        parsedScores = arrayValue;
+                    if ('i' in parsedScores && 's' in parsedScores) {
+                        parsedScores = [parsedScores];
                     } else {
-                        throw new Error("No array found in parsed JSON");
+                        const arrayValue = Object.values(parsedScores).find(val => Array.isArray(val));
+                        if (arrayValue) {
+                            parsedScores = arrayValue;
+                        } else {
+                            throw new Error("No array found in parsed JSON");
+                        }
                     }
                 } else {
                     throw new Error("Parsed JSON is not an array or object");
@@ -95,4 +127,4 @@ async function rerankGemini(query, candidates, userApiKey) {
     }
 }
 
-module.exports = { generateGeminiEmbedding, rerankGemini };
+module.exports = { generateGeminiEmbedding, rerankGemini, normalizeQuery };

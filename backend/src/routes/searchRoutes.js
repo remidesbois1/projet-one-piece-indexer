@@ -3,60 +3,26 @@ const router = express.Router();
 const { supabase, supabaseAdmin } = require('../config/supabaseClient');
 
 const { generateVoyageEmbedding, rerankVoyage } = require('../utils/voyageClient');
-const { generateGeminiEmbedding, rerankGemini } = require('../utils/geminiClient');
+const { generateGeminiEmbedding, rerankGemini, normalizeQuery } = require('../utils/geminiClient');
 
-const AI_MODEL_KEYS = ['model_ocr', 'model_description'];
-const DEFAULT_MODELS = {
-    model_ocr: 'gemini-2.5-flash-lite',
-    model_description: 'gemini-3-flash-preview'
-};
-let aiModelsCache = null;
-let aiModelsCacheTime = 0;
-const CACHE_TTL = 60 * 1000;
+const DUAL_OVERLAP_BONUS = 1.15;
 
-async function getAiModels() {
-    const now = Date.now();
-    if (aiModelsCache && (now - aiModelsCacheTime) < CACHE_TTL) return aiModelsCache;
-    const { data, error } = await supabaseAdmin.from('app_settings').select('key, value').in('key', AI_MODEL_KEYS);
-    if (error) return { ...DEFAULT_MODELS };
-    const models = { ...DEFAULT_MODELS };
-    (data || []).forEach(row => { models[row.key] = row.value; });
-    aiModelsCache = models;
-    aiModelsCacheTime = now;
-    return models;
+function getUserFromReq(req) {
+    try {
+        const auth = req.headers.authorization;
+        if (!auth) return {};
+        const token = auth.replace('Bearer ', '');
+        const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
+        return { user_id: payload.sub, user_email: payload.email };
+    } catch { return {}; }
 }
 
-let glossaryCache = null;
-let glossaryCacheTime = 0;
-
-async function getGlossary() {
-    const now = Date.now();
-    if (glossaryCache && (now - glossaryCacheTime) < CACHE_TTL * 5) return glossaryCache;
-    const { data } = await supabase.from('glossary').select('aliases');
-    glossaryCache = (data || []).map(r => r.aliases).filter(a => Array.isArray(a) && a.length > 1);
-    glossaryCacheTime = now;
-    return glossaryCache;
-}
-
-async function enrichQueryWithGlossary(query) {
-    const glossary = await getGlossary();
-    const words = query.split(/\s+/);
-    const result = [];
-
-    for (const word of words) {
-        result.push(word);
-        const lower = word.toLowerCase();
-        for (const group of glossary) {
-            if (group.some(alias => alias.toLowerCase() === lower)) {
-                group.forEach(alias => {
-                    if (alias.toLowerCase() !== lower) result.push(alias);
-                });
-                break;
-            }
-        }
+async function insertSearchLog(log) {
+    try {
+        await supabaseAdmin.from('search_logs').insert(log);
+    } catch (err) {
+        console.error('Failed to insert search log:', err.message);
     }
-
-    return result.join(' ');
 }
 
 router.get('/', async (req, res) => {
@@ -83,35 +49,131 @@ router.get('/', async (req, res) => {
     const filterArc = arc && arc !== '' ? arc : null;
     const filterTome = tome && tome !== '' ? parseInt(tome) : null;
 
+    const searchLog = {
+        raw_query: q,
+        model_provider: modelProvider,
+        search_mode: mode,
+        manga_slug: req.query.manga || null,
+        filter_characters: filterCharacters,
+        filter_arc: filterArc,
+        filter_tome: filterTome,
+        rerank_enabled: shouldRerank,
+        ...getUserFromReq(req),
+    };
+
+    const totalStart = Date.now();
+
     try {
         if (mode === 'semantic') {
             const userGeminiKey = req.headers['x-user-gemini-key'];
-            const enrichedQuery = await enrichQueryWithGlossary(q);
-            const candidatesQueryLimit = shouldRerank ? Math.max(50, parseInt(limit)) : parseInt(limit);
+            const candidatesQueryLimit = shouldRerank ? Math.max(24, parseInt(limit)) : parseInt(limit);
             const filterManga = req.query.manga;
 
             let matchedPages;
+
             if (modelProvider === 'gemini') {
-                const embedding = await generateGeminiEmbedding(enrichedQuery, "RETRIEVAL_QUERY");
-                const { data, error } = await supabase.rpc('match_pages_gemini', {
-                    query_embedding: embedding,
-                    match_threshold: 0.30,
-                    match_count: 200,
-                });
-                if (error) throw error;
-                matchedPages = data;
+                if (!userGeminiKey) {
+                    return res.status(403).json({ error: "Une clé API Gemini est requise pour utiliser le moteur Gemini." });
+                }
+
+                const normStart = Date.now();
+                const cleanQuery = await normalizeQuery(q, userGeminiKey);
+                searchLog.duration_normalization_ms = Date.now() - normStart;
+                searchLog.normalized_query = cleanQuery;
+                console.log(`[Search] Query normalized: "${q}" → "${cleanQuery}" (${searchLog.duration_normalization_ms}ms)`);
+
+                let voyageEmbedMs = 0, geminiEmbedMs = 0, voyageRpcMs = 0, geminiRpcMs = 0;
+
+                const [voyageResults, geminiResults] = await Promise.all([
+                    (async () => {
+                        const embStart = Date.now();
+                        const embedding = await generateVoyageEmbedding(cleanQuery, "query");
+                        voyageEmbedMs = Date.now() - embStart;
+
+                        const rpcStart = Date.now();
+                        const { data, error } = await supabase.rpc('match_pages', {
+                            query_embedding: embedding,
+                            match_threshold: 0.30,
+                            match_count: 50,
+                        });
+                        voyageRpcMs = Date.now() - rpcStart;
+                        if (error) throw error;
+                        return data || [];
+                    })(),
+                    (async () => {
+                        const embStart = Date.now();
+                        const embedding = await generateGeminiEmbedding(cleanQuery, "RETRIEVAL_QUERY");
+                        geminiEmbedMs = Date.now() - embStart;
+
+                        const rpcStart = Date.now();
+                        const { data, error } = await supabase.rpc('match_pages_gemini', {
+                            query_embedding: embedding,
+                            match_threshold: 0.30,
+                            match_count: 50,
+                        });
+                        geminiRpcMs = Date.now() - rpcStart;
+                        if (error) throw error;
+                        return data || [];
+                    })()
+                ]);
+
+                searchLog.duration_voyage_embedding_ms = voyageEmbedMs;
+                searchLog.duration_gemini_embedding_ms = geminiEmbedMs;
+                searchLog.duration_voyage_rpc_ms = voyageRpcMs;
+                searchLog.duration_gemini_rpc_ms = geminiRpcMs;
+                searchLog.voyage_candidates_count = voyageResults.length;
+                searchLog.gemini_candidates_count = geminiResults.length;
+
+                const mergeStart = Date.now();
+                const pageMap = new Map();
+
+                for (const p of voyageResults) {
+                    pageMap.set(p.id, { ...p, sources: ['voyage'], bestSimilarity: p.similarity });
+                }
+
+                for (const p of geminiResults) {
+                    if (pageMap.has(p.id)) {
+                        const existing = pageMap.get(p.id);
+                        existing.sources.push('gemini');
+                        existing.bestSimilarity = Math.max(existing.bestSimilarity, p.similarity);
+                    } else {
+                        pageMap.set(p.id, { ...p, sources: ['gemini'], bestSimilarity: p.similarity });
+                    }
+                }
+
+                let overlapCount = 0;
+                for (const [id, entry] of pageMap) {
+                    if (entry.sources.length > 1) {
+                        entry.similarity = Math.min(entry.bestSimilarity * DUAL_OVERLAP_BONUS, 1.0);
+                        overlapCount++;
+                    } else {
+                        entry.similarity = entry.bestSimilarity;
+                    }
+                }
+
+                searchLog.dual_overlap_count = overlapCount;
+                searchLog.merged_candidates_count = pageMap.size;
+                searchLog.duration_merge_ms = Date.now() - mergeStart;
+
+                matchedPages = Array.from(pageMap.values()).sort((a, b) => b.similarity - a.similarity);
             } else {
-                const embedding = await generateVoyageEmbedding(enrichedQuery, "query");
+                const embStart = Date.now();
+                const embedding = await generateVoyageEmbedding(q, "query");
+                searchLog.duration_voyage_embedding_ms = Date.now() - embStart;
+
+                const rpcStart = Date.now();
                 const { data, error } = await supabase.rpc('match_pages', {
                     query_embedding: embedding,
                     match_threshold: 0.30,
-                    match_count: 200,
+                    match_count: 50,
                 });
+                searchLog.duration_voyage_rpc_ms = Date.now() - rpcStart;
                 if (error) throw error;
-                matchedPages = data;
+                matchedPages = data || [];
+                searchLog.voyage_candidates_count = matchedPages.length;
             }
 
-            let filteredPages = matchedPages || [];
+            let filteredPages = matchedPages;
 
             if (filterManga) {
                 filteredPages = filteredPages.filter(p => p.manga_slug === filterManga);
@@ -143,9 +205,14 @@ router.get('/', async (req, res) => {
 
             const candidates = filteredPages.slice(0, candidatesQueryLimit);
 
-            if (!candidates.length) return res.json({ results: [], totalCount: 0 });
+            if (!candidates.length) {
+                searchLog.final_results_count = 0;
+                searchLog.duration_total_ms = Date.now() - totalStart;
+                insertSearchLog(searchLog);
+                return res.json({ results: [], totalCount: 0 });
+            }
 
-            if (!shouldRerank) {
+            if (!shouldRerank && modelProvider !== 'gemini') {
                 finalResults = candidates.map(c => {
                     let snippet = c.description;
                     try {
@@ -179,11 +246,9 @@ router.get('/', async (req, res) => {
                 });
 
                 let scores = [];
+                const rerankStart = Date.now();
                 try {
                     if (modelProvider === 'gemini') {
-                        if (!userGeminiKey) {
-                            return res.status(403).json({ error: "Une clé API Gemini est requise pour utiliser le moteur Gemini." });
-                        }
                         const results = await rerankGemini(q, candidates.map((c, idx) => ({ id: c.id, content: documents[idx] })), userGeminiKey);
                         scores = results.map(r => ({
                             i: typeof r.i === 'string' && r.i.startsWith('page-') ? parseInt(r.i.replace('page-', ''), 10) : r.i,
@@ -200,6 +265,7 @@ router.get('/', async (req, res) => {
                     console.error(`${modelProvider} rerank error, falling back to vector similarity:`, err);
                     scores = candidates.map(c => ({ i: c.id, s: c.similarity * 100 }));
                 }
+                searchLog.duration_rerank_ms = Date.now() - rerankStart;
 
                 finalResults = candidates.map(c => {
                     const aiData = scores.find(s => s.i === c.id);
@@ -228,6 +294,15 @@ router.get('/', async (req, res) => {
 
                 totalCount = finalResults.length;
             }
+
+            searchLog.final_results_count = finalResults.length;
+            if (finalResults.length > 0) {
+                searchLog.top_result_id = finalResults[0].page_id;
+                searchLog.top_result_score = finalResults[0].scores.ai || finalResults[0].scores.vector;
+            }
+            searchLog.duration_total_ms = Date.now() - totalStart;
+            insertSearchLog(searchLog);
+
         } else {
             const { data, error } = await supabase.rpc('search_bulles', {
                 search_term: q,
@@ -324,6 +399,9 @@ router.get('/', async (req, res) => {
 
     } catch (error) {
         console.error("Erreur moteur de recherche:", error);
+        searchLog.error = error.message;
+        searchLog.duration_total_ms = Date.now() - totalStart;
+        insertSearchLog(searchLog);
         res.status(500).json({ error: "Erreur moteur de recherche" });
     }
 });

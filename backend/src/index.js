@@ -59,7 +59,6 @@ const moderationRoutes = require('./routes/moderationRoutes');
 const analysisRoutes = require('./routes/analysisRoutes');
 const userRoutes = require('./routes/userRoutes');
 const statRoutes = require('./routes/statsRoutes')
-const glossaryRoutes = require('./routes/glossaryRoutes');
 const mangaRoutes = require('./routes/mangaRoutes');
 const publicRoutes = require('./routes/v1/publicRoutes');
 
@@ -89,7 +88,6 @@ app.use('/api/moderation', moderationRoutes);
 app.use('/api/analyse', analysisRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/stats', statsLimiter, statRoutes);
-app.use('/api/glossary', glossaryRoutes);
 app.use('/api/mangas', mangaRoutes);
 
 // Public API v1
