@@ -85,7 +85,14 @@ export const createTome = (tomeData, mangaSlug) => apiClient.post('/admin/tomes'
 export const uploadChapter = (formData) => apiClient.post('/admin/chapitres/upload', formData);
 
 
-export const savePageDescription = (pageId, description) => apiClient.post('/analyse/page-description', { id_page: pageId, description });
+export const savePageDescription = (pageId, description) => {
+    let headers = {};
+    if (typeof window !== 'undefined') {
+        const geminiKey = localStorage.getItem('google_api_key');
+        if (geminiKey) headers['x-user-gemini-key'] = geminiKey;
+    }
+    return apiClient.post('/analyse/page-description', { id_page: pageId, description }, { headers });
+};
 export const getMetadataSuggestions = () => apiClient.get('/analyse/metadata-suggestions');
 
 

@@ -14,20 +14,18 @@ const { generateVoyageEmbedding } = require('../utils/voyageClient');
 
 
 
+const { generateGeminiEmbedding } = require('../utils/geminiClient');
+
 router.post('/page-description', authMiddleware, async (req, res) => {
     const { id_page, description } = req.body;
+    const userGeminiKey = req.headers['x-user-gemini-key'];
 
     if (!id_page || !description) {
         return res.status(400).json({ error: 'Données manquantes (id_page ou description).' });
     }
 
     try {
-        const { data: glossaryData } = await supabaseAdmin.from('glossary').select('*');
-        const glossaryDict = glossaryData || [];
-
-        let textToEmbed = "";
         let jsonDesc = description;
-
         if (typeof description === 'string') {
             try {
                 jsonDesc = JSON.parse(description);
@@ -40,43 +38,77 @@ router.post('/page-description', authMiddleware, async (req, res) => {
             return res.status(400).json({ error: "Description must be a valid JSON object." });
         }
 
-        const charactersList = jsonDesc.metadata?.characters || [];
-        const arc = jsonDesc.metadata?.arc || "";
+        let finalDesc = jsonDesc;
+        let finalDescStr = typeof description === 'string' ? description : JSON.stringify(description);
 
-        let enrichedKeywords = new Set();
+        if (userGeminiKey && finalDesc.metadata && finalDesc.metadata.characters && finalDesc.metadata.characters.length > 0) {
+            try {
+                const genAI = new GoogleGenerativeAI(userGeminiKey);
+                const model = genAI.getGenerativeModel({
+                    model: 'gemini-2.5-flash-lite',
+                    systemInstruction: `Tu es un expert One Piece. On te donne une description JSON d'une page de manga.
+Ta SEULE mission : remplacer les noms de personnages français/incorrects par les noms officiels.
+Exemples : Pipo → Usopp, Chapeau de Paille → Luffy, Hermep → Helmeppo, Kobby → Koby, Sanji la jambe noire → Sanji, Zorro → Zoro, Patty → Paty, Sandy → Sanji, Baggy → Buggy.
+NE CHANGE RIEN D'AUTRE. Garde exactement la même structure JSON. Renvoie UNIQUEMENT le JSON modifié, sans markdown ni explication.`
+                });
 
-        charactersList.forEach(charName => {
-            if (!charName) return;
-            const lowerChar = charName.toLowerCase().trim();
+                const result = await model.generateContent({
+                    contents: [{ role: 'user', parts: [{ text: finalDescStr }] }],
+                    generationConfig: { temperature: 0.0, maxOutputTokens: 2048 }
+                });
 
-            const entry = glossaryData.find(g =>
-                g.aliases && g.aliases.some(alias => alias.toLowerCase() === lowerChar)
-            );
-
-            if (entry && Array.isArray(entry.aliases)) {
-                entry.aliases.forEach(a => enrichedKeywords.add(a));
+                let responseText = result.response.text().trim();
+                responseText = responseText.replace(/```json|```/gi, '').trim();
+                finalDesc = JSON.parse(responseText);
+                finalDescStr = JSON.stringify(finalDesc);
+                console.log(`[Analyse] Description normalisée pour la page ${id_page}.`);
+            } catch (normErr) {
+                console.warn(`[Analyse] Échec de normalisation pour la page ${id_page}, utilisation de la description originale.`, normErr.message);
             }
-        });
+        } else if (!userGeminiKey && finalDesc.metadata && finalDesc.metadata.characters && finalDesc.metadata.characters.length > 0) {
+            console.log(`[Analyse] Pas de clé Gemini fournie, normalisation ignorée pour la page ${id_page}.`);
+        }
 
-        const keywordsString = Array.from(enrichedKeywords).join(" ");
-        const charactersString = charactersList.join(" ");
 
-        textToEmbed = `${jsonDesc.content || ""} ${charactersString} ${arc} ${keywordsString}`;
+        let contentToEmbed = finalDesc.content || '';
+        if (finalDesc.metadata?.characters) {
+            contentToEmbed += ' ' + finalDesc.metadata.characters.join(' ');
+        }
+        contentToEmbed = contentToEmbed.trim();
 
-        console.log(`[Embedding] Génération pour la page ${id_page}... (Texte enrichi de ${Math.round(textToEmbed.length)} chars)`);
-        const embeddingVector = await generateVoyageEmbedding(textToEmbed, "document");
+        console.log(`[Embedding] Génération pour la page ${id_page}... (${Math.round(contentToEmbed.length)} chars)`);
+
+        let voyageEmb = null;
+        let geminiEmb = null;
+
+        if (contentToEmbed.length > 0) {
+            const [vEmb, gEmb] = await Promise.all([
+                generateVoyageEmbedding(contentToEmbed, "document").catch(e => {
+                    console.error("Erreur Voyage embedding:", e.message);
+                    return null;
+                }),
+                generateGeminiEmbedding(contentToEmbed, "RETRIEVAL_DOCUMENT").catch(e => {
+                    console.error("Erreur Gemini embedding:", e.message);
+                    return null;
+                })
+            ]);
+            voyageEmb = vEmb;
+            geminiEmb = gEmb;
+        }
+
 
         const { error } = await supabaseAdmin
             .from('pages')
             .update({
-                description: description,
-                embedding_voyage: embeddingVector
+                description: finalDescStr,
+                embedding_voyage: voyageEmb,
+                embedding_gemini: geminiEmb
             })
             .eq('id', id_page);
 
         if (error) throw error;
 
-        res.status(200).json({ success: true, message: "Description et vecteurs (Voyage) mis à jour." });
+        res.status(200).json({ success: true, message: "Description normalisée et vecteurs (Voyage + Gemini) mis à jour." });
 
     } catch (error) {
         console.error("Erreur sauvegarde description:", error);
