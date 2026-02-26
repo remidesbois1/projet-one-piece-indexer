@@ -13,8 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
+  metadataBase: new URL('https://poneglyph.fr'),
   title: "Projet Poneglyph",
-  description: "Indexer for Mangas",
+  description: "Retrouvez la page que vous cherchez. Une citation ? Un combat ? Décrivez ce que vous cherchez pour tomber pile sur la bonne page de manga.",
   icons: {
     icon: [
       { url: '/favicon.ico' },
@@ -37,7 +38,7 @@ export default function RootLayout({ children }) {
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         <NextTopLoader
-          color="#3b82f6" 
+          color="#3b82f6"
           initialPosition={0.08}
           crawlSpeed={200}
           height={3}
