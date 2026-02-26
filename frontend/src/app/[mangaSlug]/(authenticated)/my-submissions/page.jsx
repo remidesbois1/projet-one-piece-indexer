@@ -24,7 +24,7 @@ import { ChevronLeft, ChevronRight, Inbox, MessageCircle } from "lucide-react";
 const RESULTS_PER_PAGE = 15;
 
 export default function MySubmissionsPage() {
-    const { currentManga } = useManga();
+    const { currentManga, mangaSlug } = useManga();
     const pageTitle = currentManga ? `Mes Soumissions : ${currentManga.titre}` : "Mes Soumissions";
     const { session } = useAuth();
     const [submissions, setSubmissions] = useState([]);
@@ -132,7 +132,7 @@ export default function MySubmissionsPage() {
 
                                         <TableCell>
                                             <Link
-                                                href={`/annotate/${sub.pages.id}`}
+                                                href={`/${mangaSlug}/annotate/${sub.pages.id}`}
                                                 prefetch={false}
                                                 className="inline-flex items-center rounded-md bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-800 hover:bg-slate-200 transition-colors whitespace-nowrap"
                                             >
