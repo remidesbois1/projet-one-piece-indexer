@@ -14,7 +14,10 @@ const geistMono = Geist_Mono({
 
 export const metadata = {
   metadataBase: new URL('https://poneglyph.fr'),
-  title: "Projet Poneglyph",
+  title: {
+    default: "Projet Poneglyph",
+    template: "%s | Projet Poneglyph"
+  },
   description: "Retrouvez la page que vous cherchez. Une citation ? Un combat ? Décrivez ce que vous cherchez pour tomber pile sur la bonne page de manga.",
   icons: {
     icon: [

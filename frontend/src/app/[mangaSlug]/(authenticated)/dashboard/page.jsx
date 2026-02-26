@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import { useManga } from '@/context/MangaContext';
 import { useAuth } from '@/context/AuthContext';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useRouter } from 'next/navigation';
@@ -22,13 +23,11 @@ import { Badge } from "@/components/ui/badge";
 
 import { ChevronRight, ArrowLeft, BookOpen, Library, CheckCircle2, PenLine } from "lucide-react";
 
-import { useManga } from '@/context/MangaContext';
-
 export default function DashboardPage() {
     const { session, isGuest } = useAuth();
     const { loading: profileLoading } = useUserProfile();
     const router = useRouter();
-    const { mangaSlug } = useManga();
+    const { mangaSlug, currentManga } = useManga();
 
     const [tomes, setTomes] = useState([]);
     const [chapters, setChapters] = useState([]);
@@ -131,8 +130,11 @@ export default function DashboardPage() {
 
     if (profileLoading) return null;
 
+    const pageTitle = currentManga ? `Projet Poneglyph | Bibliothèque : ${currentManga.titre}` : "Projet Poneglyph";
+
     return (
         <div className="w-full">
+            {pageTitle && <title>{pageTitle}</title>}
             <header className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 pb-6 border-b border-slate-100 gap-4">
                 <div className="flex items-center gap-3">
                     <div className="p-2 bg-slate-900 rounded-lg text-white shadow-lg shadow-slate-200">
@@ -140,7 +142,7 @@ export default function DashboardPage() {
                     </div>
                     <div>
                         <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-                            Poneglyph Archives
+                            Archives {currentManga?.titre || 'Poneglyph'}
                         </h1>
                         <p className="text-xs text-slate-500 font-medium sm:hidden mt-0.5">
                             {tomes.length} VOLUMES DISPONIBLES
@@ -152,7 +154,7 @@ export default function DashboardPage() {
                 </div>
             </header>
 
-            
+
             <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 sm:gap-8">
                 {tomes.map((tome) => (
                     <Card

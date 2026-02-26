@@ -50,7 +50,8 @@ const CHAPTER_COLORS = [
 
 export default function UploadTomePage() {
     const { session } = useAuth();
-    const { mangaSlug } = useManga();
+    const { currentManga, mangaSlug } = useManga();
+    const pageTitle = currentManga ? `Upload : ${currentManga.titre}` : "Upload de Tome";
     const params = useParams();
 
     const [step, setStep] = useState(1);

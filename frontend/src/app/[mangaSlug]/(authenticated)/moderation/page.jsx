@@ -12,10 +12,15 @@ import {
 } from "@/components/ui/tabs";
 import { Card } from "@/components/ui/card";
 import { ShieldCheck, MessageSquareDashed, FileCheck } from "lucide-react";
+import { useManga } from '@/context/MangaContext';
 
 export default function ModerationPage() {
+    const { currentManga } = useManga();
+    const pageTitle = currentManga ? `Modération : ${currentManga.titre}` : "Modération";
+
     return (
         <div className="min-h-screen">
+            {pageTitle && <title>{pageTitle}</title>}
             <div className="container max-w-7xl mx-auto py-10 px-4 sm:px-6">
 
                 <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">

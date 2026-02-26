@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import { useManga } from '@/context/MangaContext';
 import { useAuth } from '@/context/AuthContext';
 import { getMySubmissions } from '@/lib/api';
 import Link from 'next/link';
@@ -23,6 +24,8 @@ import { ChevronLeft, ChevronRight, Inbox, MessageCircle } from "lucide-react";
 const RESULTS_PER_PAGE = 15;
 
 export default function MySubmissionsPage() {
+    const { currentManga } = useManga();
+    const pageTitle = currentManga ? `Mes Soumissions : ${currentManga.titre}` : "Mes Soumissions";
     const { session } = useAuth();
     const [submissions, setSubmissions] = useState([]);
     const [totalCount, setTotalCount] = useState(0);
@@ -65,7 +68,8 @@ export default function MySubmissionsPage() {
     };
 
     return (
-        <div className="container max-w-5xl mx-auto py-10 px-4 animate-in fade-in duration-500">
+        <div className="container max-w-7xl mx-auto py-10 px-4 sm:px-6">
+            {pageTitle && <title>{pageTitle}</title>}
             <div className="mb-8 space-y-2">
                 <h1 className="text-3xl font-bold tracking-tight text-slate-900">Mes Soumissions</h1>
                 <p className="text-slate-500 text-lg">
@@ -146,7 +150,6 @@ export default function MySubmissionsPage() {
                 </CardContent>
             </Card>
 
-            
             {totalPages > 1 && (
                 <div className="flex justify-center items-center gap-4 mt-6">
                     <Button

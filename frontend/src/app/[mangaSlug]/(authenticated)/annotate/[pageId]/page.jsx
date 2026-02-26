@@ -134,7 +134,11 @@ export default function AnnotatePage() {
     const [jsonInput, setJsonInput] = useState("");
     const [jsonError, setJsonError] = useState(null);
 
-    const { mangaSlug } = useManga();
+    const { mangaSlug, currentManga } = useManga();
+
+    const pageTitle = currentManga
+        ? `Annotation : ${currentManga.titre}${page?.chapitre?.titre ? ` - ${page.chapitre.titre}` : ''}`
+        : "Annotation";
 
     useEffect(() => {
         if (tabMode === 'form') {
@@ -749,6 +753,7 @@ export default function AnnotatePage() {
 
     return (
         <div className="flex flex-col lg:flex-row h-[calc(100vh-64px)] bg-slate-50 overflow-hidden -mx-4 sm:-mx-8 -my-6 relative">
+            {pageTitle && <title>{pageTitle}</title>}
 
             <div className="hidden lg:flex w-[280px] shrink-0 h-full flex-col border-r border-slate-200 bg-white z-40 relative shadow-sm">
 

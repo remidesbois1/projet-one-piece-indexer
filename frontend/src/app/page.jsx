@@ -2,7 +2,9 @@ import { supabase } from "@/lib/supabaseClient";
 import LandingPageClient from "@/components/LandingPageClient";
 
 export const metadata = {
-    title: "Projet Poneglyph | Indexer de Mangas",
+    title: {
+        absolute: "Projet Poneglyph | Indexer de Mangas"
+    },
     description: "Retrouvez la page que vous cherchez. Une citation ? Un combat ? Décrivez ce que vous cherchez pour tomber pile sur la bonne page de manga.",
     alternates: {
         canonical: '/',

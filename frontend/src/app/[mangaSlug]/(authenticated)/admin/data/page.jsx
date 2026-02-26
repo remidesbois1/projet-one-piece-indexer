@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import { useManga } from '@/context/MangaContext';
 import { getAdminHierarchy, getAdminBubblesForPage, getBubbleHistory } from '@/lib/api';
 import {
     Dialog,
@@ -22,16 +23,19 @@ import {
     Layers,
     Calendar,
     Search,
-    Loader2
+    Loader2,
+    ImageOff
 } from "lucide-react";
 import Image from "next/image";
 import { cn, getProxiedImageUrl } from "@/lib/utils";
 
 export default function AdminDataPage() {
+    const { currentManga } = useManga();
+    const pageTitle = currentManga ? `Explorateur : ${currentManga.titre}` : "Explorateur de Données";
     const [hierarchy, setHierarchy] = useState([]);
     const [loading, setLoading] = useState(true);
 
-    
+
     const [selectedTome, setSelectedTome] = useState(null);
     const [selectedChapter, setSelectedChapter] = useState(null);
     const [selectedPage, setSelectedPage] = useState(null);
@@ -40,7 +44,7 @@ export default function AdminDataPage() {
     const [loadingBubbles, setLoadingBubbles] = useState(false);
 
 
-    
+
     const [historyBubble, setHistoryBubble] = useState(null);
     const [history, setHistory] = useState([]);
     const [loadingHistory, setLoadingHistory] = useState(false);
@@ -119,8 +123,9 @@ export default function AdminDataPage() {
     };
 
     return (
-        <div className="h-[calc(100vh-4rem)] flex flex-col">
-            <div className="border-b p-4 bg-white flex justify-between items-center">
+        <div className="container max-w-7xl mx-auto py-10 px-4 sm:px-6">
+            {pageTitle && <title>{pageTitle}</title>}
+            <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
                 <h1 className="text-xl font-bold flex items-center gap-2">
                     <Layers className="h-5 w-5 text-blue-600" />
                     Explorateur de Données
@@ -131,7 +136,7 @@ export default function AdminDataPage() {
             </div>
 
             <div className="flex-1 flex overflow-hidden min-h-0">
-                
+
                 <div className="w-1/4 min-w-[250px] border-r bg-slate-50 flex flex-col min-h-0">
                     <div className="p-3 font-semibold text-slate-700 border-b bg-slate-100 shrink-0">
                         Volumes
@@ -187,7 +192,7 @@ export default function AdminDataPage() {
                     </ScrollArea>
                 </div>
 
-                
+
                 <div className="w-1/4 min-w-[250px] border-r bg-white flex flex-col min-h-0">
                     <div className="p-3 font-semibold text-slate-700 border-b bg-slate-50 flex justify-between shrink-0">
                         <span>Pages</span>
@@ -227,7 +232,7 @@ export default function AdminDataPage() {
                                                     <ImageOff className="h-6 w-6 text-slate-300" />
                                                 </div>
                                             )}
-                                            
+
                                             <div className="absolute top-1 right-1">
                                                 <Badge className={cn(
                                                     "text-[9px] px-1 h-4",
@@ -247,13 +252,13 @@ export default function AdminDataPage() {
                     </ScrollArea>
                 </div>
 
-                
+
                 <div className="flex-1 bg-slate-50/50 flex flex-col min-h-0">
                     <div className="p-3 font-semibold text-slate-700 border-b bg-white flex justify-between shrink-0">
                         <span>Détail Bubbles</span>
                         {selectedPage && <span className="text-xs font-normal text-slate-500 self-center">Page {selectedPage.numero_page}</span>}
                     </div>
-                    
+
                     <div className="flex-1 relative">
                         <ScrollArea className="absolute inset-0 h-full w-full">
                             <div className="p-4">
@@ -268,7 +273,7 @@ export default function AdminDataPage() {
                                     <div className="text-center text-slate-500 py-8">Aucune bulle sur cette page.</div>
                                 ) : (
                                     <div className="space-y-4">
-                                        
+
                                         <div className="grid grid-cols-4 gap-4 mb-6">
                                             <div className="bg-white p-3 rounded border shadow-sm flex flex-col items-center">
                                                 <span className="text-xs text-slate-500 uppercase">Total</span>
@@ -288,7 +293,7 @@ export default function AdminDataPage() {
                                             </div>
                                         </div>
 
-                                        
+
                                         <div className="bg-white border rounded-md shadow-sm overflow-hidden">
                                             <div className="grid grid-cols-12 bg-slate-100 p-2 text-xs font-semibold text-slate-600 border-b">
                                                 <div className="col-span-1 text-center">#</div>
@@ -378,7 +383,7 @@ export default function AdminDataPage() {
                                                 </div>
 
                                                 <div className="text-sm mt-2 text-slate-600">
-                                                    
+
                                                     <div className="flex items-center gap-1 text-xs text-slate-400 mb-2">
                                                         <UserIconDisplay email={entry.user?.email} id={entry.user_id} />
                                                     </div>
@@ -416,7 +421,7 @@ export default function AdminDataPage() {
 }
 
 function UserIconDisplay({ email, id }) {
-    
+
     return (
         <>
             <span className="w-4 h-4 bg-slate-200 rounded-full flex items-center justify-center text-[10px] font-bold text-slate-500">
@@ -429,8 +434,4 @@ function UserIconDisplay({ email, id }) {
     )
 }
 
-function ImageOff({ className }) {
-    return (
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="2" y1="2" x2="22" y2="22"></line><path d="M10.41 10.41a2 2 0 1 1-2.83-2.83"></path><line x1="13.5" y1="13.5" x2="6" y2="21"></line><line x1="18" y1="12" x2="21" y2="15"></line><path d="M3.59 13.59A1.99 1.99 0 0 0 3 15v4a2 2 0 0 0 2 2h4c.55 0 1.05-.22 1.41-.59"></path><path d="M21 5v-.9a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v16"></path></svg>
-    )
-}
+
