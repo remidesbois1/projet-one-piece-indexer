@@ -1,0 +1,11 @@
+.git
+__pycache__
+outputs_trocr_manga_large
+trocr_dataset
+onnx_export
+logs
+.env
+*.pt
+*.safetensors
+*.onnx
+*.bin
