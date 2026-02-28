@@ -8,7 +8,7 @@ import { analyzeBubble, generatePageDescription } from '@/lib/geminiClient';
 import ValidationForm from '@/components/ValidationForm';
 import ApiKeyForm from '@/components/ApiKeyForm';
 import { useAuth } from '@/context/AuthContext';
-import { useWorker } from '@/context/WorkerContext';
+import { useWorker, OCR_MODELS } from '@/context/WorkerContext';
 import { useDetection } from '@/context/DetectionContext';
 import { useManga } from '@/context/MangaContext';
 import { DndContext, closestCenter } from '@dnd-kit/core';
@@ -32,7 +32,7 @@ export default function AnnotatePage() {
     const params = useParams();
     const pageId = params?.pageId;
     const router = useRouter();
-    const { worker, modelStatus, loadModel, downloadProgress, runOcr } = useWorker();
+    const { worker, modelStatus, loadModel, switchModel, downloadProgress, runOcr, activeModelKey } = useWorker();
     const {
         detectBubbles,
         detectionStatus,
@@ -823,29 +823,61 @@ export default function AnnotatePage() {
                         </div>
 
                         {preferLocalOCR && (
-                            <div className="">
-                                {modelStatus === 'idle' && (
-                                    <Button variant="outline" size="sm" onClick={loadModel} className="w-full h-8 text-[11px] font-bold bg-white border border-slate-200 hover:bg-slate-50 text-slate-600">
-                                        <Download size={12} className="mr-1.5" /> Charger le modèle
-                                    </Button>
-                                )}
-                                {modelStatus === 'loading' && (
-                                    <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
-                                        <div className="flex justify-between text-[9px] font-bold text-slate-500 mb-1.5">
-                                            <span>Installation...</span>
-                                            <span>{Math.round(downloadProgress)}%</span>
+                            <>
+                                <div className="flex gap-1.5">
+                                    {Object.values(OCR_MODELS).map((m) => (
+                                        <button
+                                            key={m.key}
+                                            onClick={() => switchModel(m.key)}
+                                            disabled={isGuest || modelStatus === 'loading'}
+                                            className={cn(
+                                                "flex-1 p-2 rounded-lg border text-left transition-all duration-200",
+                                                activeModelKey === m.key
+                                                    ? "border-emerald-300 bg-emerald-50/80 ring-1 ring-emerald-200/50"
+                                                    : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50",
+                                                (isGuest || modelStatus === 'loading') && "opacity-50 cursor-not-allowed"
+                                            )}
+                                        >
+                                            <div className="flex items-center justify-between mb-0.5">
+                                                <span className={cn(
+                                                    "text-[10px] font-bold",
+                                                    activeModelKey === m.key ? "text-emerald-700" : "text-slate-600"
+                                                )}>{m.label}</span>
+                                                {activeModelKey === m.key && (
+                                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                                )}
+                                            </div>
+                                            <div className="text-[8px] font-semibold text-slate-400 leading-tight">
+                                                CER {m.cer} · {m.size}
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+
+                                <div>
+                                    {(modelStatus === 'idle' || modelStatus === 'error') && (
+                                        <Button variant="outline" size="sm" onClick={() => loadModel(activeModelKey)} className="w-full h-8 text-[11px] font-bold bg-white border border-slate-200 hover:bg-slate-50 text-slate-600">
+                                            <Download size={12} className="mr-1.5" /> Charger {OCR_MODELS[activeModelKey]?.label}
+                                        </Button>
+                                    )}
+                                    {modelStatus === 'loading' && (
+                                        <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
+                                            <div className="flex justify-between text-[9px] font-bold text-slate-500 mb-1.5">
+                                                <span>Installation {OCR_MODELS[activeModelKey]?.label}...</span>
+                                                <span>{Math.round(downloadProgress)}%</span>
+                                            </div>
+                                            <div className="h-1 w-full bg-slate-200 rounded-full overflow-hidden">
+                                                <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${downloadProgress}%` }} />
+                                            </div>
                                         </div>
-                                        <div className="h-1 w-full bg-slate-200 rounded-full overflow-hidden">
-                                            <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${downloadProgress}%` }} />
+                                    )}
+                                    {modelStatus === 'ready' && (
+                                        <div className="flex items-center justify-center gap-1.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 py-1.5 rounded-md border border-emerald-100/50">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-sm" /> {OCR_MODELS[activeModelKey]?.label} opérationnel
                                         </div>
-                                    </div>
-                                )}
-                                {modelStatus === 'ready' && (
-                                    <div className="flex items-center justify-center gap-1.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 py-1.5 rounded-md border border-emerald-100/50">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-sm" /> Modèle opérationnel
-                                    </div>
-                                )}
-                            </div>
+                                    )}
+                                </div>
+                            </>
                         )}
 
                         {!preferLocalOCR && !geminiKey && (

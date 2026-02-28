@@ -26,7 +26,7 @@ Le **Projet Poneglyph** est une plateforme de haute performance dédiée à la n
 ### **Frontend & IA (Edge)**
 
 * **Framework :** React 19 / Next.js & Vite.
-* **OCR Local :** **TrOCR Fine-tuned** (`Remidesbois/trocr-onepiece-fr`) exécuté via WebGPU (`@xenova/transformers`) directement dans le navigateur.
+* **OCR Local :** **TrOCR Fine-tuned** (Base & Large) exécuté via WebGPU (`@huggingface/transformers`) directement dans le navigateur.
 * **Détection de Bulles Locale :** **YOLO V8 Medium Fine-tuned** (`Remidesbois/YoloPiece_BubbleDetector`) exécuté via WebGPU.
 * **State Management :** Context API & LocalStorage.
 
@@ -73,15 +73,17 @@ L'extraction de texte utilise une architecture conçue pour minimiser les coûts
 
 ### **TrOCR Fine-tuned (Local)**
 
-Modèle spécialisé pour le français et les polices de One Piece.
+Deux modèles spécialisés pour le français et les polices de manga, sélectionnables directement dans l'interface :
 
-* **Coût :** 0 $ / OCR
-* **Latence :** 0.5-5 secondes / OCR (dépend du GPU client).
-* **Métriques :**
-* CER (Character Error Rate) brut : **2.90%**
-* CER après post-traitement regex : **1.31%**
-* WER (Word Error Rate) brut : **9.2%**
-* WER après post-traitement regex : **3.71%**
+| | **TrOCR Base** | **TrOCR Large** |
+|---|---|---|
+| **HuggingFace** | [`Remidesbois/trocr-onepiece-fr`](https://huggingface.co/Remidesbois/trocr-onepiece-fr) | [`Remidesbois/trocr-onepiece-fr-large`](https://huggingface.co/Remidesbois/trocr-onepiece-fr-large) |
+| **Paramètres** | ~334M | ~558M |
+| **Taille ONNX** | ~1.33 Go | ~2.33 Go |
+| **CER (brut)** | 2.90% | **1.83%** |
+| **WER (brut)** | 9.20% | **6.03%** |
+| **Use case** | Appareils modestes, chargement rapide | Précision maximale, GPU récent |
+| **Coût** | 0 $/OCR | 0 $/OCR |
 
 > **Note de compatibilité :** L'OCR local nécessite un navigateur compatible WebGPU (Chrome 113+, Edge, Firefox Nightly).
 
@@ -97,7 +99,7 @@ Détecte instantanément les zones de texte sur la planche.
 Fallback pour les configurations ne supportant pas WebGPU.
 
 * **Coût :** ~0,00004 $ / OCR.
-* **Rôle clé :** A servi à générer le corpus de "distillation" pour entraîner le modèle TrOCR local.
+* **Rôle clé :** A servi à générer le corpus de "distillation" pour entraîner les modèles TrOCR locaux.
 
 ---
 
@@ -136,8 +138,8 @@ Approche rigoureuse pour maintenir un coût de fonctionnement minimal (**≈ 4.5
 Le script `/script_docker` automatise le cycle de vie du modèle IA :
 
 1. **Extraction :** Récupération des bulles validées (Supabase).
-2. **Fine-Tuning :** Entraînement incrémental de TrOCR sur les nouvelles données.
-3. **Déploiement :** Push automatique vers Hugging Face (`Remidesbois/trocr-onepiece-fr`) si les métriques (CER/WER) sont validées.
+2. **Fine-Tuning :** Entraînement incrémental de TrOCR (Base & Large) sur les nouvelles données.
+3. **Déploiement :** Push automatique vers Hugging Face (`Remidesbois/trocr-onepiece-fr` et `Remidesbois/trocr-onepiece-fr-large`) si les métriques (CER/WER) sont validées.
 
 ---
 

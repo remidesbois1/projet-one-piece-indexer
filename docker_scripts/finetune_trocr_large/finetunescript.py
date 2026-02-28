@@ -28,30 +28,22 @@ cer_metric = evaluate.load("cer")
 wer_metric = evaluate.load("wer")
 
 class MangaOCRDataset(Dataset):
-    def __init__(self, df, processor, img_dir, max_target_length=64, name="Dataset"):
+    def __init__(self, df, processor, img_dir, decoder_start_token_id, max_target_length=64, name="Dataset"):
         self.df = df
         self.processor = processor
         self.img_dir = img_dir
         self.max_target_length = max_target_length
-        
-        print(f"📦 [{name}] Chargement de {len(self.df)} images en RAM...")
-        self.images = []
-        for idx in range(len(self.df)):
-            file_name = self.df.iloc[idx]['file_name']
-            img_path = os.path.join(self.img_dir, file_name)
-            image = Image.open(img_path).convert("RGB")
-            pixel_values = self.processor(image, return_tensors="pt").pixel_values.squeeze()
-            self.images.append(pixel_values)
-            if idx % 500 == 0 and idx > 0:
-                print(f"   > {idx} images traitées...")
-        print(f"✅ {name} prêt en mémoire.")
+        self.decoder_start_token_id = decoder_start_token_id
+        print(f"📦 [{name}] {len(self.df)} images (chargement à la volée)")
 
     def __len__(self):
         return len(self.df)
 
     def __getitem__(self, idx):
         item = self.df.iloc[idx]
-        pixel_values = self.images[idx]
+        file_name = item['file_name']
+        image = Image.open(os.path.join(self.img_dir, file_name)).convert("RGB")
+        pixel_values = self.processor(image, return_tensors="pt").pixel_values.squeeze()
         
         labels = self.processor.tokenizer(
             item['text'],
@@ -60,11 +52,15 @@ class MangaOCRDataset(Dataset):
             truncation=True
         ).input_ids
 
+        decoder_input_ids = [self.decoder_start_token_id] + labels[:-1]
+        decoder_input_ids = [tid if tid != -100 else self.processor.tokenizer.pad_token_id for tid in decoder_input_ids]
+
         labels = [label if label != self.processor.tokenizer.pad_token_id else -100 for label in labels]
 
         return {
             "pixel_values": pixel_values,
-            "labels": torch.tensor(labels)
+            "labels": torch.tensor(labels),
+            "decoder_input_ids": torch.tensor(decoder_input_ids),
         }
 
 def compute_metrics(pred):
@@ -86,20 +82,26 @@ if __name__ == "__main__":
     train_df = pd.read_csv(os.path.join(TRAIN_DIR, "metadata.csv"))
     test_df = pd.read_csv(os.path.join(TEST_DIR, "metadata.csv"))
     
-    train_dataset = MangaOCRDataset(train_df, processor, TRAIN_DIR, name="Train")
-    test_dataset = MangaOCRDataset(test_df, processor, TEST_DIR, name="Test")
+    decoder_start_id = processor.tokenizer.cls_token_id or processor.tokenizer.bos_token_id or 2
+    print(f"ℹ️  decoder_start_token_id = {decoder_start_id}")
+
+    train_dataset = MangaOCRDataset(train_df, processor, TRAIN_DIR, decoder_start_id, name="Train")
+    test_dataset = MangaOCRDataset(test_df, processor, TEST_DIR, decoder_start_id, name="Test")
 
     model = VisionEncoderDecoderModel.from_pretrained(MODEL_ID)
 
-    model.config.decoder_start_token_id = processor.tokenizer.cls_token_id
+    model.config.decoder_start_token_id = processor.tokenizer.cls_token_id or processor.tokenizer.bos_token_id or 2
     model.config.pad_token_id = processor.tokenizer.pad_token_id
+    model.config.decoder.decoder_start_token_id = model.config.decoder_start_token_id
+    model.config.decoder.pad_token_id = model.config.pad_token_id
     model.config.vocab_size = model.config.decoder.vocab_size
     model.config.eos_token_id = processor.tokenizer.sep_token_id
     model.config.max_length = 64
     model.config.early_stopping = True
     model.config.no_repeat_ngram_size = 0
     model.config.length_penalty = 1.0
-    model.config.num_beams = 6
+    model.config.num_beams = 4
+    model.gradient_checkpointing_enable()
 
     training_args = Seq2SeqTrainingArguments(
         output_dir=OUTPUT_DIR,
@@ -112,7 +114,7 @@ if __name__ == "__main__":
         num_train_epochs=25,
         
         per_device_train_batch_size=8,
-        per_device_eval_batch_size=8,
+        per_device_eval_batch_size=4,
         gradient_accumulation_steps=3,
         
         bf16=True,
