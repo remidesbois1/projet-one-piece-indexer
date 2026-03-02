@@ -10,12 +10,6 @@ Le **Projet Poneglyph** est une plateforme de haute performance dédiée à la n
 
 ---
 
-## **Démonstration**
-
-> *Recherche sémantique instantanée et analyse contextuelle des planches.*
-
----
-
 ### **Infrastructure Core**
 
 * **Hébergement :** VPS Cloud (Hetzner CX23 - 2 vCPU, 4 Go RAM).
@@ -72,6 +66,8 @@ L'Indexer utilise une architecture de recherche hybride et parallélisée pour u
 L'extraction de texte utilise une architecture conçue pour minimiser les coûts tout en maximisant la qualité.
 
 ### **TrOCR Fine-tuned (Local)**
+
+> Pour plus de détails sur la pipeline d'ocr : [ocr_pipeline.md](https://github.com/remidesbois1/projet-poneglyph/blob/master/documentation/ocr_pipeline.md)
 
 Deux modèles spécialisés pour le français et les polices de manga, sélectionnables directement dans l'interface :
 
