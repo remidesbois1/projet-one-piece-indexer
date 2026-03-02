@@ -7,6 +7,7 @@
 Le **Projet Poneglyph** est une plateforme de haute performance dédiée à la numérisation, l'indexation sémantique et la recherche contextuelle de mangas et bandes dessinées. En combinant l'intelligence artificielle déportée (**WebGPU**) et une infrastructure hybride optimisée, le système permet une exploration inédite des oeuvres.
 
 **Accès Public (Mode Invité pour la Consultation et la Recherche) :** [**poneglyph.fr**](https://poneglyph.fr)
+> Attention : Le site est malheureusement parfois inaccessible sur certains réseaux d'entreprises.
 
 ---
 
