@@ -20,8 +20,9 @@ Le **Projet Poneglyph** est une plateforme de haute performance dédiée à la n
 ### **Frontend & IA (Edge)**
 
 * **Framework :** React 19 / Next.js & Vite.
+* **CSS** : [ShadCn UI](https://ui.shadcn.com/)
 * **OCR Local :** **TrOCR Fine-tuned** (Base & Large) exécuté via WebGPU (`@huggingface/transformers`) directement dans le navigateur.
-* **Détection de Bulles Locale :** **YOLO V8 Medium Fine-tuned** (`Remidesbois/YoloPiece_BubbleDetector`) exécuté via WebGPU.
+* **Détection de Bulles Locale :** **YOLO V8 Medium Fine-tuned** [`Remidesbois/YoloPiece_BubbleDetector`](https://huggingface.co/Remidesbois/YoloPiece_BubbleDetector) exécuté via WebGPU.
 * **State Management :** Context API & LocalStorage.
 
 ### **Backend & Services (Cloud)**
