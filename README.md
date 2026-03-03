@@ -193,7 +193,7 @@ cd frontend && npm install && npm run dev
 * [x] Inférence locale WebGPU (OCR + YOLO)
 * [x] Pipeline MLOps automatisé
 * [ ] Support multilingue (Anglais)
-* [ ] Fine-tuning de modèles pour d'autres œuvres (Naruto, Berserk, Dragon Ball)
+* [ ] Se renseigner sur WebNN (évolution de WebGPU) pour permettre aux modèles de tourner sur les NPU
 
 ---
 
