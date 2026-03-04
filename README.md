@@ -7,12 +7,7 @@
 Le **Projet Poneglyph** est une plateforme de haute performance dédiée à la numérisation, l'indexation sémantique et la recherche contextuelle de mangas et bandes dessinées. En combinant l'intelligence artificielle déportée (**WebGPU**) et une infrastructure hybride optimisée, le système permet une exploration inédite des oeuvres.
 
 **Accès Public (Mode Invité pour la Consultation et la Recherche) :** [**poneglyph.fr**](https://poneglyph.fr)
-
----
-
-## **Démonstration**
-
-> *Recherche sémantique instantanée et analyse contextuelle des planches.*
+> Attention : Le site est malheureusement parfois inaccessible sur certains réseaux d'entreprises.
 
 ---
 
@@ -26,8 +21,9 @@ Le **Projet Poneglyph** est une plateforme de haute performance dédiée à la n
 ### **Frontend & IA (Edge)**
 
 * **Framework :** React 19 / Next.js & Vite.
+* **CSS** : [ShadCn UI](https://ui.shadcn.com/)
 * **OCR Local :** **TrOCR Fine-tuned** (Base & Large) exécuté via WebGPU (`@huggingface/transformers`) directement dans le navigateur.
-* **Détection de Bulles Locale :** **YOLO V8 Medium Fine-tuned** (`Remidesbois/YoloPiece_BubbleDetector`) exécuté via WebGPU.
+* **Détection de Bulles Locale :** **YOLO V8 Medium Fine-tuned** [`Remidesbois/YoloPiece_BubbleDetector`](https://huggingface.co/Remidesbois/YoloPiece_BubbleDetector) exécuté via WebGPU.
 * **State Management :** Context API & LocalStorage.
 
 ### **Backend & Services (Cloud)**
@@ -72,6 +68,8 @@ L'Indexer utilise une architecture de recherche hybride et parallélisée pour u
 L'extraction de texte utilise une architecture conçue pour minimiser les coûts tout en maximisant la qualité.
 
 ### **TrOCR Fine-tuned (Local)**
+
+> Pour plus de détails sur la pipeline d'ocr : [ocr_pipeline.md](https://github.com/remidesbois1/projet-poneglyph/blob/master/documentation/ocr_pipeline.md)
 
 Deux modèles spécialisés pour le français et les polices de manga, sélectionnables directement dans l'interface :
 
@@ -195,7 +193,7 @@ cd frontend && npm install && npm run dev
 * [x] Inférence locale WebGPU (OCR + YOLO)
 * [x] Pipeline MLOps automatisé
 * [ ] Support multilingue (Anglais)
-* [ ] Fine-tuning de modèles pour d'autres œuvres (Naruto, Berserk, Dragon Ball)
+* [ ] Se renseigner sur WebNN (évolution de WebGPU) pour permettre aux modèles de tourner sur les NPU
 
 ---
 
