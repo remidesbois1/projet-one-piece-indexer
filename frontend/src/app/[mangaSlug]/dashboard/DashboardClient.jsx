@@ -39,10 +39,8 @@ export default function DashboardPage() {
     const [isLoadingData, setIsLoadingData] = useState(false);
 
     useEffect(() => {
-        if (session?.access_token || isGuest) {
-            getTomes().then(res => setTomes(res.data)).catch(console.error);
-        }
-    }, [session, isGuest]);
+        getTomes().then(res => setTomes(res.data)).catch(console.error);
+    }, []);
 
     const openTome = async (tome) => {
         setSelectedTome(tome);
@@ -130,11 +128,8 @@ export default function DashboardPage() {
 
     if (profileLoading) return null;
 
-    const pageTitle = currentManga ? `Projet Poneglyph | Bibliothèque : ${currentManga.titre}` : "Projet Poneglyph";
-
     return (
         <div className="w-full">
-            {pageTitle && <title>{pageTitle}</title>}
             <header className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-8 pb-6 border-b border-slate-100 gap-4">
                 <div className="flex items-center gap-3">
                     <div className="p-2 bg-slate-900 rounded-lg text-white shadow-lg shadow-slate-200">

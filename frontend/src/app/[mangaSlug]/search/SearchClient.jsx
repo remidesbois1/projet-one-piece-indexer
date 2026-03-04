@@ -253,9 +253,6 @@ export default function SearchPage() {
 
     return (
         <div className="min-h-screen pb-20">
-
-
-            {pageTitle && <title>{pageTitle}</title>}
             <div className="bg-white border-b border-slate-200 pt-10 pb-8 px-4 shadow-sm -mx-4 sm:-mx-8 mb-8">
                 <div className="container max-w-4xl mx-auto text-center space-y-4 sm:space-y-8 relative z-10">
                     <h1 className="text-2xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-slate-900">
