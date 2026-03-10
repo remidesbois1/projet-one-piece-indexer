@@ -15,6 +15,7 @@ bitsandbytes
 supabase
 python-dotenv
 pillow
+pillow-avif-plugin
 tqdm
 scikit-learn
 pandas
