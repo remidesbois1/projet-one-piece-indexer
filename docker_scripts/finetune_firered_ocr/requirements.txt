@@ -1,0 +1,21 @@
+# HF and Data
+transformers
+datasets
+accelerate
+huggingface_hub
+
+# Specific to Qwen and VLMs
+qwen-vl-utils
+
+# Finetuning tools
+trl
+bitsandbytes
+
+# Utils
+supabase
+python-dotenv
+pillow
+tqdm
+scikit-learn
+pandas
+requests
