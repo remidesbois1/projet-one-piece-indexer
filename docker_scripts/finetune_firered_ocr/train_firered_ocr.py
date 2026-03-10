@@ -2,11 +2,11 @@ import os
 import torch
 from datasets import load_dataset
 from transformers import (
-    AutoModelForCausalLM,
+    Qwen3VLForConditionalGeneration,
     AutoProcessor,
-    TrainingArguments
+    TrainingArguments,
+    Trainer
 )
-from trl import SFTTrainer
 from qwen_vl_utils import process_vision_info
 
 torch.set_num_threads(8)
@@ -21,22 +21,9 @@ MODEL_ID = "FireRedTeam/FireRed-OCR"
 OUTPUT_DIR = "./outputs_firered_manga"
 LOGS_DIR = "./logs"
 
-def format_image_path(example):
-    for i, msg in enumerate(example["messages"]):
-        if msg["role"] == "user":
-            for j, content in enumerate(msg["content"]):
-                if content["type"] == "image":
-                    is_train = "train" in example.get("split_hint", TRAIN_FILE)
-                    split_dir = os.path.join(BASE_PATH, "train" if is_train else "test")
-                    abs_path = os.path.abspath(os.path.join(split_dir, content["image"]))
-                    example["messages"][i]["content"][j]["image"] = f"file://{abs_path}"
-    return example
-
 def prepare_dataset(file_path):
     print(f"Loading dataset from {file_path}...")
     dataset = load_dataset("json", data_files=file_path, split="train")
-    dataset = dataset.map(lambda x: {"split_hint": file_path})
-    dataset = dataset.map(format_image_path, remove_columns=["split_hint"])
     return dataset
 
 def formatting_prompts_func(example, processor):
@@ -52,42 +39,87 @@ def formatting_prompts_func(example, processor):
         "videos": video_inputs
     }
 
+from PIL import Image
+
 def process_batch(examples, processor):
-    texts = []
-    images_list = []
-    videos_list = []
+    batch_texts = []
+    batch_images = []
     
     for i in range(len(examples['messages'])):
         example_messages = examples['messages'][i]
+        
+        # 1. Extraire et charger les images PIL manuellement
+        # On ne touche pas au messages originaux pour l'instant
+        example_images = []
+        for msg in example_messages:
+            if msg["role"] == "user":
+                for content in msg["content"]:
+                    if content["type"] == "image":
+                        img_path = content["image"]
+                        
+                        # Résoudre le chemin
+                        # On assume que c'est relatif à BASE_PATH/train ou BASE_PATH/test
+                        # ou déjà absolu
+                        possible_paths = [
+                            os.path.join(BASE_PATH, "train", img_path),
+                            os.path.join(BASE_PATH, "test", img_path),
+                            img_path
+                        ]
+                        
+                        loaded_img = None
+                        for p in possible_paths:
+                            if os.path.exists(p):
+                                try:
+                                    loaded_img = Image.open(p).convert("RGB")
+                                    break
+                                except:
+                                    continue
+                        
+                        if loaded_img is None:
+                            # Fallback: on crée une image noire pour ne pas casser la séquence
+                            print(f"⚠️ Image non trouvée: {img_path}. Remplacement par une image vide.")
+                            loaded_img = Image.new("RGB", (224, 224), (0, 0, 0))
+                        
+                        example_images.append(loaded_img)
+                        
+        # Nettoyage des None insérés par the datasets library (qui force un schéma fixe pour tous les dicts)
+        # Ça cause un bug dans le Jinja chat template de Qwen3VL ('image' in content => 2 images par message)
+        clean_messages = []
+        for msg in example_messages:
+            clean_content = []
+            for content in msg["content"]:
+                clean_content.append({k: v for k, v in content.items() if v is not None})
+            clean_messages.append({"role": msg["role"], "content": clean_content})
+
+        # 2. Appliquer le template de chat pour obtenir le texte
+        # Note: apply_chat_template avec tokenize=False insère les tokens <|vision_start|> etc.
         text = processor.apply_chat_template(
-            example_messages, tokenize=False, add_generation_prompt=False
+            clean_messages, tokenize=False, add_generation_prompt=False
         )
-        texts.append(text)
-        
-        image_inputs, video_inputs = process_vision_info(example_messages)
-        if image_inputs:
-            images_list.extend(image_inputs)
-        if video_inputs:
-            videos_list.extend(video_inputs)
+        batch_texts.append(text)
+        batch_images.extend(example_images)
             
-    kwargs = {}
-    if images_list:
-        kwargs["images"] = images_list
-    if videos_list:
-        kwargs["videos"] = videos_list
-        
+    # 3. Utiliser le processor pour encoder le texte et les images
+    # Le processor gère lui-même le redimensionnement et le grid_thw
     model_inputs = processor(
-        text=texts,
+        text=batch_texts,
+        images=batch_images,
         padding=True,
-        return_tensors="pt",
-        **kwargs
+        return_tensors="pt"
     )
+    
+    # On doit s'assurer que les labels sont présents pour l'entraînement (copie des input_ids)
+    model_inputs["labels"] = model_inputs["input_ids"].clone()
     
     return model_inputs
 
-def custom_data_collator(features):
-    batch = {}
-    pass
+class CustomDataCollator:
+    def __init__(self, processor):
+        self.processor = processor
+
+    def __call__(self, features):
+        batch_dict = {"messages": [f["messages"] for f in features]}
+        return process_batch(batch_dict, self.processor)
 
 if __name__ == "__main__":
     
@@ -103,10 +135,19 @@ if __name__ == "__main__":
     print(f"Loaded {len(train_dataset)} training examples and {len(test_dataset)} testing examples.")
 
     print("Loading model in bfloat16...")
-    model = AutoModelForCausalLM.from_pretrained(
+    
+    attn_implementation = "sdpa"
+    try:
+        import flash_attn
+        attn_implementation = "flash_attention_2"
+        print("✨ Flash Attention 2 détecté et activé.")
+    except ImportError:
+        print("ℹ️ Flash Attention 2 non trouvé (normal sous Windows). Utilisation de SDPA.")
+
+    model = Qwen3VLForConditionalGeneration.from_pretrained(
         MODEL_ID,
-        torch_dtype=torch.bfloat16,
-        attn_implementation="flash_attention_2",
+        dtype=torch.bfloat16,
+        attn_implementation=attn_implementation,
         device_map="auto",
         trust_remote_code=True
     )
@@ -120,7 +161,7 @@ if __name__ == "__main__":
         per_device_eval_batch_size=1,
         gradient_accumulation_steps=16,
         gradient_checkpointing=True,
-        optim="adamw_8bit",
+        optim="adamw_torch",
         bf16=True,
         tf32=True,
         
@@ -130,14 +171,13 @@ if __name__ == "__main__":
         save_steps=100,
         logging_steps=10,
         
-        dataloader_num_workers=2,
+        dataloader_num_workers=0,
         dataloader_pin_memory=True,
         
         logging_dir=LOGS_DIR,
         report_to="tensorboard",
         save_total_limit=2,
-        remove_unused_columns=False,
-        dataset_kwargs={"skip_prepare_dataset": True}
+        remove_unused_columns=False
     )
 
     def sft_formatting_func(example):
@@ -149,36 +189,25 @@ if __name__ == "__main__":
             texts.append(text)
         return texts
         
-    print("Tokenizing datasets...")
-    train_dataset = train_dataset.map(
-        lambda x: process_batch(x, processor),
-        batched=True,
-        batch_size=4,
-        remove_columns=train_dataset.column_names
-    )
-    
-    test_dataset = test_dataset.map(
-        lambda x: process_batch(x, processor),
-        batched=True,
-        batch_size=4,
-        remove_columns=test_dataset.column_names
-    )
+    print("Initialisation du Data Collator...")
+    data_collator_fn = CustomDataCollator(processor)
 
     print("\n" + "="*50)
     print("🚀 DÉMARRAGE DU FULL FINE-TUNING FIRE-RED OCR")
     print("="*50)
     print(f"   • Modèle base  : {MODEL_ID}")
     print(f"   • Batch Size   : {training_args.per_device_train_batch_size * training_args.gradient_accumulation_steps} (Effective)")
-    print(f"   • Optimiseur   : 8-bit AdamW")
+    print(f"   • Optimiseur   : Standard AdamW (Windows Safe)")
     print(f"   • Flash Attn 2 : Active")
     print(f"   • Grad Checkpt : Active")
     print("="*50 + "\n")
 
-    trainer = SFTTrainer(
+    trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
+        data_collator=data_collator_fn
     )
 
     checkpoint_to_resume = None

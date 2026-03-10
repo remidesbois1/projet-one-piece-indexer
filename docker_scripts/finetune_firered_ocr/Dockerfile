@@ -1,4 +1,4 @@
-FROM pytorch/pytorch:2.2.0-cuda12.1-cudnn8-devel
+FROM pytorch/pytorch:2.4.0-cuda12.1-cudnn9-devel
 
 WORKDIR /app
 
@@ -14,8 +14,8 @@ COPY requirements.txt .
 # Install Python requirements
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install flash-attention using a precompiled wheel (cu122 works perfectly on cu121 and bypasses the 2 hours build!)
-RUN pip install --no-cache-dir https://github.com/Dao-AILab/flash-attention/releases/download/v2.5.6/flash_attn-2.5.6%2Bcu122torch2.2cxx11abiFALSE-cp310-cp310-linux_x86_64.whl
+# Install flash-attention using a precompiled wheel (cu12 works perfectly on cu121 and bypasses the 2 hours build!)
+RUN pip install --no-cache-dir https://github.com/Dao-AILab/flash-attention/releases/download/v2.8.3/flash_attn-2.8.3+cu12torch2.4cxx11abiFALSE-cp311-cp311-linux_x86_64.whl
 
 COPY . /app
 

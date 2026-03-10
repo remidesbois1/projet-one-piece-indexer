@@ -6,6 +6,9 @@ import requests
 from huggingface_hub import HfApi, login
 from pathlib import Path
 
+from dotenv import load_dotenv
+load_dotenv()
+
 REQUIRED_ENV_VARS = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "HF_TOKEN"]
 missing_vars = [var for var in REQUIRED_ENV_VARS if var not in os.environ]
 
@@ -51,17 +54,20 @@ def terminate_runpod(is_error=False):
 print("🚀 Starting Automated FireRed-OCR Fine-Tuning Pipeline...")
 login(token=os.environ["HF_TOKEN"])
 
-print("\n1️⃣  Downloading Dataset from Supabase...")
-result = subprocess.run([sys.executable, "export_dataset.py"], capture_output=False)
-if result.returncode != 0:
-    print("❌ Dataset download failed.")
-    terminate_runpod(is_error=True) 
-    sys.exit(1)
-
 dataset_dir = Path("firered_dataset")
-if dataset_dir.exists():
-    print(f"✅ Dataset found at {dataset_dir.resolve()}")
+train_jsonl = dataset_dir / "train" / "metadata.jsonl"
+
+if dataset_dir.exists() and train_jsonl.exists():
+    print(f"✅ Dataset already exists at {dataset_dir.resolve()}. Skipping download.")
 else:
+    print("\n1️⃣  Downloading Dataset from Supabase...")
+    result = subprocess.run([sys.executable, "export_dataset.py"], capture_output=False)
+    if result.returncode != 0:
+        print("❌ Dataset download failed.")
+        terminate_runpod(is_error=True) 
+        sys.exit(1)
+
+if not dataset_dir.exists():
     print(f"❌ Dataset not found at {dataset_dir}. Processing failed.")
     terminate_runpod(is_error=True)
     sys.exit(1)
