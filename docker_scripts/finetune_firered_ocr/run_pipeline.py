@@ -13,7 +13,9 @@ if missing_vars:
     print(f"Error: Missing environment variables: {', '.join(missing_vars)}")
     sys.exit(1)
 
-def terminate_runpod():
+import time
+
+def terminate_runpod(is_error=False):
     pod_id = os.environ.get("RUNPOD_POD_ID")
     api_key = os.environ.get("RUNPOD_API_KEY")
 
@@ -24,6 +26,11 @@ def terminate_runpod():
     if not api_key:
         print("⚠️ Running on RunPod but RUNPOD_API_KEY is missing. Cannot terminate pod automatically.")
         return
+
+    if is_error:
+        print("\n⏳ ATTENTION : Le script a crashé !")
+        print("⏳ Le pod s'autodétruira dans 10 minutes pour vous laisser le temps de lire les logs RunPod...")
+        time.sleep(600)
 
     print(f"🛑 Initiating termination for Pod ID: {pod_id}")
     
@@ -48,7 +55,7 @@ print("\n1️⃣  Downloading Dataset from Supabase...")
 result = subprocess.run([sys.executable, "export_dataset.py"], capture_output=False)
 if result.returncode != 0:
     print("❌ Dataset download failed.")
-    terminate_runpod() 
+    terminate_runpod(is_error=True) 
     sys.exit(1)
 
 dataset_dir = Path("firered_dataset")
@@ -56,7 +63,7 @@ if dataset_dir.exists():
     print(f"✅ Dataset found at {dataset_dir.resolve()}")
 else:
     print(f"❌ Dataset not found at {dataset_dir}. Processing failed.")
-    terminate_runpod()
+    terminate_runpod(is_error=True)
     sys.exit(1)
 
 
@@ -69,7 +76,7 @@ else:
     result = subprocess.run([sys.executable, "train_firered_ocr.py"], capture_output=False)
     if result.returncode != 0:
         print("❌ Fine-tuning failed.")
-        terminate_runpod()
+        terminate_runpod(is_error=True)
         sys.exit(1)
 
 
@@ -94,7 +101,7 @@ try:
     print("✅ Root files uploaded.")
 except Exception as e:
     print(f"❌ Failed to upload root files: {e}")
-    terminate_runpod()
+    terminate_runpod(is_error=True)
     sys.exit(1)
 
 
