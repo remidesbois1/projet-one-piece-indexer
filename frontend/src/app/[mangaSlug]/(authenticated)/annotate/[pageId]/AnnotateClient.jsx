@@ -15,7 +15,7 @@ import { DndContext, closestCenter } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
 import { SortableBubbleItem } from '@/components/SortableBubbleItem';
 import DraggableWrapper from '@/components/DraggableWrapper';
-import { cropImage, getProxiedImageUrl } from '@/lib/utils';
+import { cn, cropImage, getProxiedImageUrl } from '@/lib/utils';
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
@@ -23,8 +23,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Send, Loader2, MousePointer2, Cpu, CloudLightning, Download, Settings2, FileText, Save, Plus, X, Search, ChevronLeft, ChevronRight, Shield, Code, Sparkles } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { ArrowLeft, Send, Loader2, MousePointer2, Cpu, CloudLightning, Download, Settings2, FileText, Save, Plus, X, Search, ChevronLeft, ChevronRight, Shield, Code, Sparkles, RotateCcw, Eye, Users, MapPin, AlignLeft } from "lucide-react";
 import { toast } from "sonner";
 
 export default function AnnotatePage() {
@@ -249,17 +248,54 @@ export default function AnnotatePage() {
 
     const lastRequestId = useRef(0);
 
-    const runLocalOcr = async () => {
+    const runLocalOcr = async (cropData = null) => {
         try {
+            const modelData = OCR_MODELS[activeModelKey];
+
+            if (!modelData) return;
+            if (preferLocalOCR && modelData.type !== 'local') return;
+            if (!preferLocalOCR && modelData.type !== 'api') return;
+
+            const areaToCrop = cropData || rectangle || (pendingAnnotation ? { x: pendingAnnotation.x, y: pendingAnnotation.y, w: pendingAnnotation.w, h: pendingAnnotation.h } : null);
+            if (!areaToCrop) return;
+
+            if (modelData?.key === 'gemini') {
+                handleRetryWithCloud({ id_page: parseInt(pageId, 10), ...areaToCrop, texte_propose: '' });
+                return;
+            }
+
+            if (modelData?.key === 'poneglyph') {
+                setLoadingText("Analyse Cloud Poneglyph...");
+                setIsSubmitting(true);
+                const blob = await cropImage(imageRef.current, areaToCrop);
+
+                const response = await fetch('/api/ocr', {
+                    method: 'POST',
+                    body: blob
+                });
+
+                if (!response.ok) throw new Error("Erreur Serveur Poneglyph (Proxy)");
+                const result = await response.json();
+
+                setOcrSource('poneglyph');
+                setPendingAnnotation(prev => ({
+                    ...(cropData ? { id_page: parseInt(pageId, 10), ...cropData } : prev),
+                    texte_propose: result.text
+                }));
+                setIsSubmitting(false);
+                return;
+            }
+
             setLoadingText("Analyse Locale...");
             setIsSubmitting(true);
             const requestId = Date.now();
             lastRequestId.current = requestId;
 
-            const blob = await cropImage(imageRef.current, rectangle);
+            const blob = await cropImage(imageRef.current, areaToCrop);
             runOcr(blob, requestId);
         } catch (err) {
             console.error(err);
+            toast.error("Erreur OCR: " + err.message);
             setIsSubmitting(false);
         }
     };
@@ -301,7 +337,7 @@ export default function AnnotatePage() {
     const toggleOcrPreference = () => {
         const newValue = !preferLocalOCR;
         setPreferLocalOCR(newValue);
-        localStorage.setItem('preferLocalOCR', newValue);
+        localStorage.setItem('preferLocalOCR', JSON.stringify(newValue));
     };
 
     const fetchBubbles = useCallback(() => {
@@ -346,7 +382,7 @@ export default function AnnotatePage() {
 
                 if (e.key === 'Escape') {
                     if (pendingAnnotation) setPendingAnnotation(null);
-                    if (showDescModal) setShowDescModal(null);
+                    if (showDescModal) setShowDescModal(false);
                     if (showApiKeyModal) setShowApiKeyModal(false);
                 }
                 return;
@@ -387,15 +423,12 @@ export default function AnnotatePage() {
             setPendingAnnotation(analysisData);
             setDebugImageUrl(null);
 
-            if (preferLocalOCR) {
-                if (modelStatus === 'ready') {
-                    runLocalOcr();
-                }
-            } else {
-                handleRetryWithCloud(analysisData);
-            }
+            const modelData = OCR_MODELS[activeModelKey];
+            if (modelData?.type === 'local' && modelStatus !== 'ready') return;
+
+            runLocalOcr();
         }
-    }, [rectangle, pageId, isAutoDetecting]);
+    }, [rectangle, pageId, isAutoDetecting, activeModelKey]);
 
     const processNextBubble = useCallback(async () => {
         if (!imageRef.current) return;
@@ -414,28 +447,16 @@ export default function AnnotatePage() {
         setRectangle(nextBox);
 
         const analysisData = { id_page: parseInt(pageId, 10), ...nextBox, texte_propose: '' };
-
         setPendingAnnotation(analysisData);
         setDebugImageUrl(null);
 
-        if (preferLocalOCR && modelStatus === 'ready') {
-            try {
-                setLoadingText("Analyse Locale (Auto)...");
-                setIsSubmitting(true);
-                const requestId = Date.now();
-                lastRequestId.current = requestId;
-
-                const blob = await cropImage(imageRef.current, nextBox);
-                runOcr(blob, requestId);
-            } catch (err) {
-                console.error(err);
-                setIsSubmitting(false);
-            }
-        } else {
-            handleRetryWithCloud(analysisData);
+        const modelData = OCR_MODELS[activeModelKey];
+        if (modelData?.type === 'local' && modelStatus !== 'ready') {
+            return;
         }
 
-    }, [pageId, preferLocalOCR, modelStatus, runOcr]);
+        runLocalOcr(nextBox);
+    }, [pageId, activeModelKey, modelStatus, runOcr]);
 
     const handleExecuteDetection = async () => {
         if (!imageRef.current) return;
@@ -791,171 +812,258 @@ export default function AnnotatePage() {
                             </Button>
                         </div>
                     </div>
+                       {!isGuest ? (
+                        <>
+                            <div className="flex-none p-3 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-3">
+                                <div className="flex items-center justify-between pl-0.5">
+                                    <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Moteur OCR</h3>
+                                    <button
+                                        onClick={() => toggleOcrPreference()}
+                                        className={cn(
+                                            "relative inline-flex h-4 w-7 items-center rounded-full transition-colors focus:outline-none",
+                                            preferLocalOCR ? "bg-emerald-500" : "bg-blue-500"
+                                        )}
+                                    >
+                                        <span className={cn(
+                                            "inline-block h-3 w-3 transform rounded-full bg-white transition-transform shadow-sm",
+                                            preferLocalOCR ? "translate-x-3.5" : "translate-x-0.5"
+                                        )} />
+                                    </button>
+                                </div>
 
-                    <div className="flex-none p-3 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-3">
-                        <div className="flex items-center justify-between pl-0.5">
-                            <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Moteur OCR</h3>
-                            <button
-                                onClick={() => !isGuest && toggleOcrPreference()}
-                                disabled={isGuest}
-                                className={cn(
-                                    "relative inline-flex h-4 w-7 items-center rounded-full transition-colors focus:outline-none",
-                                    preferLocalOCR ? "bg-emerald-500" : "bg-blue-500",
-                                    isGuest && "opacity-50 cursor-not-allowed"
-                                )}
-                            >
-                                <span className={cn(
-                                    "inline-block h-3 w-3 transform rounded-full bg-white transition-transform shadow-sm",
-                                    preferLocalOCR ? "translate-x-3.5" : "translate-x-0.5"
-                                )} />
-                            </button>
-                        </div>
+                                <div className="flex items-center gap-2.5 bg-slate-50 p-2 rounded-lg border border-slate-100/80">
+                                    <div className={cn("p-1.5 rounded-md", preferLocalOCR ? "bg-emerald-100/50 text-emerald-600" : "bg-blue-100/50 text-blue-600")}>
+                                        {preferLocalOCR ? <Cpu size={14} /> : <CloudLightning size={14} />}
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <span className="text-[11px] font-bold text-slate-800 leading-tight">{preferLocalOCR ? "Mode Local" : "Cloud API"}</span>
+                                        <span className="text-[9px] font-bold text-slate-400 mt-0.5">{preferLocalOCR ? "Inférence locale" : "API Gemini Distante"}</span>
+                                    </div>
+                                </div>
 
-                        <div className="flex items-center gap-2.5 bg-slate-50 p-2 rounded-lg border border-slate-100/80">
-                            <div className={cn("p-1.5 rounded-md", preferLocalOCR ? "bg-emerald-100/50 text-emerald-600" : "bg-blue-100/50 text-blue-600")}>
-                                {preferLocalOCR ? <Cpu size={14} /> : <CloudLightning size={14} />}
-                            </div>
-                            <div className="flex flex-col">
-                                <span className="text-[11px] font-bold text-slate-800 leading-tight">{preferLocalOCR ? "Mode Local" : "Cloud API"}</span>
-                                <span className="text-[9px] font-bold text-slate-400 mt-0.5">{preferLocalOCR ? "Inférence locale" : "API Gemini Distante"}</span>
-                            </div>
-                        </div>
-
-                        {preferLocalOCR && (
-                            <>
                                 <div className="flex gap-1.5">
-                                    {Object.values(OCR_MODELS).map((m) => (
-                                        <button
-                                            key={m.key}
-                                            onClick={() => switchModel(m.key)}
-                                            disabled={isGuest || modelStatus === 'loading'}
-                                            className={cn(
-                                                "flex-1 p-2 rounded-lg border text-left transition-all duration-200",
-                                                activeModelKey === m.key
-                                                    ? "border-emerald-300 bg-emerald-50/80 ring-1 ring-emerald-200/50"
-                                                    : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50",
-                                                (isGuest || modelStatus === 'loading') && "opacity-50 cursor-not-allowed"
-                                            )}
-                                        >
-                                            <div className="flex items-center justify-between mb-0.5">
-                                                <span className={cn(
-                                                    "text-[10px] font-bold",
-                                                    activeModelKey === m.key ? "text-emerald-700" : "text-slate-600"
-                                                )}>{m.label}</span>
-                                                {activeModelKey === m.key && (
-                                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                    {Object.values(OCR_MODELS)
+                                        .filter(m => preferLocalOCR ? m.type === 'local' : m.type === 'api')
+                                        .map((m) => (
+                                            <button
+                                                key={m.key}
+                                                onClick={() => switchModel(m.key)}
+                                                disabled={preferLocalOCR && modelStatus === 'loading'}
+                                                className={cn(
+                                                    "flex-1 p-2 rounded-lg border text-left transition-all duration-200",
+                                                    activeModelKey === m.key
+                                                        ? (m.type === 'api' ? "border-indigo-300 bg-indigo-50/80 ring-1 ring-indigo-200/50" : "border-emerald-300 bg-emerald-50/80 ring-1 ring-emerald-200/50")
+                                                        : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50",
+                                                    (preferLocalOCR && modelStatus === 'loading') && "opacity-50 cursor-not-allowed"
                                                 )}
-                                            </div>
-                                            <div className="text-[8px] font-semibold text-slate-400 leading-tight">
-                                                CER {m.cer} · {m.size}
-                                            </div>
-                                        </button>
-                                    ))}
+                                            >
+                                                <div className="flex items-center justify-between mb-0.5">
+                                                    <div className="flex items-center gap-1">
+                                                        {m.type === 'api' && <Sparkles size={10} className={cn(m.key === 'gemini' ? "text-blue-500" : "text-indigo-500")} />}
+                                                        <span className={cn(
+                                                            "text-[10px] font-bold",
+                                                            activeModelKey === m.key ? (m.type === 'api' ? (m.key === 'gemini' ? "text-blue-700" : "text-indigo-700") : "text-emerald-700") : "text-slate-600"
+                                                        )}>{m.label}</span>
+                                                    </div>
+                                                    {activeModelKey === m.key && (
+                                                        <div className={cn("w-1.5 h-1.5 rounded-full", m.type === 'api' ? (m.key === 'gemini' ? "bg-blue-500" : "bg-indigo-500") : "bg-emerald-500")} />
+                                                    )}
+                                                </div>
+                                                <div className="text-[8px] font-semibold text-slate-400 leading-tight">
+                                                    {m.key === 'poneglyph' ? `CER ${m.cer} - Serverless` : m.key === 'gemini' ? "Vision AI · Google" : `CER ${m.cer} · ${m.size}`}
+                                                </div>
+                                            </button>
+                                        ))}
                                 </div>
 
-                                <div>
-                                    {(modelStatus === 'idle' || modelStatus === 'error') && (
-                                        <Button variant="outline" size="sm" onClick={() => loadModel(activeModelKey)} className="w-full h-8 text-[11px] font-bold bg-white border border-slate-200 hover:bg-slate-50 text-slate-600">
-                                            <Download size={12} className="mr-1.5" /> Charger {OCR_MODELS[activeModelKey]?.label}
-                                        </Button>
-                                    )}
-                                    {modelStatus === 'loading' && (
-                                        <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
-                                            <div className="flex justify-between text-[9px] font-bold text-slate-500 mb-1.5">
-                                                <span>Installation {OCR_MODELS[activeModelKey]?.label}...</span>
-                                                <span>{Math.round(downloadProgress)}%</span>
+                                {preferLocalOCR ? (
+                                    <div>
+                                        {OCR_MODELS[activeModelKey]?.type === 'local' ? (
+                                            <>
+                                                {(modelStatus === 'idle' || modelStatus === 'error') && (
+                                                    <Button variant="outline" size="sm" onClick={() => loadModel(activeModelKey)} className="w-full h-8 text-[11px] font-bold bg-white border border-slate-200 hover:bg-slate-50 text-slate-600">
+                                                        <Download size={12} className="mr-1.5" /> Charger {OCR_MODELS[activeModelKey]?.label}
+                                                    </Button>
+                                                )}
+                                                {modelStatus === 'loading' && (
+                                                    <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
+                                                        <div className="flex justify-between text-[9px] font-bold text-slate-500 mb-1.5">
+                                                            <span>Installation {OCR_MODELS[activeModelKey]?.label}...</span>
+                                                            <span>{Math.round(downloadProgress)}%</span>
+                                                        </div>
+                                                        <div className="h-1 w-full bg-slate-200 rounded-full overflow-hidden">
+                                                            <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${downloadProgress}%` }} />
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {modelStatus === 'ready' && (
+                                                    <div className="flex items-center justify-center gap-1.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 py-1.5 rounded-md border border-emerald-100/50">
+                                                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-sm" /> {OCR_MODELS[activeModelKey]?.label} opérationnel
+                                                    </div>
+                                                )}
+                                            </>
+                                        ) : (
+                                            <div className="text-[10px] font-bold text-slate-400 text-center py-2 bg-slate-50 rounded-lg border border-dashed border-slate-200">
+                                                Sélectionnez un modèle local
                                             </div>
-                                            <div className="h-1 w-full bg-slate-200 rounded-full overflow-hidden">
-                                                <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${downloadProgress}%` }} />
-                                            </div>
-                                        </div>
-                                    )}
-                                    {modelStatus === 'ready' && (
-                                        <div className="flex items-center justify-center gap-1.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 py-1.5 rounded-md border border-emerald-100/50">
-                                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-sm" /> {OCR_MODELS[activeModelKey]?.label} opérationnel
-                                        </div>
-                                    )}
-                                </div>
-                            </>
-                        )}
-
-                        {!preferLocalOCR && !geminiKey && (
-                            <div className="animate-in fade-in slide-in-from-top-1 duration-300 mt-1 flex flex-col gap-2 bg-amber-50 border border-amber-200/60 p-2.5 rounded-lg">
-                                <div className="flex items-start gap-2">
-                                    <div className="bg-amber-100 p-1 rounded-full shrink-0 mt-0.5">
-                                        <Shield className="h-3 w-3 text-amber-600" />
+                                        )}
                                     </div>
-                                    <div className="text-[10px] leading-tight text-amber-800">
-                                        <span className="font-bold block mb-0.5">Clé API Requise</span>
-                                        Les appels Gemini Distants nécessitent votre clé. En l'absence de clé, l'extraction de texte sera ignorée.
+                                ) : (
+                                    <div>
+                                        {OCR_MODELS[activeModelKey]?.type === 'api' ? (
+                                            <>
+                                                {activeModelKey === 'poneglyph' && (
+                                                    <div className="flex items-center justify-center gap-1.5 text-[10px] font-bold text-indigo-700 bg-indigo-50 py-1.5 rounded-md border border-indigo-100/50">
+                                                        <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-sm" /> Inférence Modal (Nvidia L4)
+                                                    </div>
+                                                )}
+                                                {activeModelKey === 'gemini' && !geminiKey && (
+                                                    <div className="animate-in fade-in slide-in-from-top-1 duration-300 flex flex-col gap-2 bg-amber-50 border border-amber-200/60 p-2.5 rounded-lg">
+                                                        <div className="flex items-start gap-2">
+                                                            <div className="bg-amber-100 p-1 rounded-full shrink-0 mt-0.5">
+                                                                <Shield className="h-3 w-3 text-amber-600" />
+                                                            </div>
+                                                            <div className="text-[10px] leading-tight text-amber-800">
+                                                                <span className="font-bold block mb-0.5">Clé API Requise</span>
+                                                                Google Gemini nécessite votre clé.
+                                                            </div>
+                                                        </div>
+                                                        <Button
+                                                            variant="outline"
+                                                            size="sm"
+                                                            onClick={() => window.dispatchEvent(new Event('open-api-key-modal'))}
+                                                            className="h-7 text-[9px] font-bold bg-white"
+                                                        >
+                                                            Configurer ma clé
+                                                        </Button>
+                                                    </div>
+                                                )}
+                                                {activeModelKey === 'gemini' && geminiKey && (
+                                                    <div className="flex items-center justify-center gap-1.5 text-[10px] font-bold text-blue-700 bg-blue-50 py-1.5 rounded-md border border-blue-100/50">
+                                                        <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-sm" /> Gemini AI Connecté
+                                                    </div>
+                                                )}
+                                            </>
+                                        ) : (
+                                            <div className="text-[10px] font-bold text-slate-400 text-center py-2 bg-slate-50 rounded-lg border border-dashed border-slate-200">
+                                                Sélectionnez un modèle Cloud
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="flex-none p-3 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-3">
+                                <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-0.5">Scanner Vision</h3>
+
+                                {detectionStatus === 'idle' && (
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={loadDetectionModel}
+                                        className="w-full h-8 text-[11px] font-bold bg-white border border-slate-200 hover:bg-slate-50 text-slate-600"
+                                    >
+                                        <Download size={12} className="mr-1.5" /> Activer l'IA Vision
+                                    </Button>
+                                )}
+                                {detectionStatus === 'loading' && (
+                                    <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
+                                        <div className="flex justify-between text-[9px] font-bold text-slate-500 mb-1.5">
+                                            <span>Téléchargement...</span>
+                                            <span>{Math.round(detectionProgress)}%</span>
+                                        </div>
+                                        <div className="h-1 w-full bg-slate-200 rounded-full overflow-hidden">
+                                            <div className="h-full bg-indigo-500 transition-all duration-300" style={{ width: `${detectionProgress}%` }} />
+                                        </div>
+                                    </div>
+                                )}
+                                {detectionStatus === 'ready' && (
+                                    <Button
+                                        variant="default"
+                                        onClick={handleExecuteDetection}
+                                        disabled={isSubmitting || isAutoDetecting}
+                                        className="w-full h-8 bg-indigo-600 hover:bg-indigo-700 text-[11px] font-bold shadow-sm"
+                                    >
+                                        <Sparkles size={12} className={cn("mr-1.5", isAutoDetecting && "animate-pulse")} />
+                                        {isAutoDetecting ? `Analyse en cours (${queueLength})` : "Scanner la page"}
+                                    </Button>
+                                )}
+                            </div>
+                        </>
+                    ) : (
+                        <div className="flex-none p-4 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-5 overflow-y-auto max-h-[500px]">
+                            <div className="flex items-center gap-2 pb-2 border-b border-slate-50">
+                                <div className="bg-indigo-50 p-1.5 rounded-lg border border-indigo-100/50">
+                                    <FileText size={14} className="text-indigo-600" />
+                                </div>
+                                <h3 className="text-[11px] font-bold text-slate-900 uppercase tracking-widest">Métadonnées Page</h3>
+                            </div>
+
+                            <div className="space-y-5">
+                                <div className="space-y-2">
+                                    <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-tight">
+                                        <AlignLeft size={10} /> Description Sémantique
+                                    </div>
+                                    <div className="text-[11px] text-slate-600 leading-relaxed bg-slate-50/50 p-3 rounded-lg border border-slate-100/60 italic">
+                                        {page.description_semantique?.content || "Aucune description rattachée à cette page."}
                                     </div>
                                 </div>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => window.dispatchEvent(new Event('open-api-key-modal'))}
-                                    className="h-7 text-[10px] font-bold text-amber-700 bg-amber-100/50 hover:bg-amber-100 border-amber-200 w-full"
-                                >
-                                    Configurer ma clé
-                                </Button>
-                            </div>
-                        )}
-                    </div>
 
+                                <div className="space-y-4">
+                                    <div className="space-y-2">
+                                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-tight">
+                                            <MapPin size={10} /> Arc Narratif
+                                        </div>
+                                        <div className="flex">
+                                            <Badge variant="outline" className="text-[10px] font-bold text-indigo-700 bg-indigo-50/30 border-indigo-100 px-2 py-0.5">
+                                                {page.description_semantique?.arc || "Inconnu"}
+                                            </Badge>
+                                        </div>
+                                    </div>
 
-                    <div className="flex-none p-3 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-3">
-                        <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-0.5">Scanner Vision</h3>
-
-                        {detectionStatus === 'idle' && (
-                            <Button variant="outline" size="sm" onClick={loadDetectionModel} className="w-full h-8 text-[11px] font-bold bg-white border border-slate-200 hover:bg-slate-50 text-slate-600">
-                                <Download size={12} className="mr-1.5" /> Activer l'IA Vision
-                            </Button>
-                        )}
-                        {detectionStatus === 'loading' && (
-                            <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
-                                <div className="flex justify-between text-[9px] font-bold text-slate-500 mb-1.5">
-                                    <span>Téléchargement...</span>
-                                    <span>{Math.round(detectionProgress)}%</span>
+                                    <div className="space-y-2">
+                                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-tight">
+                                            <Users size={10} /> Personnages
+                                        </div>
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {page.description_semantique?.characters?.length > 0 ? (
+                                                page.description_semantique.characters.map((char, idx) => (
+                                                    <Badge key={idx} variant="secondary" className="text-[10px] font-medium bg-white border border-slate-100 text-slate-600 px-2 py-0.5">
+                                                        {char}
+                                                    </Badge>
+                                                ))
+                                            ) : (
+                                                <span className="text-[10px] text-slate-400 italic bg-slate-50 px-2 py-1 rounded">Aucun personnage listé</span>
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
-                                <div className="h-1 w-full bg-slate-200 rounded-full overflow-hidden">
-                                    <div className="h-full bg-indigo-500 transition-all duration-300" style={{ width: `${detectionProgress}%` }} />
-                                </div>
                             </div>
-                        )}
-                        {detectionStatus === 'ready' && (
-                            <Button
-                                variant="default"
-                                onClick={handleExecuteDetection}
-                                disabled={isSubmitting || isAutoDetecting}
-                                className="w-full h-8 bg-indigo-600 hover:bg-indigo-700 text-[11px] font-bold shadow-sm"
-                            >
-                                <Sparkles size={12} className={cn("mr-1.5", isAutoDetecting && "animate-pulse")} />
-                                {isAutoDetecting ? `Analyse en cours (${queueLength})` : "Scanner la page"}
-                            </Button>
-                        )}
-                    </div>
+                        </div>
+                    )}
                 </div>
 
+                {!isGuest && (
+                    <div className="flex-none p-4 border-t border-slate-100 bg-white flex flex-col gap-2.5 z-10">
+                        <div className="grid grid-cols-2 gap-2">
+                            <Button variant="outline" size="sm" className="h-8 text-[11px] font-bold text-slate-600 bg-slate-50 border-slate-200/60 hover:bg-slate-100 hover:text-slate-900 w-full" onClick={() => setShowDescModal(true)}>
+                                <FileText size={12} className="mr-1.5" /> Meta
+                            </Button>
+                            <Button variant="outline" size="sm" className="h-8 text-[11px] font-bold text-slate-600 bg-slate-50 border-slate-200/60 hover:bg-slate-100 hover:text-slate-900 w-full" onClick={() => setShowApiKeyModal(true)}>
+                                <Settings2 size={12} className="mr-1.5" /> Clés API
+                            </Button>
+                        </div>
 
-                <div className="flex-none p-4 border-t border-slate-100 bg-white flex flex-col gap-2.5 z-10">
-                    <div className="grid grid-cols-2 gap-2">
-                        <Button variant="outline" size="sm" className="h-8 text-[11px] font-bold text-slate-600 bg-slate-50 border-slate-200/60 hover:bg-slate-100 hover:text-slate-900 w-full" onClick={() => setShowDescModal(true)}>
-                            <FileText size={12} className="mr-1.5" /> Meta
-                        </Button>
-                        <Button variant="outline" size="sm" className="h-8 text-[11px] font-bold text-slate-600 bg-slate-50 border-slate-200/60 hover:bg-slate-100 hover:text-slate-900 w-full" onClick={() => setShowApiKeyModal(true)}>
-                            <Settings2 size={12} className="mr-1.5" /> Clés API
+                        <Button
+                            variant="default"
+                            className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-[11px] uppercase tracking-wider font-bold shadow-md"
+                            disabled={page.statut === 'pending_review' || page.statut === 'completed'}
+                            onClick={handleSubmitPage}
+                        >
+                            <Send size={12} className="mr-1.5" /> Validation Finale
                         </Button>
                     </div>
-
-                    <Button
-                        variant="default"
-                        className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-[11px] uppercase tracking-wider font-bold shadow-md"
-                        disabled={page.statut === 'pending_review' || page.statut === 'completed'}
-                        onClick={handleSubmitPage}
-                    >
-                        <Send size={12} className="mr-1.5" /> Validation Finale
-                    </Button>
-                </div>
+                )}
             </div>
 
 
@@ -1117,7 +1225,7 @@ export default function AnnotatePage() {
                                     className="fixed z-50 pointer-events-none bg-slate-900/95 text-white p-3 rounded-lg shadow-xl border border-slate-700 backdrop-blur-sm max-w-[300px]"
                                     style={{
                                         left: 0, top: 0,
-                                        transform: `translate(${mousePos.x + 20 + containerRef.current?.getBoundingClientRect().left}px, ${mousePos.y + 20 + containerRef.current?.getBoundingClientRect().top}px)`
+                                        transform: `translate(${(mousePos.x + 20 + (containerRef.current?.getBoundingClientRect()?.left || 0))}px, ${(mousePos.y + 20 + (containerRef.current?.getBoundingClientRect()?.top || 0))}px)`
                                     }}
                                 >
                                     <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
@@ -1250,10 +1358,13 @@ export default function AnnotatePage() {
                                             variant="ghost"
                                             size="sm"
                                             className="text-xs text-slate-500 hover:text-slate-900"
-                                            onClick={() => handleRetryWithCloud()}
+                                            onClick={() => runLocalOcr()}
                                         >
-                                            <CloudLightning className="h-3 w-3 mr-1" />
-                                            {preferLocalOCR ? "Réessayer avec l'IA Cloud" : "Relancer l'analyse Cloud"}
+                                            {OCR_MODELS[activeModelKey]?.type === 'local' ? (
+                                                <><Sparkles className="h-3 w-3 mr-1 text-indigo-500" /> Essayer un modèle Cloud</>
+                                            ) : (
+                                                <><RotateCcw className="h-3 w-3 mr-1" /> Relancer l'analyse {OCR_MODELS[activeModelKey]?.label}</>
+                                            )}
                                         </Button>
                                     </div>
                                 </div>
@@ -1273,137 +1384,139 @@ export default function AnnotatePage() {
                 </DialogContent>
             </Dialog>
 
-            <Dialog open={showDescModal} onOpenChange={setShowDescModal}>
-                <DialogContent className="max-w-3xl">
-                    <DialogHeader>
-                        <div className="flex items-center justify-between pr-4">
-                            <div>
-                                <DialogTitle className="flex items-center gap-2">
-                                    <FileText className="h-5 w-5 text-indigo-600" />
-                                    Description Sémantique
-                                </DialogTitle>
-                                <DialogDescription>
-                                    Définition des métadonnées pour le moteur de recherche.
-                                </DialogDescription>
+            {!isGuest && (
+                <Dialog open={showDescModal} onOpenChange={setShowDescModal}>
+                    <DialogContent className="max-w-3xl">
+                        <DialogHeader>
+                            <div className="flex items-center justify-between pr-4">
+                                <div>
+                                    <DialogTitle className="flex items-center gap-2">
+                                        <FileText className="h-5 w-5 text-indigo-600" />
+                                        Description Sémantique
+                                    </DialogTitle>
+                                    <DialogDescription>
+                                        Définition des métadonnées pour le moteur de recherche.
+                                    </DialogDescription>
+                                </div>
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={handleGenerateAI}
+                                    disabled={isGeneratingAI}
+                                    className="gap-2 border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100"
+                                >
+                                    {isGeneratingAI ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                                    Générer avec IA
+                                </Button>
                             </div>
-                            <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={handleGenerateAI}
-                                disabled={isGeneratingAI || isGuest}
-                                className="gap-2 border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100"
-                            >
-                                {isGeneratingAI ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                                Générer avec IA
-                            </Button>
-                        </div>
-                    </DialogHeader>
+                        </DialogHeader>
 
-                    <Tabs value={tabMode} onValueChange={setTabMode} className="w-full">
-                        <TabsList className="grid w-full grid-cols-2 mb-4">
-                            <TabsTrigger value="form">
-                                <FileText className="h-4 w-4 mr-2" />
-                                Formulaire
-                            </TabsTrigger>
-                            <TabsTrigger value="json">
-                                <Code className="h-4 w-4 mr-2" />
-                                JSON Raw
-                            </TabsTrigger>
-                        </TabsList>
+                        <Tabs value={tabMode} onValueChange={setTabMode} className="w-full">
+                            <TabsList className="grid w-full grid-cols-2 mb-4">
+                                <TabsTrigger value="form">
+                                    <FileText className="h-4 w-4 mr-2" />
+                                    Formulaire
+                                </TabsTrigger>
+                                <TabsTrigger value="json">
+                                    <Code className="h-4 w-4 mr-2" />
+                                    JSON Raw
+                                </TabsTrigger>
+                            </TabsList>
 
-                        <TabsContent value="form" className="space-y-4 outline-none">
-                            <div className="flex flex-col gap-3">
-                                <Label htmlFor="scene-content" className="text-sm font-semibold text-slate-700">
-                                    Contenu Sémantique
-                                </Label>
-                                <Textarea
-                                    id="scene-content"
-                                    value={formData.content}
-                                    onChange={(e) => setFormData(prev => ({ ...prev, content: e.target.value }))}
-                                    className="min-h-[120px] resize-none border-slate-200 focus:ring-indigo-500"
-                                    placeholder="Description de l'action, des lieux..."
-                                />
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <TabsContent value="form" className="space-y-4 outline-none">
                                 <div className="flex flex-col gap-3">
-                                    <Label className="text-sm font-semibold text-slate-700">Arc Narratif</Label>
-                                    <div className="relative">
-                                        <input
-                                            list="arc-suggestions"
-                                            value={formData.arc}
-                                            onChange={(e) => {
-                                                setFormData(prev => ({ ...prev, arc: e.target.value }));
-                                            }}
-                                            className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:ring-indigo-500 focus:outline-none focus:ring-2"
-                                            placeholder="Ex: Water 7"
-                                        />
-                                        <datalist id="arc-suggestions">
-                                            {suggestions.arcs.map(arc => <option key={arc} value={arc} />)}
-                                        </datalist>
-                                    </div>
+                                    <Label htmlFor="scene-content" className="text-sm font-semibold text-slate-700">
+                                        Contenu Sémantique
+                                    </Label>
+                                    <Textarea
+                                        id="scene-content"
+                                        value={formData.content}
+                                        onChange={(e) => setFormData(prev => ({ ...prev, content: e.target.value }))}
+                                        className="min-h-[120px] resize-none border-slate-200 focus:ring-indigo-500"
+                                        placeholder="Description de l'action, des lieux..."
+                                    />
                                 </div>
 
-                                <div className="flex flex-col gap-3">
-                                    <Label className="text-sm font-semibold text-slate-700">Personnages</Label>
-                                    <div className="flex flex-col gap-2">
-                                        <div className="flex gap-2">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="flex flex-col gap-3">
+                                        <Label className="text-sm font-semibold text-slate-700">Arc Narratif</Label>
+                                        <div className="relative">
                                             <input
-                                                list="char-suggestions"
-                                                value={charInput}
-                                                onChange={(e) => setCharInput(e.target.value)}
-                                                onKeyDown={(e) => e.key === 'Enter' && addCharacter(charInput)}
-                                                className="flex h-10 flex-1 rounded-md border border-slate-200 px-3 text-sm focus:ring-indigo-500 focus:outline-none focus:ring-2"
-                                                placeholder="Ajouter..."
+                                                list="arc-suggestions"
+                                                value={formData.arc}
+                                                onChange={(e) => {
+                                                    setFormData(prev => ({ ...prev, arc: e.target.value }));
+                                                }}
+                                                className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:ring-indigo-500 focus:outline-none focus:ring-2"
+                                                placeholder="Ex: Water 7"
                                             />
-                                            <datalist id="char-suggestions">
-                                                {suggestions.characters.map(c => <option key={c} value={c} />)}
+                                            <datalist id="arc-suggestions">
+                                                {suggestions.arcs.map(arc => <option key={arc} value={arc} />)}
                                             </datalist>
-                                            <Button size="icon" variant="secondary" onClick={() => addCharacter(charInput)}>
-                                                <Plus className="h-4 w-4" />
-                                            </Button>
                                         </div>
-                                        <div className="flex flex-wrap gap-2 min-h-[40px] p-2 bg-slate-50 rounded border border-dashed border-slate-200">
-                                            {formData.characters.map(char => (
-                                                <Badge key={char} variant="secondary" className="gap-1 bg-white hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer" onClick={() => removeCharacter(char)}>
-                                                    {char} <X className="h-3 w-3" />
-                                                </Badge>
-                                            ))}
+                                    </div>
+
+                                    <div className="flex flex-col gap-3">
+                                        <Label className="text-sm font-semibold text-slate-700">Personnages</Label>
+                                        <div className="flex flex-col gap-2">
+                                            <div className="flex gap-2">
+                                                <input
+                                                    list="char-suggestions"
+                                                    value={charInput}
+                                                    onChange={(e) => setCharInput(e.target.value)}
+                                                    onKeyDown={(e) => e.key === 'Enter' && addCharacter(charInput)}
+                                                    className="flex h-10 flex-1 rounded-md border border-slate-200 px-3 text-sm focus:ring-indigo-500 focus:outline-none focus:ring-2"
+                                                    placeholder="Ajouter..."
+                                                />
+                                                <datalist id="char-suggestions">
+                                                    {suggestions.characters.map(c => <option key={c} value={c} />)}
+                                                </datalist>
+                                                <Button size="icon" variant="secondary" onClick={() => addCharacter(charInput)}>
+                                                    <Plus className="h-4 w-4" />
+                                                </Button>
+                                            </div>
+                                            <div className="flex flex-wrap gap-2 min-h-[40px] p-2 bg-slate-50 rounded border border-dashed border-slate-200">
+                                                {formData.characters.map(char => (
+                                                    <Badge key={char} variant="secondary" className="gap-1 bg-white hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer" onClick={() => removeCharacter(char)}>
+                                                        {char} <X className="h-3 w-3" />
+                                                    </Badge>
+                                                ))}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
-                            </div>
-                        </TabsContent>
+                            </TabsContent>
 
-                        <TabsContent value="json" className="outline-none">
-                            <div className="relative">
-                                <Textarea
-                                    value={jsonInput}
-                                    onChange={handleJsonChange}
-                                    className={cn(
-                                        "font-mono text-xs min-h-[350px] bg-slate-900 text-slate-50 resize-none",
-                                        jsonError ? "border-red-500 focus:ring-red-500" : "border-slate-800 focus:ring-slate-700"
+                            <TabsContent value="json" className="outline-none">
+                                <div className="relative">
+                                    <Textarea
+                                        value={jsonInput}
+                                        onChange={handleJsonChange}
+                                        className={cn(
+                                            "font-mono text-xs min-h-[350px] bg-slate-900 text-slate-50 resize-none",
+                                            jsonError ? "border-red-500 focus:ring-red-500" : "border-slate-800 focus:ring-slate-700"
+                                        )}
+                                        spellCheck={false}
+                                    />
+                                    {jsonError && (
+                                        <div className="absolute bottom-4 left-4 right-4 bg-red-500/90 text-white text-xs p-2 rounded shadow-lg backdrop-blur-sm">
+                                            Erreur JSON: {jsonError}
+                                        </div>
                                     )}
-                                    spellCheck={false}
-                                />
-                                {jsonError && (
-                                    <div className="absolute bottom-4 left-4 right-4 bg-red-500/90 text-white text-xs p-2 rounded shadow-lg backdrop-blur-sm">
-                                        Erreur JSON: {jsonError}
-                                    </div>
-                                )}
-                            </div>
-                        </TabsContent>
-                    </Tabs>
+                                </div>
+                            </TabsContent>
+                        </Tabs>
 
-                    <DialogFooter>
-                        <Button variant="ghost" onClick={() => setShowDescModal(false)}>Fermer</Button>
-                        <Button onClick={handleSaveDescription} disabled={isSavingDesc || !!jsonError} className="bg-indigo-600 hover:bg-indigo-700 text-white">
-                            {isSavingDesc ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                            Enregistrer
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-        </div >
+                        <DialogFooter>
+                            <Button variant="ghost" onClick={() => setShowDescModal(false)}>Fermer</Button>
+                            <Button onClick={handleSaveDescription} disabled={isSavingDesc || !!jsonError} className="bg-indigo-600 hover:bg-indigo-700 text-white">
+                                {isSavingDesc ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                                Enregistrer
+                            </Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+            )}
+        </div>
     );
 }

@@ -22,7 +22,7 @@ Le **Projet Poneglyph** est une plateforme de haute performance dédiée à la n
 
 * **Framework :** React 19 / Next.js & Vite.
 * **CSS** : [ShadCn UI](https://ui.shadcn.com/)
-* **OCR Local :** **TrOCR Fine-tuned** (Base & Large) exécuté via WebGPU (`@huggingface/transformers`) directement dans le navigateur.
+* **OCR Hybride :** **TrOCR Fine-tuned** (Local via WebGPU) & **FireRed-OCR** (Cloud via Modal).
 * **Détection de Bulles Locale :** **YOLO V8 Medium Fine-tuned** [`Remidesbois/YoloPiece_BubbleDetector`](https://huggingface.co/Remidesbois/YoloPiece_BubbleDetector) exécuté via WebGPU.
 * **State Management :** Context API & LocalStorage.
 
@@ -31,6 +31,7 @@ Le **Projet Poneglyph** est une plateforme de haute performance dédiée à la n
 * **Serveur API :** Node.js / Express.
 * **Base de Données :** Supabase (PostgreSQL) avec l'extension **pgvector**.
 * **LLM & Embeddings :** Google Gemini 2.5 Flash-Lite & Voyage AI (`voyage-4-large`).
+* **Inférence GPU Cloud :** Modal (pour l'OCR FireRed de haute précision).
 
 ---
 
@@ -84,6 +85,18 @@ Deux modèles spécialisés pour le français et les polices de manga, sélectio
 | **Coût** | 0 $/OCR | 0 $/OCR |
 
 > **Note de compatibilité :** L'OCR local nécessite un navigateur compatible WebGPU (Chrome 113+, Edge, Firefox Nightly).
+
+### **FireRed-OCR "Poneglyph" (Cloud via Modal)**
+
+Nouveau modèle de pointe pour une précision extrême, déployé en mode *serverless* sur **Modal**.
+
+* **Modèle :** [`Remidesbois/firered-ocr-onepiece`](https://huggingface.co/Remidesbois/firered-ocr-onepiece) (Architecture FireRed-OCR / Qwen3-VL).
+* **Précision :** CER **< 0.8%** - WER **< 2.4%** (SOTA pour mon projet).
+* **Infrastructure :** Inférence sur GPU **NVIDIA L4** via la plateforme Modal.
+* **Usage :** Idéal pour les textes difficiles, les bulles denses ou les configurations sans support WebGPU.
+* **Coût :** ~0,000222 $ / Secondes où le container est en cours d'éxécution.
+
+> Modal offre 30$ de crédit par mois (~37.5h d'inférence), au delà de ce seuil, le service se coupe.
 
 ### **YOLO V8 Fine-tuned (Détection)**
 
@@ -191,6 +204,7 @@ cd frontend && npm install && npm run dev
 
 * [x] Recherche Vectorielle & Sémantique
 * [x] Inférence locale WebGPU (OCR + YOLO)
+* [x] OCR Cloud Haute Précision (FireRed-OCR / Modal)
 * [x] Pipeline MLOps automatisé
 * [ ] Support multilingue (Anglais)
 * [ ] Se renseigner sur WebNN (évolution de WebGPU) pour permettre aux modèles de tourner sur les NPU

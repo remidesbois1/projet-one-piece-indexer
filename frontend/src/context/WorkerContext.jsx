@@ -12,6 +12,7 @@ export const OCR_MODELS = {
         description: 'Rapide (~1.3 Go)',
         cer: '2.90%',
         size: '~1.3 Go',
+        type: 'local'
     },
     large: {
         key: 'large',
@@ -19,6 +20,23 @@ export const OCR_MODELS = {
         description: 'Précis (~2.3 Go)',
         cer: '1.83%',
         size: '~2.3 Go',
+        type: 'local'
+    },
+    poneglyph: {
+        key: 'poneglyph',
+        label: 'Poneglyph',
+        description: 'FireRed OCR - Serverless',
+        cer: '< 1.0%',
+        size: '~4.2 Go (Cloud)',
+        type: 'api'
+    },
+    gemini: {
+        key: 'gemini',
+        label: 'Gemini 2.5 Flash Lite',
+        description: 'Google Gemini API',
+        cer: '~ 1.2%',
+        size: 'Cloud',
+        type: 'api'
     }
 };
 
@@ -65,6 +83,13 @@ export const WorkerProvider = ({ children }) => {
 
     const loadModel = (modelKey) => {
         const key = modelKey || activeModelKey;
+        const modelData = OCR_MODELS[key];
+
+        if (modelData?.type === 'api') {
+            setModelStatus('ready');
+            return;
+        }
+
         if (workerRef.current && (modelStatus === 'idle' || modelStatus === 'error')) {
             setModelStatus('loading');
             setDownloadProgress(0);
@@ -76,11 +101,17 @@ export const WorkerProvider = ({ children }) => {
         if (newKey === activeModelKey && modelStatus === 'ready') return;
         localStorage.setItem('ocrModelKey', newKey);
         setActiveModelKey(newKey);
-        setModelStatus('loading');
-        setDownloadProgress(0);
-        if (workerRef.current) {
-            workerRef.current.postMessage({ type: 'init', modelKey: newKey });
+
+        const modelData = OCR_MODELS[newKey];
+        if (modelData?.type === 'api') {
+            setModelStatus('ready');
+            return;
         }
+
+        // For local models, we just set it to idle. 
+        // User must click "Load" to start the worker/download.
+        setModelStatus('idle');
+        setDownloadProgress(0);
     };
 
     const runOcr = (blob, requestId = null) => {
