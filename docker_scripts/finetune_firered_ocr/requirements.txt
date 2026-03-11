@@ -20,3 +20,4 @@ tqdm
 scikit-learn
 pandas
 requests
+onnxruntime-genai
