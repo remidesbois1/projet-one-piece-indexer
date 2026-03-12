@@ -6,7 +6,7 @@ let detectionSession = null;
 let orderSession = null;
 
 const MODEL_PATH = 'https://huggingface.co/Remidesbois/YoloPiece_BubbleDetector/resolve/main/onepiece_detector.onnx';
-const ORDER_MODEL_PATH = '/models/reading_order.onnx';
+const ORDER_MODEL_PATH = 'https://huggingface.co/Remidesbois/bubble_reorder_ml/resolve/main/reading_order_v2.onnx';
 const INPUT_DIM = 800;
 const ORDER_DIM = 256;
 
@@ -167,6 +167,19 @@ function preparePageRGB(bitmap) {
     return rgb;
 }
 
+const COORD_MAPS = (() => {
+    const maps = new Float32Array(2 * ORDER_DIM * ORDER_DIM);
+    for (let y = 0; y < ORDER_DIM; y++) {
+        const yVal = (y / (ORDER_DIM - 1)) * 2 - 1;
+        for (let x = 0; x < ORDER_DIM; x++) {
+            const xVal = (x / (ORDER_DIM - 1)) * 2 - 1;
+            maps[y * ORDER_DIM + x] = xVal;
+            maps[ORDER_DIM * ORDER_DIM + y * ORDER_DIM + x] = yVal;
+        }
+    }
+    return maps;
+})();
+
 async function comparePair(pageRGB, boxA, boxB, pageW, pageH) {
     const S = ORDER_DIM;
     const pixels = S * S;
@@ -177,12 +190,13 @@ async function comparePair(pageRGB, boxA, boxB, pageW, pageH) {
     fillMask(maskA, boxA, pageW, pageH, S);
     fillMask(maskB, boxB, pageW, pageH, S);
 
-    const inputData = new Float32Array(5 * pixels);
+    const inputData = new Float32Array(7 * pixels);
     inputData.set(pageRGB, 0);
     inputData.set(maskA, 3 * pixels);
     inputData.set(maskB, 4 * pixels);
+    inputData.set(COORD_MAPS, 5 * pixels);
 
-    const tensor = new ort.Tensor('float32', inputData, [1, 5, S, S]);
+    const tensor = new ort.Tensor('float32', inputData, [1, 7, S, S]);
     const result = await orderSession.run({
         [orderSession.inputNames[0]]: tensor
     });
@@ -227,4 +241,4 @@ function mangaOrderSort(boxes) {
         sortedBoxes.push(...row);
     }
     return sortedBoxes;
-}
+}

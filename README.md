@@ -105,6 +105,20 @@ Détecte instantanément les zones de texte sur la planche.
 * **Performance :** (Mean Average Precision) mAP50 de **0.97**.
 * **Exécution :** WebGPU (via ONNX Runtime Web).
 
+### **Modèle de Tri des Bulles**
+
+Une fois les bulles détectées, un modèle spécialisé les trie intelligemment dans le bon ordre de lecture.
+
+> Pour plus de détails sur le modèle de tri : [reading_order_ml.md](https://github.com/remidesbois1/projet-poneglyph/blob/master/documentation/reading_order_ml.md)
+> Modèle hébergé sur Hugging Face : [Remidesbois/bubble_reorder_ml](https://huggingface.co/Remidesbois/bubble_reorder_ml)
+
+| | **Modèle de Tri des Bulles** |
+|---|---|
+| **Architecture** | MonsterNet V4 |
+| **Précision (Val)** | **98.3%** |
+| **Taille ONNX** | **~170 MB** |
+| **Exécution** | Local (Web worker) |
+
 ### **Google Gemini 2.5 Flash-Lite (Cloud)**
 
 Fallback pour les configurations ne supportant pas WebGPU.
