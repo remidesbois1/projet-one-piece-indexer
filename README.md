@@ -98,11 +98,12 @@ Nouveau modèle de pointe pour une précision extrême, déployé en mode *serve
 
 > Modal offre 30$ de crédit par mois (~37.5h d'inférence), au delà de ce seuil, le service se coupe.
 
-### **YOLO V8 Fine-tuned (Détection)**
+### **YOLO11 Fine-tuned (Détection des bulles)**
 
-Détecte instantanément les zones de texte sur la planche.
+Détecte instantanément les bulles sur la planche.
 
-* **Performance :** (Mean Average Precision) mAP50 de **0.97**.
+* **Performance :** (Mean Average Precision) mAP50 de **0.992**.
+* **Architecture :** YOLO11 Medium Fine-tuned.
 * **Exécution :** WebGPU (via ONNX Runtime Web).
 
 ### **Modèle de Tri des Bulles**
