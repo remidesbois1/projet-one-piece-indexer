@@ -115,7 +115,7 @@ Une fois les bulles détectées, un modèle spécialisé les trie intelligemment
 
 | | **Modèle de Tri des Bulles** |
 |---|---|
-| **Architecture** | MonsterNet V4 |
+| **Architecture** | ResNet |
 | **Précision (Val)** | **98.3%** |
 | **Taille ONNX** | **~170 MB** |
 | **Exécution** | Local (Web worker) |
