@@ -25,7 +25,7 @@ Le modèle est un **CNN (Convolutional Neural Network)** spécialisé dans la co
 ### Métriques de Performance
 - **Accuracy (Validation)** : **98.3%**
 - **Loss** : ~0.0001
-- **Taille ONNX** : **~170 MB** (MonsterNet V4)
+- **Taille ONNX** : **~170 MB**
 
 ## Fonctionnement du Tri (Algorithme)
 
