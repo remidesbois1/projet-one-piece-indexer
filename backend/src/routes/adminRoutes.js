@@ -393,10 +393,9 @@ router.post('/covers', authMiddleware, roleCheck(['Admin']), upload.single('cove
   }
 });
 
-const AI_MODEL_KEYS = ['model_ocr', 'model_reranking', 'model_description'];
+const AI_MODEL_KEYS = ['model_ocr', 'model_description'];
 const DEFAULT_MODELS = {
   model_ocr: 'gemini-2.5-flash-lite',
-  model_reranking: 'gemini-2.5-flash-lite',
   model_description: 'gemini-3-flash-preview'
 };
 
@@ -443,7 +442,6 @@ router.put('/ai-models', authMiddleware, roleCheck(['Admin']), async (req, res) 
   try {
     const updates = [];
     if (model_ocr) updates.push({ key: 'model_ocr', value: model_ocr });
-    if (model_reranking) updates.push({ key: 'model_reranking', value: model_reranking });
     if (model_description) updates.push({ key: 'model_description', value: model_description });
 
     for (const { key, value } of updates) {
@@ -705,19 +703,18 @@ router.get('/ai-models/embedding-stats', authMiddleware, roleCheck(['Admin']), a
 
 router.post('/ai-models/trigger-backfill', authMiddleware, roleCheck(['Admin']), async (req, res) => {
   // We trigger this asynchronously and return immediately to avoid timeout
-  res.json({ message: "Processus de backfill démarré en tâche de fond." });
+  res.json({ message: "Processus de backfill Gemini (multimodal) démarré en tâche de fond." });
 
   (async () => {
     try {
-      console.log("[Backfill] Démarrage du backfill Gemini...");
+      console.log("[Backfill] Démarrage du backfill Gemini multimodal (text + image)...");
 
-      // Step 1: Get pages where embedding_gemini is null and we have either a description or validated bulles.
-      // Easiest is to get all pages without gemini embedding. 
       const { data: pagesToProcess, error: pagesError } = await supabaseAdmin
         .from('pages')
         .select(`
             id,
             description,
+            url_image,
             bulles ( texte_propose, statut )
         `)
         .is('embedding_gemini', null);
@@ -751,11 +748,9 @@ router.post('/ai-models/trigger-backfill', authMiddleware, roleCheck(['Admin']),
 
         if (contentToEmbed.length > 0) {
           try {
-            // Call Gemini for embedding (using backend key implicitly stored in env)
-            // Need to use process.env.GOOGLE_API_KEY inside generateGeminiEmbedding, which it does.
-            const embedding = await generateGeminiEmbedding(contentToEmbed, "RETRIEVAL_DOCUMENT");
+            // Multimodal: send text + image URL to gemini-embedding-2-preview
+            const embedding = await generateGeminiEmbedding(contentToEmbed, "RETRIEVAL_DOCUMENT", page.url_image || null);
 
-            // Save it back to supabase
             const { error: updateError } = await supabaseAdmin
               .from('pages')
               .update({ embedding_gemini: embedding })
@@ -771,8 +766,8 @@ router.post('/ai-models/trigger-backfill', authMiddleware, roleCheck(['Admin']),
             console.error(`[Backfill] Erreur Gemini Embedding pour la page ${page.id}:`, embedError.message);
             errors++;
           }
-          // Small delay to prevent rate limits
-          await new Promise(resolve => setTimeout(resolve, 500));
+          // Delay to prevent rate limits (multimodal is heavier)
+          await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
 
@@ -859,112 +854,7 @@ router.post('/ai-models/trigger-backfill-voyage', authMiddleware, roleCheck(['Ad
     }
   })();
 });
-router.post('/ai-models/normalize-descriptions', authMiddleware, roleCheck(['Admin']), async (req, res) => {
-  const userGeminiKey = req.headers['x-user-gemini-key'];
-  if (!userGeminiKey) {
-    return res.status(403).json({ error: "Une clé API Gemini est requise." });
-  }
 
-  res.json({ message: "Normalisation des descriptions démarrée en tâche de fond." });
-
-  (async () => {
-    try {
-      const { GoogleGenerativeAI } = require('@google/generative-ai');
-      console.log("[Normalize] Démarrage de la normalisation des noms de personnages...");
-
-      const { data: pages, error: pagesError } = await supabaseAdmin
-        .from('pages')
-        .select('id, description')
-        .not('description', 'is', null);
-
-      if (pagesError) throw pagesError;
-
-      const pagesWithDesc = pages.filter(p => {
-        if (!p.description) return false;
-        try {
-          const d = typeof p.description === 'string' ? JSON.parse(p.description) : p.description;
-          return d.metadata?.characters?.length > 0;
-        } catch { return false; }
-      });
-
-      console.log(`[Normalize] ${pagesWithDesc.length} pages avec personnages à traiter.`);
-
-      const genAI = new GoogleGenerativeAI(userGeminiKey);
-      const model = genAI.getGenerativeModel({
-        model: 'gemini-2.5-flash-lite',
-        systemInstruction: `Tu es un expert One Piece. On te donne une description JSON d'une page de manga.
-Ta SEULE mission : remplacer les noms de personnages français/incorrects par les noms officiels.
-Exemples : Pipo → Usopp, Chapeau de Paille → Luffy (ou Mugiwara), Hermep → Helmeppo, Kobby → Koby, Sanji la jambe noire → Sanji, Zorro → Zoro, Patty → Paty, Pépé → Zeff, Sandy → Sanji, Baggy → Buggy.
-NE CHANGE RIEN D'AUTRE. Garde exactement la même structure JSON. Renvoie UNIQUEMENT le JSON modifié, sans markdown ni explication.`
-      });
-
-      let processed = 0, errors = 0;
-
-      for (const page of pagesWithDesc) {
-        try {
-          let desc = typeof page.description === 'string' ? JSON.parse(page.description) : page.description;
-          const descStr = JSON.stringify(desc);
-
-          const result = await model.generateContent({
-            contents: [{ role: 'user', parts: [{ text: descStr }] }],
-            generationConfig: { temperature: 0.0, maxOutputTokens: 2048 }
-          });
-
-          let responseText = result.response.text().trim();
-          responseText = responseText.replace(/```json|```/gi, '').trim();
-          const normalizedDesc = JSON.parse(responseText);
-
-          const normalizedStr = JSON.stringify(normalizedDesc);
-          const { error: updateError } = await supabaseAdmin
-            .from('pages')
-            .update({ description: normalizedStr, embedding_voyage: null, embedding_gemini: null })
-            .eq('id', page.id);
-
-          if (updateError) {
-            console.error(`[Normalize] Erreur update page ${page.id}:`, updateError);
-            errors++;
-            continue;
-          }
-
-          let contentToEmbed = normalizedDesc.content || '';
-          if (normalizedDesc.metadata?.characters) {
-            contentToEmbed += ' ' + normalizedDesc.metadata.characters.join(' ');
-          }
-          contentToEmbed = contentToEmbed.trim();
-
-          if (contentToEmbed.length > 0) {
-            try {
-              const [voyageEmb, geminiEmb] = await Promise.all([
-                generateVoyageEmbedding(contentToEmbed, "document"),
-                generateGeminiEmbedding(contentToEmbed, "RETRIEVAL_DOCUMENT")
-              ]);
-
-              await supabaseAdmin
-                .from('pages')
-                .update({ embedding_voyage: voyageEmb, embedding_gemini: geminiEmb })
-                .eq('id', page.id);
-            } catch (embErr) {
-              console.error(`[Normalize] Erreur embedding page ${page.id}:`, embErr.message);
-              errors++;
-            }
-          }
-
-          processed++;
-          console.log(`[Normalize] Page ${page.id} traitée (${processed}/${pagesWithDesc.length})`);
-          await new Promise(resolve => setTimeout(resolve, 300));
-        } catch (err) {
-          console.error(`[Normalize] Erreur page ${page.id}:`, err.message);
-          errors++;
-          await new Promise(resolve => setTimeout(resolve, 300));
-        }
-      }
-
-      console.log(`[Normalize] Terminé. Traitées: ${processed}, Erreurs: ${errors}`);
-    } catch (e) {
-      console.error("[Normalize] Erreur globale:", e);
-    }
-  })();
-});
 
 module.exports = router;
 

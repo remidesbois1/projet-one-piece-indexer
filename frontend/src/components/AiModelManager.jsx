@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { getAiModels, updateAiModels, getAvailableAiModels, getEmbeddingStats, triggerGeminiBackfill, triggerVoyageBackfill, triggerNormalizeDescriptions } from '@/lib/api';
+import { getAiModels, updateAiModels, getAvailableAiModels, getEmbeddingStats, triggerGeminiBackfill, triggerVoyageBackfill } from '@/lib/api';
 import { invalidateModelCache } from '@/lib/geminiClient';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -42,7 +42,7 @@ export default function AiModelManager() {
     const [saving, setSaving] = useState(false);
     const [triggeringGeminiBackfill, setTriggeringGeminiBackfill] = useState(false);
     const [triggeringVoyageBackfill, setTriggeringVoyageBackfill] = useState(false);
-    const [triggeringNormalize, setTriggeringNormalize] = useState(false);
+
     const [searchQuery, setSearchQuery] = useState('');
 
     useEffect(() => {
@@ -100,7 +100,7 @@ export default function AiModelManager() {
         setTriggeringGeminiBackfill(true);
         try {
             await triggerGeminiBackfill();
-            toast.success("Backfill Gemini démarré", { description: "Le processus tourne en arrière-plan. Revenez plus tard pour voir la progression." });
+            toast.success("Backfill Gemini multimodal démarré", { description: "Le processus génère les embeddings avec description + image. Revenez plus tard pour voir la progression." });
         } catch (error) {
             toast.error("Erreur lors du démarrage du backfill Gemini.");
         } finally {
@@ -120,22 +120,7 @@ export default function AiModelManager() {
         }
     };
 
-    const handleTriggerNormalize = async () => {
-        const geminiKey = typeof window !== 'undefined' ? localStorage.getItem('google_api_key') : null;
-        if (!geminiKey) {
-            toast.error("Clé API Gemini requise", { description: "Configurez votre clé dans la page de recherche avant d'utiliser cette fonctionnalité." });
-            return;
-        }
-        setTriggeringNormalize(true);
-        try {
-            await triggerNormalizeDescriptions();
-            toast.success("Normalisation démarrée", { description: "Les noms de personnages sont en cours de normalisation et les embeddings seront régénérés. Suivez la progression dans la console serveur." });
-        } catch (error) {
-            toast.error("Erreur lors du démarrage de la normalisation.");
-        } finally {
-            setTriggeringNormalize(false);
-        }
-    };
+
 
     const filteredModels = availableModels.filter(m =>
         !searchQuery || m.id.toLowerCase().includes(searchQuery.toLowerCase()) || m.displayName?.toLowerCase().includes(searchQuery.toLowerCase())
@@ -267,7 +252,7 @@ export default function AiModelManager() {
                             État des Embeddings
                         </h2>
                         <p className="text-sm text-slate-500 mt-1">
-                            Visualisez la complétion sémantique. Grise (Pas de description), Voyage (Bleu), Gemini (Jaune), Les Deux (Vert), Aucun (Rouge).
+                            Visualisez la complétion sémantique. Voyage (texte uniquement, bleu), Gemini (multimodal texte+image, jaune), Les Deux (vert), Aucun (rouge), Sans description (gris).
                         </p>
                     </div>
                     <div className="flex flex-wrap gap-2 w-full sm:w-auto mt-2 sm:mt-0">
@@ -286,16 +271,9 @@ export default function AiModelManager() {
                             className="bg-slate-900 hover:bg-slate-800 text-white"
                         >
                             {triggeringGeminiBackfill ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
-                            Générer Gemini
+                            Générer Gemini (Multimodal)
                         </Button>
-                        <Button
-                            onClick={handleTriggerNormalize}
-                            disabled={triggeringNormalize || loadingStats}
-                            className="bg-red-600 hover:bg-red-700 text-white"
-                        >
-                            {triggeringNormalize ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Zap className="h-4 w-4 mr-2" />}
-                            Normaliser + Re-embed
-                        </Button>
+
                     </div>
                 </div>
 

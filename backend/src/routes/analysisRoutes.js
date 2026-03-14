@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { authMiddleware } = require('../middleware/auth');
 
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+
 const fs = require('fs');
 const path = require('path');
 
@@ -18,7 +18,6 @@ const { generateGeminiEmbedding } = require('../utils/geminiClient');
 
 router.post('/page-description', authMiddleware, async (req, res) => {
     const { id_page, description } = req.body;
-    const userGeminiKey = req.headers['x-user-gemini-key'];
 
     if (!id_page || !description) {
         return res.status(400).json({ error: 'Données manquantes (id_page ou description).' });
@@ -41,34 +40,15 @@ router.post('/page-description', authMiddleware, async (req, res) => {
         let finalDesc = jsonDesc;
         let finalDescStr = typeof description === 'string' ? description : JSON.stringify(description);
 
-        if (userGeminiKey && finalDesc.metadata && finalDesc.metadata.characters && finalDesc.metadata.characters.length > 0) {
-            try {
-                const genAI = new GoogleGenerativeAI(userGeminiKey);
-                const model = genAI.getGenerativeModel({
-                    model: 'gemini-2.5-flash-lite',
-                    systemInstruction: `Tu es un expert One Piece. On te donne une description JSON d'une page de manga.
-Ta SEULE mission : remplacer les noms de personnages français/incorrects par les noms officiels.
-Exemples : Pipo → Usopp, Chapeau de Paille → Luffy, Hermep → Helmeppo, Kobby → Koby, Sanji la jambe noire → Sanji, Zorro → Zoro, Patty → Paty, Sandy → Sanji, Baggy → Buggy.
-NE CHANGE RIEN D'AUTRE. Garde exactement la même structure JSON. Renvoie UNIQUEMENT le JSON modifié, sans markdown ni explication.`
-                });
 
-                const result = await model.generateContent({
-                    contents: [{ role: 'user', parts: [{ text: finalDescStr }] }],
-                    generationConfig: { temperature: 0.0, maxOutputTokens: 2048 }
-                });
 
-                let responseText = result.response.text().trim();
-                responseText = responseText.replace(/```json|```/gi, '').trim();
-                finalDesc = JSON.parse(responseText);
-                finalDescStr = JSON.stringify(finalDesc);
-                console.log(`[Analyse] Description normalisée pour la page ${id_page}.`);
-            } catch (normErr) {
-                console.warn(`[Analyse] Échec de normalisation pour la page ${id_page}, utilisation de la description originale.`, normErr.message);
-            }
-        } else if (!userGeminiKey && finalDesc.metadata && finalDesc.metadata.characters && finalDesc.metadata.characters.length > 0) {
-            console.log(`[Analyse] Pas de clé Gemini fournie, normalisation ignorée pour la page ${id_page}.`);
-        }
-
+        // Get page image URL for multimodal Gemini embedding
+        const { data: pageData } = await supabaseAdmin
+            .from('pages')
+            .select('url_image')
+            .eq('id', id_page)
+            .single();
+        const pageImageUrl = pageData?.url_image || null;
 
         let contentToEmbed = finalDesc.content || '';
         if (finalDesc.metadata?.characters) {
@@ -87,7 +67,8 @@ NE CHANGE RIEN D'AUTRE. Garde exactement la même structure JSON. Renvoie UNIQUE
                     console.error("Erreur Voyage embedding:", e.message);
                     return null;
                 }),
-                generateGeminiEmbedding(contentToEmbed, "RETRIEVAL_DOCUMENT").catch(e => {
+                // Multimodal: text + image
+                generateGeminiEmbedding(contentToEmbed, "RETRIEVAL_DOCUMENT", pageImageUrl).catch(e => {
                     console.error("Erreur Gemini embedding:", e.message);
                     return null;
                 })

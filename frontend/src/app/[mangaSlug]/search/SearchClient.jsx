@@ -25,7 +25,7 @@ import { toast } from "sonner";
 
 
 
-import { Search, X, Loader2, Sparkles, BookOpen, MapPin, Quote, Info, ArrowRight, Settings, Filter, XCircle, Check, Key } from "lucide-react";
+import { Search, X, Loader2, Sparkles, BookOpen, MapPin, Quote, Info, ArrowRight, Settings, Filter, XCircle, Check } from "lucide-react";
 
 const RESULTS_PER_PAGE = 24;
 
@@ -93,8 +93,7 @@ export default function SearchPage() {
     const [hasMore, setHasMore] = useState(false);
 
     const [useSemantic, setUseSemantic] = useState(false);
-    const [modelProvider, setModelProvider] = useState('voyage');
-    const [geminiKey, setGeminiKey] = useState(null);
+
 
 
 
@@ -133,13 +132,6 @@ export default function SearchPage() {
             }
         };
         fetchMetadata();
-
-        if (typeof window !== 'undefined') {
-            const loadKey = () => setGeminiKey(localStorage.getItem('google_api_key'));
-            loadKey();
-            window.addEventListener('storage', loadKey);
-            return () => window.removeEventListener('storage', loadKey);
-        }
     }, []);
 
 
@@ -159,7 +151,6 @@ export default function SearchPage() {
 
     const handleManualSearch = () => {
         if (query.trim().length < 2) return;
-        if (useSemantic && modelProvider === 'gemini' && !geminiKey) return;
         setPage(1);
         fetchResults(query, 1, true);
     };
@@ -192,8 +183,7 @@ export default function SearchPage() {
                 RESULTS_PER_PAGE,
                 useSemantic ? 'semantic' : 'keyword',
                 filters,
-                useSemantic,
-                modelProvider
+                useSemantic
             );
 
             let newResults = response.data.results;
@@ -240,7 +230,7 @@ export default function SearchPage() {
                 doc_id: item.id,
                 doc_text: item.content,
                 is_relevant: isRelevant,
-                model_provider: modelProvider
+                model_provider: 'dual'
             });
 
             setFeedbackGiven(prev => ({ ...prev, [item.id]: true }));
@@ -289,11 +279,10 @@ export default function SearchPage() {
                                     size="icon"
                                     className={cn(
                                         "rounded-full h-9 w-9 sm:h-12 sm:w-12 shadow-sm transition-all",
-                                        useSemantic ? "bg-indigo-600 hover:bg-indigo-700" : "bg-slate-900 hover:bg-slate-800",
-                                        (useSemantic && modelProvider === 'gemini' && !geminiKey) && "opacity-50 cursor-not-allowed bg-slate-300 hover:bg-slate-300 text-slate-500"
+                                        useSemantic ? "bg-indigo-600 hover:bg-indigo-700" : "bg-slate-900 hover:bg-slate-800"
                                     )}
                                     onClick={handleManualSearch}
-                                    disabled={isLoading || query.length < 2 || (useSemantic && modelProvider === 'gemini' && !geminiKey)}
+                                    disabled={isLoading || query.length < 2}
                                 >
                                     {isLoading ? <Loader2 className="h-4 w-4 sm:h-5 sm:w-5 animate-spin" /> : <Search className="h-4 w-4 sm:h-5 sm:w-5" />}
                                 </Button>
@@ -325,71 +314,18 @@ export default function SearchPage() {
                                         className="data-[state=checked]:bg-indigo-600"
                                     />
                                 </div>
-
-                                {useSemantic && (
-                                    <>
-                                        <div className="hidden sm:block w-px h-6 bg-slate-200"></div>
-                                        <div className="flex items-center justify-between sm:justify-start space-x-3 px-3 py-2 sm:py-0">
-                                            <Label
-                                                className="font-bold cursor-pointer select-none flex items-center gap-2 text-xs sm:text-sm text-slate-700"
-                                            >
-                                                Moteur IA :
-                                            </Label>
-                                            <div className="flex items-center bg-white rounded-full p-0.5 shadow-sm border border-slate-200">
-                                                <button
-                                                    onClick={() => setModelProvider('voyage')}
-                                                    className={cn(
-                                                        "flex items-center justify-center rounded-full px-3 py-1 text-xs font-bold transition-all",
-                                                        modelProvider === 'voyage' ? "bg-slate-900 text-white shadow" : "text-slate-500 hover:text-slate-700"
-                                                    )}
-                                                >
-                                                    Voyage
-                                                </button>
-                                                <button
-                                                    onClick={() => setModelProvider('gemini')}
-                                                    className={cn(
-                                                        "flex items-center justify-center rounded-full px-3 py-1 text-xs font-bold transition-all",
-                                                        modelProvider === 'gemini' ? "bg-indigo-600 text-white shadow" : "text-slate-500 hover:text-slate-700"
-                                                    )}
-                                                >
-                                                    Gemini
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </>
-                                )}
                             </div>
                         </div>
 
 
                         <div className="flex flex-col gap-2 max-w-lg mx-auto w-full px-2">
                             {useSemantic ? (
-                                modelProvider === 'gemini' && !geminiKey ? (
-                                    <div className="animate-in fade-in slide-in-from-top-1 duration-300 flex flex-col sm:flex-row items-start sm:items-center gap-4 text-amber-800 bg-amber-50 px-5 py-4 rounded-xl border border-amber-200 shadow-sm text-left">
-                                        <div className="bg-amber-100 p-2 rounded-full shrink-0">
-                                            <Key className="h-5 w-5 text-amber-600" />
-                                        </div>
-                                        <div className="flex-1">
-                                            <strong className="block text-sm mb-1">Clé API Requise</strong>
-                                            <p className="text-xs text-amber-700/90 leading-relaxed mb-3">
-                                                Le modèle Gemini nécessite votre propre clé API Google pour fonctionner.
-                                            </p>
-                                            <button
-                                                onClick={() => window.dispatchEvent(new Event('open-api-key-modal'))}
-                                                className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-700 hover:text-amber-900 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
-                                            >
-                                                Ajouter ma clé <ArrowRight className="h-3.5 w-3.5" />
-                                            </button>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div className="animate-in fade-in slide-in-from-top-1 duration-300 flex items-center gap-3 text-xs text-indigo-700 bg-indigo-50/50 px-4 py-2.5 rounded-xl border border-indigo-100 shadow-sm text-left">
-                                        <Info className="h-4 w-4 flex-shrink-0 text-indigo-500" />
-                                        <p>
-                                            <strong>Mode Conceptuel :</strong> L'IA comprend le sens de votre phrase. Parfait pour trouver des moments précis.
-                                        </p>
-                                    </div>
-                                )
+                                <div className="animate-in fade-in slide-in-from-top-1 duration-300 flex items-center gap-3 text-xs text-indigo-700 bg-indigo-50/50 px-4 py-2.5 rounded-xl border border-indigo-100 shadow-sm text-left">
+                                    <Info className="h-4 w-4 flex-shrink-0 text-indigo-500" />
+                                    <p>
+                                        <strong>Mode Sémantique :</strong> Voyage + Gemini multimodal analysent le sens et l'image de votre recherche simultanément.
+                                    </p>
+                                </div>
                             ) : (
                                 <div className="animate-in fade-in slide-in-from-top-1 duration-300 flex items-center gap-3 text-xs text-slate-600 bg-slate-50 px-4 py-2.5 rounded-xl border border-slate-200 text-left">
                                     <Quote className="h-4 w-4 flex-shrink-0 text-slate-400" />
@@ -568,7 +504,7 @@ export default function SearchPage() {
                     <div className="mb-6 flex items-baseline gap-2 text-slate-500 border-b border-slate-200 pb-2">
                         <span className="text-xl font-bold text-slate-900">{totalCount}</span>
                         <span>résultats trouvés</span>
-                        {useSemantic && <Badge variant="secondary" className="ml-2 text-[10px] bg-indigo-100 text-indigo-700 hover:bg-indigo-200">Sémantique (Rerank)</Badge>}
+                        {useSemantic && <Badge variant="secondary" className="ml-2 text-[10px] bg-indigo-100 text-indigo-700 hover:bg-indigo-200">Sémantique (Dual IA)</Badge>}
                     </div>
                 )}
 
