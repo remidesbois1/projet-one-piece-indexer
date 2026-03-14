@@ -8,7 +8,6 @@ const apiClient = axios.create({
 apiClient.interceptors.request.use(async (config) => {
     const { data: { session } } = await supabase.auth.getSession();
     const token = session?.access_token;
-    let googleApiKey = null;
     if (typeof window !== 'undefined') {
 
         const pathSegments = window.location.pathname.split('/');
@@ -39,14 +38,13 @@ export const updateBubbleGeometry = (id, geometry) => apiClient.put(`/bulles/${i
 export const deleteBubble = (id) => apiClient.delete(`/bulles/${id}`);
 export const reorderBubbles = (orderedBubbles) => apiClient.put('/bulles/reorder', { orderedBubbles });
 
-export const searchBubbles = (query, page = 1, limit = 10, mode = 'keyword', filters = {}, rerank = false, modelProvider = 'voyage') => {
+export const searchBubbles = (query, page = 1, limit = 10, mode = 'keyword', filters = {}, rerank = false) => {
     const params = new URLSearchParams({
         q: query,
         page: page.toString(),
         limit: limit.toString(),
         mode,
         rerank: rerank.toString(),
-        modelProvider
     });
 
     if (filters.characters && filters.characters.length > 0) {
@@ -59,15 +57,7 @@ export const searchBubbles = (query, page = 1, limit = 10, mode = 'keyword', fil
         params.append('tome', filters.tome.toString());
     }
 
-    let headers = {};
-    if (typeof window !== 'undefined') {
-        const geminiKey = localStorage.getItem('google_api_key');
-        if (geminiKey) {
-            headers['x-user-gemini-key'] = geminiKey;
-        }
-    }
-
-    return apiClient.get(`/search?${params.toString()}`, { headers });
+    return apiClient.get(`/search?${params.toString()}`);
 };
 export const searchSemantic = (query, limit = 6) => apiClient.get(`/search/semantic?q=${query}&limit=${limit}`);
 
@@ -86,12 +76,7 @@ export const uploadChapter = (formData) => apiClient.post('/admin/chapitres/uplo
 
 
 export const savePageDescription = (pageId, description) => {
-    let headers = {};
-    if (typeof window !== 'undefined') {
-        const geminiKey = localStorage.getItem('google_api_key');
-        if (geminiKey) headers['x-user-gemini-key'] = geminiKey;
-    }
-    return apiClient.post('/analyse/page-description', { id_page: pageId, description }, { headers });
+    return apiClient.post('/analyse/page-description', { id_page: pageId, description });
 };
 export const getMetadataSuggestions = () => apiClient.get('/analyse/metadata-suggestions');
 
@@ -130,14 +115,6 @@ export const getAvailableAiModels = () => apiClient.get('/admin/ai-models/availa
 export const getEmbeddingStats = () => apiClient.get('/admin/ai-models/embedding-stats');
 export const triggerGeminiBackfill = () => apiClient.post('/admin/ai-models/trigger-backfill');
 export const triggerVoyageBackfill = () => apiClient.post('/admin/ai-models/trigger-backfill-voyage');
-export const triggerNormalizeDescriptions = () => {
-    let headers = {};
-    if (typeof window !== 'undefined') {
-        const geminiKey = localStorage.getItem('google_api_key');
-        if (geminiKey) headers['x-user-gemini-key'] = geminiKey;
-    }
-    return apiClient.post('/admin/ai-models/normalize-descriptions', {}, { headers });
-};
 
 export const uploadPageToR2 = (formData) => apiClient.post('/admin/upload/page', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },

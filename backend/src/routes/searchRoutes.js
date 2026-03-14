@@ -3,7 +3,7 @@ const router = express.Router();
 const { supabase, supabaseAdmin } = require('../config/supabaseClient');
 
 const { generateVoyageEmbedding, rerankVoyage } = require('../utils/voyageClient');
-const { generateGeminiEmbedding, rerankGemini, normalizeQuery } = require('../utils/geminiClient');
+const { generateGeminiEmbedding } = require('../utils/geminiClient');
 
 const DUAL_OVERLAP_BONUS = 1.15;
 
@@ -26,7 +26,7 @@ async function insertSearchLog(log) {
 }
 
 router.get('/', async (req, res) => {
-    const { q, page = 1, limit = 10, mode = 'keyword', characters, arc, tome, rerank, modelProvider = 'voyage' } = req.query;
+    const { q, page = 1, limit = 10, mode = 'keyword', characters, arc, tome, rerank } = req.query;
     const shouldRerank = rerank === 'true';
 
     if (!q || q.length < 2) return res.status(400).json({ error: "Recherche trop courte" });
@@ -51,7 +51,7 @@ router.get('/', async (req, res) => {
 
     const searchLog = {
         raw_query: q,
-        model_provider: modelProvider,
+        model_provider: 'dual',
         search_mode: mode,
         manga_slug: req.query.manga || null,
         filter_characters: filterCharacters,
@@ -65,44 +65,33 @@ router.get('/', async (req, res) => {
 
     try {
         if (mode === 'semantic') {
-            const userGeminiKey = req.headers['x-user-gemini-key'];
             const candidatesQueryLimit = shouldRerank ? Math.max(24, parseInt(limit)) : parseInt(limit);
             const filterManga = req.query.manga;
 
-            let matchedPages;
+            let voyageEmbedMs = 0, geminiEmbedMs = 0, voyageRpcMs = 0, geminiRpcMs = 0;
 
-            if (modelProvider === 'gemini') {
-                if (!userGeminiKey) {
-                    return res.status(403).json({ error: "Une clé API Gemini est requise pour utiliser le moteur Gemini." });
-                }
+            // Always run BOTH engines in parallel
+            const [voyageResults, geminiResults] = await Promise.all([
+                (async () => {
+                    const embStart = Date.now();
+                    const embedding = await generateVoyageEmbedding(q, "query");
+                    voyageEmbedMs = Date.now() - embStart;
 
-                const normStart = Date.now();
-                const cleanQuery = await normalizeQuery(q, userGeminiKey);
-                searchLog.duration_normalization_ms = Date.now() - normStart;
-                searchLog.normalized_query = cleanQuery;
-                console.log(`[Search] Query normalized: "${q}" → "${cleanQuery}" (${searchLog.duration_normalization_ms}ms)`);
-
-                let voyageEmbedMs = 0, geminiEmbedMs = 0, voyageRpcMs = 0, geminiRpcMs = 0;
-
-                const [voyageResults, geminiResults] = await Promise.all([
-                    (async () => {
+                    const rpcStart = Date.now();
+                    const { data, error } = await supabase.rpc('match_pages', {
+                        query_embedding: embedding,
+                        match_threshold: 0.30,
+                        match_count: 50,
+                    });
+                    voyageRpcMs = Date.now() - rpcStart;
+                    if (error) throw error;
+                    return data || [];
+                })(),
+                (async () => {
+                    try {
                         const embStart = Date.now();
-                        const embedding = await generateVoyageEmbedding(cleanQuery, "query");
-                        voyageEmbedMs = Date.now() - embStart;
-
-                        const rpcStart = Date.now();
-                        const { data, error } = await supabase.rpc('match_pages', {
-                            query_embedding: embedding,
-                            match_threshold: 0.30,
-                            match_count: 50,
-                        });
-                        voyageRpcMs = Date.now() - rpcStart;
-                        if (error) throw error;
-                        return data || [];
-                    })(),
-                    (async () => {
-                        const embStart = Date.now();
-                        const embedding = await generateGeminiEmbedding(cleanQuery, "RETRIEVAL_QUERY");
+                        // For query embedding, we only send text (no image for the query)
+                        const embedding = await generateGeminiEmbedding(q, "RETRIEVAL_QUERY");
                         geminiEmbedMs = Date.now() - embStart;
 
                         const rpcStart = Date.now();
@@ -114,65 +103,55 @@ router.get('/', async (req, res) => {
                         geminiRpcMs = Date.now() - rpcStart;
                         if (error) throw error;
                         return data || [];
-                    })()
-                ]);
-
-                searchLog.duration_voyage_embedding_ms = voyageEmbedMs;
-                searchLog.duration_gemini_embedding_ms = geminiEmbedMs;
-                searchLog.duration_voyage_rpc_ms = voyageRpcMs;
-                searchLog.duration_gemini_rpc_ms = geminiRpcMs;
-                searchLog.voyage_candidates_count = voyageResults.length;
-                searchLog.gemini_candidates_count = geminiResults.length;
-
-                const mergeStart = Date.now();
-                const pageMap = new Map();
-
-                for (const p of voyageResults) {
-                    pageMap.set(p.id, { ...p, sources: ['voyage'], bestSimilarity: p.similarity });
-                }
-
-                for (const p of geminiResults) {
-                    if (pageMap.has(p.id)) {
-                        const existing = pageMap.get(p.id);
-                        existing.sources.push('gemini');
-                        existing.bestSimilarity = Math.max(existing.bestSimilarity, p.similarity);
-                    } else {
-                        pageMap.set(p.id, { ...p, sources: ['gemini'], bestSimilarity: p.similarity });
+                    } catch (geminiError) {
+                        console.error('[Search] Gemini search failed, continuing with Voyage only:', geminiError.message);
+                        return [];
                     }
-                }
+                })()
+            ]);
 
-                let overlapCount = 0;
-                for (const [id, entry] of pageMap) {
-                    if (entry.sources.length > 1) {
-                        entry.similarity = Math.min(entry.bestSimilarity * DUAL_OVERLAP_BONUS, 1.0);
-                        overlapCount++;
-                    } else {
-                        entry.similarity = entry.bestSimilarity;
-                    }
-                }
+            searchLog.duration_voyage_embedding_ms = voyageEmbedMs;
+            searchLog.duration_gemini_embedding_ms = geminiEmbedMs;
+            searchLog.duration_voyage_rpc_ms = voyageRpcMs;
+            searchLog.duration_gemini_rpc_ms = geminiRpcMs;
+            searchLog.voyage_candidates_count = voyageResults.length;
+            searchLog.gemini_candidates_count = geminiResults.length;
 
-                searchLog.dual_overlap_count = overlapCount;
-                searchLog.merged_candidates_count = pageMap.size;
-                searchLog.duration_merge_ms = Date.now() - mergeStart;
+            // Merge results from both engines
+            const mergeStart = Date.now();
+            const pageMap = new Map();
 
-                matchedPages = Array.from(pageMap.values()).sort((a, b) => b.similarity - a.similarity);
-            } else {
-                const embStart = Date.now();
-                const embedding = await generateVoyageEmbedding(q, "query");
-                searchLog.duration_voyage_embedding_ms = Date.now() - embStart;
-
-                const rpcStart = Date.now();
-                const { data, error } = await supabase.rpc('match_pages', {
-                    query_embedding: embedding,
-                    match_threshold: 0.30,
-                    match_count: 50,
-                });
-                searchLog.duration_voyage_rpc_ms = Date.now() - rpcStart;
-                if (error) throw error;
-                matchedPages = data || [];
-                searchLog.voyage_candidates_count = matchedPages.length;
+            for (const p of voyageResults) {
+                pageMap.set(p.id, { ...p, sources: ['voyage'], bestSimilarity: p.similarity });
             }
 
+            for (const p of geminiResults) {
+                if (pageMap.has(p.id)) {
+                    const existing = pageMap.get(p.id);
+                    existing.sources.push('gemini');
+                    existing.bestSimilarity = Math.max(existing.bestSimilarity, p.similarity);
+                } else {
+                    pageMap.set(p.id, { ...p, sources: ['gemini'], bestSimilarity: p.similarity });
+                }
+            }
+
+            let overlapCount = 0;
+            for (const [id, entry] of pageMap) {
+                if (entry.sources.length > 1) {
+                    entry.similarity = Math.min(entry.bestSimilarity * DUAL_OVERLAP_BONUS, 1.0);
+                    overlapCount++;
+                } else {
+                    entry.similarity = entry.bestSimilarity;
+                }
+            }
+
+            searchLog.dual_overlap_count = overlapCount;
+            searchLog.merged_candidates_count = pageMap.size;
+            searchLog.duration_merge_ms = Date.now() - mergeStart;
+
+            let matchedPages = Array.from(pageMap.values()).sort((a, b) => b.similarity - a.similarity);
+
+            // Apply filters
             let filteredPages = matchedPages;
 
             if (filterManga) {
@@ -212,7 +191,7 @@ router.get('/', async (req, res) => {
                 return res.json({ results: [], totalCount: 0 });
             }
 
-            if (!shouldRerank && modelProvider !== 'gemini') {
+            if (!shouldRerank) {
                 finalResults = candidates.map(c => {
                     let snippet = c.description;
                     try {
@@ -248,21 +227,14 @@ router.get('/', async (req, res) => {
                 let scores = [];
                 const rerankStart = Date.now();
                 try {
-                    if (modelProvider === 'gemini') {
-                        const results = await rerankGemini(q, candidates.map((c, idx) => ({ id: c.id, content: documents[idx] })), userGeminiKey);
-                        scores = results.map(r => ({
-                            i: typeof r.i === 'string' && r.i.startsWith('page-') ? parseInt(r.i.replace('page-', ''), 10) : r.i,
-                            s: typeof r.s === 'number' ? r.s : parseFloat(r.s) || 0
-                        }));
-                    } else {
-                        const results = await rerankVoyage(q, documents);
-                        scores = results.map(r => ({
-                            i: candidates[r.index].id,
-                            s: r.relevance_score * 100
-                        }));
-                    }
+                    // Use Voyage reranking by default (faster, more reliable)
+                    const results = await rerankVoyage(q, documents);
+                    scores = results.map(r => ({
+                        i: candidates[r.index].id,
+                        s: r.relevance_score * 100
+                    }));
                 } catch (err) {
-                    console.error(`${modelProvider} rerank error, falling back to vector similarity:`, err);
+                    console.error(`Rerank error, falling back to vector similarity:`, err);
                     scores = candidates.map(c => ({ i: c.id, s: c.similarity * 100 }));
                 }
                 searchLog.duration_rerank_ms = Date.now() - rerankStart;
@@ -417,7 +389,7 @@ router.post('/feedback', async (req, res) => {
                 doc_id: doc_id ? parseInt(String(doc_id).replace('page-', ''), 10) : null,
                 doc_text,
                 is_relevant,
-                model_provider: model_provider || 'unknown',
+                model_provider: model_provider || 'dual',
             });
 
         if (error) {

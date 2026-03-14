@@ -30,7 +30,7 @@ Le **Projet Poneglyph** est une plateforme de haute performance dédiée à la n
 
 * **Serveur API :** Node.js / Express.
 * **Base de Données :** Supabase (PostgreSQL) avec l'extension **pgvector**.
-* **LLM & Embeddings :** Google Gemini 2.5 Flash-Lite & Voyage AI (`voyage-4-large`).
+* **LLM & Embeddings :** Google Gemini 2.5 Flash-Lite, Voyage AI (`voyage-4-large`) & Gemini Multimodal (`gemini-embedding-2-preview`).
 * **Inférence GPU Cloud :** Modal (pour l'OCR FireRed de haute précision).
 
 ---
@@ -46,16 +46,15 @@ L'indexer propose deux expériences de recherche distinctes :
 
 ### **2. Recherche Sémantique & Conceptuelle**
 
-L'Indexer utilise une architecture de recherche hybride et parallélisée pour une précision maximale :
+L'Indexer utilise une architecture de recherche hybride, multicouche et parallélisée pour une précision maximale :
 
-* **Normalisation (Gemini) :** Réécriture de la requête de l'utilisateur par Gemini 2.5 Flash-Lite pour corriger les fautes et standardiser les noms de personnages.
-* **Récupération Parallèle :** 
-    * Vectorisation simultanée par **Voyage AI** (`voyage-4-large`) et **Gemini** (gemini-embedding-001).
-    * Bonus de score (**1.15x**) appliqué aux pages identifiées par les deux moteurs pour prioriser le consensus.
-* **Reranking LLM :** Validation finale de la pertinence par un LLM (Gemini 2.5 Flash-Lite) ou un reranker dédié.
+* **Récupération Parallèle & Multimodale :** 
+    * **Moteur 1 (Texte) :** Vectorisation par **Voyage AI** (`voyage-4-large`).
+    * **Moteur 2 (Vision-Texte) :** Vectorisation **multimodale** par **Gemini** (`gemini-embedding-2-preview`). Ce moteur fusionne les descriptions textuelles et l'analyse visuelle des planches pour une compréhension profonde de l'image.
+    * **Consensus :** Bonus de score (**1.15x**) appliqué aux pages identifiées par les deux moteurs pour prioriser le consensus.
 * **Filtrage Multicritère :** Arcs narratifs, personnages, volumes et mangas.
 
-> En cas de clé API manquante, le système utilise uniquement Voyage AI à travers la clé côté serveur.
+> L'expérience sémantique est désormais entièrement gérée via les clés API côté serveur pour une expérience utilisateur fluide.
 
 ### **3. Système de Feedback (RLHF Lite)**
 
@@ -154,7 +153,7 @@ Le projet expose une API sécurisée pour les développeurs.
 Approche rigoureuse pour maintenir un coût de fonctionnement minimal (**≈ 4.50 € / mois**).
 
 * **Watermarking dynamique :** Protection des visuels.
-* **Confidentialité :** Clés API personnelles stockées uniquement en LocalStorage.
+* **Confidentialité :** Clés API personnelles stockées en LocalStorage (Optionnel - Uniquement pour l'OCR/Analyse). La recherche sémantique utilise désormais les clés serveur.
 * **Edge Computing :** Déport de la charge d'inférence (OCR/Detection) sur le client pour réduire les coûts serveur.
 
 ---
