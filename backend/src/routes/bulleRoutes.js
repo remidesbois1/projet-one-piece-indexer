@@ -201,18 +201,18 @@ router.get('/:id/crop', authMiddleware, async (req, res) => {
 
 router.put('/:id', authMiddleware, async (req, res) => {
   const { id } = req.params;
-  const { texte_propose } = req.body;
+  const { x, y, w, h, texte_propose } = req.body;
   const userId = req.user.id;
   const userRole = req.user.role;
 
-  if (!texte_propose) {
-    return res.status(400).json({ error: "Le champ 'texte_propose' est manquant." });
+  if (x === undefined && y === undefined && w === undefined && h === undefined && texte_propose === undefined) {
+    return res.status(400).json({ error: "Aucune donnée à mettre à jour." });
   }
 
   try {
     const { data: existingBubble, error: findError } = await supabaseAdmin
       .from('bulles')
-      .select('id, id_user_createur, texte_propose')
+      .select('*')
       .eq('id', id)
       .single();
 
@@ -226,23 +226,47 @@ router.put('/:id', authMiddleware, async (req, res) => {
     if (!isCreator && !isStaff) {
       return res.status(403).json({ error: "Accès refusé. Vous n'avez pas les droits pour modifier cette bulle." });
     }
+
+    const updateData = {};
+    if (x !== undefined) updateData.x = x;
+    if (y !== undefined) updateData.y = y;
+    if (w !== undefined) updateData.w = w;
+    if (h !== undefined) updateData.h = h;
+    if (texte_propose !== undefined) updateData.texte_propose = texte_propose;
+
     const { data, error } = await supabaseAdmin
       .from('bulles')
-      .update({ texte_propose: texte_propose })
+      .update(updateData)
       .eq('id', id)
-      .select();
+      .select()
+      .single();
 
     if (error) throw error;
 
-    // Audit Log: Update Text
-    await logBubbleHistory(
-      id,
-      userId,
-      'update_text',
-      { texte_propose: existingBubble.texte_propose },
-      { texte_propose: texte_propose },
-      'Modification du texte'
-    );
+    const isGeometryUpdate = x !== undefined || y !== undefined || w !== undefined || h !== undefined;
+    const isTextUpdate = texte_propose !== undefined;
+
+    if (isTextUpdate) {
+      await logBubbleHistory(
+        id,
+        userId,
+        'update_text',
+        { texte_propose: existingBubble.texte_propose },
+        { texte_propose: texte_propose },
+        'Modification du texte'
+      );
+    }
+
+    if (isGeometryUpdate) {
+      await logBubbleHistory(
+        id,
+        userId,
+        'update_geometry',
+        { x: existingBubble.x, y: existingBubble.y, w: existingBubble.w, h: existingBubble.h },
+        { x: data.x, y: data.y, w: data.w, h: data.h },
+        'Modification de la géométrie'
+      );
+    }
 
     res.status(200).json(data);
 

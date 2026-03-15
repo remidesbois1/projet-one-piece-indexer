@@ -63,7 +63,6 @@ export default function AnnotatePage() {
     const [rectangle, setRectangle] = useState(null);
     const [imageDimensions, setImageDimensions] = useState(null);
 
-    // États pour le redimensionnement et le déplacement
     const [activeInteraction, setActiveInteraction] = useState({ type: null, handle: null, startX: 0, startY: 0, initialBox: null, targetId: null });
     const [isShiftPressed, setIsShiftPressed] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -972,7 +971,7 @@ export default function AnnotatePage() {
                             </Button>
                         </div>
                     </div>
-                       {!isGuest ? (
+                    {!isGuest ? (
                         <>
                             <div className="flex-none p-3 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-3">
                                 <div className="flex items-center justify-between pl-0.5">
@@ -1377,7 +1376,7 @@ export default function AnnotatePage() {
                                         key={bubble.id}
                                         style={style}
                                         className={cn(
-                                            "absolute border-2 z-10 transition-colors cursor-pointer group", 
+                                            "absolute border-2 z-10 transition-colors cursor-pointer group",
                                             colorClass,
                                             isShiftPressed && "cursor-move"
                                         )}
