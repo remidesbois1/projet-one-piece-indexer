@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, reorderBubbles, savePageDescription, getMetadataSuggestions, getPages } from '@/lib/api';
+import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, reorderBubbles, savePageDescription, getMetadataSuggestions, getPages, updateBubbleGeometry } from '@/lib/api';
 import { analyzeBubble, generatePageDescription } from '@/lib/geminiClient';
 import ValidationForm from '@/components/ValidationForm';
 import ApiKeyForm from '@/components/ApiKeyForm';
@@ -63,6 +63,13 @@ export default function AnnotatePage() {
     const [rectangle, setRectangle] = useState(null);
     const [imageDimensions, setImageDimensions] = useState(null);
 
+    // États pour le redimensionnement et le déplacement
+    const [activeInteraction, setActiveInteraction] = useState({ type: null, handle: null, startX: 0, startY: 0, initialBox: null, targetId: null });
+    const [isShiftPressed, setIsShiftPressed] = useState(false);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+
+
+
     const [debugImageUrl, setDebugImageUrl] = useState(null);
 
     const [preferLocalOCR, setPreferLocalOCR] = useState(false);
@@ -75,9 +82,24 @@ export default function AnnotatePage() {
             const loadKey = () => setGeminiKey(localStorage.getItem('google_api_key'));
             loadKey();
             window.addEventListener('storage', loadKey);
-            return () => window.removeEventListener('storage', loadKey);
+
+            const handleKeyDown = (e) => { if (e.key === 'Shift') setIsShiftPressed(true); };
+            const handleKeyUp = (e) => { if (e.key === 'Shift') setIsShiftPressed(false); };
+            const handleBlur = () => setIsShiftPressed(false);
+
+            window.addEventListener('keydown', handleKeyDown);
+            window.addEventListener('keyup', handleKeyUp);
+            window.addEventListener('blur', handleBlur);
+
+            return () => {
+                window.removeEventListener('storage', loadKey);
+                window.removeEventListener('keydown', handleKeyDown);
+                window.removeEventListener('keyup', handleKeyUp);
+                window.removeEventListener('blur', handleBlur);
+            };
         }
     }, []);
+
 
     const [showDescModal, setShowDescModal] = useState(false);
     const [isSavingDesc, setIsSavingDesc] = useState(false);
@@ -251,13 +273,25 @@ export default function AnnotatePage() {
     const runLocalOcr = async (cropData = null) => {
         try {
             const modelData = OCR_MODELS[activeModelKey];
-
-            if (!modelData) return;
-            if (preferLocalOCR && modelData.type !== 'local') return;
-            if (!preferLocalOCR && modelData.type !== 'api') return;
-
             const areaToCrop = cropData || rectangle || (pendingAnnotation ? { x: pendingAnnotation.x, y: pendingAnnotation.y, w: pendingAnnotation.w, h: pendingAnnotation.h } : null);
-            if (!areaToCrop) return;
+            if (!areaToCrop) {
+                setIsModalOpen(true);
+                return;
+            }
+
+            if (!modelData || (modelData.type === 'local' && modelStatus !== 'ready')) {
+                setIsModalOpen(true);
+                return;
+            }
+
+            if (preferLocalOCR && modelData.type !== 'local') {
+                setIsModalOpen(true);
+                return;
+            }
+            if (!preferLocalOCR && modelData.type !== 'api') {
+                setIsModalOpen(true);
+                return;
+            }
 
             if (modelData?.key === 'gemini') {
                 handleRetryWithCloud({ id_page: parseInt(pageId, 10), ...areaToCrop, texte_propose: '' });
@@ -277,12 +311,15 @@ export default function AnnotatePage() {
                 if (!response.ok) throw new Error("Erreur Serveur Poneglyph (Proxy)");
                 const result = await response.json();
 
+                const geometry = cropData || rectangle;
                 setOcrSource('poneglyph');
-                setPendingAnnotation(prev => ({
-                    ...(cropData ? { id_page: parseInt(pageId, 10), ...cropData } : prev),
+                setPendingAnnotation({
+                    id_page: parseInt(pageId, 10),
+                    ...geometry,
                     texte_propose: result.text
-                }));
+                });
                 setIsSubmitting(false);
+                setIsModalOpen(true);
                 return;
             }
 
@@ -297,6 +334,7 @@ export default function AnnotatePage() {
             console.error(err);
             toast.error("Erreur OCR: " + err.message);
             setIsSubmitting(false);
+            setIsModalOpen(true);
         }
     };
 
@@ -315,12 +353,14 @@ export default function AnnotatePage() {
 
             if (status === 'complete') {
                 setOcrSource('local');
-                setPendingAnnotation(prev => ({
-                    ...prev,
-                    texte_propose: text
-                }));
+                setPendingAnnotation(prev => {
+                    if (!prev) return null;
+                    return { ...prev, texte_propose: text };
+                });
                 setIsSubmitting(false);
+                setIsModalOpen(true);
             }
+
 
             if (status === 'error') {
                 if (modelStatus === 'ready') {
@@ -423,9 +463,6 @@ export default function AnnotatePage() {
             setPendingAnnotation(analysisData);
             setDebugImageUrl(null);
 
-            const modelData = OCR_MODELS[activeModelKey];
-            if (modelData?.type === 'local' && modelStatus !== 'ready') return;
-
             runLocalOcr();
         }
     }, [rectangle, pageId, isAutoDetecting, activeModelKey]);
@@ -449,11 +486,6 @@ export default function AnnotatePage() {
         const analysisData = { id_page: parseInt(pageId, 10), ...nextBox, texte_propose: '' };
         setPendingAnnotation(analysisData);
         setDebugImageUrl(null);
-
-        const modelData = OCR_MODELS[activeModelKey];
-        if (modelData?.type === 'local' && modelStatus !== 'ready') {
-            return;
-        }
 
         runLocalOcr(nextBox);
     }, [pageId, activeModelKey, modelStatus, runOcr]);
@@ -516,21 +548,22 @@ export default function AnnotatePage() {
             .then(response => {
                 setPendingAnnotation(prev => ({ ...prev, texte_propose: response.data.texte_propose }));
                 setOcrSource('cloud');
+                setIsModalOpen(true);
             })
+
             .catch(error => {
                 if (error.message === "QUOTA_EXCEEDED") {
                     toast.error("Quota API Gemini dépassé !", {
                         description: "Votre clé a atteint sa limite gratuite (RPM/TPM). Réessayez dans une minute ou changez de clé."
                     });
-                    return;
+                } else {
+                    console.error("Cloud OCR Error:", error);
+                    if (error.message?.includes('API key') || error.toString().includes('400')) {
+                        localStorage.removeItem('google_api_key');
+                        setShowApiKeyModal(true);
+                    }
                 }
-
-                console.error("Cloud OCR Error:", error);
-
-                if (error.message?.includes('API key') || error.toString().includes('400')) {
-                    localStorage.removeItem('google_api_key');
-                    setShowApiKeyModal(true);
-                }
+                setIsModalOpen(true);
             })
             .finally(() => setIsSubmitting(false));
     };
@@ -636,7 +669,9 @@ export default function AnnotatePage() {
     const handleEditBubble = (bubble) => {
         if (isGuest || isMobile) return;
         setPendingAnnotation(bubble);
+        setIsModalOpen(true);
     };
+
 
     const handleDeleteBubble = async (bubbleId) => {
         if (isGuest || isMobile) return;
@@ -657,6 +692,8 @@ export default function AnnotatePage() {
     const handleSuccess = (newData) => {
         setPendingAnnotation(null);
         setDebugImageUrl(null);
+        setIsModalOpen(false);
+
 
         if (newData) {
             setExistingBubbles(prev => {
@@ -669,7 +706,7 @@ export default function AnnotatePage() {
             });
         }
 
-        fetchBubbles();
+        // fetchBubbles(); // Désactivé pour éviter de recharger d'anciennes données après un update local réussi
 
         if (isAutoDetecting) {
             setTimeout(() => {
@@ -721,35 +758,158 @@ export default function AnnotatePage() {
     };
 
     const handleMouseUp = (event) => {
-        if (!isDrawing) return;
-        event.preventDefault();
-        setIsDrawing(false);
+        if (isDrawing) {
+            event.preventDefault();
+            setIsDrawing(false);
 
-        const imageEl = imageRef.current;
-        if (!imageEl || !startPoint || !endPoint || imageEl.naturalWidth === 0) return;
+            const imageEl = imageRef.current;
+            if (!imageEl || !startPoint || !endPoint || imageEl.naturalWidth === 0) return;
 
-        const scale = imageEl.naturalWidth / imageEl.offsetWidth;
-        const currentEndPoint = getContainerCoords(event) || endPoint;
+            const scale = imageEl.naturalWidth / imageEl.offsetWidth;
+            const currentEndPoint = getContainerCoords(event) || endPoint;
 
-        const unscaledRect = {
-            x: Math.min(startPoint.x, currentEndPoint.x),
-            y: Math.min(startPoint.y, currentEndPoint.y),
-            w: Math.abs(startPoint.x - currentEndPoint.x),
-            h: Math.abs(startPoint.y - currentEndPoint.y),
-        };
+            const unscaledRect = {
+                x: Math.min(startPoint.x, currentEndPoint.x),
+                y: Math.min(startPoint.y, currentEndPoint.y),
+                w: Math.abs(startPoint.x - currentEndPoint.x),
+                h: Math.abs(startPoint.y - currentEndPoint.y),
+            };
 
-        if (unscaledRect.w > 10 && unscaledRect.h > 10) {
-            setRectangle({
-                x: Math.round(unscaledRect.x * scale),
-                y: Math.round(unscaledRect.y * scale),
-                w: Math.round(unscaledRect.w * scale),
-                h: Math.round(unscaledRect.h * scale),
-            });
-        } else {
-            setStartPoint(null);
-            setEndPoint(null);
+            if (unscaledRect.w > 10 && unscaledRect.h > 10) {
+                setRectangle({
+                    x: Math.round(unscaledRect.x * scale),
+                    y: Math.round(unscaledRect.y * scale),
+                    w: Math.round(unscaledRect.w * scale),
+                    h: Math.round(unscaledRect.h * scale),
+                });
+            } else {
+                setStartPoint(null);
+                setEndPoint(null);
+            }
+        }
+
+        if (activeInteraction.type) {
+            const { targetId } = activeInteraction;
+
+            if (targetId) {
+                // Trouver la bulle dans l'état local actuel (qui a été mis à jour par handleGlobalMouseMove)
+                const currentBox = existingBubbles.find(b => b.id === targetId);
+
+                if (currentBox) {
+                    const geometry = {
+                        x: currentBox.x,
+                        y: currentBox.y,
+                        w: currentBox.w,
+                        h: currentBox.h
+                    };
+                    updateBubbleGeometry(targetId, geometry)
+                        .then(() => {
+                            toast.success("Position mise à jour");
+                        })
+                        .catch(err => {
+                            console.error("Erreur update geometry:", err);
+                            toast.error("Erreur lors de la mise à jour de la position");
+                        });
+                }
+            } else if (pendingAnnotation && !pendingAnnotation.id && activeInteraction.type) {
+                // Pour une nouvelle bulle en cours de création, on a déjà mis à jour setRectangle via handleGlobalMouseMove
+            }
+
+            setActiveInteraction({ type: null, handle: null, startX: 0, startY: 0, initialBox: null, targetId: null });
         }
     };
+
+    const handleInteractionStart = (e, type, handle = null, targetBubble = null) => {
+        e.stopPropagation();
+        e.preventDefault();
+
+        const bubbleToUse = targetBubble || pendingAnnotation;
+        if (!bubbleToUse) return;
+
+        setActiveInteraction({
+            type,
+            handle,
+            startX: e.clientX,
+            startY: e.clientY,
+            targetId: bubbleToUse.id || null,
+            initialBox: {
+                x: bubbleToUse.x,
+                y: bubbleToUse.y,
+                w: bubbleToUse.w,
+                h: bubbleToUse.h
+            }
+        });
+    };
+
+    useEffect(() => {
+        if (!activeInteraction.type) return;
+
+        const handleGlobalMouseMove = (e) => {
+            if (!activeInteraction.type || !imageRef.current || !imageDimensions) return;
+
+            const scale = imageRef.current.naturalWidth / imageRef.current.offsetWidth;
+            const dx = (e.clientX - activeInteraction.startX) * scale;
+            const dy = (e.clientY - activeInteraction.startY) * scale;
+
+            const { initialBox, type, handle, targetId } = activeInteraction;
+            let newBox = { ...initialBox };
+
+            if (type === 'move') {
+                newBox.x = Math.round(initialBox.x + dx);
+                newBox.y = Math.round(initialBox.y + dy);
+            } else if (type === 'resize') {
+                if (handle.includes('e')) newBox.w = Math.max(20, Math.round(initialBox.w + dx));
+                if (handle.includes('s')) newBox.h = Math.max(20, Math.round(initialBox.h + dy));
+                if (handle.includes('w')) {
+                    const nextW = Math.round(initialBox.w - dx);
+                    if (nextW > 20) {
+                        newBox.x = Math.round(initialBox.x + dx);
+                        newBox.w = nextW;
+                    }
+                }
+                if (handle.includes('n')) {
+                    const nextH = Math.round(initialBox.h - dy);
+                    if (nextH > 20) {
+                        newBox.y = Math.round(initialBox.y + dy);
+                        newBox.h = nextH;
+                    }
+                }
+            }
+
+            // Garder dans les limites de l'image
+            newBox.x = Math.max(0, Math.min(newBox.x, imageRef.current.naturalWidth - newBox.w));
+            newBox.y = Math.max(0, Math.min(newBox.y, imageRef.current.naturalHeight - newBox.h));
+            newBox.w = Math.min(newBox.w, imageRef.current.naturalWidth - newBox.x);
+            newBox.h = Math.min(newBox.h, imageRef.current.naturalHeight - newBox.y);
+
+            if (targetId) {
+                // Mettre à jour la bulle dans la liste des bulles existantes
+                setExistingBubbles(prev => prev.map(b => b.id === targetId ? { ...b, ...newBox } : b));
+                // Si cette bulle est aussi la bulle en cours d'édition dans la modale, mettre à jour pendingAnnotation
+                if (pendingAnnotation?.id === targetId) {
+                    setPendingAnnotation(prev => ({ ...prev, ...newBox }));
+                }
+            } else {
+                // C'est une nouvelle bulle
+                setPendingAnnotation(prev => ({ ...prev, ...newBox }));
+                setRectangle(newBox);
+            }
+        };
+
+
+        const handleGlobalMouseUp = (e) => {
+            handleMouseUp(e);
+        };
+
+        window.addEventListener('mousemove', handleGlobalMouseMove);
+        window.addEventListener('mouseup', handleGlobalMouseUp);
+
+        return () => {
+            window.removeEventListener('mousemove', handleGlobalMouseMove);
+            window.removeEventListener('mouseup', handleGlobalMouseUp);
+        };
+    }, [activeInteraction, imageDimensions]);
+
 
     const handleDragEnd = (event) => {
         if (isGuest) return;
@@ -1156,19 +1316,31 @@ export default function AnnotatePage() {
                                 </div>
                             )}
 
-                            {rectangle && imageDimensions && (
+                            {((rectangle && imageDimensions) || (pendingAnnotation && imageDimensions)) && (
                                 <div
                                     style={{
-                                        left: rectangle.x * (imageDimensions.width / imageDimensions.naturalWidth),
-                                        top: rectangle.y * (imageDimensions.width / imageDimensions.naturalWidth),
-                                        width: rectangle.w * (imageDimensions.width / imageDimensions.naturalWidth),
-                                        height: rectangle.h * (imageDimensions.width / imageDimensions.naturalWidth),
+                                        left: (pendingAnnotation?.x || rectangle.x) * (imageDimensions.width / imageDimensions.naturalWidth),
+                                        top: (pendingAnnotation?.y || rectangle.y) * (imageDimensions.width / imageDimensions.naturalWidth),
+                                        width: (pendingAnnotation?.w || rectangle.w) * (imageDimensions.width / imageDimensions.naturalWidth),
+                                        height: (pendingAnnotation?.h || rectangle.h) * (imageDimensions.width / imageDimensions.naturalWidth),
                                     }}
                                     className={cn(
-                                        "absolute border-2 border-dashed transition-all duration-300 z-30 pointer-events-none",
-                                        isAutoDetecting ? "border-indigo-500 bg-indigo-500/10" : "border-red-500 bg-red-500/10"
+                                        "absolute border-2 border-dashed transition-all duration-300 z-30",
+                                        isAutoDetecting ? "border-indigo-500 bg-indigo-500/10" : "border-red-500 bg-red-500/10",
+                                        pendingAnnotation && isShiftPressed && "cursor-move"
                                     )}
-                                />
+                                    onMouseDown={(e) => {
+                                        if (pendingAnnotation && isShiftPressed) {
+                                            handleInteractionStart(e, 'move');
+                                        }
+                                    }}
+                                    onClick={(e) => {
+                                        if (isShiftPressed) return;
+                                        e.stopPropagation();
+                                        setIsModalOpen(true);
+                                    }}
+                                >
+                                </div>
                             )}
 
                             {isDrawing && startPoint && endPoint && (
@@ -1187,6 +1359,8 @@ export default function AnnotatePage() {
                                 const scale = imageDimensions.width / imageDimensions.naturalWidth;
                                 if (!scale) return null;
 
+                                if (pendingAnnotation?.id === bubble.id) return null;
+
                                 const style = {
                                     left: `${bubble.x * scale}px`,
                                     top: `${bubble.y * scale}px`,
@@ -1202,10 +1376,20 @@ export default function AnnotatePage() {
                                     <div
                                         key={bubble.id}
                                         style={style}
-                                        className={cn("absolute border-2 z-10 transition-colors cursor-pointer group", colorClass)}
+                                        className={cn(
+                                            "absolute border-2 z-10 transition-colors cursor-pointer group", 
+                                            colorClass,
+                                            isShiftPressed && "cursor-move"
+                                        )}
                                         onMouseEnter={() => setHoveredBubble(bubble)}
                                         onMouseLeave={() => setHoveredBubble(null)}
+                                        onMouseDown={(e) => {
+                                            if (isShiftPressed) {
+                                                handleInteractionStart(e, 'move', null, bubble);
+                                            }
+                                        }}
                                         onClick={(e) => {
+                                            if (isShiftPressed) return;
                                             e.stopPropagation();
                                             handleEditBubble(bubble);
                                         }}
@@ -1216,8 +1400,34 @@ export default function AnnotatePage() {
                                         )}>
                                             #{index + 1}
                                         </div>
+
+                                        {/* Poignées visibles en mode Shift */}
+                                        {isShiftPressed && (
+                                            <>
+                                                {[
+                                                    { h: 'nw', c: 'top-0 left-0 -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize' },
+                                                    { h: 'n', c: 'top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 cursor-ns-resize' },
+                                                    { h: 'ne', c: 'top-0 left-full -translate-x-1/2 -translate-y-1/2 cursor-nesw-resize' },
+                                                    { h: 'w', c: 'top-1/2 left-0 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize' },
+                                                    { h: 'e', c: 'top-1/2 left-full -translate-x-1/2 -translate-y-1/2 cursor-ew-resize' },
+                                                    { h: 'sw', c: 'top-full left-0 -translate-x-1/2 -translate-y-1/2 cursor-nesw-resize' },
+                                                    { h: 's', c: 'top-full left-1/2 -translate-x-1/2 -translate-y-1/2 cursor-ns-resize' },
+                                                    { h: 'se', c: 'top-full left-full -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize' },
+                                                ].map((handle) => (
+                                                    <div
+                                                        key={handle.h}
+                                                        className={cn(
+                                                            "absolute w-2.5 h-2.5 bg-white border border-slate-900 rounded-full shadow-sm z-50 hover:scale-125 transition-transform",
+                                                            handle.c
+                                                        )}
+                                                        onMouseDown={(e) => handleInteractionStart(e, 'resize', handle.h, bubble)}
+                                                    />
+                                                ))}
+                                            </>
+                                        )}
                                     </div>
                                 );
+
                             })}
 
                             {hoveredBubble && (
@@ -1277,23 +1487,24 @@ export default function AnnotatePage() {
             </div>
 
             <Dialog
-                open={!!pendingAnnotation && !isSubmitting}
+                open={isModalOpen}
                 onOpenChange={(open) => {
                     if (!open) {
-                        if (!isSubmitting) {
-                            if (isAutoDetecting) {
-                                setIsAutoDetecting(false);
-                                toast.info("Détection automatique arrêtée.");
-                            }
-                            setPendingAnnotation(null);
-                            setDebugImageUrl(null);
-                            setRectangle(null);
+                        setIsModalOpen(false);
+                        setIsSubmitting(false);
+                        if (isAutoDetecting) {
+                            setIsAutoDetecting(false);
+                            toast.info("Détection automatique arrêtée.");
                         }
+                        setPendingAnnotation(null);
+                        setDebugImageUrl(null);
+                        setRectangle(null);
                     }
                 }}
             >
+
                 <DialogContent
-                    className="max-w-none w-full h-full bg-transparent border-0 shadow-none p-0 flex items-center justify-center pointer-events-none"
+                    className="max-w-none w-full h-full bg-transparent border-0 shadow-none p-0 flex items-center justify-end pr-8 pointer-events-none top-0 left-0 translate-x-0 translate-y-0"
                     showCloseButton={false}
                     aria-describedby={undefined}
                 >
@@ -1324,6 +1535,8 @@ export default function AnnotatePage() {
                                     setPendingAnnotation(null);
                                     setRectangle(null);
                                     setDebugImageUrl(null);
+                                    setIsModalOpen(false);
+                                    setIsSubmitting(false);
                                 }}
                                 className="w-full max-w-lg"
                             >
@@ -1334,6 +1547,8 @@ export default function AnnotatePage() {
                                         onCancel={() => {
                                             setPendingAnnotation(null);
                                             setDebugImageUrl(null);
+                                            setIsModalOpen(false);
+                                            setIsSubmitting(false);
 
                                             if (isAutoDetecting) {
                                                 setTimeout(() => processNextBubble(), 100);
