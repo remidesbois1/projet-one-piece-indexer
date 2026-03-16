@@ -1,13 +1,14 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
-import { getAiModels, updateAiModels, getAvailableAiModels, getEmbeddingStats, triggerGeminiBackfill, triggerVoyageBackfill } from '@/lib/api';
-import { invalidateModelCache } from '@/lib/geminiClient';
+import React, { useState, useEffect, useRef } from 'react';
+import { getAiModels, updateAiModels, getAvailableAiModels, getEmbeddingStats, triggerGeminiBackfill, triggerVoyageBackfill, savePageData, generateVoyageEmbedding } from '@/lib/api';
+import { invalidateModelCache, generatePageDescription, generateGeminiEmbedding } from '@/lib/geminiClient';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Save, RotateCcw, Cpu, Eye, MessageSquareText, Sparkles, Search, Zap } from 'lucide-react';
+import { Progress } from '@/components/ui/progress';
+import { Loader2, Save, RotateCcw, Cpu, Eye, MessageSquareText, Sparkles, Search, Zap, Play, Square, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
+import { cn, loadImage, getProxiedImageUrl } from '@/lib/utils';
 
 const MODEL_ROLES = [
     {
@@ -32,7 +33,7 @@ const colorMap = {
     emerald: { bg: 'bg-emerald-50', border: 'border-emerald-200', icon: 'text-emerald-600', badge: 'bg-emerald-100 text-emerald-700', activeBg: 'bg-emerald-600', activeText: 'text-white' },
 };
 
-export default function AiModelManager() {
+export default function AiModelManager({ mangaSlug }) {
     const [models, setModels] = useState(null);
     const [draft, setDraft] = useState(null);
     const [availableModels, setAvailableModels] = useState([]);
@@ -45,6 +46,10 @@ export default function AiModelManager() {
 
     const [searchQuery, setSearchQuery] = useState('');
 
+    const [isBackfilling, setIsBackfilling] = useState(false);
+    const [backfillProgress, setBackfillProgress] = useState({ current: 0, total: 0, log: [] });
+    const shouldStopRef = useRef(false);
+
     useEffect(() => {
         loadData();
     }, []);
@@ -56,7 +61,7 @@ export default function AiModelManager() {
             const [settingsRes, availableRes, statsRes] = await Promise.all([
                 getAiModels(),
                 getAvailableAiModels(),
-                getEmbeddingStats().catch(() => ({ data: [] }))
+                getEmbeddingStats(mangaSlug).catch(() => ({ data: [] }))
             ]);
             setModels(settingsRes.data);
             setDraft(settingsRes.data);
@@ -99,7 +104,7 @@ export default function AiModelManager() {
     const handleTriggerGeminiBackfill = async () => {
         setTriggeringGeminiBackfill(true);
         try {
-            await triggerGeminiBackfill();
+            await triggerGeminiBackfill(mangaSlug);
             toast.success("Backfill Gemini multimodal démarré", { description: "Le processus génère les embeddings avec description + image. Revenez plus tard pour voir la progression." });
         } catch (error) {
             toast.error("Erreur lors du démarrage du backfill Gemini.");
@@ -107,17 +112,119 @@ export default function AiModelManager() {
             setTriggeringGeminiBackfill(false);
         }
     };
-
+ 
     const handleTriggerVoyageBackfill = async () => {
         setTriggeringVoyageBackfill(true);
         try {
-            await triggerVoyageBackfill();
+            await triggerVoyageBackfill(mangaSlug);
             toast.success("Backfill Voyage démarré", { description: "Le processus tourne en arrière-plan. Revenez plus tard." });
         } catch (error) {
             toast.error("Erreur lors du démarrage du backfill Voyage.");
         } finally {
             setTriggeringVoyageBackfill(false);
         }
+    };
+    const handleClientBackfill = async () => {
+        const apiKey = localStorage.getItem('google_api_key');
+        if (!apiKey) {
+            toast.error("Clé API Google manquante.", { description: "Veuillez configurer votre clé API Gemini dans le profil (en haut à droite) avant de lancer le backfill client." });
+            return;
+        }
+
+        const pagesToProcess = embeddingStats.filter(s => !s.has_description || !s.has_voyage || !s.has_gemini);
+        if (pagesToProcess.length === 0) {
+            toast.info("Toutes les pages sont déjà à jour !");
+            return;
+        }
+
+        setIsBackfilling(true);
+        shouldStopRef.current = false;
+        setBackfillProgress({ current: 0, total: pagesToProcess.length, log: ["Démarrage du backfill client..."] });
+
+        let currentCount = 0;
+
+        for (const page of pagesToProcess) {
+            if (shouldStopRef.current) {
+               setBackfillProgress(prev => ({ ...prev, log: ["Arrêt demandé par l'utilisateur.", ...prev.log] }));
+               break;
+            }
+
+            try {
+                setBackfillProgress(prev => ({ ...prev, current: currentCount, log: [`Traitement page ${page.id}...`, ...prev.log.slice(0, 10)] }));
+                
+                // 1. Charger l'image avec proxy pour éviter CORS
+                const proxiedUrl = getProxiedImageUrl(page.url_image);
+                const img = await loadImage(proxiedUrl);
+                
+                let currentDescription = page.description;
+                let currentVoyage = page.has_voyage ? null : undefined; // undefined means don't update if already there
+                let currentGeminiEmb = page.has_gemini ? null : undefined;
+
+                // 2. Générer description si manquante
+                if (!page.has_description) {
+                    const descRes = await generatePageDescription(img, apiKey);
+                    currentDescription = JSON.stringify(descRes.data);
+                    setBackfillProgress(prev => ({ ...prev, log: [`Description générée pour ${page.id}`, ...prev.log.slice(0, 10)] }));
+                }
+
+                // 3. Vectoriser Voyage (via serveur mais déclenché ici pour chaque page)
+                if (!page.has_voyage) {
+                    // Extract text content from description
+                    let text = "";
+                    try {
+                        const d = JSON.parse(currentDescription);
+                        text = d.content || "";
+                        if (d.metadata?.characters) text += " " + d.metadata.characters.join(" ");
+                    } catch(e) { text = typeof currentDescription === 'string' ? currentDescription : ""; }
+                    
+                    if (text && text.trim()) {
+                        const voyRes = await generateVoyageEmbedding(text.trim());
+                        currentVoyage = voyRes.data.embedding;
+                        setBackfillProgress(prev => ({ ...prev, log: [`Embedding Voyage généré pour ${page.id}`, ...prev.log.slice(0, 10)] }));
+                    }
+                }
+
+                // 4. Vectoriser Gemini (Client)
+                if (!page.has_gemini) {
+                     let text = "";
+                     try {
+                         const d = JSON.parse(currentDescription);
+                         text = d.content || "";
+                         if (d.metadata?.characters) text += " " + d.metadata.characters.join(" ");
+                     } catch(e) { text = typeof currentDescription === 'string' ? currentDescription : ""; }
+                     
+                     if (text && text.trim()) {
+                        const gemRes = await generateGeminiEmbedding(text.trim(), img, apiKey);
+                        currentGeminiEmb = gemRes;
+                        setBackfillProgress(prev => ({ ...prev, log: [`Embedding Gemini généré pour ${page.id}`, ...prev.log.slice(0, 10)] }));
+                     }
+                }
+
+                // 5. Sauvegarder
+                await savePageData({
+                    id_page: page.id,
+                    description: currentDescription,
+                    embedding_voyage: currentVoyage,
+                    embedding_gemini: currentGeminiEmb
+                });
+
+                currentCount++;
+                setBackfillProgress(prev => ({ ...prev, current: currentCount }));
+
+            } catch (err) {
+                console.error(`Erreur page ${page.id}:`, err);
+                const errorMsg = err instanceof Error ? err.message : (typeof err === 'string' ? err : 'Erreur inconnue (CORS ou format)');
+                setBackfillProgress(prev => ({ ...prev, log: [`Erreur page ${page.id}: ${errorMsg}`, ...prev.log.slice(0, 10)] }));
+                // Continue to next page
+            }
+            
+            // Artificial delay to play nice with rate limits
+            await new Promise(r => setTimeout(r, 1000));
+        }
+
+        setIsBackfilling(false);
+        toast.success("Backfill client terminé !", { description: `${currentCount} pages traitées.` });
+        loadData(); // Refresh stats
     };
 
 
@@ -313,22 +420,82 @@ export default function AiModelManager() {
                             </div>
                         </div>
 
-                        <div className="flex flex-wrap gap-1 p-4 bg-slate-50 rounded-xl border border-slate-200 max-h-[400px] overflow-y-auto">
-                            {embeddingStats.map(page => {
-                                let colorClass = "bg-red-400";
-                                if (!page.has_description) colorClass = "bg-slate-300";
-                                else if (page.has_voyage && page.has_gemini) colorClass = "bg-emerald-500";
-                                else if (page.has_voyage) colorClass = "bg-blue-500";
-                                else if (page.has_gemini) colorClass = "bg-yellow-400";
+                        {isBackfilling && (
+                            <div className="bg-white border-2 border-indigo-100 rounded-2xl p-6 shadow-xl animate-in fade-in zoom-in duration-300">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 bg-indigo-100 rounded-lg">
+                                            <Loader2 className="h-5 w-5 text-indigo-600 animate-spin" />
+                                        </div>
+                                        <div>
+                                            <h4 className="font-bold text-slate-900">Backfill Client en cours...</h4>
+                                            <p className="text-xs text-slate-500">Utilisation de votre clé API Gemini personnelle</p>
+                                        </div>
+                                    </div>
+                                    <Button 
+                                        variant="outline" 
+                                        size="sm" 
+                                        onClick={() => shouldStopRef.current = true}
+                                        className="text-red-600 border-red-200 hover:bg-red-50"
+                                    >
+                                        <Square className="h-3.5 w-3.5 mr-2" />
+                                        Arrêter
+                                    </Button>
+                                </div>
+                                
+                                <div className="space-y-2">
+                                    <div className="flex justify-between text-sm font-medium">
+                                        <span className="text-slate-600">Progression</span>
+                                        <span className="text-indigo-600">{Math.round((backfillProgress.current / backfillProgress.total) * 100)}% ({backfillProgress.current}/{backfillProgress.total})</span>
+                                    </div>
+                                    <Progress value={(backfillProgress.current / backfillProgress.total) * 100} className="h-3" />
+                                </div>
 
-                                return (
-                                    <div
-                                        key={page.id}
-                                        title={`Page ${page.id} (Tome/Chap: ${page.chapitre_id} | Num: ${page.numero})`}
-                                        className={cn("w-3 h-3 rounded-sm opacity-80 hover:opacity-100 transition-opacity cursor-help", colorClass)}
-                                    />
-                                );
-                            })}
+                                <div className="mt-4 bg-slate-900 rounded-lg p-3 font-mono text-[10px] text-emerald-400 h-32 overflow-y-auto space-y-1 border border-slate-800">
+                                    {backfillProgress.log.map((line, i) => (
+                                        <div key={i} className={line.includes('Erreur') ? 'text-red-400' : ''}>
+                                            <span className="text-slate-500 mr-2">[{new Date().toLocaleTimeString()}]</span>
+                                            {line}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="flex flex-col gap-4">
+                            {!isBackfilling && (
+                                <div className="flex items-center gap-4 bg-indigo-50 border border-indigo-100 p-4 rounded-xl">
+                                    <div className="flex-1">
+                                        <h4 className="text-sm font-bold text-indigo-900">Backfill Manuel via Client</h4>
+                                        <p className="text-xs text-indigo-700">Lancer le traitement sur les {embeddingStats.filter(s => !s.has_description || !s.has_voyage || !s.has_gemini).length} pages manquantes via votre navigateur.</p>
+                                    </div>
+                                    <Button 
+                                        onClick={handleClientBackfill}
+                                        className="bg-indigo-600 hover:bg-indigo-700 shadow-md"
+                                    >
+                                        <Play className="h-4 w-4 mr-2" />
+                                        Lancer le Backfill Client
+                                    </Button>
+                                </div>
+                            )}
+
+                            <div className="flex flex-wrap gap-1 p-4 bg-slate-50 rounded-xl border border-slate-200 max-h-[400px] overflow-y-auto">
+                                {embeddingStats.map(page => {
+                                    let colorClass = "bg-red-400";
+                                    if (!page.has_description) colorClass = "bg-slate-300";
+                                    else if (page.has_voyage && page.has_gemini) colorClass = "bg-emerald-500";
+                                    else if (page.has_voyage) colorClass = "bg-blue-500";
+                                    else if (page.has_gemini) colorClass = "bg-yellow-400";
+
+                                    return (
+                                        <div
+                                            key={page.id}
+                                            title={`Tome ${page.tome_numero} | Chap ${page.chapitre_numero} | Page ${page.numero}`}
+                                            className={cn("w-3 h-3 rounded-sm opacity-80 hover:opacity-100 transition-opacity cursor-help", colorClass)}
+                                        />
+                                    );
+                                })}
+                            </div>
                         </div>
                     </div>
                 )}

@@ -152,4 +152,57 @@ export async function generatePageDescription(imageSource, apiKey) {
     }
 }
 
+export async function generateGeminiEmbedding(text, imageSource, apiKey) {
+    if (!apiKey) throw new Error("Clé API manquante");
+
+    let blob;
+    try {
+        const fullRect = {
+            x: 0,
+            y: 0,
+            w: imageSource.naturalWidth,
+            h: imageSource.naturalHeight
+        };
+        blob = await cropImage(imageSource, fullRect);
+    } catch (e) {
+        console.error("Image processing error:", e);
+        throw new Error("Erreur lors du traitement de l'image.");
+    }
+
+    const base64Data = await blobToBase64(blob);
+
+    try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2-preview:embedContent?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                content: {
+                    parts: [
+                        { text: text },
+                        {
+                            inlineData: {
+                                mimeType: "image/jpeg",
+                                data: base64Data
+                            }
+                        }
+                    ]
+                },
+                taskType: "RETRIEVAL_DOCUMENT"
+            })
+        });
+
+        if (!response.ok) {
+            const err = await response.json();
+             throw new Error(err.error?.message || "Erreur Gemini Embedding");
+        }
+
+        const res = await response.json();
+        return res.embedding.values;
+    } catch (error) {
+        handleGeminiError(error);
+        console.error("Gemini Embedding Error:", error);
+        throw error;
+    }
+}
+
 

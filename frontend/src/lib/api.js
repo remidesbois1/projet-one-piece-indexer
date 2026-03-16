@@ -75,10 +75,15 @@ export const createTome = (tomeData, mangaSlug) => apiClient.post('/admin/tomes'
 export const uploadChapter = (formData) => apiClient.post('/admin/chapitres/upload', formData);
 
 
-export const savePageDescription = (pageId, description) => {
-    return apiClient.post('/analyse/page-description', { id_page: pageId, description });
+export const savePageDescription = (pageId, description, embedding_voyage = null, embedding_gemini = null) => {
+    return apiClient.post('/analyse/page-description', { 
+        id_page: pageId, 
+        description, 
+        embedding_voyage, 
+        embedding_gemini 
+    });
 };
-export const getMetadataSuggestions = () => apiClient.get('/analyse/metadata-suggestions');
+export const getMetadataSuggestions = (mangaSlug) => apiClient.get('/analyse/metadata-suggestions', { params: mangaSlug ? { manga: mangaSlug } : {} });
 
 
 
@@ -112,9 +117,11 @@ export const updateAiModels = (models) => apiClient.put('/admin/ai-models', mode
 export const getPublicAiModels = () => apiClient.get('/admin/ai-models/public');
 export const getAvailableAiModels = () => apiClient.get('/admin/ai-models/available');
 
-export const getEmbeddingStats = () => apiClient.get('/admin/ai-models/embedding-stats');
-export const triggerGeminiBackfill = () => apiClient.post('/admin/ai-models/trigger-backfill');
-export const triggerVoyageBackfill = () => apiClient.post('/admin/ai-models/trigger-backfill-voyage');
+export const getEmbeddingStats = (mangaSlug) => apiClient.get('/admin/ai-models/embedding-stats', { params: mangaSlug ? { manga: mangaSlug } : {} });
+export const triggerGeminiBackfill = (mangaSlug) => apiClient.post('/admin/ai-models/trigger-backfill', { manga: mangaSlug });
+export const triggerVoyageBackfill = (mangaSlug) => apiClient.post('/admin/ai-models/trigger-backfill-voyage', { manga: mangaSlug });
+export const savePageData = (data) => apiClient.post('/admin/ai-models/save-page-data', data);
+export const generateVoyageEmbedding = (text) => apiClient.post('/admin/ai-models/generate-voyage-embedding', { text });
 
 export const uploadPageToR2 = (formData) => apiClient.post('/admin/upload/page', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
