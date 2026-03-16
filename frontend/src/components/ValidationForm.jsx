@@ -50,8 +50,8 @@ const ValidationForm = ({ annotationData, onValidationSuccess, onCancel, onRejec
     setIsSubmitting(true);
     try {
       if (isEditing) {
-        onValidationSuccess({ id: annotationData.id, texte_propose: text });
-        await updateBubbleText(annotationData.id, text);
+        const response = await updateBubbleText(annotationData.id, text);
+        onValidationSuccess(response.data);
       } else {
         const finalBubbleData = {
           id_page: annotationData.id_page,
