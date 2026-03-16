@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, reorderBubbles, savePageDescription, getMetadataSuggestions, getPages } from '@/lib/api';
-import { analyzeBubble, generatePageDescription } from '@/lib/geminiClient';
+import { analyzeBubble, generatePageDescription, generateGeminiEmbedding } from '@/lib/geminiClient';
 import ValidationForm from '@/components/ValidationForm';
 import ApiKeyForm from '@/components/ApiKeyForm';
 import { useAuth } from '@/context/AuthContext';
@@ -29,6 +29,8 @@ import { toast } from "sonner";
 export default function AnnotatePage() {
     const { user, session, isGuest } = useAuth();
     const params = useParams();
+    const searchParams = useSearchParams();
+    const fromSearch = searchParams.get('from') === 'search';
     const pageId = params?.pageId;
     const router = useRouter();
     const { worker, modelStatus, loadModel, switchModel, downloadProgress, runOcr, activeModelKey } = useWorker();
@@ -566,10 +568,22 @@ export default function AnnotatePage() {
         setIsSavingDesc(true);
 
         try {
-            await savePageDescription(pageId, payload);
+            let geminiEmb = null;
+            
+            // Generate Gemini vector if we have a key and an image
+            if (storedKey && imageRef.current && (formData.content || formData.characters?.length > 0)) {
+                try {
+                    const textToEmbed = `${formData.content} ${formData.characters?.join(' ')}`.trim();
+                    geminiEmb = await generateGeminiEmbedding(textToEmbed, imageRef.current, storedKey);
+                } catch (embErr) {
+                    console.error("Gemini embedding error:", embErr);
+                    // We continue even if embedding fails, the backend might retry or skip
+                }
+            }
+
+            await savePageDescription(pageId, payload, null, geminiEmb);
             toast.success("Description et vecteurs enregistrés !");
         } catch (error) {
-
             setPage(previousPage);
             console.error(error);
             toast.error("Erreur lors de la sauvegarde.");
@@ -778,9 +792,12 @@ export default function AnnotatePage() {
             <div className="hidden lg:flex w-[280px] shrink-0 h-full flex-col border-r border-slate-200 bg-white z-40 relative shadow-sm">
 
                 <div className="p-4 border-b border-slate-100 flex-none space-y-4 z-10">
-                    <Link href={`/${mangaSlug}/dashboard`} className="inline-flex items-center text-[11px] font-bold text-slate-400 hover:text-slate-700 uppercase tracking-wider transition-colors">
+                    <Link 
+                        href={fromSearch ? `/${mangaSlug}/search` : `/${mangaSlug}/dashboard`} 
+                        className="inline-flex items-center text-[11px] font-bold text-slate-400 hover:text-slate-700 uppercase tracking-wider transition-colors"
+                    >
                         <ArrowLeft size={12} className="mr-2" />
-                        Retours
+                        {fromSearch ? "Retour Recherche" : "Retours Dashboard"}
                     </Link>
 
                     <div className="flex items-center justify-between">
