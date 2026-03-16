@@ -510,90 +510,7 @@ router.get('/ai-models/available', authMiddleware, roleCheck(['Admin']), async (
   }
 });
 
-let freeTierCache = null;
-let freeTierCacheTime = 0;
-const FREE_TIER_CACHE_TTL = 24 * 60 * 60 * 1000;
 
-async function pingModel(modelId, apiKey) {
-  try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: "1" }] }],
-          generationConfig: { maxOutputTokens: 1 }
-        })
-      }
-    );
-
-    if (response.ok) return { id: modelId, freeTier: true };
-
-    if (response.status === 429) {
-      const body = await response.json();
-      const msg = body.error?.message || '';
-      if (msg.includes('limit: 0')) {
-        return { id: modelId, freeTier: false };
-      }
-      return { id: modelId, freeTier: true };
-    }
-
-    return { id: modelId, freeTier: null };
-  } catch {
-    return { id: modelId, freeTier: null };
-  }
-}
-
-async function processInBatches(items, fn, concurrency = 5) {
-  const results = [];
-  for (let i = 0; i < items.length; i += concurrency) {
-    const batch = items.slice(i, i + concurrency);
-    const batchResults = await Promise.all(batch.map(fn));
-    results.push(...batchResults);
-  }
-  return results;
-}
-
-router.get('/ai-models/check-availability', authMiddleware, roleCheck(['Admin']), async (req, res) => {
-  try {
-    const now = Date.now();
-    if (freeTierCache && (now - freeTierCacheTime) < FREE_TIER_CACHE_TTL) {
-      return res.json(freeTierCache);
-    }
-
-    const apiKey = process.env.GOOGLE_API_KEY;
-    if (!apiKey) return res.status(500).json({ error: "GOOGLE_API_KEY non configurée sur le serveur." });
-
-    let models = availableModelsCache;
-    if (!models) {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}&pageSize=100`
-      );
-      if (!response.ok) throw new Error(`Google API error: ${response.status}`);
-      const data = await response.json();
-      models = (data.models || [])
-        .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
-        .map(m => ({ id: m.name.replace('models/', '') }));
-    }
-
-    const results = await processInBatches(
-      models.map(m => m.id),
-      (id) => pingModel(id, apiKey),
-      5
-    );
-
-    const availability = {};
-    results.forEach(r => { availability[r.id] = r.freeTier; });
-
-    freeTierCache = availability;
-    freeTierCacheTime = now;
-    res.json(availability);
-  } catch (error) {
-    console.error("Erreur check availability:", error);
-    res.status(500).json({ error: "Erreur vérification disponibilité." });
-  }
-});
 
 router.post('/upload/page', authMiddleware, roleCheck(['Admin']), upload.single('file'), async (req, res) => {
   const { key } = req.body;
@@ -676,23 +593,46 @@ router.post('/tomes/batch-pages', authMiddleware, roleCheck(['Admin']), express.
 
 router.get('/ai-models/embedding-stats', authMiddleware, roleCheck(['Admin']), async (req, res) => {
   try {
-    const { data, error } = await supabaseAdmin
-      .from('pages')
-      .select('id, description, embedding_voyage, embedding_gemini, id_chapitre, numero_page, statut')
-      .order('id_chapitre', { ascending: true })
-      .order('numero_page', { ascending: true });
+    const { manga } = req.query;
 
+    let query = supabaseAdmin
+      .from('pages')
+      .select(`
+        id, description, embedding_voyage, embedding_gemini, id_chapitre, numero_page, statut, url_image,
+        chapitres!inner(
+          numero,
+          tomes!inner(
+            numero,
+            mangas!inner(slug)
+          )
+        )
+      `);
+
+    if (manga) {
+      query = query.eq('chapitres.tomes.mangas.slug', manga);
+    }
+
+    const { data, error } = await query;
     if (error) throw error;
 
     const stats = data.map(page => ({
       id: page.id,
       chapitre_id: page.id_chapitre,
+      chapitre_numero: page.chapitres?.numero,
+      tome_numero: page.chapitres?.tomes?.numero,
       numero: page.numero_page,
+      url_image: page.url_image,
       has_voyage: page.embedding_voyage !== null,
       has_gemini: page.embedding_gemini !== null,
       has_description: page.description !== null && page.description !== '',
       statut: page.statut
     }));
+
+    stats.sort((a, b) => {
+      if (a.tome_numero !== b.tome_numero) return (a.tome_numero || 0) - (b.tome_numero || 0);
+      if (a.chapitre_numero !== b.chapitre_numero) return (a.chapitre_numero || 0) - (b.chapitre_numero || 0);
+      return (a.numero || 0) - (b.numero || 0);
+    });
 
     res.json(stats);
   } catch (error) {
@@ -701,24 +641,66 @@ router.get('/ai-models/embedding-stats', authMiddleware, roleCheck(['Admin']), a
   }
 });
 
+
+router.post('/ai-models/save-page-data', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+  const { id_page, description, embedding_voyage, embedding_gemini } = req.body;
+
+  if (!id_page) return res.status(400).json({ error: "Page ID requis." });
+
+  try {
+    const updateData = {};
+    if (description) updateData.description = typeof description === 'string' ? description : JSON.stringify(description);
+    if (embedding_voyage) updateData.embedding_voyage = embedding_voyage;
+    if (embedding_gemini) updateData.embedding_gemini = embedding_gemini;
+
+    const { error } = await supabaseAdmin
+      .from('pages')
+      .update(updateData)
+      .eq('id', id_page);
+
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Erreur save-page-data:", error);
+    res.status(500).json({ error: "Erreur lors de la sauvegarde des données de la page." });
+  }
+});
+
+router.post('/ai-models/generate-voyage-embedding', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+  const { text } = req.body;
+  if (!text) return res.status(400).json({ error: "Texte requis." });
+
+  try {
+    const embedding = await generateVoyageEmbedding(text, "document");
+    res.json({ embedding });
+  } catch (error) {
+    console.error("Erreur generation Voyage:", error);
+    res.status(500).json({ error: "Erreur lors de la génération de l'embedding Voyage." });
+  }
+});
+
 router.post('/ai-models/trigger-backfill', authMiddleware, roleCheck(['Admin']), async (req, res) => {
-  // We trigger this asynchronously and return immediately to avoid timeout
+  const { manga } = req.query;
   res.json({ message: "Processus de backfill Gemini (multimodal) démarré en tâche de fond." });
 
   (async () => {
     try {
-      console.log("[Backfill] Démarrage du backfill Gemini multimodal (text + image)...");
+      console.log(`[Backfill] Démarrage du backfill Gemini multimodal${manga ? ` pour ${manga}` : ''}...`);
 
-      const { data: pagesToProcess, error: pagesError } = await supabaseAdmin
+      let query = supabaseAdmin
         .from('pages')
         .select(`
-            id,
-            description,
-            url_image,
-            bulles ( texte_propose, statut )
+            id, description, url_image,
+            bulles ( texte_propose, statut ),
+            chapitres!inner( tomes!inner( mangas!inner(slug) ) )
         `)
         .is('embedding_gemini', null);
 
+      if (manga) {
+        query = query.eq('chapitres.tomes.mangas.slug', manga);
+      }
+
+      const { data: pagesToProcess, error: pagesError } = await query;
       if (pagesError) throw pagesError;
 
       let processed = 0;
@@ -748,7 +730,6 @@ router.post('/ai-models/trigger-backfill', authMiddleware, roleCheck(['Admin']),
 
         if (contentToEmbed.length > 0) {
           try {
-            // Multimodal: send text + image URL to gemini-embedding-2-preview
             const embedding = await generateGeminiEmbedding(contentToEmbed, "RETRIEVAL_DOCUMENT", page.url_image || null);
 
             const { error: updateError } = await supabaseAdmin
@@ -766,7 +747,6 @@ router.post('/ai-models/trigger-backfill', authMiddleware, roleCheck(['Admin']),
             console.error(`[Backfill] Erreur Gemini Embedding pour la page ${page.id}:`, embedError.message);
             errors++;
           }
-          // Delay to prevent rate limits (multimodal is heavier)
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
@@ -779,22 +759,27 @@ router.post('/ai-models/trigger-backfill', authMiddleware, roleCheck(['Admin']),
 });
 
 router.post('/ai-models/trigger-backfill-voyage', authMiddleware, roleCheck(['Admin']), async (req, res) => {
-  // We trigger this asynchronously and return immediately to avoid timeout
+  const { manga } = req.query;
   res.json({ message: "Processus de backfill Voyage démarré en tâche de fond." });
 
   (async () => {
     try {
-      console.log("[Backfill Voyage] Démarrage du backfill Voyage...");
+      console.log(`[Backfill Voyage] Démarrage du backfill Voyage${manga ? ` pour ${manga}` : ''}...`);
 
-      const { data: pagesToProcess, error: pagesError } = await supabaseAdmin
+      let query = supabaseAdmin
         .from('pages')
         .select(`
-            id,
-            description,
-            bulles ( texte_propose, statut )
+            id, description,
+            bulles ( texte_propose, statut ),
+            chapitres!inner( tomes!inner( mangas!inner(slug) ) )
         `)
         .is('embedding_voyage', null);
 
+      if (manga) {
+        query = query.eq('chapitres.tomes.mangas.slug', manga);
+      }
+
+      const { data: pagesToProcess, error: pagesError } = await query;
       if (pagesError) throw pagesError;
 
       let processed = 0;
@@ -824,10 +809,8 @@ router.post('/ai-models/trigger-backfill-voyage', authMiddleware, roleCheck(['Ad
 
         if (contentToEmbed.length > 0) {
           try {
-            // Call Voyage for embedding
             const embedding = await generateVoyageEmbedding(contentToEmbed, "document");
 
-            // Save it back to supabase
             const { error: updateError } = await supabaseAdmin
               .from('pages')
               .update({ embedding_voyage: embedding })
@@ -843,7 +826,6 @@ router.post('/ai-models/trigger-backfill-voyage', authMiddleware, roleCheck(['Ad
             console.error(`[Backfill Voyage] Erreur Voyage Embedding pour la page ${page.id}:`, embedError.message);
             errors++;
           }
-          // Small delay to prevent rate limits
           await new Promise(resolve => setTimeout(resolve, 500));
         }
       }

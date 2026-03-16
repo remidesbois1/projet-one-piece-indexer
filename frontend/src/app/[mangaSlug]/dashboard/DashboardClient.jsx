@@ -155,7 +155,7 @@ export default function DashboardPage() {
                     <Card
                         key={tome.id}
                         onClick={() => openTome(tome)}
-                        className="group cursor-pointer border-0 shadow-sm ring-1 ring-slate-200 bg-white overflow-hidden transition-all duration-300 hover:shadow-xl hover:ring-slate-300 hover:-translate-y-2 rounded-xl"
+                        className="group cursor-pointer border-0 shadow-sm ring-1 ring-slate-200 bg-white overflow-hidden transition-all duration-300 hover:shadow-2xl hover:ring-slate-300 hover:bg-slate-50/30 rounded-xl"
                     >
                         <div className="aspect-[2/3] w-full overflow-hidden bg-slate-100 relative">
                             {tome.cover_url ? (
@@ -164,7 +164,7 @@ export default function DashboardPage() {
                                         src={getProxiedImageUrl(tome.cover_url)}
                                         crossOrigin="anonymous"
                                         alt={`Tome ${tome.numero}`}
-                                        className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110 will-change-transform"
+                                        className="h-full w-full object-cover transition-all duration-700 group-hover:brightness-[1.05] will-change-transform"
                                         loading="lazy"
                                     />
                                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors duration-300" />
@@ -306,7 +306,7 @@ export default function DashboardPage() {
                                                     className={`
                             h-12 w-12 flex items-center justify-center rounded-lg border-2 text-sm font-bold cursor-pointer transition-all duration-200 shadow-sm
                             ${getPageStatusColor(page.statut)}
-                            scale-100 hover:scale-110 active:scale-95
+                            shadow-none hover:shadow-md hover:border-slate-400
                             `}
                                                     title={`Page ${page.numero_page} - ${page.statut}`}
                                                 >

@@ -17,7 +17,7 @@ const { generateVoyageEmbedding } = require('../utils/voyageClient');
 const { generateGeminiEmbedding } = require('../utils/geminiClient');
 
 router.post('/page-description', authMiddleware, async (req, res) => {
-    const { id_page, description } = req.body;
+    const { id_page, description, embedding_voyage, embedding_gemini } = req.body;
 
     if (!id_page || !description) {
         return res.status(400).json({ error: 'Données manquantes (id_page ou description).' });
@@ -37,46 +37,43 @@ router.post('/page-description', authMiddleware, async (req, res) => {
             return res.status(400).json({ error: "Description must be a valid JSON object." });
         }
 
-        let finalDesc = jsonDesc;
         let finalDescStr = typeof description === 'string' ? description : JSON.stringify(description);
 
+        let voyageEmb = embedding_voyage || null;
+        let geminiEmb = embedding_gemini || null;
 
+        if (!voyageEmb || !geminiEmb) {
+            const { data: pageData } = await supabaseAdmin
+                .from('pages')
+                .select('url_image')
+                .eq('id', id_page)
+                .single();
+            const pageImageUrl = pageData?.url_image || null;
 
-        // Get page image URL for multimodal Gemini embedding
-        const { data: pageData } = await supabaseAdmin
-            .from('pages')
-            .select('url_image')
-            .eq('id', id_page)
-            .single();
-        const pageImageUrl = pageData?.url_image || null;
+            let contentToEmbed = jsonDesc.content || '';
+            if (jsonDesc.metadata?.characters) {
+                contentToEmbed += ' ' + jsonDesc.metadata.characters.join(' ');
+            }
+            contentToEmbed = contentToEmbed.trim();
 
-        let contentToEmbed = finalDesc.content || '';
-        if (finalDesc.metadata?.characters) {
-            contentToEmbed += ' ' + finalDesc.metadata.characters.join(' ');
+            if (contentToEmbed.length > 0) {
+                const promises = [];
+
+                if (!voyageEmb) {
+                    promises.push(generateVoyageEmbedding(contentToEmbed, "document")
+                        .then(emb => voyageEmb = emb)
+                        .catch(e => console.error("Erreur Voyage embedding:", e.message)));
+                }
+
+                if (!geminiEmb) {
+                    promises.push(generateGeminiEmbedding(contentToEmbed, "RETRIEVAL_DOCUMENT", pageImageUrl)
+                        .then(emb => geminiEmb = emb)
+                        .catch(e => console.error("Erreur Gemini embedding:", e.message)));
+                }
+
+                await Promise.all(promises);
+            }
         }
-        contentToEmbed = contentToEmbed.trim();
-
-        console.log(`[Embedding] Génération pour la page ${id_page}... (${Math.round(contentToEmbed.length)} chars)`);
-
-        let voyageEmb = null;
-        let geminiEmb = null;
-
-        if (contentToEmbed.length > 0) {
-            const [vEmb, gEmb] = await Promise.all([
-                generateVoyageEmbedding(contentToEmbed, "document").catch(e => {
-                    console.error("Erreur Voyage embedding:", e.message);
-                    return null;
-                }),
-                // Multimodal: text + image
-                generateGeminiEmbedding(contentToEmbed, "RETRIEVAL_DOCUMENT", pageImageUrl).catch(e => {
-                    console.error("Erreur Gemini embedding:", e.message);
-                    return null;
-                })
-            ]);
-            voyageEmb = vEmb;
-            geminiEmb = gEmb;
-        }
-
 
         const { error } = await supabaseAdmin
             .from('pages')
@@ -89,7 +86,7 @@ router.post('/page-description', authMiddleware, async (req, res) => {
 
         if (error) throw error;
 
-        res.status(200).json({ success: true, message: "Description normalisée et vecteurs (Voyage + Gemini) mis à jour." });
+        res.status(200).json({ success: true, message: "Description et vecteurs mis à jour." });
 
     } catch (error) {
         console.error("Erreur sauvegarde description:", error);
@@ -97,16 +94,19 @@ router.post('/page-description', authMiddleware, async (req, res) => {
     }
 });
 
-
-
 router.get('/metadata-suggestions', async (req, res) => {
+    const { manga } = req.query;
     try {
-        const { data, error } = await supabaseAdmin
+        let query = supabaseAdmin
             .from('pages')
-            .select('description')
+            .select('description, chapitres!inner(tomes!inner(mangas!inner(slug)))')
             .not('description', 'is', null);
 
-        if (error) throw error;
+        if (manga) {
+            query = query.eq('chapitres.tomes.mangas.slug', manga);
+        }
+
+        const { data, error } = await query;
 
         const characters = new Set();
         const arcs = new Set();

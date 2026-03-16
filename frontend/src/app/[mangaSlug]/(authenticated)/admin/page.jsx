@@ -178,7 +178,7 @@ export default function AdminDashboard() {
 
 
                     <TabsContent value="ai" className="m-0 p-8 outline-none">
-                        <AiModelManager />
+                        <AiModelManager mangaSlug={params.mangaSlug} />
                     </TabsContent>
 
                     <TabsContent value="security" className="m-0 p-8 outline-none">
