@@ -23,14 +23,14 @@ Le **Projet Poneglyph** est une plateforme de haute performance dédiée à la n
 * **Framework :** React 19 / Next.js & Vite.
 * **CSS** : [ShadCn UI](https://ui.shadcn.com/)
 * **OCR Hybride :** **TrOCR Fine-tuned** (Local via WebGPU) & **FireRed-OCR** (Cloud via Modal).
-* **Détection de Bulles Locale :** **YOLO V8 Medium Fine-tuned** [`Remidesbois/YoloPiece_BubbleDetector`](https://huggingface.co/Remidesbois/YoloPiece_BubbleDetector) exécuté via WebGPU.
+* **Détection de Bulles Locale :** **YOLO V11 Medium Fine-tuned** [`Remidesbois/YoloPiece_BubbleDetector`](https://huggingface.co/Remidesbois/YoloPiece_BubbleDetector) exécuté via WebGPU.
 * **State Management :** Context API & LocalStorage.
 
 ### **Backend & Services (Cloud)**
 
 * **Serveur API :** Node.js / Express.
 * **Base de Données :** Supabase (PostgreSQL) avec l'extension **pgvector**.
-* **LLM & Embeddings :** Google Gemini 2.5 Flash-Lite, Voyage AI (`voyage-4-large`) & Gemini Multimodal (`gemini-embedding-2-preview`).
+* **LLM & Embeddings :** Google Gemini 3.1 Flash-Lite, Voyage AI (`voyage-4-large`) & Gemini Multimodal (`gemini-embedding-2-preview`).
 * **Inférence GPU Cloud :** Modal (pour l'OCR FireRed de haute précision).
 
 ---
@@ -93,7 +93,7 @@ Nouveau modèle de pointe pour une précision extrême, déployé en mode *serve
 * **Précision :** CER **< 0.8%** - WER **< 2.4%** (SOTA pour mon projet).
 * **Infrastructure :** Inférence sur GPU **NVIDIA L4** via la plateforme Modal.
 * **Usage :** Idéal pour les textes difficiles, les bulles denses ou les configurations sans support WebGPU.
-* **Coût :** ~0,000222 $ / Secondes où le container est en cours d'éxécution.
+* **Coût :** ~0,000222 $ / secondes où le container est en cours d'éxécution.
 
 > Modal offre 30$ de crédit par mois (~37.5h d'inférence), au delà de ce seuil, le service se coupe.
 
@@ -119,12 +119,12 @@ Une fois les bulles détectées, un modèle spécialisé les trie intelligemment
 | **Taille ONNX** | **~170 MB** |
 | **Exécution** | Local (Web worker) |
 
-### **Google Gemini 2.5 Flash-Lite (Cloud)**
+### **Google Gemini ~~2.5~~ 3.1 Flash-Lite (Cloud)**
 
 Fallback pour les configurations ne supportant pas WebGPU.
 
-* **Coût :** ~0,00004 $ / OCR.
-* **Rôle clé :** A servi à générer le corpus de "distillation" pour entraîner les modèles TrOCR locaux.
+* **Coût :** 500 requêtes gratuites sur le free plan, au delà : 0.00008$ / OCR.
+* **Rôle clé :** Gemini 2.5 Flash-Lite a servi en grande partie à générer le corpus de "distillation" pour entraîner les modèles locaux.
 
 ---
 
@@ -150,7 +150,7 @@ Le projet expose une API sécurisée pour les développeurs.
 
 ## **Sécurité & FinOps**
 
-Approche rigoureuse pour maintenir un coût de fonctionnement minimal (**≈ 4.50 € / mois**).
+Approche rigoureuse pour maintenir un coût de fonctionnement minimal (**≈ 5 € / mois**).
 
 * **Watermarking dynamique :** Protection des visuels.
 * **Confidentialité :** Clés API personnelles stockées en LocalStorage (Optionnel - Uniquement pour l'OCR/Analyse). La recherche sémantique utilise désormais les clés serveur.
@@ -163,8 +163,8 @@ Approche rigoureuse pour maintenir un coût de fonctionnement minimal (**≈ 4.5
 Le script `/script_docker` automatise le cycle de vie du modèle IA :
 
 1. **Extraction :** Récupération des bulles validées (Supabase).
-2. **Fine-Tuning :** Entraînement incrémental de TrOCR (Base & Large) sur les nouvelles données.
-3. **Déploiement :** Push automatique vers Hugging Face (`Remidesbois/trocr-onepiece-fr` et `Remidesbois/trocr-onepiece-fr-large`) si les métriques (CER/WER) sont validées.
+2. **Fine-Tuning :** Entraînement incrémental de TrOCR (Base & Large), de FireRed, et des modèles de détection/tri des bulles, sur les nouvelles données.
+3. **Déploiement :** Push automatique vers Hugging Face si les métriques (CER/WER, mAP50) sont validées.
 
 ---
 
