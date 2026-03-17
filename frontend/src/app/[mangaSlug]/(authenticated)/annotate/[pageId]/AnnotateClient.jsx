@@ -3,28 +3,27 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, reorderBubbles, savePageDescription, getMetadataSuggestions, getPages, updateBubbleGeometry } from '@/lib/api';
+import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, reorderBubbles, savePageDescription, getMetadataSuggestions, getPages } from '@/lib/api';
 import { analyzeBubble, generatePageDescription, generateGeminiEmbedding } from '@/lib/geminiClient';
-import ValidationForm from '@/components/ValidationForm';
 import ApiKeyForm from '@/components/ApiKeyForm';
 import { useAuth } from '@/context/AuthContext';
-import { useWorker, OCR_MODELS } from '@/context/WorkerContext';
-import { useDetection } from '@/context/DetectionContext';
+import { OCR_MODELS } from '@/context/WorkerContext';
 import { useManga } from '@/context/MangaContext';
-import { DndContext, closestCenter } from '@dnd-kit/core';
-import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
-import { SortableBubbleItem } from '@/components/SortableBubbleItem';
-import DraggableWrapper from '@/components/DraggableWrapper';
-import { cn, cropImage, getProxiedImageUrl } from '@/lib/utils';
+import { arrayMove } from '@dnd-kit/sortable';
+import { useAnnotationInteractions } from '@/hooks/useAnnotationInteractions';
+import { useAnnotationOCR } from '@/hooks/useAnnotationOCR';
+import { useAnnotationDetection } from '@/hooks/useAnnotationDetection';
+import { useAnnotationMetadata } from '@/hooks/useAnnotationMetadata';
+import { getProxiedImageUrl } from '@/lib/utils';
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, Send, Loader2, MousePointer2, Cpu, CloudLightning, Download, Settings2, FileText, Save, Plus, X, Search, ChevronLeft, ChevronRight, Shield, Code, Sparkles, RotateCcw, Eye, Users, MapPin, AlignLeft } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { ArrowLeft, Send, X, Shield, FileText } from "lucide-react";
 import { toast } from "sonner";
+import AnnotateLeftSidebar from '@/components/AnnotateLeftSidebar';
+import AnnotateCanvas from '@/components/AnnotateCanvas';
+import AnnotateAnnotationSidebar from '@/components/AnnotateAnnotationSidebar';
+import AnnotateEditorDialog from '@/components/AnnotateEditorDialog';
+import AnnotateMetadataModal from '@/components/AnnotateMetadataModal';
 
 export default function AnnotatePage() {
     const { user, session, isGuest } = useAuth();
@@ -33,78 +32,24 @@ export default function AnnotatePage() {
     const fromSearch = searchParams.get('from') === 'search';
     const pageId = params?.pageId;
     const router = useRouter();
-    const { worker, modelStatus, loadModel, switchModel, downloadProgress, runOcr, activeModelKey } = useWorker();
-    const {
-        detectBubbles,
-        detectionStatus,
-        loadDetectionModel,
-        downloadProgress: detectionProgress
-    } = useDetection();
+    const { mangaSlug, currentManga } = useManga();
 
     const [page, setPage] = useState(null);
     const [existingBubbles, setExistingBubbles] = useState([]);
     const [error, setError] = useState(null);
-
-    const [isAutoDetecting, setIsAutoDetecting] = useState(false);
-    const detectionQueueRef = useRef([]);
-    const [queueLength, setQueueLength] = useState(0);
-
-    const [hoveredBubble, setHoveredBubble] = useState(null);
-    const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
-
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [loadingText, setLoadingText] = useState("Analyse en cours...");
-
     const [pendingAnnotation, setPendingAnnotation] = useState(null);
-    const [showApiKeyModal, setShowApiKeyModal] = useState(false);
-    const [ocrSource, setOcrSource] = useState(null);
-
-    const [isDrawing, setIsDrawing] = useState(false);
-    const [startPoint, setStartPoint] = useState(null);
-    const [endPoint, setEndPoint] = useState(null);
     const [rectangle, setRectangle] = useState(null);
     const [imageDimensions, setImageDimensions] = useState(null);
-
-    const [activeInteraction, setActiveInteraction] = useState({ type: null, handle: null, startX: 0, startY: 0, initialBox: null, targetId: null });
-    const [isShiftPressed, setIsShiftPressed] = useState(false);
+    const [ocrSource, setOcrSource] = useState(null);
+    const [debugImageUrl, setDebugImageUrl] = useState(null);
+    const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+    const [showDescModal, setShowDescModal] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
 
-
-
-    const [debugImageUrl, setDebugImageUrl] = useState(null);
-
-    const [preferLocalOCR, setPreferLocalOCR] = useState(false);
-    const [geminiKey, setGeminiKey] = useState(null);
-
-    useEffect(() => {
-        if (typeof window !== 'undefined') {
-            setPreferLocalOCR(localStorage.getItem('preferLocalOCR') !== 'false');
-
-            const loadKey = () => setGeminiKey(localStorage.getItem('google_api_key'));
-            loadKey();
-            window.addEventListener('storage', loadKey);
-
-            const handleKeyDown = (e) => { if (e.key === 'Shift') setIsShiftPressed(true); };
-            const handleKeyUp = (e) => { if (e.key === 'Shift') setIsShiftPressed(false); };
-            const handleBlur = () => setIsShiftPressed(false);
-
-            window.addEventListener('keydown', handleKeyDown);
-            window.addEventListener('keyup', handleKeyUp);
-            window.addEventListener('blur', handleBlur);
-
-            return () => {
-                window.removeEventListener('storage', loadKey);
-                window.removeEventListener('keydown', handleKeyDown);
-                window.removeEventListener('keyup', handleKeyUp);
-                window.removeEventListener('blur', handleBlur);
-            };
-        }
-    }, []);
-
-
-    const [showDescModal, setShowDescModal] = useState(false);
-    const [isSavingDesc, setIsSavingDesc] = useState(false);
-    const [isGeneratingAI, setIsGeneratingAI] = useState(false);
+    const containerRef = useRef(null);
+    const imageRef = useRef(null);
 
     const [chapterPages, setChapterPages] = useState([]);
     const [navContext, setNavContext] = useState({ prev: null, next: null });
@@ -117,13 +62,9 @@ export default function AnnotatePage() {
         return () => window.removeEventListener('resize', checkMobile);
     }, []);
 
-    const containerRef = useRef(null);
-    const imageRef = useRef(null);
-
     useEffect(() => {
         const imgEl = imageRef.current;
         if (!imgEl) return;
-
         const observer = new ResizeObserver((entries) => {
             const entry = entries[0];
             if (entry && imgEl.naturalWidth) {
@@ -134,252 +75,47 @@ export default function AnnotatePage() {
                 });
             }
         });
-
         observer.observe(imgEl);
         return () => observer.disconnect();
     }, [pageId, page]);
 
-    const [formData, setFormData] = useState({
-        content: "",
-        arc: "",
-        characters: []
+    const {
+        formData, setFormData, suggestions, charInput, setCharInput,
+        isSavingDesc, isGeneratingAI, tabMode, setTabMode, jsonInput,
+        jsonError, handleJsonChange, handleSaveDescription, handleGenerateAI,
+        addCharacter, removeCharacter
+    } = useAnnotationMetadata({
+        page, setPage, pageId, imageRef, showDescModal, setShowDescModal, setShowApiKeyModal
     });
-    const [suggestions, setSuggestions] = useState({
-        arcs: [],
-        characters: []
+
+    const {
+        preferLocalOCR, toggleOcrPreference, geminiKey, activeModelKey,
+        modelStatus, loadModel, switchModel, downloadProgress, runLocalOcr,
+        handleRetryWithCloud
+    } = useAnnotationOCR({
+        imageRef, pageId, rectangle, pendingAnnotation, setPendingAnnotation,
+        setIsSubmitting, setLoadingText, setIsModalOpen, setOcrSource,
+        setDebugImageUrl, setShowApiKeyModal
     });
-    const [charInput, setCharInput] = useState("");
 
-    const [isFetchingSuggestions, setIsFetchingSuggestions] = useState(false);
+    const {
+        isAutoDetecting, setIsAutoDetecting, queueLength, detectionStatus,
+        loadDetectionModel, detectionProgress, handleExecuteDetection,
+        processNextBubble
+    } = useAnnotationDetection({
+        imageRef, pageId, setRectangle, setPendingAnnotation, setDebugImageUrl,
+        runLocalOcr, setIsSubmitting, setLoadingText
+    });
 
-    const [tabMode, setTabMode] = useState("form");
-    const [jsonInput, setJsonInput] = useState("");
-    const [jsonError, setJsonError] = useState(null);
-
-    const { mangaSlug, currentManga } = useManga();
-
-    const pageTitle = currentManga
-        ? `Annotation : ${currentManga.titre}${page?.chapitre?.titre ? ` - ${page.chapitre.titre}` : ''}`
-        : "Annotation";
-
-    useEffect(() => {
-        if (tabMode === 'form') {
-            const jsonStructure = {
-                content: formData.content,
-                metadata: {
-                    arc: formData.arc,
-                    characters: formData.characters
-                }
-            };
-            setJsonInput(JSON.stringify(jsonStructure, null, 4));
-            setJsonError(null);
-        }
-    }, [formData, tabMode]);
-
-    const handleJsonChange = (e) => {
-        const val = e.target.value;
-        setJsonInput(val);
-        try {
-            const parsed = JSON.parse(val);
-
-            if (typeof parsed !== 'object' || parsed === null) {
-                throw new Error("Le JSON doit être un objet.");
-            }
-            if (!parsed.metadata || typeof parsed.metadata !== 'object') {
-                throw new Error("L'objet doit contenir une clé 'metadata'.");
-            }
-
-            setJsonError(null);
-            setFormData(prev => ({
-                ...prev,
-                content: parsed.content || "",
-                arc: parsed.metadata.arc || "",
-                characters: Array.isArray(parsed.metadata.characters) ? parsed.metadata.characters : []
-            }));
-        } catch (err) {
-            setJsonError(err.message);
-        }
-    };
-
-    useEffect(() => {
-        if (page?.description) {
-            let desc = page.description;
-            if (typeof desc === 'string') {
-                try {
-                    desc = JSON.parse(desc);
-                } catch (e) {
-                    desc = { content: page.description, metadata: { arc: "", characters: [] } };
-                }
-            }
-
-            const newFormData = {
-                content: desc.content || "",
-                arc: desc.metadata?.arc || "",
-                characters: desc.metadata?.characters || []
-            };
-
-            setFormData(newFormData);
-
-            const jsonStructure = {
-                content: newFormData.content,
-                metadata: {
-                    arc: newFormData.arc,
-                    characters: newFormData.characters
-                }
-            };
-            setJsonInput(JSON.stringify(jsonStructure, null, 4));
-            setJsonError(null);
-
-        } else if (page) {
-            const newFormData = {
-                content: "",
-                arc: "",
-                characters: []
-            };
-            setFormData(newFormData);
-
-            const jsonStructure = {
-                content: newFormData.content,
-                metadata: {
-                    arc: newFormData.arc,
-                    characters: newFormData.characters
-                }
-            };
-            setJsonInput(JSON.stringify(jsonStructure, null, 4));
-            setJsonError(null);
-        }
-    }, [page]);
-
-    const fetchSuggestions = useCallback(async () => {
-        if (!session?.access_token) return;
-        setIsFetchingSuggestions(true);
-        try {
-            const res = await getMetadataSuggestions();
-            setSuggestions(res.data);
-        } catch (err) {
-            console.error("Erreur suggestions:", err);
-        } finally {
-            setIsFetchingSuggestions(false);
-        }
-    }, [session]);
-
-    useEffect(() => {
-        if (showDescModal) {
-            fetchSuggestions();
-        }
-    }, [showDescModal, fetchSuggestions]);
-
-    const lastRequestId = useRef(0);
-
-    const runLocalOcr = async (cropData = null) => {
-        try {
-            const modelData = OCR_MODELS[activeModelKey];
-            const areaToCrop = cropData || rectangle || (pendingAnnotation ? { x: pendingAnnotation.x, y: pendingAnnotation.y, w: pendingAnnotation.w, h: pendingAnnotation.h } : null);
-            if (!areaToCrop) {
-                setIsModalOpen(true);
-                return;
-            }
-
-            if (!modelData || (modelData.type === 'local' && modelStatus !== 'ready')) {
-                setIsModalOpen(true);
-                return;
-            }
-
-            if (preferLocalOCR && modelData.type !== 'local') {
-                setIsModalOpen(true);
-                return;
-            }
-            if (!preferLocalOCR && modelData.type !== 'api') {
-                setIsModalOpen(true);
-                return;
-            }
-
-            if (modelData?.key === 'gemini') {
-                handleRetryWithCloud({ id_page: parseInt(pageId, 10), ...areaToCrop, texte_propose: '' });
-                return;
-            }
-
-            if (modelData?.key === 'poneglyph') {
-                setLoadingText("Analyse Cloud Poneglyph...");
-                setIsSubmitting(true);
-                const blob = await cropImage(imageRef.current, areaToCrop);
-
-                const response = await fetch('/api/ocr', {
-                    method: 'POST',
-                    body: blob
-                });
-
-                if (!response.ok) throw new Error("Erreur Serveur Poneglyph (Proxy)");
-                const result = await response.json();
-
-                const geometry = cropData || rectangle;
-                setOcrSource('poneglyph');
-                setPendingAnnotation({
-                    id_page: parseInt(pageId, 10),
-                    ...geometry,
-                    texte_propose: result.text
-                });
-                setIsSubmitting(false);
-                setIsModalOpen(true);
-                return;
-            }
-
-            setLoadingText("Analyse Locale...");
-            setIsSubmitting(true);
-            const requestId = Date.now();
-            lastRequestId.current = requestId;
-
-            const blob = await cropImage(imageRef.current, areaToCrop);
-            runOcr(blob, requestId);
-        } catch (err) {
-            console.error(err);
-            toast.error("Erreur OCR: " + err.message);
-            setIsSubmitting(false);
-            setIsModalOpen(true);
-        }
-    };
-
-    useEffect(() => {
-        if (!worker) return;
-
-        const handleMessage = async (e) => {
-            const { status, text, error, url, requestId } = e.data;
-
-            if (requestId && requestId !== lastRequestId.current) {
-                console.warn(`[OCR] Ignored outdated response for ID ${requestId} (Expected: ${lastRequestId.current})`);
-                return;
-            }
-
-            if (status === 'debug_image') setDebugImageUrl(url);
-
-            if (status === 'complete') {
-                setOcrSource('local');
-                setPendingAnnotation(prev => {
-                    if (!prev) return null;
-                    return { ...prev, texte_propose: text };
-                });
-                setIsSubmitting(false);
-                setIsModalOpen(true);
-            }
-
-
-            if (status === 'error') {
-                if (modelStatus === 'ready') {
-                    console.error("Erreur OCR:", error);
-                    setIsSubmitting(false);
-                }
-            }
-        };
-
-        worker.addEventListener('message', handleMessage);
-        return () => worker.removeEventListener('message', handleMessage);
-    }, [worker, modelStatus]);
-
-    const toggleOcrPreference = () => {
-        const newValue = !preferLocalOCR;
-        setPreferLocalOCR(newValue);
-        localStorage.setItem('preferLocalOCR', JSON.stringify(newValue));
-    };
+    const {
+        isDrawing, startPoint, endPoint, mousePos, isShiftPressed,
+        hoveredBubble, setHoveredBubble, handleMouseDown, handleMouseMove,
+        handleMouseUp, handleInteractionStart
+    } = useAnnotationInteractions({
+        containerRef, imageRef, imageDimensions, existingBubbles, setExistingBubbles,
+        pendingAnnotation, setPendingAnnotation, setRectangle, isGuest, isMobile,
+        pageStatus: page?.statut, isSubmitting, showApiKeyModal, showDescModal
+    });
 
     const fetchBubbles = useCallback(() => {
         if (pageId && (session?.access_token || isGuest)) {
@@ -418,9 +154,6 @@ export default function AnnotatePage() {
     useEffect(() => {
         const handleKeyDown = (e) => {
             if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
-                if (e.key === 'Enter' && e.ctrlKey && pendingAnnotation) {
-                }
-
                 if (e.key === 'Escape') {
                     if (pendingAnnotation) setPendingAnnotation(null);
                     if (showDescModal) setShowDescModal(false);
@@ -428,7 +161,6 @@ export default function AnnotatePage() {
                 }
                 return;
             }
-
             switch (e.key) {
                 case 'ArrowLeft':
                     if (navContext.prev) router.push(`/${mangaSlug}/annotate/${navContext.prev.id}`);
@@ -437,137 +169,27 @@ export default function AnnotatePage() {
                     if (navContext.next) router.push(`/${mangaSlug}/annotate/${navContext.next.id}`);
                     break;
                 case 'Escape':
-                    if (isDrawing) {
-                        setIsDrawing(false);
-                        setStartPoint(null);
-                        setEndPoint(null);
-                    }
+                    if (isDrawing) { /* dealt with in hook but can be here too */ }
                     if (pendingAnnotation) setPendingAnnotation(null);
-                    break;
-                default:
                     break;
             }
         };
-
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [navContext, router, isDrawing, pendingAnnotation, showDescModal, showApiKeyModal, mangaSlug]);
+    }, [navContext, router, pendingAnnotation, showDescModal, showApiKeyModal, mangaSlug, isDrawing]);
 
     const goToPrev = () => navContext.prev && router.push(`/${mangaSlug}/annotate/${navContext.prev.id}`);
     const goToNext = () => navContext.next && router.push(`/${mangaSlug}/annotate/${navContext.next.id}`);
 
     useEffect(() => {
         if (isAutoDetecting) return;
-
         if (rectangle && imageRef.current) {
             const analysisData = { id_page: parseInt(pageId, 10), ...rectangle, texte_propose: '' };
             setPendingAnnotation(analysisData);
             setDebugImageUrl(null);
-
             runLocalOcr();
         }
     }, [rectangle, pageId, isAutoDetecting, activeModelKey]);
-
-    const processNextBubble = useCallback(async () => {
-        if (!imageRef.current) return;
-
-        if (detectionQueueRef.current.length === 0) {
-            setIsAutoDetecting(false);
-            setQueueLength(0);
-            setRectangle(null);
-            toast.success("Détection automatique terminée !");
-            return;
-        }
-
-        const nextBox = detectionQueueRef.current.shift();
-        setQueueLength(detectionQueueRef.current.length);
-
-        setRectangle(nextBox);
-
-        const analysisData = { id_page: parseInt(pageId, 10), ...nextBox, texte_propose: '' };
-        setPendingAnnotation(analysisData);
-        setDebugImageUrl(null);
-
-        runLocalOcr(nextBox);
-    }, [pageId, activeModelKey, modelStatus, runOcr]);
-
-    const handleExecuteDetection = async () => {
-        if (!imageRef.current) return;
-
-        try {
-            setLoadingText("Détection des bulles...");
-            setIsSubmitting(true);
-
-            const response = await fetch(imageRef.current.src);
-            const blob = await response.blob();
-
-            const boxes = await detectBubbles(blob);
-
-            if (boxes.length === 0) {
-                toast.info("Aucune bulle détectée.");
-                setIsSubmitting(false);
-                return;
-            }
-
-            toast.success(`${boxes.length} bulles détectées !`);
-
-            detectionQueueRef.current = boxes;
-            setQueueLength(boxes.length);
-            setIsAutoDetecting(true);
-
-            setTimeout(() => {
-                processNextBubble();
-            }, 100);
-
-
-        } catch (err) {
-            console.error("Detection error:", err);
-            toast.error("Erreur lors de la détection: " + err.message);
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
-
-
-
-
-    const handleRetryWithCloud = (dataOverride = null) => {
-        const dataToUse = dataOverride || pendingAnnotation;
-        if (!dataToUse) return;
-
-        const storedKey = localStorage.getItem('google_api_key');
-        if (!storedKey) {
-            if (!pendingAnnotation) setPendingAnnotation(dataToUse);
-            return;
-        }
-
-        setLoadingText("Analyse Cloud (Google)...");
-        setIsSubmitting(true);
-        setDebugImageUrl(null);
-
-        analyzeBubble(imageRef.current, dataToUse, storedKey)
-            .then(response => {
-                setPendingAnnotation(prev => ({ ...prev, texte_propose: response.data.texte_propose }));
-                setOcrSource('cloud');
-                setIsModalOpen(true);
-            })
-
-            .catch(error => {
-                if (error.message === "QUOTA_EXCEEDED") {
-                    toast.error("Quota API Gemini dépassé !", {
-                        description: "Votre clé a atteint sa limite gratuite (RPM/TPM). Réessayez dans une minute ou changez de clé."
-                    });
-                } else {
-                    console.error("Cloud OCR Error:", error);
-                    if (error.message?.includes('API key') || error.toString().includes('400')) {
-                        localStorage.removeItem('google_api_key');
-                        setShowApiKeyModal(true);
-                    }
-                }
-                setIsModalOpen(true);
-            })
-            .finally(() => setIsSubmitting(false));
-    };
 
     const handleSaveApiKey = (key) => {
         localStorage.setItem('google_api_key', key);
@@ -576,122 +198,17 @@ export default function AnnotatePage() {
         if (showDescModal) handleSaveDescription();
     };
 
-    const handleSaveDescription = async () => {
-        const payload = {
-            content: formData.content,
-            metadata: {
-                arc: formData.arc,
-                characters: formData.characters
-            }
-        };
-
-        const storedKey = localStorage.getItem('google_api_key');
-        if (!storedKey) {
-            setShowApiKeyModal(true);
-            return;
-        }
-
-        const previousPage = { ...page };
-        setPage(prev => ({
-            ...prev,
-            description: JSON.stringify(payload)
-        }));
-        setShowDescModal(false);
-        setIsSavingDesc(true);
-
-        try {
-            let geminiEmb = null;
-
-            // Generate Gemini vector if we have a key and an image
-            if (storedKey && imageRef.current && (formData.content || formData.characters?.length > 0)) {
-                try {
-                    const textToEmbed = `${formData.content} ${formData.characters?.join(' ')}`.trim();
-                    geminiEmb = await generateGeminiEmbedding(textToEmbed, imageRef.current, storedKey);
-                } catch (embErr) {
-                    console.error("Gemini embedding error:", embErr);
-                    // We continue even if embedding fails, the backend might retry or skip
-                }
-            }
-
-            await savePageDescription(pageId, payload, null, geminiEmb);
-            toast.success("Description et vecteurs enregistrés !");
-        } catch (error) {
-            setPage(previousPage);
-            console.error(error);
-            toast.error("Erreur lors de la sauvegarde.");
-        } finally {
-            setIsSavingDesc(false);
-        }
-    };
-
-    const handleGenerateAI = async () => {
-        const storedKey = localStorage.getItem('google_api_key');
-        if (!storedKey) {
-            setShowApiKeyModal(true);
-            return;
-        }
-
-        setIsGeneratingAI(true);
-        try {
-            const res = await generatePageDescription(imageRef.current, storedKey);
-            const aiData = res.data;
-
-            setFormData({
-                content: aiData.content || "",
-                arc: aiData.metadata?.arc || "",
-                characters: Array.isArray(aiData.metadata?.characters) ? aiData.metadata.characters : []
-            });
-
-            setJsonInput(JSON.stringify(aiData, null, 4));
-            setJsonError(null);
-
-        } catch (error) {
-            if (error.message === "QUOTA_EXCEEDED") {
-                toast.error("Quota API Gemini dépassé !", {
-                    description: "Votre clé a atteint sa limite. Veuillez patienter."
-                });
-            } else {
-                console.error("Erreur génération AI:", error);
-                toast.error("Erreur lors de la génération par IA.", {
-                    description: "Vérifiez votre clé API."
-                });
-            }
-        } finally {
-            setIsGeneratingAI(false);
-        }
-    };
-
-    const addCharacter = (char) => {
-        const cleanChar = char.trim();
-        if (cleanChar && !formData.characters.includes(cleanChar)) {
-            setFormData(prev => ({
-                ...prev,
-                characters: [...prev.characters, cleanChar]
-            }));
-        }
-        setCharInput("");
-    };
-
-    const removeCharacter = (char) => {
-        setFormData(prev => ({
-            ...prev,
-            characters: prev.characters.filter(c => c !== char)
-        }));
-    };
-
     const handleEditBubble = (bubble) => {
         if (isGuest || isMobile) return;
         setPendingAnnotation(bubble);
         setIsModalOpen(true);
     };
 
-
     const handleDeleteBubble = async (bubbleId) => {
         if (isGuest || isMobile) return;
         if (window.confirm("Supprimer cette annotation ?")) {
             const previousBubbles = [...existingBubbles];
             setExistingBubbles(prev => prev.filter(b => b.id !== bubbleId));
-
             try {
                 await deleteBubble(bubbleId);
                 toast.success("Annotation supprimée.");
@@ -706,25 +223,15 @@ export default function AnnotatePage() {
         setPendingAnnotation(null);
         setDebugImageUrl(null);
         setIsModalOpen(false);
-
-
         if (newData) {
             setExistingBubbles(prev => {
                 const exists = prev.find(b => b.id === newData.id);
-                if (exists) {
-                    return prev.map(b => b.id === newData.id ? { ...b, ...newData } : b);
-                } else {
-                    return [...prev, newData].sort((a, b) => a.order - b.order);
-                }
+                if (exists) return prev.map(b => b.id === newData.id ? { ...b, ...newData } : b);
+                return [...prev, newData].sort((a, b) => a.order - b.order);
             });
         }
-
-        // fetchBubbles(); // Désactivé pour éviter de recharger d'anciennes données après un update local réussi
-
         if (isAutoDetecting) {
-            setTimeout(() => {
-                processNextBubble();
-            }, 300);
+            setTimeout(() => processNextBubble(), 300);
         } else {
             setRectangle(null);
         }
@@ -741,189 +248,6 @@ export default function AnnotatePage() {
         }
     };
 
-    const getContainerCoords = (event) => {
-        const container = containerRef.current;
-        if (!container) return null;
-        const rect = container.getBoundingClientRect();
-        return { x: event.clientX - rect.left, y: event.clientY - rect.top };
-    };
-
-    const handleMouseDown = (event) => {
-        if (isGuest || isMobile) return;
-        if (page?.statut !== 'not_started' && page?.statut !== 'in_progress') return;
-        if (isSubmitting || showApiKeyModal || showDescModal) return;
-
-        event.preventDefault();
-        setIsDrawing(true);
-        const coords = getContainerCoords(event);
-        setStartPoint(coords);
-        setEndPoint(coords);
-        setRectangle(null);
-        setPendingAnnotation(null);
-    };
-
-    const handleMouseMove = (event) => {
-        const coords = getContainerCoords(event);
-        if (coords) setMousePos(coords);
-        if (!isDrawing) return;
-        event.preventDefault();
-        setEndPoint(coords);
-    };
-
-    const handleMouseUp = (event) => {
-        if (isDrawing) {
-            event.preventDefault();
-            setIsDrawing(false);
-
-            const imageEl = imageRef.current;
-            if (!imageEl || !startPoint || !endPoint || imageEl.naturalWidth === 0) return;
-
-            const scale = imageEl.naturalWidth / imageEl.offsetWidth;
-            const currentEndPoint = getContainerCoords(event) || endPoint;
-
-            const unscaledRect = {
-                x: Math.min(startPoint.x, currentEndPoint.x),
-                y: Math.min(startPoint.y, currentEndPoint.y),
-                w: Math.abs(startPoint.x - currentEndPoint.x),
-                h: Math.abs(startPoint.y - currentEndPoint.y),
-            };
-
-            if (unscaledRect.w > 10 && unscaledRect.h > 10) {
-                setRectangle({
-                    x: Math.round(unscaledRect.x * scale),
-                    y: Math.round(unscaledRect.y * scale),
-                    w: Math.round(unscaledRect.w * scale),
-                    h: Math.round(unscaledRect.h * scale),
-                });
-            } else {
-                setStartPoint(null);
-                setEndPoint(null);
-            }
-        }
-
-        if (activeInteraction.type) {
-            const { targetId } = activeInteraction;
-
-            if (targetId) {
-                // Trouver la bulle dans l'état local actuel (qui a été mis à jour par handleGlobalMouseMove)
-                const currentBox = existingBubbles.find(b => b.id === targetId);
-
-                if (currentBox) {
-                    const geometry = {
-                        x: currentBox.x,
-                        y: currentBox.y,
-                        w: currentBox.w,
-                        h: currentBox.h
-                    };
-                    updateBubbleGeometry(targetId, geometry)
-                        .then(() => {
-                            toast.success("Position mise à jour");
-                        })
-                        .catch(err => {
-                            console.error("Erreur update geometry:", err);
-                            toast.error("Erreur lors de la mise à jour de la position");
-                        });
-                }
-            } else if (pendingAnnotation && !pendingAnnotation.id && activeInteraction.type) {
-                // Pour une nouvelle bulle en cours de création, on a déjà mis à jour setRectangle via handleGlobalMouseMove
-            }
-
-            setActiveInteraction({ type: null, handle: null, startX: 0, startY: 0, initialBox: null, targetId: null });
-        }
-    };
-
-    const handleInteractionStart = (e, type, handle = null, targetBubble = null) => {
-        e.stopPropagation();
-        e.preventDefault();
-
-        const bubbleToUse = targetBubble || pendingAnnotation;
-        if (!bubbleToUse) return;
-
-        setActiveInteraction({
-            type,
-            handle,
-            startX: e.clientX,
-            startY: e.clientY,
-            targetId: bubbleToUse.id || null,
-            initialBox: {
-                x: bubbleToUse.x,
-                y: bubbleToUse.y,
-                w: bubbleToUse.w,
-                h: bubbleToUse.h
-            }
-        });
-    };
-
-    useEffect(() => {
-        if (!activeInteraction.type) return;
-
-        const handleGlobalMouseMove = (e) => {
-            if (!activeInteraction.type || !imageRef.current || !imageDimensions) return;
-
-            const scale = imageRef.current.naturalWidth / imageRef.current.offsetWidth;
-            const dx = (e.clientX - activeInteraction.startX) * scale;
-            const dy = (e.clientY - activeInteraction.startY) * scale;
-
-            const { initialBox, type, handle, targetId } = activeInteraction;
-            let newBox = { ...initialBox };
-
-            if (type === 'move') {
-                newBox.x = Math.round(initialBox.x + dx);
-                newBox.y = Math.round(initialBox.y + dy);
-            } else if (type === 'resize') {
-                if (handle.includes('e')) newBox.w = Math.max(20, Math.round(initialBox.w + dx));
-                if (handle.includes('s')) newBox.h = Math.max(20, Math.round(initialBox.h + dy));
-                if (handle.includes('w')) {
-                    const nextW = Math.round(initialBox.w - dx);
-                    if (nextW > 20) {
-                        newBox.x = Math.round(initialBox.x + dx);
-                        newBox.w = nextW;
-                    }
-                }
-                if (handle.includes('n')) {
-                    const nextH = Math.round(initialBox.h - dy);
-                    if (nextH > 20) {
-                        newBox.y = Math.round(initialBox.y + dy);
-                        newBox.h = nextH;
-                    }
-                }
-            }
-
-            // Garder dans les limites de l'image
-            newBox.x = Math.max(0, Math.min(newBox.x, imageRef.current.naturalWidth - newBox.w));
-            newBox.y = Math.max(0, Math.min(newBox.y, imageRef.current.naturalHeight - newBox.h));
-            newBox.w = Math.min(newBox.w, imageRef.current.naturalWidth - newBox.x);
-            newBox.h = Math.min(newBox.h, imageRef.current.naturalHeight - newBox.y);
-
-            if (targetId) {
-                // Mettre à jour la bulle dans la liste des bulles existantes
-                setExistingBubbles(prev => prev.map(b => b.id === targetId ? { ...b, ...newBox } : b));
-                // Si cette bulle est aussi la bulle en cours d'édition dans la modale, mettre à jour pendingAnnotation
-                if (pendingAnnotation?.id === targetId) {
-                    setPendingAnnotation(prev => ({ ...prev, ...newBox }));
-                }
-            } else {
-                // C'est une nouvelle bulle
-                setPendingAnnotation(prev => ({ ...prev, ...newBox }));
-                setRectangle(newBox);
-            }
-        };
-
-
-        const handleGlobalMouseUp = (e) => {
-            handleMouseUp(e);
-        };
-
-        window.addEventListener('mousemove', handleGlobalMouseMove);
-        window.addEventListener('mouseup', handleGlobalMouseUp);
-
-        return () => {
-            window.removeEventListener('mousemove', handleGlobalMouseMove);
-            window.removeEventListener('mouseup', handleGlobalMouseUp);
-        };
-    }, [activeInteraction, imageDimensions]);
-
-
     const handleDragEnd = (event) => {
         if (isGuest) return;
         const { active, over } = event;
@@ -932,7 +256,6 @@ export default function AnnotatePage() {
                 const oldIndex = bubbles.findIndex(b => b.id === active.id);
                 const newIndex = bubbles.findIndex(b => b.id === over.id);
                 const newOrder = arrayMove(bubbles, oldIndex, newIndex);
-
                 const orderedBubblesForApi = newOrder.map((b, index) => ({ id: b.id, order: index + 1 }));
                 reorderBubbles(orderedBubblesForApi).catch(() => fetchBubbles());
                 return newOrder;
@@ -947,301 +270,35 @@ export default function AnnotatePage() {
 
     return (
         <div className="flex flex-col lg:flex-row h-[calc(100vh-64px)] bg-slate-50 overflow-hidden -mx-4 sm:-mx-8 -my-6 relative">
-
-            <div className="hidden lg:flex w-[280px] shrink-0 h-full flex-col border-r border-slate-200 bg-white z-40 relative shadow-sm">
-
-                <div className="p-4 border-b border-slate-100 flex-none space-y-4 z-10">
-                    <Link
-                        href={fromSearch ? `/${mangaSlug}/search` : `/${mangaSlug}/dashboard`}
-                        className="inline-flex items-center text-[11px] font-bold text-slate-400 hover:text-slate-700 uppercase tracking-wider transition-colors"
-                    >
-                        <ArrowLeft size={12} className="mr-2" />
-                        {fromSearch ? "Retour Recherche" : "Retours Dashboard"}
-                    </Link>
-
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <div className="flex items-baseline gap-1.5">
-                                <h2 className="text-xl font-black text-slate-900 tracking-tight">
-                                    Ch.{page.chapitres?.numero}
-                                </h2>
-                                <span className="text-xs font-bold text-slate-400">Vol.{page.chapitres?.tomes?.numero}</span>
-                            </div>
-                            <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mt-0.5">Page {page.numero_page} sur {chapterPages.length}</div>
-                        </div>
-                        <Badge variant="secondary" className="bg-slate-50 text-slate-600 border border-slate-200/60 font-bold px-2 py-0.5 text-[10px] uppercase tracking-wide">
-                            {page.statut.replace(/_/g, ' ')}
-                        </Badge>
-                    </div>
-                </div>
-
-                <div className="flex-1 flex flex-col p-4 gap-3 overflow-hidden bg-slate-50/50">
-
-                    <div className="flex-none p-3 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-2">
-                        <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-0.5">Navigation</h3>
-                        <div className="flex gap-2">
-                            <Button variant="outline" size="sm" disabled={!navContext.prev} onClick={goToPrev} className="flex-1 h-8 text-[11px] font-bold bg-white border-slate-200 hover:bg-slate-50 text-slate-600">
-                                <ChevronLeft size={14} className="mr-1" /> Préc
-                            </Button>
-                            <Button variant="outline" size="sm" disabled={!navContext.next} onClick={goToNext} className="flex-1 h-8 text-[11px] font-bold bg-white border-slate-200 hover:bg-slate-50 text-slate-600">
-                                Suiv <ChevronRight size={14} className="ml-1" />
-                            </Button>
-                        </div>
-                    </div>
-                    {!isGuest ? (
-                        <>
-                            <div className="flex-none p-3 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-3">
-                                <div className="flex items-center justify-between pl-0.5">
-                                    <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Moteur OCR</h3>
-                                    <button
-                                        onClick={() => toggleOcrPreference()}
-                                        className={cn(
-                                            "relative inline-flex h-4 w-7 items-center rounded-full transition-colors focus:outline-none",
-                                            preferLocalOCR ? "bg-emerald-500" : "bg-blue-500"
-                                        )}
-                                    >
-                                        <span className={cn(
-                                            "inline-block h-3 w-3 transform rounded-full bg-white transition-transform shadow-sm",
-                                            preferLocalOCR ? "translate-x-3.5" : "translate-x-0.5"
-                                        )} />
-                                    </button>
-                                </div>
-
-                                <div className="flex items-center gap-2.5 bg-slate-50 p-2 rounded-lg border border-slate-100/80">
-                                    <div className={cn("p-1.5 rounded-md", preferLocalOCR ? "bg-emerald-100/50 text-emerald-600" : "bg-blue-100/50 text-blue-600")}>
-                                        {preferLocalOCR ? <Cpu size={14} /> : <CloudLightning size={14} />}
-                                    </div>
-                                    <div className="flex flex-col">
-                                        <span className="text-[11px] font-bold text-slate-800 leading-tight">{preferLocalOCR ? "Mode Local" : "Cloud API"}</span>
-                                        <span className="text-[9px] font-bold text-slate-400 mt-0.5">{preferLocalOCR ? "Inférence locale" : "API Distante"}</span>
-                                    </div>
-                                </div>
-
-                                <div className="flex gap-1.5">
-                                    {Object.values(OCR_MODELS)
-                                        .filter(m => preferLocalOCR ? m.type === 'local' : m.type === 'api')
-                                        .map((m) => (
-                                            <button
-                                                key={m.key}
-                                                onClick={() => switchModel(m.key)}
-                                                disabled={preferLocalOCR && modelStatus === 'loading'}
-                                                className={cn(
-                                                    "flex-1 p-2 rounded-lg border text-left transition-all duration-200",
-                                                    activeModelKey === m.key
-                                                        ? (m.type === 'api' ? "border-indigo-300 bg-indigo-50/80 ring-1 ring-indigo-200/50" : "border-emerald-300 bg-emerald-50/80 ring-1 ring-emerald-200/50")
-                                                        : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50",
-                                                    (preferLocalOCR && modelStatus === 'loading') && "opacity-50 cursor-not-allowed"
-                                                )}
-                                            >
-                                                <div className="flex items-center justify-between mb-0.5">
-                                                    <div className="flex items-center gap-1">
-                                                        {m.type === 'api' && <Sparkles size={10} className={cn(m.key === 'gemini' ? "text-blue-500" : "text-indigo-500")} />}
-                                                        <span className={cn(
-                                                            "text-[10px] font-bold",
-                                                            activeModelKey === m.key ? (m.type === 'api' ? (m.key === 'gemini' ? "text-blue-700" : "text-indigo-700") : "text-emerald-700") : "text-slate-600"
-                                                        )}>{m.label}</span>
-                                                    </div>
-                                                    {activeModelKey === m.key && (
-                                                        <div className={cn("w-1.5 h-1.5 rounded-full", m.type === 'api' ? (m.key === 'gemini' ? "bg-blue-500" : "bg-indigo-500") : "bg-emerald-500")} />
-                                                    )}
-                                                </div>
-                                                <div className="text-[8px] font-semibold text-slate-400 leading-tight">
-                                                    {m.key === 'poneglyph' ? `CER ${m.cer} - Serverless` : m.key === 'gemini' ? "Vision AI · Google" : `CER ${m.cer} · ${m.size}`}
-                                                </div>
-                                            </button>
-                                        ))}
-                                </div>
-
-                                {preferLocalOCR ? (
-                                    <div>
-                                        {OCR_MODELS[activeModelKey]?.type === 'local' ? (
-                                            <>
-                                                {(modelStatus === 'idle' || modelStatus === 'error') && (
-                                                    <Button variant="outline" size="sm" onClick={() => loadModel(activeModelKey)} className="w-full h-8 text-[11px] font-bold bg-white border border-slate-200 hover:bg-slate-50 text-slate-600">
-                                                        <Download size={12} className="mr-1.5" /> Charger {OCR_MODELS[activeModelKey]?.label}
-                                                    </Button>
-                                                )}
-                                                {modelStatus === 'loading' && (
-                                                    <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
-                                                        <div className="flex justify-between text-[9px] font-bold text-slate-500 mb-1.5">
-                                                            <span>Installation {OCR_MODELS[activeModelKey]?.label}...</span>
-                                                            <span>{Math.round(downloadProgress)}%</span>
-                                                        </div>
-                                                        <div className="h-1 w-full bg-slate-200 rounded-full overflow-hidden">
-                                                            <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${downloadProgress}%` }} />
-                                                        </div>
-                                                    </div>
-                                                )}
-                                                {modelStatus === 'ready' && (
-                                                    <div className="flex items-center justify-center gap-1.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 py-1.5 rounded-md border border-emerald-100/50">
-                                                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-sm" /> {OCR_MODELS[activeModelKey]?.label} opérationnel
-                                                    </div>
-                                                )}
-                                            </>
-                                        ) : (
-                                            <div className="text-[10px] font-bold text-slate-400 text-center py-2 bg-slate-50 rounded-lg border border-dashed border-slate-200">
-                                                Sélectionnez un modèle local
-                                            </div>
-                                        )}
-                                    </div>
-                                ) : (
-                                    <div>
-                                        {OCR_MODELS[activeModelKey]?.type === 'api' ? (
-                                            <>
-                                                {activeModelKey === 'poneglyph' && (
-                                                    <div className="flex items-center justify-center gap-1.5 text-[10px] font-bold text-indigo-700 bg-indigo-50 py-1.5 rounded-md border border-indigo-100/50">
-                                                        <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-sm" /> Inférence Modal (Nvidia L4)
-                                                    </div>
-                                                )}
-                                                {activeModelKey === 'gemini' && !geminiKey && (
-                                                    <div className="animate-in fade-in slide-in-from-top-1 duration-300 flex flex-col gap-2 bg-amber-50 border border-amber-200/60 p-2.5 rounded-lg">
-                                                        <div className="flex items-start gap-2">
-                                                            <div className="bg-amber-100 p-1 rounded-full shrink-0 mt-0.5">
-                                                                <Shield className="h-3 w-3 text-amber-600" />
-                                                            </div>
-                                                            <div className="text-[10px] leading-tight text-amber-800">
-                                                                <span className="font-bold block mb-0.5">Clé API Requise</span>
-                                                                Google Gemini nécessite votre clé.
-                                                            </div>
-                                                        </div>
-                                                        <Button
-                                                            variant="outline"
-                                                            size="sm"
-                                                            onClick={() => window.dispatchEvent(new Event('open-api-key-modal'))}
-                                                            className="h-7 text-[9px] font-bold bg-white"
-                                                        >
-                                                            Configurer ma clé
-                                                        </Button>
-                                                    </div>
-                                                )}
-                                                {activeModelKey === 'gemini' && geminiKey && (
-                                                    <div className="flex items-center justify-center gap-1.5 text-[10px] font-bold text-blue-700 bg-blue-50 py-1.5 rounded-md border border-blue-100/50">
-                                                        <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-sm" /> Gemini AI Connecté
-                                                    </div>
-                                                )}
-                                            </>
-                                        ) : (
-                                            <div className="text-[10px] font-bold text-slate-400 text-center py-2 bg-slate-50 rounded-lg border border-dashed border-slate-200">
-                                                Sélectionnez un modèle Cloud
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="flex-none p-3 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-3">
-                                <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-0.5">Détection des bulles</h3>
-
-                                {detectionStatus === 'idle' && (
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={loadDetectionModel}
-                                        className="w-full h-8 text-[11px] font-bold bg-white border border-slate-200 hover:bg-slate-50 text-slate-600"
-                                    >
-                                        <Download size={12} className="mr-1.5" /> Charger le modèle <span className="text-[10px] font-bold text-slate-400">(250MB)</span>
-                                    </Button>
-                                )}
-                                {detectionStatus === 'loading' && (
-                                    <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
-                                        <div className="flex justify-between text-[9px] font-bold text-slate-500 mb-1.5">
-                                            <span>Téléchargement...</span>
-                                            <span>{Math.round(detectionProgress)}%</span>
-                                        </div>
-                                        <div className="h-1 w-full bg-slate-200 rounded-full overflow-hidden">
-                                            <div className="h-full bg-indigo-500 transition-all duration-300" style={{ width: `${detectionProgress}%` }} />
-                                        </div>
-                                    </div>
-                                )}
-                                {detectionStatus === 'ready' && (
-                                    <Button
-                                        variant="default"
-                                        onClick={handleExecuteDetection}
-                                        disabled={isSubmitting || isAutoDetecting}
-                                        className="w-full h-8 bg-indigo-600 hover:bg-indigo-700 text-[11px] font-bold shadow-sm"
-                                    >
-                                        <Sparkles size={12} className={cn("mr-1.5", isAutoDetecting && "animate-pulse")} />
-                                        {isAutoDetecting ? `Analyse en cours (${queueLength})` : "Scanner la page"}
-                                    </Button>
-                                )}
-                            </div>
-                        </>
-                    ) : (
-                        <div className="flex-none p-4 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-5 overflow-y-auto max-h-[500px]">
-                            <div className="flex items-center gap-2 pb-2 border-b border-slate-50">
-                                <div className="bg-indigo-50 p-1.5 rounded-lg border border-indigo-100/50">
-                                    <FileText size={14} className="text-indigo-600" />
-                                </div>
-                                <h3 className="text-[11px] font-bold text-slate-900 uppercase tracking-widest">Métadonnées Page</h3>
-                            </div>
-
-                            <div className="space-y-5">
-                                <div className="space-y-2">
-                                    <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-tight">
-                                        <AlignLeft size={10} /> Description Sémantique
-                                    </div>
-                                    <div className="text-[11px] text-slate-600 leading-relaxed bg-slate-50/50 p-3 rounded-lg border border-slate-100/60 italic">
-                                        {page.description_semantique?.content || "Aucune description rattachée à cette page."}
-                                    </div>
-                                </div>
-
-                                <div className="space-y-4">
-                                    <div className="space-y-2">
-                                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-tight">
-                                            <MapPin size={10} /> Arc Narratif
-                                        </div>
-                                        <div className="flex">
-                                            <Badge variant="outline" className="text-[10px] font-bold text-indigo-700 bg-indigo-50/30 border-indigo-100 px-2 py-0.5">
-                                                {page.description_semantique?.arc || "Inconnu"}
-                                            </Badge>
-                                        </div>
-                                    </div>
-
-                                    <div className="space-y-2">
-                                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-tight">
-                                            <Users size={10} /> Personnages
-                                        </div>
-                                        <div className="flex flex-wrap gap-1.5">
-                                            {page.description_semantique?.characters?.length > 0 ? (
-                                                page.description_semantique.characters.map((char, idx) => (
-                                                    <Badge key={idx} variant="secondary" className="text-[10px] font-medium bg-white border border-slate-100 text-slate-600 px-2 py-0.5">
-                                                        {char}
-                                                    </Badge>
-                                                ))
-                                            ) : (
-                                                <span className="text-[10px] text-slate-400 italic bg-slate-50 px-2 py-1 rounded">Aucun personnage listé</span>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                {!isGuest && (
-                    <div className="flex-none p-4 border-t border-slate-100 bg-white flex flex-col gap-2.5 z-10">
-                        <div className="grid grid-cols-2 gap-2">
-                            <Button variant="outline" size="sm" className="h-8 text-[11px] font-bold text-slate-600 bg-slate-50 border-slate-200/60 hover:bg-slate-100 hover:text-slate-900 w-full" onClick={() => setShowDescModal(true)}>
-                                <FileText size={12} className="mr-1.5" /> Meta
-                            </Button>
-                            <Button variant="outline" size="sm" className="h-8 text-[11px] font-bold text-slate-600 bg-slate-50 border-slate-200/60 hover:bg-slate-100 hover:text-slate-900 w-full" onClick={() => setShowApiKeyModal(true)}>
-                                <Settings2 size={12} className="mr-1.5" /> Clés API
-                            </Button>
-                        </div>
-
-                        <Button
-                            variant="default"
-                            className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-[11px] uppercase tracking-wider font-bold shadow-md"
-                            disabled={page.statut === 'pending_review' || page.statut === 'completed'}
-                            onClick={handleSubmitPage}
-                        >
-                            <Send size={12} className="mr-1.5" /> Validation Finale
-                        </Button>
-                    </div>
-                )}
-            </div>
-
+            
+            <AnnotateLeftSidebar 
+                fromSearch={fromSearch}
+                mangaSlug={mangaSlug}
+                page={page}
+                chapterPages={chapterPages}
+                navContext={navContext}
+                goToPrev={goToPrev}
+                goToNext={goToNext}
+                isGuest={isGuest}
+                preferLocalOCR={preferLocalOCR}
+                toggleOcrPreference={toggleOcrPreference}
+                activeModelKey={activeModelKey}
+                switchModel={switchModel}
+                modelStatus={modelStatus}
+                loadModel={loadModel}
+                downloadProgress={downloadProgress}
+                geminiKey={geminiKey}
+                detectionStatus={detectionStatus}
+                loadDetectionModel={loadDetectionModel}
+                detectionProgress={detectionProgress}
+                handleExecuteDetection={handleExecuteDetection}
+                isSubmitting={isSubmitting}
+                isAutoDetecting={isAutoDetecting}
+                queueLength={queueLength}
+                setShowDescModal={setShowDescModal}
+                setShowApiKeyModal={setShowApiKeyModal}
+                handleSubmitPage={handleSubmitPage}
+            />
 
             <div className="flex flex-col flex-1 overflow-hidden min-w-0 bg-slate-50 relative">
 
@@ -1275,335 +332,78 @@ export default function AnnotatePage() {
                         <Shield className="h-4 w-4" />
                         Mode Lecture Seule : La modification des données est réservée aux utilisateurs connectés.
                     </div>
-                )
-                }
+                )}
 
-                {
-                    page.commentaire_moderation && page.statut !== 'completed' && (
-                        <div className="bg-red-50 border-b border-red-200 px-6 py-3 flex items-center gap-3 text-red-800 text-sm animate-in slide-in-from-top duration-300">
-                            <div className="h-8 w-8 rounded-full bg-red-100 flex items-center justify-center shrink-0">
-                                <X className="h-4 w-4 text-red-600" />
-                            </div>
-                            <div className="flex-1">
-                                <p className="font-bold">Cette page a été refusée par la modération</p>
-                                <p className="text-red-700/80 italic font-medium">"{page.commentaire_moderation}"</p>
-                            </div>
+                {page.commentaire_moderation && page.statut !== 'completed' && (
+                    <div className="bg-red-50 border-b border-red-200 px-6 py-3 flex items-center gap-3 text-red-800 text-sm animate-in slide-in-from-top duration-300">
+                        <div className="h-8 w-8 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                            <X className="h-4 w-4 text-red-600" />
                         </div>
-                    )
-                }
-
-
-
-
+                        <div className="flex-1">
+                            <p className="font-bold">Cette page a été refusée par la modération</p>
+                            <p className="text-red-700/80 italic font-medium">"{page.commentaire_moderation}"</p>
+                        </div>
+                    </div>
+                )}
 
                 <div className="flex flex-col lg:flex-row flex-1 overflow-hidden min-h-0">
-                    <main className="flex-1 min-h-0 bg-slate-200/50 overflow-hidden flex items-center justify-center p-2 sm:p-4 relative cursor-default">
-                        <div
-                            ref={containerRef}
-                            className={cn(
-                                "relative inline-flex flex-col min-w-0 min-h-0 max-w-full max-h-full bg-white shadow-xl select-none",
-                                canEdit ? "cursor-crosshair" : "cursor-default"
-                            )}
-                            style={{
-                                aspectRatio: imageDimensions?.naturalWidth ? `${imageDimensions.naturalWidth} / ${imageDimensions.naturalHeight}` : 'auto'
-                            }}
-                            onMouseDown={handleMouseDown}
-                            onMouseMove={handleMouseMove}
-                            onMouseUp={handleMouseUp}
-                            onMouseLeave={handleMouseUp}
-                        >
-                            <img
-                                ref={imageRef}
-                                src={getProxiedImageUrl(page.url_image, pageId, session?.access_token)}
-                                crossOrigin="anonymous"
-                                alt={`Page ${page.numero_page}`}
-                                className="block w-full h-full object-contain pointer-events-none"
-                                onLoad={(e) => setImageDimensions({
-                                    width: e.target.offsetWidth,
-                                    naturalWidth: e.target.naturalWidth,
-                                    naturalHeight: e.target.naturalHeight
-                                })}
-                            />
+                    <AnnotateCanvas 
+                        canEdit={canEdit}
+                        imageDimensions={imageDimensions}
+                        setImageDimensions={setImageDimensions}
+                        containerRef={containerRef}
+                        imageRef={imageRef}
+                        handleMouseDown={handleMouseDown}
+                        handleMouseMove={handleMouseMove}
+                        handleMouseUp={handleMouseUp}
+                        imageUrl={getProxiedImageUrl(page.url_image, pageId, session?.access_token)}
+                        isSubmitting={isSubmitting}
+                        loadingText={loadingText}
+                        rectangle={rectangle}
+                        pendingAnnotation={pendingAnnotation}
+                        isAutoDetecting={isAutoDetecting}
+                        isShiftPressed={isShiftPressed}
+                        handleInteractionStart={handleInteractionStart}
+                        setIsModalOpen={setIsModalOpen}
+                        isDrawing={isDrawing}
+                        startPoint={startPoint}
+                        endPoint={endPoint}
+                        existingBubbles={existingBubbles}
+                        setHoveredBubble={setHoveredBubble}
+                        hoveredBubble={hoveredBubble}
+                        mousePos={mousePos}
+                        handleEditBubble={handleEditBubble}
+                    />
 
-                            {isSubmitting && (
-                                <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] z-50 flex flex-col items-center justify-center text-slate-800 font-semibold">
-                                    <Loader2 className="h-10 w-10 animate-spin mb-2 text-slate-900" />
-                                    <span>{loadingText}</span>
-                                </div>
-                            )}
-
-                            {((rectangle && imageDimensions) || (pendingAnnotation && imageDimensions)) && (
-                                <div
-                                    style={{
-                                        left: (pendingAnnotation?.x || rectangle.x) * (imageDimensions.width / imageDimensions.naturalWidth),
-                                        top: (pendingAnnotation?.y || rectangle.y) * (imageDimensions.width / imageDimensions.naturalWidth),
-                                        width: (pendingAnnotation?.w || rectangle.w) * (imageDimensions.width / imageDimensions.naturalWidth),
-                                        height: (pendingAnnotation?.h || rectangle.h) * (imageDimensions.width / imageDimensions.naturalWidth),
-                                    }}
-                                    className={cn(
-                                        "absolute border-2 border-dashed transition-all duration-300 z-30",
-                                        isAutoDetecting ? "border-indigo-500 bg-indigo-500/10" : "border-red-500 bg-red-500/10",
-                                        pendingAnnotation && isShiftPressed && "cursor-move"
-                                    )}
-                                    onMouseDown={(e) => {
-                                        if (pendingAnnotation && isShiftPressed) {
-                                            handleInteractionStart(e, 'move');
-                                        }
-                                    }}
-                                    onClick={(e) => {
-                                        if (isShiftPressed) return;
-                                        e.stopPropagation();
-                                        setIsModalOpen(true);
-                                    }}
-                                >
-                                </div>
-                            )}
-
-                            {isDrawing && startPoint && endPoint && (
-                                <div
-                                    style={{
-                                        left: Math.min(startPoint.x, endPoint.x),
-                                        top: Math.min(startPoint.y, endPoint.y),
-                                        width: Math.abs(startPoint.x - endPoint.x),
-                                        height: Math.abs(startPoint.y - endPoint.y),
-                                    }}
-                                    className="absolute border-2 border-dashed border-red-500 bg-red-500/10 pointer-events-none z-20"
-                                />
-                            )}
-
-                            {imageDimensions && existingBubbles.map((bubble, index) => {
-                                const scale = imageDimensions.width / imageDimensions.naturalWidth;
-                                if (!scale) return null;
-
-                                if (pendingAnnotation?.id === bubble.id) return null;
-
-                                const style = {
-                                    left: `${bubble.x * scale}px`,
-                                    top: `${bubble.y * scale}px`,
-                                    width: `${bubble.w * scale}px`,
-                                    height: `${bubble.h * scale}px`,
-                                };
-
-                                const colorClass = bubble.statut === 'Validé'
-                                    ? "border-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20"
-                                    : "border-amber-500 bg-amber-500/10 hover:bg-amber-500/20";
-
-                                return (
-                                    <div
-                                        key={bubble.id}
-                                        style={style}
-                                        className={cn(
-                                            "absolute border-2 z-10 transition-colors cursor-pointer group",
-                                            colorClass,
-                                            isShiftPressed && "cursor-move"
-                                        )}
-                                        onMouseEnter={() => setHoveredBubble(bubble)}
-                                        onMouseLeave={() => setHoveredBubble(null)}
-                                        onMouseDown={(e) => {
-                                            if (isShiftPressed) {
-                                                handleInteractionStart(e, 'move', null, bubble);
-                                            }
-                                        }}
-                                        onClick={(e) => {
-                                            if (isShiftPressed) return;
-                                            e.stopPropagation();
-                                            handleEditBubble(bubble);
-                                        }}
-                                    >
-                                        <div className={cn(
-                                            "absolute -top-6 -left-[2px] text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm",
-                                            bubble.statut === 'Validé' ? "bg-emerald-500" : "bg-amber-500"
-                                        )}>
-                                            #{index + 1}
-                                        </div>
-
-                                        {/* Poignées visibles en mode Shift */}
-                                        {isShiftPressed && (
-                                            <>
-                                                {[
-                                                    { h: 'nw', c: 'top-0 left-0 -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize' },
-                                                    { h: 'n', c: 'top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 cursor-ns-resize' },
-                                                    { h: 'ne', c: 'top-0 left-full -translate-x-1/2 -translate-y-1/2 cursor-nesw-resize' },
-                                                    { h: 'w', c: 'top-1/2 left-0 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize' },
-                                                    { h: 'e', c: 'top-1/2 left-full -translate-x-1/2 -translate-y-1/2 cursor-ew-resize' },
-                                                    { h: 'sw', c: 'top-full left-0 -translate-x-1/2 -translate-y-1/2 cursor-nesw-resize' },
-                                                    { h: 's', c: 'top-full left-1/2 -translate-x-1/2 -translate-y-1/2 cursor-ns-resize' },
-                                                    { h: 'se', c: 'top-full left-full -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize' },
-                                                ].map((handle) => (
-                                                    <div
-                                                        key={handle.h}
-                                                        className={cn(
-                                                            "absolute w-2.5 h-2.5 bg-white border border-slate-900 rounded-full shadow-sm z-50 hover:scale-125 transition-transform",
-                                                            handle.c
-                                                        )}
-                                                        onMouseDown={(e) => handleInteractionStart(e, 'resize', handle.h, bubble)}
-                                                    />
-                                                ))}
-                                            </>
-                                        )}
-                                    </div>
-                                );
-
-                            })}
-
-                            {hoveredBubble && (
-                                <div
-                                    className="fixed z-50 pointer-events-none bg-slate-900/95 text-white p-3 rounded-lg shadow-xl border border-slate-700 backdrop-blur-sm max-w-[300px]"
-                                    style={{
-                                        left: 0, top: 0,
-                                        transform: `translate(${(mousePos.x + 20 + (containerRef.current?.getBoundingClientRect()?.left || 0))}px, ${(mousePos.y + 20 + (containerRef.current?.getBoundingClientRect()?.top || 0))}px)`
-                                    }}
-                                >
-                                    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                                        Bulle #{existingBubbles.findIndex(b => b.id === hoveredBubble.id) + 1}
-                                    </div>
-                                    <p className="text-sm font-medium leading-relaxed">{hoveredBubble.texte_propose}</p>
-                                </div>
-                            )}
-                        </div>
-                    </main>
-
-                    <aside className="w-full lg:w-[380px] bg-white border-t lg:border-t-0 lg:border-l border-slate-200 flex flex-col h-[40vh] lg:h-full overflow-hidden z-10 shadow-lg shrink-0">
-                        <div className="flex-none p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
-                            <h3 className="font-semibold text-slate-900">Annotations</h3>
-                            <Badge variant="secondary">{existingBubbles.length}</Badge>
-                        </div>
-                        <ScrollArea className="flex-1 w-full h-full">
-                            <div className="flex flex-col w-full max-w-full px-4 py-4 pb-20 overflow-x-hidden">
-                                {existingBubbles.length === 0 ? (
-                                    <div className="flex flex-col items-center justify-center py-10 text-center border-2 border-dashed border-slate-200 rounded-lg bg-slate-50/50 text-slate-500">
-                                        <MousePointer2 className="h-8 w-8 mb-2 text-slate-300" />
-                                        <p className="text-sm font-medium">Aucune annotation</p>
-                                        <p className="text-xs mt-1">Dessinez un rectangle sur l'image<br />pour commencer.</p>
-                                    </div>
-                                ) : (
-                                    <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                                        <SortableContext items={existingBubbles.map(b => b.id)} strategy={verticalListSortingStrategy}>
-                                            <ul className="flex flex-col gap-3 w-full max-w-full">
-                                                {existingBubbles.map((bubble, index) => (
-                                                    <SortableBubbleItem
-                                                        key={bubble.id}
-                                                        id={bubble.id}
-                                                        bubble={bubble}
-                                                        index={index}
-                                                        user={user}
-                                                        onEdit={handleEditBubble}
-                                                        onDelete={handleDeleteBubble}
-                                                        disabled={!canEdit}
-                                                    />
-                                                ))}
-                                            </ul>
-                                        </SortableContext>
-                                    </DndContext>
-                                )}
-                            </div>
-                        </ScrollArea>
-                    </aside>
+                    <AnnotateAnnotationSidebar 
+                        existingBubbles={existingBubbles}
+                        handleDragEnd={handleDragEnd}
+                        user={user}
+                        handleEditBubble={handleEditBubble}
+                        handleDeleteBubble={handleDeleteBubble}
+                        canEdit={canEdit}
+                    />
                 </div>
             </div>
 
-            <Dialog
-                open={isModalOpen}
-                onOpenChange={(open) => {
-                    if (!open) {
-                        setIsModalOpen(false);
-                        setIsSubmitting(false);
-                        if (isAutoDetecting) {
-                            setIsAutoDetecting(false);
-                            toast.info("Détection automatique arrêtée.");
-                        }
-                        setPendingAnnotation(null);
-                        setDebugImageUrl(null);
-                        setRectangle(null);
-                    }
-                }}
-            >
-
-                <DialogContent
-                    className="max-w-none w-full h-full bg-transparent border-0 shadow-none p-0 flex items-center justify-end pr-8 pointer-events-none top-0 left-0 translate-x-0 translate-y-0"
-                    showCloseButton={false}
-                    aria-describedby={undefined}
-                >
-                    <div className="sr-only">
-                        <DialogTitle>Édition de l'annotation</DialogTitle>
-                        <DialogDescription>Zone d'édition</DialogDescription>
-                    </div>
-
-                    {pendingAnnotation && (
-                        <div className="pointer-events-auto flex flex-col items-center gap-2">
-                            <DraggableWrapper
-                                title={
-                                    <div className="flex items-center gap-2">
-                                        {pendingAnnotation?.id ? "Modifier" : "Nouvelle"} annotation
-                                        {ocrSource === 'local' && (
-                                            <Badge variant="outline" className="text-[10px] text-emerald-600 border-emerald-200 bg-emerald-50">
-                                                <Cpu className="h-3 w-3 mr-1" /> Local IA
-                                            </Badge>
-                                        )}
-                                        {ocrSource === 'cloud' && (
-                                            <Badge variant="outline" className="text-[10px] text-blue-600 border-blue-200 bg-blue-50">
-                                                <CloudLightning className="h-3 w-3 mr-1" /> Cloud IA
-                                            </Badge>
-                                        )}
-                                    </div>
-                                }
-                                onClose={() => {
-                                    setPendingAnnotation(null);
-                                    setRectangle(null);
-                                    setDebugImageUrl(null);
-                                    setIsModalOpen(false);
-                                    setIsSubmitting(false);
-                                }}
-                                className="w-full max-w-lg"
-                            >
-                                <div className="p-6">
-                                    <ValidationForm
-                                        annotationData={pendingAnnotation}
-                                        onValidationSuccess={handleSuccess}
-                                        onCancel={() => {
-                                            setPendingAnnotation(null);
-                                            setDebugImageUrl(null);
-                                            setIsModalOpen(false);
-                                            setIsSubmitting(false);
-
-                                            if (isAutoDetecting) {
-                                                setTimeout(() => processNextBubble(), 100);
-                                            } else {
-                                                setRectangle(null);
-                                            }
-                                        }}
-                                    />
-
-                                    {debugImageUrl && (
-                                        <div className="mt-4 flex justify-center">
-                                            <img
-                                                src={debugImageUrl}
-                                                alt="Debug"
-                                                className="max-h-24 object-contain border border-slate-200 shadow-sm rounded bg-white p-1"
-                                            />
-                                        </div>
-                                    )}
-
-                                    <div className="mt-4 pt-4 border-t border-slate-100 flex justify-center">
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="text-xs text-slate-500 hover:text-slate-900"
-                                            onClick={() => runLocalOcr()}
-                                        >
-                                            {OCR_MODELS[activeModelKey]?.type === 'local' ? (
-                                                <><Sparkles className="h-3 w-3 mr-1 text-indigo-500" /> Essayer un modèle Cloud</>
-                                            ) : (
-                                                <><RotateCcw className="h-3 w-3 mr-1" /> Relancer l'analyse {OCR_MODELS[activeModelKey]?.label}</>
-                                            )}
-                                        </Button>
-                                    </div>
-                                </div>
-                            </DraggableWrapper>
-                        </div>
-                    )}
-                </DialogContent>
-            </Dialog>
+            <AnnotateEditorDialog 
+                isOpen={isModalOpen}
+                setIsModalOpen={setIsModalOpen}
+                setIsSubmitting={setIsSubmitting}
+                isAutoDetecting={isAutoDetecting}
+                setIsAutoDetecting={setIsAutoDetecting}
+                setPendingAnnotation={setPendingAnnotation}
+                setDebugImageUrl={setDebugImageUrl}
+                setRectangle={setRectangle}
+                pendingAnnotation={pendingAnnotation}
+                ocrSource={ocrSource}
+                handleSuccess={handleSuccess}
+                processNextBubble={processNextBubble}
+                debugImageUrl={debugImageUrl}
+                runLocalOcr={runLocalOcr}
+                activeModelKey={activeModelKey}
+                OCR_MODELS={OCR_MODELS}
+            />
 
             <Dialog open={showApiKeyModal} onOpenChange={setShowApiKeyModal}>
                 <DialogContent className="sm:max-w-md">
@@ -1616,137 +416,24 @@ export default function AnnotatePage() {
             </Dialog>
 
             {!isGuest && (
-                <Dialog open={showDescModal} onOpenChange={setShowDescModal}>
-                    <DialogContent className="max-w-3xl">
-                        <DialogHeader>
-                            <div className="flex items-center justify-between pr-4">
-                                <div>
-                                    <DialogTitle className="flex items-center gap-2">
-                                        <FileText className="h-5 w-5 text-indigo-600" />
-                                        Description Sémantique
-                                    </DialogTitle>
-                                    <DialogDescription>
-                                        Définition des métadonnées pour le moteur de recherche.
-                                    </DialogDescription>
-                                </div>
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={handleGenerateAI}
-                                    disabled={isGeneratingAI}
-                                    className="gap-2 border-indigo-200 text-indigo-700 bg-indigo-50 hover:bg-indigo-100"
-                                >
-                                    {isGeneratingAI ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                                    Générer avec IA
-                                </Button>
-                            </div>
-                        </DialogHeader>
-
-                        <Tabs value={tabMode} onValueChange={setTabMode} className="w-full">
-                            <TabsList className="grid w-full grid-cols-2 mb-4">
-                                <TabsTrigger value="form">
-                                    <FileText className="h-4 w-4 mr-2" />
-                                    Formulaire
-                                </TabsTrigger>
-                                <TabsTrigger value="json">
-                                    <Code className="h-4 w-4 mr-2" />
-                                    JSON Raw
-                                </TabsTrigger>
-                            </TabsList>
-
-                            <TabsContent value="form" className="space-y-4 outline-none">
-                                <div className="flex flex-col gap-3">
-                                    <Label htmlFor="scene-content" className="text-sm font-semibold text-slate-700">
-                                        Contenu Sémantique
-                                    </Label>
-                                    <Textarea
-                                        id="scene-content"
-                                        value={formData.content}
-                                        onChange={(e) => setFormData(prev => ({ ...prev, content: e.target.value }))}
-                                        className="min-h-[120px] resize-none border-slate-200 focus:ring-indigo-500"
-                                        placeholder="Description de l'action, des lieux..."
-                                    />
-                                </div>
-
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div className="flex flex-col gap-3">
-                                        <Label className="text-sm font-semibold text-slate-700">Arc Narratif</Label>
-                                        <div className="relative">
-                                            <input
-                                                list="arc-suggestions"
-                                                value={formData.arc}
-                                                onChange={(e) => {
-                                                    setFormData(prev => ({ ...prev, arc: e.target.value }));
-                                                }}
-                                                className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:ring-indigo-500 focus:outline-none focus:ring-2"
-                                                placeholder="Ex: Water 7"
-                                            />
-                                            <datalist id="arc-suggestions">
-                                                {suggestions.arcs.map(arc => <option key={arc} value={arc} />)}
-                                            </datalist>
-                                        </div>
-                                    </div>
-
-                                    <div className="flex flex-col gap-3">
-                                        <Label className="text-sm font-semibold text-slate-700">Personnages</Label>
-                                        <div className="flex flex-col gap-2">
-                                            <div className="flex gap-2">
-                                                <input
-                                                    list="char-suggestions"
-                                                    value={charInput}
-                                                    onChange={(e) => setCharInput(e.target.value)}
-                                                    onKeyDown={(e) => e.key === 'Enter' && addCharacter(charInput)}
-                                                    className="flex h-10 flex-1 rounded-md border border-slate-200 px-3 text-sm focus:ring-indigo-500 focus:outline-none focus:ring-2"
-                                                    placeholder="Ajouter..."
-                                                />
-                                                <datalist id="char-suggestions">
-                                                    {suggestions.characters.map(c => <option key={c} value={c} />)}
-                                                </datalist>
-                                                <Button size="icon" variant="secondary" onClick={() => addCharacter(charInput)}>
-                                                    <Plus className="h-4 w-4" />
-                                                </Button>
-                                            </div>
-                                            <div className="flex flex-wrap gap-2 min-h-[40px] p-2 bg-slate-50 rounded border border-dashed border-slate-200">
-                                                {formData.characters.map(char => (
-                                                    <Badge key={char} variant="secondary" className="gap-1 bg-white hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer" onClick={() => removeCharacter(char)}>
-                                                        {char} <X className="h-3 w-3" />
-                                                    </Badge>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </TabsContent>
-
-                            <TabsContent value="json" className="outline-none">
-                                <div className="relative">
-                                    <Textarea
-                                        value={jsonInput}
-                                        onChange={handleJsonChange}
-                                        className={cn(
-                                            "font-mono text-xs min-h-[350px] bg-slate-900 text-slate-50 resize-none",
-                                            jsonError ? "border-red-500 focus:ring-red-500" : "border-slate-800 focus:ring-slate-700"
-                                        )}
-                                        spellCheck={false}
-                                    />
-                                    {jsonError && (
-                                        <div className="absolute bottom-4 left-4 right-4 bg-red-500/90 text-white text-xs p-2 rounded shadow-lg backdrop-blur-sm">
-                                            Erreur JSON: {jsonError}
-                                        </div>
-                                    )}
-                                </div>
-                            </TabsContent>
-                        </Tabs>
-
-                        <DialogFooter>
-                            <Button variant="ghost" onClick={() => setShowDescModal(false)}>Fermer</Button>
-                            <Button onClick={handleSaveDescription} disabled={isSavingDesc || !!jsonError} className="bg-indigo-600 hover:bg-indigo-700 text-white">
-                                {isSavingDesc ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                                Enregistrer
-                            </Button>
-                        </DialogFooter>
-                    </DialogContent>
-                </Dialog>
+                <AnnotateMetadataModal 
+                    isOpen={showDescModal}
+                    onOpenChange={setShowDescModal}
+                    tabMode={tabMode}
+                    setTabMode={setTabMode}
+                    formData={formData}
+                    setFormData={setFormData}
+                    charInput={charInput}
+                    setCharInput={setCharInput}
+                    suggestions={suggestions}
+                    isGeneratingAI={isGeneratingAI}
+                    handleGenerateAI={handleGenerateAI}
+                    handleSaveDescription={handleSaveDescription}
+                    isSavingDesc={isSavingDesc}
+                    jsonInput={jsonInput}
+                    handleJsonChange={handleJsonChange}
+                    jsonError={jsonError}
+                />
             )}
         </div>
     );
