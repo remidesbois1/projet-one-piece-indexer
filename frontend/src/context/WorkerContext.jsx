@@ -26,15 +26,15 @@ export const OCR_MODELS = {
         key: 'poneglyph',
         label: 'Poneglyph',
         description: 'FireRed OCR - Serverless',
-        cer: '< 1.0%',
+        cer: '< 0.8%',
         size: '~4.2 Go (Cloud)',
         type: 'api'
     },
     gemini: {
         key: 'gemini',
-        label: 'Gemini 2.5 Flash Lite',
+        label: 'Gemini 3.1 Flash Lite',
         description: 'Google Gemini API',
-        cer: '~ 1.2%',
+        cer: '~ 0.5%',
         size: 'Cloud',
         type: 'api'
     }

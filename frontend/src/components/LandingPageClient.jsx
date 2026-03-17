@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { Button } from "@/components/ui/button";
 import {
     ArrowRight, Search, BookOpen, Layers, ScanText, Cpu,
-    BrainCircuit, Users, BarChart3, Eye, Globe, Workflow, ShieldCheck
+    BrainCircuit, Users, BarChart3, Eye, Globe, Workflow, ShieldCheck, Zap
 } from "lucide-react";
 import Image from "next/image";
 
@@ -209,26 +209,40 @@ const features = [
         title: "OCR Local — TrOCR Fine-tuned",
         badge: "WebGPU",
         description: "Modèle TrOCR fine-tuné sur la typographie manga, exécuté directement dans le navigateur via WebGPU. Zéro coût serveur.",
-        details: ["CER 1.31%", "WER 3.71%", "ONNX", "Post-processing Regex"],
+        details: ["CER 1.83%", "WER 6.03%", "ONNX", "Web Worker"],
     },
     {
-        icon: Eye,
-        title: "Détection de Bulles — YOLOv8",
-        badge: "WebGPU",
-        description: "YOLOv8 Medium fine-tuné pour détecter les zones de texte sur chaque planche, exécuté côté client via ONNX Runtime Web.",
-        details: ["mAP50 0.97", "Temps réel", "ONNX"],
-    },
-    {
-        icon: Search,
-        title: "Recherche Sémantique & Indexation",
-        description: "Chaque page est encodée en vecteurs 1024d par Voyage AI et stockée dans PostgreSQL (pgvector). Les requêtes sont comparées par similarité cosinus puis réordonnées par reranking.",
-        details: ["voyage-4-large", "rerank-2.5", "pgvector", "1024 dimensions", "Supabase"],
+        icon: Zap,
+        title: "OCR Serverless — Poneglyph",
+        badge: "SOTA",
+        description: "Modèle de pointe (Qwen3-VL-2B) fine-tuné déployé en serverless sur GPU NVIDIA L4 via Modal. Précision et rapidité extrême pour les textes complexes.",
+        details: ["CER < 0.8%", "WER < 2.4%", "Modal.com", "L4 GPU", "Serverless"],
     },
     {
         icon: Cpu,
         title: "OCR Cloud — Gemini Flash-Lite",
-        description: "Alternative côté serveur via Google Gemini 2.5 Flash-Lite pour les utilisateurs qui le souhaitent. Également utilisé pour générer le corpus de distillation du modèle local.",
-        details: ["~0.00004$ / OCR", "Distillation"],
+        description: "Alternative côté serveur via Google Gemini 3.1 Flash-Lite. Également utilisé pour générer le corpus de distillation des modèles locaux.",
+        details: ["~0.00008$ / OCR", "Distillation"],
+    },
+    {
+        icon: Eye,
+        title: "Détection de Bulles — YOLO11",
+        badge: "WebGPU",
+        description: "YOLO11 Medium fine-tuné pour détecter les zones de texte sur chaque planche, exécuté côté client via ONNX Runtime Web.",
+        details: ["mAP50 0.992", "Temps réel", "ONNX"],
+    },
+    {
+        icon: Workflow,
+        title: "Tri des Bulles — ResNet",
+        badge: "WebGPU",
+        description: "Modèle ResNet spécialisé pour ordonner les bulles selon le sens de lecture japonais, garantissant une transcription cohérente.",
+        details: ["98.3% Accuracy", "170 MB", "ONNX", "Web Worker"],
+    },
+    {
+        icon: Search,
+        title: "Recherche Sémantique & Indexation",
+        description: "Chaque page est encodée en vecteurs par Voyage AI et Gemini Embedding 2, stockée dans PostgreSQL (pgvector). Fusion de recherche texte et vision.",
+        details: ["voyage-4-large", "gemini-embedding-2", "pgvector"],
     },
 ];
 

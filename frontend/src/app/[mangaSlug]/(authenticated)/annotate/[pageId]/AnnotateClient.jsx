@@ -1013,7 +1013,7 @@ export default function AnnotatePage() {
                                     </div>
                                     <div className="flex flex-col">
                                         <span className="text-[11px] font-bold text-slate-800 leading-tight">{preferLocalOCR ? "Mode Local" : "Cloud API"}</span>
-                                        <span className="text-[9px] font-bold text-slate-400 mt-0.5">{preferLocalOCR ? "Inférence locale" : "API Gemini Distante"}</span>
+                                        <span className="text-[9px] font-bold text-slate-400 mt-0.5">{preferLocalOCR ? "Inférence locale" : "API Distante"}</span>
                                     </div>
                                 </div>
 
@@ -1130,7 +1130,7 @@ export default function AnnotatePage() {
                             </div>
 
                             <div className="flex-none p-3 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-3">
-                                <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-0.5">Scanner Vision</h3>
+                                <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-0.5">Détection des bulles</h3>
 
                                 {detectionStatus === 'idle' && (
                                     <Button
@@ -1139,7 +1139,7 @@ export default function AnnotatePage() {
                                         onClick={loadDetectionModel}
                                         className="w-full h-8 text-[11px] font-bold bg-white border border-slate-200 hover:bg-slate-50 text-slate-600"
                                     >
-                                        <Download size={12} className="mr-1.5" /> Activer l'IA Vision
+                                        <Download size={12} className="mr-1.5" /> Charger le modèle <span className="text-[10px] font-bold text-slate-400">(250MB)</span>
                                     </Button>
                                 )}
                                 {detectionStatus === 'loading' && (
