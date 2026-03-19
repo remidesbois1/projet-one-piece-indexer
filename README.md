@@ -110,14 +110,14 @@ Détecte instantanément les bulles sur la planche.
 Une fois les bulles détectées, un modèle spécialisé les trie intelligemment dans le bon ordre de lecture.
 
 > Pour plus de détails sur le modèle de tri : [reading_order_ml.md](https://github.com/remidesbois1/projet-poneglyph/blob/master/documentation/reading_order_ml.md)
-> Modèle hébergé sur Hugging Face : [Remidesbois/bubble_reorder_ml](https://huggingface.co/Remidesbois/bubble_reorder_ml)
+> Modèle hébergé sur Hugging Face : [Remidesbois/ReaderNet-V5](https://huggingface.co/Remidesbois/ReaderNet-V5)
 
-| | **Modèle de Tri des Bulles** |
+| | **Modèle de Tri des Bulles (ReaderNet V5)** |
 |---|---|
-| **Architecture** | ResNet |
-| **Précision (Val)** | **98.3%** |
-| **Taille ONNX** | **~170 MB** |
-| **Exécution** | Local (Web worker) |
+| **Architecture** | Global-Local (MobileNetV3 + MLP) |
+| **Précision (Val)** | **98.0%** |
+| **Taille ONNX** | **2.47 MB** (vs 170 MB) |
+| **Exécution** | Local (Web worker) - Infér. unique par page |
 
 ### **Google Gemini ~~2.5~~ 3.1 Flash-Lite (Cloud)**
 

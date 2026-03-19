@@ -6,9 +6,10 @@ let detectionSession = null;
 let orderSession = null;
 
 const MODEL_PATH = 'https://huggingface.co/Remidesbois/YoloPiece_BubbleDetector/resolve/main/onepiece_detector.onnx';
-const ORDER_MODEL_PATH = 'https://huggingface.co/Remidesbois/bubble_reorder_ml/resolve/main/reading_order_v2.onnx';
+const ORDER_MODEL_PATH = 'https://huggingface.co/Remidesbois/ReaderNet-V5/resolve/main/readernet_v5.onnx';
 const INPUT_DIM = 800;
-const ORDER_DIM = 256;
+const ORDER_H = 256;
+const ORDER_W = 384;
 
 self.addEventListener('message', async (event) => {
     const { type, imageBlob } = event.data;
@@ -37,15 +38,15 @@ self.addEventListener('message', async (event) => {
                         executionProviders: ['webgpu', 'wasm'],
                         graphOptimizationLevel: 'all'
                     });
-                    console.log("[Worker] Reading order model loaded");
+                    console.log("[Worker] ReaderNet V5 loaded");
                 } else {
-                    console.warn("[Worker] Reading order model not found at", ORDER_MODEL_PATH);
+                    console.warn("[Worker] ReaderNet V5 not found at", ORDER_MODEL_PATH);
                 }
             } catch (e) {
-                console.warn("[Worker] Failed to load reading order model:", e.message);
+                console.warn("[Worker] Failed to load ReaderNet V5:", e.message);
             }
 
-            console.log("[Worker] Detection model loaded");
+            console.log("[Worker] Detection models loaded");
             self.postMessage({ status: 'ready' });
         } catch (err) {
             console.error("[Worker] Init Error:", err);
@@ -131,14 +132,46 @@ function simplifyPostProcess(data, scale, padX, padY) {
 
 async function mlReadingOrder(boxes, bitmap) {
     const n = boxes.length;
-    const pageRGB = preparePageRGB(bitmap);
+    const { imageTensor, ratio, padLeft } = preparePageGrayscale(bitmap);
+
+    const norm = boxes.map(b => {
+        const x = (b.x * ratio + padLeft) / ORDER_W;
+        const y = (b.y * ratio) / ORDER_H;
+        const w = (b.w * ratio) / ORDER_W;
+        const h = (b.h * ratio) / ORDER_H;
+        const cx = x + w / 2;
+        const cy = y + h / 2;
+        return { x, y, w, h, cx, cy };
+    });
+
     const scores = Array.from({ length: n }, () => new Float32Array(n));
 
     for (let i = 0; i < n; i++) {
-        for (let j = i + 1; j < n; j++) {
-            const prob = await comparePair(pageRGB, boxes[i], boxes[j], bitmap.width, bitmap.height);
+        for (let j = 0; j < n; j++) {
+            if (i === j) continue;
+            const a = norm[i];
+            const b = norm[j];
+            const dx = b.cx - a.cx;
+            const dy = b.cy - a.cy;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const angle = Math.atan2(dy, dx) / Math.PI;
+
+            const geometryVec = new Float32Array([
+                a.x, a.y, a.w, a.h,
+                b.x, b.y, b.w, b.h,
+                dx, dy, dist, angle
+            ]);
+
+            const geomTensor = new ort.Tensor('float32', geometryVec, [1, 12]);
+            const results = await orderSession.run({
+                image: imageTensor,
+                geometry: geomTensor
+            });
+
+            const logit = results.prediction.data[0];
+            const prob = 1 / (1 + Math.exp(-logit));
+
             scores[i][j] = prob;
-            scores[j][i] = 1 - prob;
         }
     }
 
@@ -151,70 +184,31 @@ async function mlReadingOrder(boxes, bitmap) {
     return indices.map(i => boxes[i]);
 }
 
-function preparePageRGB(bitmap) {
-    const canvas = new OffscreenCanvas(ORDER_DIM, ORDER_DIM);
+function preparePageGrayscale(bitmap) {
+    const { width, height } = bitmap;
+    const ratio = ORDER_H / height;
+    const newW = Math.round(width * ratio);
+    const clampedW = Math.min(newW, ORDER_W);
+    const padLeft = Math.floor((ORDER_W - clampedW) / 2);
+
+    const canvas = new OffscreenCanvas(ORDER_W, ORDER_H);
     const ctx = canvas.getContext('2d');
-    ctx.drawImage(bitmap, 0, 0, ORDER_DIM, ORDER_DIM);
-    const imageData = ctx.getImageData(0, 0, ORDER_DIM, ORDER_DIM);
+
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, ORDER_W, ORDER_H);
+
+    ctx.drawImage(bitmap, padLeft, 0, clampedW, ORDER_H);
+
+    const imageData = ctx.getImageData(0, 0, ORDER_W, ORDER_H);
     const { data } = imageData;
+    const grayscale = new Float32Array(ORDER_W * ORDER_H);
 
-    const rgb = new Float32Array(3 * ORDER_DIM * ORDER_DIM);
-    for (let i = 0; i < ORDER_DIM * ORDER_DIM; i++) {
-        rgb[i]                              = data[i * 4]     / 255.0;
-        rgb[ORDER_DIM * ORDER_DIM + i]      = data[i * 4 + 1] / 255.0;
-        rgb[2 * ORDER_DIM * ORDER_DIM + i]  = data[i * 4 + 2] / 255.0;
+    for (let i = 0; i < ORDER_W * ORDER_H; i++) {
+        grayscale[i] = (data[i * 4] * 0.299 + data[i * 4 + 1] * 0.587 + data[i * 4 + 2] * 0.114) / 255.0;
     }
-    return rgb;
-}
 
-const COORD_MAPS = (() => {
-    const maps = new Float32Array(2 * ORDER_DIM * ORDER_DIM);
-    for (let y = 0; y < ORDER_DIM; y++) {
-        const yVal = (y / (ORDER_DIM - 1)) * 2 - 1;
-        for (let x = 0; x < ORDER_DIM; x++) {
-            const xVal = (x / (ORDER_DIM - 1)) * 2 - 1;
-            maps[y * ORDER_DIM + x] = xVal;
-            maps[ORDER_DIM * ORDER_DIM + y * ORDER_DIM + x] = yVal;
-        }
-    }
-    return maps;
-})();
-
-async function comparePair(pageRGB, boxA, boxB, pageW, pageH) {
-    const S = ORDER_DIM;
-    const pixels = S * S;
-
-    const maskA = new Float32Array(pixels);
-    const maskB = new Float32Array(pixels);
-
-    fillMask(maskA, boxA, pageW, pageH, S);
-    fillMask(maskB, boxB, pageW, pageH, S);
-
-    const inputData = new Float32Array(7 * pixels);
-    inputData.set(pageRGB, 0);
-    inputData.set(maskA, 3 * pixels);
-    inputData.set(maskB, 4 * pixels);
-    inputData.set(COORD_MAPS, 5 * pixels);
-
-    const tensor = new ort.Tensor('float32', inputData, [1, 7, S, S]);
-    const result = await orderSession.run({
-        [orderSession.inputNames[0]]: tensor
-    });
-
-    return result[orderSession.outputNames[0]].data[0];
-}
-
-function fillMask(mask, box, pageW, pageH, size) {
-    const x1 = Math.max(0, Math.floor(box.x / pageW * size));
-    const y1 = Math.max(0, Math.floor(box.y / pageH * size));
-    const x2 = Math.min(size, Math.ceil((box.x + box.w) / pageW * size));
-    const y2 = Math.min(size, Math.ceil((box.y + box.h) / pageH * size));
-
-    for (let y = y1; y < y2; y++) {
-        for (let x = x1; x < x2; x++) {
-            mask[y * size + x] = 1.0;
-        }
-    }
+    const imageTensor = new ort.Tensor('float32', grayscale, [1, 1, ORDER_H, ORDER_W]);
+    return { imageTensor, ratio, padLeft };
 }
 
 function mangaOrderSort(boxes) {
