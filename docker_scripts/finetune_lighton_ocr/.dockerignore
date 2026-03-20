@@ -1,0 +1,17 @@
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.env
+.git
+.github
+.vscode
+lighton_dataset/
+outputs_lighton_manga/
+node_modules/
+dist/
+build/
+*.gguf
+tests/
+examples/
+llama.cpp/

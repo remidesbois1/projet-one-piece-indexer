@@ -11,6 +11,7 @@ export function useAnnotationDetection({
     setPendingAnnotation,
     setDebugImageUrl,
     runLocalOcr,
+    runBackgroundOcr,
     setIsSubmitting,
     setLoadingText
 }) {
@@ -38,7 +39,7 @@ export function useAnnotationDetection({
         setPendingAnnotation(analysisData);
         setDebugImageUrl(null);
 
-        runLocalOcr(nextBox);
+        runLocalOcr(nextBox, nextBox.id);
     }, [imageRef, pageId, setRectangle, setPendingAnnotation, setDebugImageUrl, runLocalOcr]);
 
     const handleExecuteDetection = async () => {
@@ -61,8 +62,18 @@ export function useAnnotationDetection({
 
             toast.success(`${boxes.length} bulles détectées !`);
 
-            detectionQueueRef.current = boxes;
-            setQueueLength(boxes.length);
+            const boxesWithId = boxes.map((box, index) => ({
+                ...box,
+                id: `auto-${Date.now()}-${index}`
+            }));
+
+            // Launch background OCR for all bubbles
+            boxesWithId.forEach(box => {
+                runBackgroundOcr(box, box.id);
+            });
+
+            detectionQueueRef.current = boxesWithId;
+            setQueueLength(boxesWithId.length);
             setIsAutoDetecting(true);
 
             setTimeout(() => {

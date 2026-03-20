@@ -62,7 +62,7 @@ export default function AnnotateEditorDialog({
                         <DraggableWrapper
                             title={
                                 <div className="flex items-center gap-2">
-                                    {pendingAnnotation?.id ? "Modifier" : "Nouvelle"} annotation
+                                    {pendingAnnotation?.id && typeof pendingAnnotation.id !== 'string' ? "Modifier" : "Nouvelle"} annotation
                                     {ocrSource === 'local' && (
                                         <Badge variant="outline" className="text-[10px] text-emerald-600 border-emerald-200 bg-emerald-50">
                                             <Cpu className="h-3 w-3 mr-1" /> Local IA

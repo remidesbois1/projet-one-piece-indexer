@@ -19,7 +19,7 @@ const ValidationForm = ({ annotationData, onValidationSuccess, onCancel, onRejec
   const [isSubmitting, setIsSubmitting] = useState(false);
   const textareaRef = useRef(null);
 
-  const isEditing = annotationData && annotationData.id;
+  const isEditing = annotationData && annotationData.id && typeof annotationData.id !== 'string';
 
   useEffect(() => {
     setTimeout(() => {
@@ -47,26 +47,34 @@ const ValidationForm = ({ annotationData, onValidationSuccess, onCancel, onRejec
       toast.error("Le texte ne peut pas être vide.");
       return;
     }
-    setIsSubmitting(true);
+
+    const tempId = annotationData.id;
+    const finalBubbleData = {
+      id_page: annotationData.id_page,
+      x: annotationData.x, y: annotationData.y,
+      w: annotationData.w, h: annotationData.h,
+      texte_propose: text,
+      // Provide temporary ID to handleSuccess for optimistic replacement if needed
+      tempId: typeof tempId === 'string' ? tempId : null
+    };
+
+    // Optimistic closure/return
+    const optimisticBubble = { ...finalBubbleData, id: tempId, isOptimistic: true };
+    onValidationSuccess(optimisticBubble);
+
+    // Background API call
     try {
       if (isEditing) {
         const response = await updateBubbleText(annotationData.id, text);
-        onValidationSuccess(response.data);
+        onValidationSuccess(response.data, tempId);
       } else {
-        const finalBubbleData = {
-          id_page: annotationData.id_page,
-          x: annotationData.x, y: annotationData.y,
-          w: annotationData.w, h: annotationData.h,
-          texte_propose: text,
-        };
         const response = await createBubble(finalBubbleData);
-        onValidationSuccess(response.data);
+        onValidationSuccess(response.data, tempId);
       }
     } catch (error) {
-      console.error("Erreur soumission", error);
-      toast.error("Une erreur est survenue lors de l'enregistrement.");
-    } finally {
-      setIsSubmitting(false);
+      console.error("Erreur soumission background", error);
+      toast.error("Erreur d'enregistrement en arrière-plan.");
+      // In a real app, we might want to revert the optimistic UI here
     }
   };
 
