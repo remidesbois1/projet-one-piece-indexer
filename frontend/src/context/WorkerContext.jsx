@@ -40,11 +40,11 @@ export const OCR_MODELS = {
     },
     lighton: {
         key: 'lighton',
-        label: 'LightOnOCR 2',
-        description: 'WebGPU Optimized - Local 1B',
+        label: 'LightON Poneglyph',
+        description: 'Serveur Cloud (Modal GPU)',
         cer: '< 0.5%',
-        size: '~ 700 Mo (WASM)',
-        type: 'local'
+        size: 'API Cloud',
+        type: 'api'
     }
 };
 
@@ -126,12 +126,8 @@ export const WorkerProvider = ({ children }) => {
             return;
         }
 
-        if (key === 'lighton') {
-            if (lightonWorkerRef.current && (modelStatus === 'idle' || modelStatus === 'error')) {
-                setModelStatus('loading');
-                setDownloadProgress(0);
-                lightonWorkerRef.current.postMessage({ type: 'init', modelId: "Remidesbois/lighton-ocr-2-1b-manga-gguf" });
-            }
+        if (modelData?.type === 'api') {
+            setModelStatus('ready');
             return;
         }
 
@@ -160,23 +156,6 @@ export const WorkerProvider = ({ children }) => {
     };
 
     const runOcr = async (blob, requestId = null) => {
-        if (activeModelKey === 'lighton') {
-            if (lightonWorkerRef.current && modelStatus === 'ready') {
-                // Convert blob to base64 for the worker
-                const reader = new FileReader();
-                reader.readAsDataURL(blob);
-                reader.onloadend = () => {
-                    const base64data = reader.result;                
-                    lightonWorkerRef.current.postMessage({ 
-                        type: 'run', 
-                        image: base64data, 
-                        requestId 
-                    });
-                };
-            }
-            return;
-        }
-
         if (workerRef.current && modelStatus === 'ready') {
             workerRef.current.postMessage({ type: 'run', imageBlob: blob, requestId });
         }

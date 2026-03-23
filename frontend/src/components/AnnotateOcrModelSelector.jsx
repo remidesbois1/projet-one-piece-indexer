@@ -42,7 +42,7 @@ export default function AnnotateOcrModelSelector({
                 </div>
             </div>
 
-            <div className="flex gap-1.5">
+            <div className="flex flex-col gap-1.5">
                 {Object.values(OCR_MODELS)
                     .filter(m => preferLocalOCR ? m.type === 'local' : m.type === 'api')
                     .map((m) => (
