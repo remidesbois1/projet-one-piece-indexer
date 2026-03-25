@@ -163,10 +163,10 @@ export default function AnnotatePage() {
             }
             switch (e.key) {
                 case 'ArrowLeft':
-                    if (navContext.prev) router.push(`/${mangaSlug}/annotate/${navContext.prev.id}`);
+                    if (!isGuest && navContext.prev) router.push(`/${mangaSlug}/annotate/${navContext.prev.id}`);
                     break;
                 case 'ArrowRight':
-                    if (navContext.next) router.push(`/${mangaSlug}/annotate/${navContext.next.id}`);
+                    if (!isGuest && navContext.next) router.push(`/${mangaSlug}/annotate/${navContext.next.id}`);
                     break;
                 case 'Escape':
                     if (isDrawing) { /* dealt with in hook but can be here too */ }
@@ -318,10 +318,12 @@ export default function AnnotatePage() {
                     </div>
 
                     <div className="flex items-center gap-2">
-                        <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => setShowDescModal(true)}>
-                            <FileText size={16} />
-                        </Button>
-                        <Button variant="default" size="sm" className="h-9" disabled={page.statut === 'pending_review' || page.statut === 'completed'} onClick={handleSubmitPage}>
+                        {!isGuest && (
+                            <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => setShowDescModal(true)}>
+                                <FileText size={16} />
+                            </Button>
+                        )}
+                        <Button variant="default" size="sm" className="h-9" disabled={page.statut === 'pending_review' || page.statut === 'completed' || isGuest} onClick={handleSubmitPage}>
                             <Send size={14} className="mr-2" /> Soumettre
                         </Button>
                     </div>
