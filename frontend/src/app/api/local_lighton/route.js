@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 export async function POST(req) {
     try {
-        const modalUrl = process.env.MODAL_LIGHTON_URL || "https://remidesbois--lighton-ocr-poneglyph-lightonocr-ocr-lighton.modal.run";
+        const modalUrl = process.env.MODAL_LIGHTON_URL || "https://remisemenzin--ocr-lighton.modal.run";
         const modalApiKey = process.env.MODAL_OCR_API_KEY;
 
         if (!modalApiKey) {
