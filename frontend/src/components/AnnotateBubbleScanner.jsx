@@ -23,7 +23,7 @@ export default function AnnotateBubbleScanner({
                     onClick={loadDetectionModel}
                     className="w-full h-8 text-[11px] font-bold bg-white border border-slate-200 hover:bg-slate-50 text-slate-600"
                 >
-                    <Download size={12} className="mr-1.5" /> Charger le modèle <span className="text-[10px] font-bold text-slate-400">(250MB)</span>
+                    <Download size={12} className="mr-1.5" /> Charger le modèle <span className="text-[10px] font-bold text-slate-400">(13MB)</span>
                 </Button>
             )}
             {detectionStatus === 'loading' && (

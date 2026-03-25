@@ -5,9 +5,9 @@ ort.env.wasm.wasmPaths = new URL('/onnx/', self.location.origin).href;
 let detectionSession = null;
 let orderSession = null;
 
-const MODEL_PATH = 'https://huggingface.co/Remidesbois/YoloPiece_BubbleDetector/resolve/main/onepiece_detector.onnx';
+const MODEL_PATH = 'https://huggingface.co/Remidesbois/YoloPiece_BubbleDetector_Nano/resolve/main/onepiece_detector_nano.onnx';
 const ORDER_MODEL_PATH = 'https://huggingface.co/Remidesbois/ReaderNet-V5/resolve/main/readernet_v5.onnx';
-const INPUT_DIM = 800;
+const INPUT_DIM = 1024;
 const ORDER_H = 256;
 const ORDER_W = 384;
 
