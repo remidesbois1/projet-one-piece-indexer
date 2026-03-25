@@ -13,7 +13,7 @@ export function useAnnotationInteractions({
     pendingAnnotation,
     setPendingAnnotation,
     setRectangle,
-    isGuest,
+    canEdit,
     isMobile,
     pageStatus,
     isSubmitting,
@@ -59,7 +59,7 @@ export function useAnnotationInteractions({
     }, [containerRef]);
 
     const handleMouseDown = useCallback((event) => {
-        if (isGuest || isMobile) return;
+        if (!canEdit || isMobile) return;
         if (pageStatus !== 'not_started' && pageStatus !== 'in_progress') return;
         if (isSubmitting || showApiKeyModal || showDescModal) return;
 
@@ -70,7 +70,7 @@ export function useAnnotationInteractions({
         setEndPoint(coords);
         setRectangle(null);
         setPendingAnnotation(null);
-    }, [isGuest, isMobile, pageStatus, isSubmitting, showApiKeyModal, showDescModal, getContainerCoords, setRectangle, setPendingAnnotation]);
+    }, [canEdit, isMobile, pageStatus, isSubmitting, showApiKeyModal, showDescModal, getContainerCoords, setRectangle, setPendingAnnotation]);
 
     const handleMouseMove = useCallback((event) => {
         const coords = getContainerCoords(event);
@@ -139,6 +139,7 @@ export function useAnnotationInteractions({
     }, [isDrawing, imageRef, startPoint, endPoint, getContainerCoords, setRectangle, activeInteraction, existingBubbles]);
 
     const handleInteractionStart = useCallback((e, type, handle = null, targetBubble = null) => {
+        if (!canEdit || isMobile) return;
         e.stopPropagation();
         e.preventDefault();
 
@@ -158,7 +159,7 @@ export function useAnnotationInteractions({
                 h: bubbleToUse.h
             }
         });
-    }, [pendingAnnotation]);
+    }, [canEdit, isMobile, pendingAnnotation]);
 
     useEffect(() => {
         if (!activeInteraction.type) return;

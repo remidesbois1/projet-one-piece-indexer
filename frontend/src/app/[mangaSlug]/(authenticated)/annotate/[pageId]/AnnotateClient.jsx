@@ -26,7 +26,7 @@ import AnnotateEditorDialog from '@/components/AnnotateEditorDialog';
 import AnnotateMetadataModal from '@/components/AnnotateMetadataModal';
 
 export default function AnnotatePage() {
-    const { user, session, isGuest } = useAuth();
+    const { user, session, isGuest, role } = useAuth();
     const params = useParams();
     const searchParams = useSearchParams();
     const fromSearch = searchParams.get('from') === 'search';
@@ -47,6 +47,7 @@ export default function AnnotatePage() {
     const [showApiKeyModal, setShowApiKeyModal] = useState(false);
     const [showDescModal, setShowDescModal] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const canEdit = page && !isGuest && (role === 'Admin' || role === 'Modo') && (page.statut === 'not_started' || page.statut === 'in_progress');
 
     const containerRef = useRef(null);
     const imageRef = useRef(null);
@@ -113,7 +114,7 @@ export default function AnnotatePage() {
         handleMouseUp, handleInteractionStart
     } = useAnnotationInteractions({
         containerRef, imageRef, imageDimensions, existingBubbles, setExistingBubbles,
-        pendingAnnotation, setPendingAnnotation, setRectangle, isGuest, isMobile,
+        pendingAnnotation, setPendingAnnotation, setRectangle, canEdit, isMobile,
         pageStatus: page?.statut, isSubmitting, showApiKeyModal, showDescModal
     });
 
@@ -163,10 +164,10 @@ export default function AnnotatePage() {
             }
             switch (e.key) {
                 case 'ArrowLeft':
-                    if (navContext.prev) router.push(`/${mangaSlug}/annotate/${navContext.prev.id}`);
+                    if (!isGuest && navContext.prev) router.push(`/${mangaSlug}/annotate/${navContext.prev.id}`);
                     break;
                 case 'ArrowRight':
-                    if (navContext.next) router.push(`/${mangaSlug}/annotate/${navContext.next.id}`);
+                    if (!isGuest && navContext.next) router.push(`/${mangaSlug}/annotate/${navContext.next.id}`);
                     break;
                 case 'Escape':
                     if (isDrawing) { /* dealt with in hook but can be here too */ }
@@ -199,7 +200,7 @@ export default function AnnotatePage() {
     };
 
     const handleEditBubble = (bubble) => {
-        if (isGuest || isMobile) return;
+        if (!canEdit || isMobile) return;
         setPendingAnnotation(bubble);
         setIsModalOpen(true);
     };
@@ -266,21 +267,20 @@ export default function AnnotatePage() {
     if (error) return <div className="p-8 text-red-500">{error}</div>;
     if (!page) return null;
 
-    const canEdit = !isGuest && (page.statut === 'not_started' || page.statut === 'in_progress');
-
     return (
         <div className="flex flex-col lg:flex-row h-[calc(100vh-64px)] bg-slate-50 overflow-hidden -mx-4 sm:-mx-8 -my-6 relative">
             
-            <AnnotateLeftSidebar 
-                fromSearch={fromSearch}
-                mangaSlug={mangaSlug}
-                page={page}
-                chapterPages={chapterPages}
-                navContext={navContext}
-                goToPrev={goToPrev}
-                goToNext={goToNext}
-                isGuest={isGuest}
-                preferLocalOCR={preferLocalOCR}
+                <AnnotateLeftSidebar 
+                    fromSearch={fromSearch}
+                    mangaSlug={mangaSlug}
+                    page={page}
+                    chapterPages={chapterPages}
+                    navContext={navContext}
+                    goToPrev={goToPrev}
+                    goToNext={goToNext}
+                    isGuest={isGuest}
+                    role={role}
+                    preferLocalOCR={preferLocalOCR}
                 toggleOcrPreference={toggleOcrPreference}
                 activeModelKey={activeModelKey}
                 switchModel={switchModel}
@@ -318,10 +318,12 @@ export default function AnnotatePage() {
                     </div>
 
                     <div className="flex items-center gap-2">
-                        <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => setShowDescModal(true)}>
-                            <FileText size={16} />
-                        </Button>
-                        <Button variant="default" size="sm" className="h-9" disabled={page.statut === 'pending_review' || page.statut === 'completed'} onClick={handleSubmitPage}>
+                        {!isGuest && (role === 'Admin' || role === 'Modo') && (
+                            <Button variant="outline" size="icon" className="h-9 w-9" onClick={() => setShowDescModal(true)}>
+                                <FileText size={16} />
+                            </Button>
+                        )}
+                        <Button variant="default" size="sm" className="h-9" disabled={page.statut === 'pending_review' || page.statut === 'completed' || isGuest || role === 'User'} onClick={handleSubmitPage}>
                             <Send size={14} className="mr-2" /> Soumettre
                         </Button>
                     </div>
@@ -330,7 +332,7 @@ export default function AnnotatePage() {
                 {isGuest && (
                     <div className="bg-amber-50 border-b border-amber-200 px-6 py-2 flex items-center justify-center gap-2 text-amber-800 text-sm font-medium">
                         <Shield className="h-4 w-4" />
-                        Mode Lecture Seule : La modification des données est réservée aux utilisateurs connectés.
+                        Mode Visiteur : Modification et navigation limitées. Connectez-vous pour tout débloquer.
                     </div>
                 )}
 

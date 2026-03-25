@@ -42,8 +42,11 @@ export default function AnnotateLeftSidebar({
     queueLength,
     setShowDescModal,
     setShowApiKeyModal,
-    handleSubmitPage
+    handleSubmitPage,
+    role
 }) {
+    const isStaff = role === 'Admin' || role === 'Modo';
+
     return (
         <div className="hidden lg:flex w-[280px] shrink-0 h-full flex-col border-r border-slate-200 bg-white z-40 relative shadow-sm">
             {/* Header Info */}
@@ -74,19 +77,21 @@ export default function AnnotateLeftSidebar({
 
             <div className="flex-1 flex flex-col p-4 gap-3 overflow-hidden bg-slate-50/50">
                 {/* Navigation */}
-                <div className="flex-none p-3 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-2">
-                    <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-0.5">Navigation</h3>
-                    <div className="flex gap-2">
-                        <Button variant="outline" size="sm" disabled={!navContext.prev} onClick={goToPrev} className="flex-1 h-8 text-[11px] font-bold bg-white border-slate-200 hover:bg-slate-50 text-slate-600">
-                            <ChevronLeft size={14} className="mr-1" /> Préc
-                        </Button>
-                        <Button variant="outline" size="sm" disabled={!navContext.next} onClick={goToNext} className="flex-1 h-8 text-[11px] font-bold bg-white border-slate-200 hover:bg-slate-50 text-slate-600">
-                            Suiv <ChevronRight size={14} className="ml-1" />
-                        </Button>
+                {!isGuest && (
+                    <div className="flex-none p-3 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-2">
+                        <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-0.5">Navigation</h3>
+                        <div className="flex gap-2">
+                            <Button variant="outline" size="sm" disabled={!navContext.prev} onClick={goToPrev} className="flex-1 h-8 text-[11px] font-bold bg-white border-slate-200 hover:bg-slate-50 text-slate-600">
+                                <ChevronLeft size={14} className="mr-1" /> Préc
+                            </Button>
+                            <Button variant="outline" size="sm" disabled={!navContext.next} onClick={goToNext} className="flex-1 h-8 text-[11px] font-bold bg-white border-slate-200 hover:bg-slate-50 text-slate-600">
+                                Suiv <ChevronRight size={14} className="ml-1" />
+                            </Button>
+                        </div>
                     </div>
-                </div>
+                )}
 
-                {!isGuest ? (
+                {!isGuest && isStaff && (
                     <>
                         <AnnotateOcrModelSelector
                             preferLocalOCR={preferLocalOCR}
@@ -109,7 +114,9 @@ export default function AnnotateLeftSidebar({
                             queueLength={queueLength}
                         />
                     </>
-                ) : (
+                )}
+
+                {role === 'User' && (
                     <div className="flex-none p-4 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-5 overflow-y-auto max-h-[500px]">
                         <div className="flex items-center gap-2 pb-2 border-b border-slate-50">
                             <div className="bg-indigo-50 p-1.5 rounded-lg border border-indigo-100/50">
@@ -162,7 +169,7 @@ export default function AnnotateLeftSidebar({
                 )}
             </div>
 
-            {!isGuest && (
+            {!isGuest && isStaff && (
                 <div className="flex-none p-4 border-t border-slate-100 bg-white flex flex-col gap-2.5 z-10">
                     <div className="grid grid-cols-2 gap-2">
                         <Button variant="outline" size="sm" className="h-8 text-[11px] font-bold text-slate-600 bg-slate-50 border-slate-200/60 hover:bg-slate-100 hover:text-slate-900 w-full" onClick={() => setShowDescModal(true)}>

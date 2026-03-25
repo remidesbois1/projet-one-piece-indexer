@@ -5,6 +5,7 @@ import { useManga } from '@/context/MangaContext';
 import { useAuth } from '@/context/AuthContext';
 import { getMySubmissions } from '@/lib/api';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 import {
     Table,
@@ -19,21 +20,24 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 
-import { ChevronLeft, ChevronRight, Inbox, MessageCircle } from "lucide-react";
+import { ChevronLeft, ChevronRight, Inbox, MessageCircle, Shield } from "lucide-react";
 
 const RESULTS_PER_PAGE = 15;
 
 export default function MySubmissionsPage() {
     const { currentManga, mangaSlug } = useManga();
+    const router = useRouter();
     const pageTitle = currentManga ? `Mes Soumissions : ${currentManga.titre}` : "Mes Soumissions";
-    const { session } = useAuth();
+    const { session, role, isGuest } = useAuth();
     const [submissions, setSubmissions] = useState([]);
     const [totalCount, setTotalCount] = useState(0);
     const [currentPage, setCurrentPage] = useState(1);
     const [isLoading, setIsLoading] = useState(true);
 
+    const isStaff = role === 'Admin' || role === 'Modo';
+
     const fetchSubmissions = (pageToFetch) => {
-        if (session) {
+        if (session && isStaff) {
             setIsLoading(true);
             getMySubmissions(pageToFetch, RESULTS_PER_PAGE)
                 .then(res => {
@@ -49,10 +53,16 @@ export default function MySubmissionsPage() {
     };
 
     useEffect(() => {
-        if (session) {
+        if (session && role === 'User') {
+            router.push(`/${mangaSlug}/dashboard`);
+        } else if (session && isStaff) {
             fetchSubmissions(1);
         }
-    }, [session]);
+    }, [session, role, mangaSlug]);
+
+    if (!isGuest && role === 'User') {
+        return null;
+    }
 
     const totalPages = Math.ceil(totalCount / RESULTS_PER_PAGE);
 

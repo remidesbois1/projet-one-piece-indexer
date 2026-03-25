@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict pxxoPHNGFlNQrIw9hFYPm7b0quGDZRskbRc38cvCcwJYXP1lnLl3ZwxbjkA8JXg
+\restrict l8tB4NLScuGXcB8BerO3ABtuIw8Uuq5q8LOlcWeGTkPhTBVMEGOOo6E2QfVtfuQ
 
 -- Dumped from database version 17.6
 -- Dumped by pg_dump version 18.2
@@ -930,33 +930,131 @@ $$;
 ALTER FUNCTION public.handle_new_user() OWNER TO postgres;
 
 --
+-- Name: is_admin(); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.is_admin() RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 
+    FROM public.profiles 
+    WHERE id = auth.uid() 
+    AND role = 'Admin'
+  );
+END;
+$$;
+
+
+ALTER FUNCTION public.is_admin() OWNER TO postgres;
+
+--
+-- Name: is_staff(); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.is_staff() RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 
+    FROM public.profiles 
+    WHERE id = auth.uid() 
+    AND role IN ('Admin', 'Modo')
+  );
+END;
+$$;
+
+
+ALTER FUNCTION public.is_staff() OWNER TO postgres;
+
+--
+-- Name: match_page_embeddings_dinov3(public.vector, integer); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.match_page_embeddings_dinov3(query_embedding public.vector, match_count integer DEFAULT 20) RETURNS TABLE(id uuid, id_chapitre uuid, numero_page integer, url_image text, similarity double precision)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    p.id,
+    p.id_chapitre,
+    p.numero_page,
+    p.url_image,
+    1 - (p.embedding <=> query_embedding) as similarity
+  FROM pages p
+  WHERE p.embedding IS NOT NULL
+  ORDER BY p.embedding <=> query_embedding
+  LIMIT match_count;
+END;
+$$;
+
+
+ALTER FUNCTION public.match_page_embeddings_dinov3(query_embedding public.vector, match_count integer) OWNER TO postgres;
+
+--
 -- Name: match_pages(public.vector, double precision, integer); Type: FUNCTION; Schema: public; Owner: postgres
 --
 
-CREATE FUNCTION public.match_pages(query_embedding public.vector, match_threshold double precision, match_count integer) RETURNS TABLE(id bigint, numero_page integer, url_image text, description jsonb, similarity double precision, chapitre_numero integer, tome_numero integer)
-    LANGUAGE plpgsql
+CREATE FUNCTION public.match_pages(query_embedding public.vector, match_threshold double precision DEFAULT 0.35, match_count integer DEFAULT 50) RETURNS TABLE(id bigint, url_image text, description jsonb, numero_page integer, chapitre_numero integer, tome_numero integer, id_tome bigint, manga_slug text, similarity double precision)
+    LANGUAGE sql STABLE
     AS $$
-begin
-  return query
   select
     p.id,
-    p.numero_page,
     p.url_image,
-    p.description,
-    (1 - (p.embedding <=> query_embedding)) as similarity,
+    p.description::jsonb,
+    p.numero_page,
     c.numero as chapitre_numero,
-    t.numero as tome_numero
+    t.numero as tome_numero,
+    c.id_tome,
+    m.slug as manga_slug,
+    1 - (p.embedding_voyage <=> query_embedding) as similarity
   from pages p
-  join chapitres c on p.id_chapitre = c.id
-  join tomes t on c.id_tome = t.id
-  where 1 - (p.embedding <=> query_embedding) > match_threshold
-  order by similarity desc
+  join chapitres c on c.id = p.id_chapitre
+  join tomes t on t.id = c.id_tome
+  join mangas m on m.id = t.manga_id
+  where p.embedding_voyage is not null
+    and 1 - (p.embedding_voyage <=> query_embedding) > match_threshold
+  order by p.embedding_voyage <=> query_embedding
   limit match_count;
-end;
 $$;
 
 
 ALTER FUNCTION public.match_pages(query_embedding public.vector, match_threshold double precision, match_count integer) OWNER TO postgres;
+
+--
+-- Name: match_pages_gemini(public.halfvec, double precision, integer); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.match_pages_gemini(query_embedding public.halfvec, match_threshold double precision DEFAULT 0.30, match_count integer DEFAULT 50) RETURNS TABLE(id bigint, url_image text, description jsonb, numero_page integer, chapitre_numero integer, tome_numero integer, id_tome bigint, manga_slug text, similarity double precision)
+    LANGUAGE sql STABLE
+    AS $$
+  select
+    p.id,
+    p.url_image,
+    p.description::jsonb,
+    p.numero_page,
+    c.numero as chapitre_numero,
+    t.numero as tome_numero,
+    c.id_tome,
+    m.slug as manga_slug,
+    1 - (p.embedding_gemini <=> query_embedding) as similarity
+  from pages p
+  join chapitres c on c.id = p.id_chapitre
+  join tomes t on t.id = c.id_tome
+  join mangas m on m.id = t.manga_id
+  where p.embedding_gemini is not null
+    and 1 - (p.embedding_gemini <=> query_embedding) > match_threshold
+  order by p.embedding_gemini <=> query_embedding
+  limit match_count;
+$$;
+
+
+ALTER FUNCTION public.match_pages_gemini(query_embedding public.halfvec, match_threshold double precision, match_count integer) OWNER TO postgres;
 
 --
 -- Name: match_pages_hybrid(public.vector, text, double precision, integer); Type: FUNCTION; Schema: public; Owner: postgres
@@ -1026,6 +1124,109 @@ $_$;
 
 
 ALTER FUNCTION public.match_pages_hybrid(query_embedding public.vector, query_text text, match_threshold double precision, match_count integer) OWNER TO postgres;
+
+--
+-- Name: match_pages_phash(bit, integer, integer); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.match_pages_phash(query_phash bit, max_distance integer, match_count integer) RETURNS TABLE(id bigint, manga_slug text, tome_numero integer, chapitre_numero double precision, numero_page integer, url_image text, description text, distance integer)
+    LANGUAGE sql STABLE
+    AS $$
+  SELECT
+    p.id,
+    m.slug AS manga_slug,
+    t.numero AS tome_numero,
+    c.numero AS chapitre_numero,
+    p.numero_page,
+    p.url_image,
+    p.description::text,
+    bit_count(p.image_phash # query_phash) AS distance
+  FROM pages p
+  JOIN chapitres c ON c.id = p.id_chapitre
+  JOIN tomes t ON t.id = c.id_tome
+  JOIN mangas m ON m.id = t.manga_id
+  WHERE 
+    p.image_phash IS NOT NULL
+    AND bit_count(p.image_phash # query_phash) <= max_distance
+  ORDER BY bit_count(p.image_phash # query_phash) ASC
+  LIMIT match_count;
+$$;
+
+
+ALTER FUNCTION public.match_pages_phash(query_phash bit, max_distance integer, match_count integer) OWNER TO postgres;
+
+--
+-- Name: match_pages_visual(public.vector, double precision, integer); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.match_pages_visual(query_embedding public.vector, match_threshold double precision, match_count integer) RETURNS TABLE(id bigint, page_id integer, similarity double precision, tile_type text, coords jsonb, url_image text, tome_numero integer, chapitre_numero integer, numero_page integer, manga_slug text)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    pp.id,
+    pp.page_id,
+    (1 - (pp.embedding <=> query_embedding))::float AS similarity,
+    pp.tile_type,
+    pp.coords,
+    p.url_image,
+    t.numero AS tome_numero,
+    c.numero AS chapitre_numero,
+    p.numero_page,
+    m.slug AS manga_slug
+  FROM public.page_visual_embeddings pp
+  JOIN public.pages p ON p.id = pp.page_id
+  JOIN public.chapitres c ON c.id = p.id_chapitre
+  JOIN public.tomes t ON t.id = c.id_tome
+  JOIN public.mangas m ON m.id = t.manga_id
+  WHERE 1 - (pp.embedding <=> query_embedding) > match_threshold
+  ORDER BY pp.embedding <=> query_embedding
+  LIMIT match_count;
+END;
+$$;
+
+
+ALTER FUNCTION public.match_pages_visual(query_embedding public.vector, match_threshold double precision, match_count integer) OWNER TO postgres;
+
+--
+-- Name: match_phash(text, double precision); Type: FUNCTION; Schema: public; Owner: postgres
+--
+
+CREATE FUNCTION public.match_phash(query_phash text, threshold double precision DEFAULT 0.95) RETURNS TABLE(id uuid, id_chapitre uuid, numero_page integer, url_image text, phash text, similarity double precision)
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    p.id,
+    p.id_chapitre,
+    p.numero_page,
+    p.url_image,
+    p.phash,
+    -- Calculate similarity: 1 - (hamming distance / 64) since phash is usually 64 bits (16 hex chars = 64 bits)
+    -- Actually blockhash-js returns a 64-character hex string which means 256 bits, so:
+    -- similarity = 1 - (num_differing_bits / 256)
+    1.0 - (
+      LENGTH(REGEXP_REPLACE(
+        LPAD(CAST(CAST(('x' || p.phash) AS BIT(256)) # CAST(('x' || query_phash) AS BIT(256)) AS TEXT), 256, '0'),
+        '0', '', 'g'
+      ))::float / 256.0
+    ) AS similarity
+  FROM pages p
+  WHERE p.phash IS NOT NULL
+  HAVING 1.0 - (
+      LENGTH(REGEXP_REPLACE(
+        LPAD(CAST(CAST(('x' || p.phash) AS BIT(256)) # CAST(('x' || query_phash) AS BIT(256)) AS TEXT), 256, '0'),
+        '0', '', 'g'
+      ))::float / 256.0
+    ) >= threshold
+  ORDER BY similarity DESC;
+END;
+$$;
+
+
+ALTER FUNCTION public.match_phash(query_phash text, threshold double precision) OWNER TO postgres;
 
 --
 -- Name: reorder_bubbles(jsonb); Type: FUNCTION; Schema: public; Owner: postgres
@@ -1509,13 +1710,16 @@ ALTER FUNCTION realtime.build_prepared_statement_sql(prepared_statement_name tex
 CREATE FUNCTION realtime."cast"(val text, type_ regtype) RETURNS jsonb
     LANGUAGE plpgsql IMMUTABLE
     AS $$
-    declare
-      res jsonb;
-    begin
-      execute format('select to_jsonb(%L::'|| type_::text || ')', val)  into res;
-      return res;
-    end
-    $$;
+declare
+  res jsonb;
+begin
+  if type_::text = 'bytea' then
+    return to_jsonb(val);
+  end if;
+  execute format('select to_jsonb(%L::'|| type_::text || ')', val) into res;
+  return res;
+end
+$$;
 
 
 ALTER FUNCTION realtime."cast"(val text, type_ regtype) OWNER TO supabase_admin;
@@ -2945,6 +3149,58 @@ COMMENT ON TABLE auth.audit_log_entries IS 'Auth: Audit trail for user actions.'
 
 
 --
+-- Name: custom_oauth_providers; Type: TABLE; Schema: auth; Owner: supabase_auth_admin
+--
+
+CREATE TABLE auth.custom_oauth_providers (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    provider_type text NOT NULL,
+    identifier text NOT NULL,
+    name text NOT NULL,
+    client_id text NOT NULL,
+    client_secret text NOT NULL,
+    acceptable_client_ids text[] DEFAULT '{}'::text[] NOT NULL,
+    scopes text[] DEFAULT '{}'::text[] NOT NULL,
+    pkce_enabled boolean DEFAULT true NOT NULL,
+    attribute_mapping jsonb DEFAULT '{}'::jsonb NOT NULL,
+    authorization_params jsonb DEFAULT '{}'::jsonb NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    email_optional boolean DEFAULT false NOT NULL,
+    issuer text,
+    discovery_url text,
+    skip_nonce_check boolean DEFAULT false NOT NULL,
+    cached_discovery jsonb,
+    discovery_cached_at timestamp with time zone,
+    authorization_url text,
+    token_url text,
+    userinfo_url text,
+    jwks_uri text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT custom_oauth_providers_authorization_url_https CHECK (((authorization_url IS NULL) OR (authorization_url ~~ 'https://%'::text))),
+    CONSTRAINT custom_oauth_providers_authorization_url_length CHECK (((authorization_url IS NULL) OR (char_length(authorization_url) <= 2048))),
+    CONSTRAINT custom_oauth_providers_client_id_length CHECK (((char_length(client_id) >= 1) AND (char_length(client_id) <= 512))),
+    CONSTRAINT custom_oauth_providers_discovery_url_length CHECK (((discovery_url IS NULL) OR (char_length(discovery_url) <= 2048))),
+    CONSTRAINT custom_oauth_providers_identifier_format CHECK ((identifier ~ '^[a-z0-9][a-z0-9:-]{0,48}[a-z0-9]$'::text)),
+    CONSTRAINT custom_oauth_providers_issuer_length CHECK (((issuer IS NULL) OR ((char_length(issuer) >= 1) AND (char_length(issuer) <= 2048)))),
+    CONSTRAINT custom_oauth_providers_jwks_uri_https CHECK (((jwks_uri IS NULL) OR (jwks_uri ~~ 'https://%'::text))),
+    CONSTRAINT custom_oauth_providers_jwks_uri_length CHECK (((jwks_uri IS NULL) OR (char_length(jwks_uri) <= 2048))),
+    CONSTRAINT custom_oauth_providers_name_length CHECK (((char_length(name) >= 1) AND (char_length(name) <= 100))),
+    CONSTRAINT custom_oauth_providers_oauth2_requires_endpoints CHECK (((provider_type <> 'oauth2'::text) OR ((authorization_url IS NOT NULL) AND (token_url IS NOT NULL) AND (userinfo_url IS NOT NULL)))),
+    CONSTRAINT custom_oauth_providers_oidc_discovery_url_https CHECK (((provider_type <> 'oidc'::text) OR (discovery_url IS NULL) OR (discovery_url ~~ 'https://%'::text))),
+    CONSTRAINT custom_oauth_providers_oidc_issuer_https CHECK (((provider_type <> 'oidc'::text) OR (issuer IS NULL) OR (issuer ~~ 'https://%'::text))),
+    CONSTRAINT custom_oauth_providers_oidc_requires_issuer CHECK (((provider_type <> 'oidc'::text) OR (issuer IS NOT NULL))),
+    CONSTRAINT custom_oauth_providers_provider_type_check CHECK ((provider_type = ANY (ARRAY['oauth2'::text, 'oidc'::text]))),
+    CONSTRAINT custom_oauth_providers_token_url_https CHECK (((token_url IS NULL) OR (token_url ~~ 'https://%'::text))),
+    CONSTRAINT custom_oauth_providers_token_url_length CHECK (((token_url IS NULL) OR (char_length(token_url) <= 2048))),
+    CONSTRAINT custom_oauth_providers_userinfo_url_https CHECK (((userinfo_url IS NULL) OR (userinfo_url ~~ 'https://%'::text))),
+    CONSTRAINT custom_oauth_providers_userinfo_url_length CHECK (((userinfo_url IS NULL) OR (char_length(userinfo_url) <= 2048)))
+);
+
+
+ALTER TABLE auth.custom_oauth_providers OWNER TO supabase_auth_admin;
+
+--
 -- Name: flow_state; Type: TABLE; Schema: auth; Owner: supabase_auth_admin
 --
 
@@ -3524,6 +3780,47 @@ COMMENT ON COLUMN auth.users.is_sso_user IS 'Auth: Set this column to true when 
 
 
 --
+-- Name: webauthn_challenges; Type: TABLE; Schema: auth; Owner: supabase_auth_admin
+--
+
+CREATE TABLE auth.webauthn_challenges (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid,
+    challenge_type text NOT NULL,
+    session_data jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    CONSTRAINT webauthn_challenges_challenge_type_check CHECK ((challenge_type = ANY (ARRAY['signup'::text, 'registration'::text, 'authentication'::text])))
+);
+
+
+ALTER TABLE auth.webauthn_challenges OWNER TO supabase_auth_admin;
+
+--
+-- Name: webauthn_credentials; Type: TABLE; Schema: auth; Owner: supabase_auth_admin
+--
+
+CREATE TABLE auth.webauthn_credentials (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    credential_id bytea NOT NULL,
+    public_key bytea NOT NULL,
+    attestation_type text DEFAULT ''::text NOT NULL,
+    aaguid uuid,
+    sign_count bigint DEFAULT 0 NOT NULL,
+    transports jsonb DEFAULT '[]'::jsonb NOT NULL,
+    backup_eligible boolean DEFAULT false NOT NULL,
+    backed_up boolean DEFAULT false NOT NULL,
+    friendly_name text DEFAULT ''::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_used_at timestamp with time zone
+);
+
+
+ALTER TABLE auth.webauthn_credentials OWNER TO supabase_auth_admin;
+
+--
 -- Name: app_settings; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -3636,18 +3933,6 @@ ALTER TABLE public.chapitres ALTER COLUMN id ADD GENERATED BY DEFAULT AS IDENTIT
 
 
 --
--- Name: glossary; Type: TABLE; Schema: public; Owner: postgres
---
-
-CREATE TABLE public.glossary (
-    word text NOT NULL,
-    created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
-
-ALTER TABLE public.glossary OWNER TO postgres;
-
---
 -- Name: mangas; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -3657,7 +3942,8 @@ CREATE TABLE public.mangas (
     titre text NOT NULL,
     description text,
     cover_url text,
-    created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL
+    created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+    enabled boolean DEFAULT true NOT NULL
 );
 
 
@@ -3689,8 +3975,9 @@ CREATE TABLE public.pages (
     created_at timestamp with time zone DEFAULT now(),
     statut public.page_status DEFAULT 'not_started'::public.page_status NOT NULL,
     description jsonb,
-    embedding public.vector(3072),
-    commentaire_moderation text
+    commentaire_moderation text,
+    embedding_voyage public.vector(1024),
+    embedding_gemini public.halfvec(3072)
 );
 
 
@@ -3742,6 +4029,59 @@ CREATE TABLE public.search_feedback (
 
 
 ALTER TABLE public.search_feedback OWNER TO postgres;
+
+--
+-- Name: search_logs; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.search_logs (
+    id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now(),
+    user_id uuid,
+    user_email text,
+    raw_query text NOT NULL,
+    normalized_query text,
+    model_provider text NOT NULL,
+    search_mode text NOT NULL,
+    manga_slug text,
+    filter_characters jsonb,
+    filter_arc text,
+    filter_tome integer,
+    rerank_enabled boolean DEFAULT false,
+    voyage_candidates_count integer,
+    gemini_candidates_count integer,
+    dual_overlap_count integer,
+    merged_candidates_count integer,
+    final_results_count integer,
+    duration_normalization_ms integer,
+    duration_voyage_embedding_ms integer,
+    duration_gemini_embedding_ms integer,
+    duration_voyage_rpc_ms integer,
+    duration_gemini_rpc_ms integer,
+    duration_merge_ms integer,
+    duration_rerank_ms integer,
+    duration_total_ms integer,
+    top_result_id integer,
+    top_result_score numeric,
+    error text
+);
+
+
+ALTER TABLE public.search_logs OWNER TO postgres;
+
+--
+-- Name: search_logs_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.search_logs ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.search_logs_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
 
 --
 -- Name: tomes; Type: TABLE; Schema: public; Owner: postgres
@@ -4021,6 +4361,22 @@ ALTER TABLE ONLY auth.audit_log_entries
 
 
 --
+-- Name: custom_oauth_providers custom_oauth_providers_identifier_key; Type: CONSTRAINT; Schema: auth; Owner: supabase_auth_admin
+--
+
+ALTER TABLE ONLY auth.custom_oauth_providers
+    ADD CONSTRAINT custom_oauth_providers_identifier_key UNIQUE (identifier);
+
+
+--
+-- Name: custom_oauth_providers custom_oauth_providers_pkey; Type: CONSTRAINT; Schema: auth; Owner: supabase_auth_admin
+--
+
+ALTER TABLE ONLY auth.custom_oauth_providers
+    ADD CONSTRAINT custom_oauth_providers_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: flow_state flow_state_pkey; Type: CONSTRAINT; Schema: auth; Owner: supabase_auth_admin
 --
 
@@ -4237,6 +4593,22 @@ ALTER TABLE ONLY auth.users
 
 
 --
+-- Name: webauthn_challenges webauthn_challenges_pkey; Type: CONSTRAINT; Schema: auth; Owner: supabase_auth_admin
+--
+
+ALTER TABLE ONLY auth.webauthn_challenges
+    ADD CONSTRAINT webauthn_challenges_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: webauthn_credentials webauthn_credentials_pkey; Type: CONSTRAINT; Schema: auth; Owner: supabase_auth_admin
+--
+
+ALTER TABLE ONLY auth.webauthn_credentials
+    ADD CONSTRAINT webauthn_credentials_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: app_settings app_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -4282,14 +4654,6 @@ ALTER TABLE ONLY public.chapitres
 
 ALTER TABLE ONLY public.chapitres
     ADD CONSTRAINT chapitres_pkey PRIMARY KEY (id);
-
-
---
--- Name: glossary glossary_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.glossary
-    ADD CONSTRAINT glossary_pkey PRIMARY KEY (word);
 
 
 --
@@ -4354,6 +4718,14 @@ ALTER TABLE ONLY public.profiles
 
 ALTER TABLE ONLY public.search_feedback
     ADD CONSTRAINT search_feedback_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: search_logs search_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.search_logs
+    ADD CONSTRAINT search_logs_pkey PRIMARY KEY (id);
 
 
 --
@@ -4480,6 +4852,34 @@ CREATE INDEX audit_logs_instance_id_idx ON auth.audit_log_entries USING btree (i
 --
 
 CREATE UNIQUE INDEX confirmation_token_idx ON auth.users USING btree (confirmation_token) WHERE ((confirmation_token)::text !~ '^[0-9 ]*$'::text);
+
+
+--
+-- Name: custom_oauth_providers_created_at_idx; Type: INDEX; Schema: auth; Owner: supabase_auth_admin
+--
+
+CREATE INDEX custom_oauth_providers_created_at_idx ON auth.custom_oauth_providers USING btree (created_at);
+
+
+--
+-- Name: custom_oauth_providers_enabled_idx; Type: INDEX; Schema: auth; Owner: supabase_auth_admin
+--
+
+CREATE INDEX custom_oauth_providers_enabled_idx ON auth.custom_oauth_providers USING btree (enabled);
+
+
+--
+-- Name: custom_oauth_providers_identifier_idx; Type: INDEX; Schema: auth; Owner: supabase_auth_admin
+--
+
+CREATE INDEX custom_oauth_providers_identifier_idx ON auth.custom_oauth_providers USING btree (identifier);
+
+
+--
+-- Name: custom_oauth_providers_provider_type_idx; Type: INDEX; Schema: auth; Owner: supabase_auth_admin
+--
+
+CREATE INDEX custom_oauth_providers_provider_type_idx ON auth.custom_oauth_providers USING btree (provider_type);
 
 
 --
@@ -4805,6 +5205,34 @@ CREATE INDEX users_is_anonymous_idx ON auth.users USING btree (is_anonymous);
 
 
 --
+-- Name: webauthn_challenges_expires_at_idx; Type: INDEX; Schema: auth; Owner: supabase_auth_admin
+--
+
+CREATE INDEX webauthn_challenges_expires_at_idx ON auth.webauthn_challenges USING btree (expires_at);
+
+
+--
+-- Name: webauthn_challenges_user_id_idx; Type: INDEX; Schema: auth; Owner: supabase_auth_admin
+--
+
+CREATE INDEX webauthn_challenges_user_id_idx ON auth.webauthn_challenges USING btree (user_id);
+
+
+--
+-- Name: webauthn_credentials_credential_id_key; Type: INDEX; Schema: auth; Owner: supabase_auth_admin
+--
+
+CREATE UNIQUE INDEX webauthn_credentials_credential_id_key ON auth.webauthn_credentials USING btree (credential_id);
+
+
+--
+-- Name: webauthn_credentials_user_id_idx; Type: INDEX; Schema: auth; Owner: supabase_auth_admin
+--
+
+CREATE INDEX webauthn_credentials_user_id_idx ON auth.webauthn_credentials USING btree (user_id);
+
+
+--
 -- Name: bulles_fts_idx; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -4826,10 +5254,45 @@ CREATE INDEX idx_bulles_texte_fts ON public.bulles USING gin (to_tsvector('frenc
 
 
 --
+-- Name: idx_search_logs_created_at; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_search_logs_created_at ON public.search_logs USING btree (created_at DESC);
+
+
+--
+-- Name: idx_search_logs_model_provider; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_search_logs_model_provider ON public.search_logs USING btree (model_provider);
+
+
+--
+-- Name: idx_search_logs_user_id; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_search_logs_user_id ON public.search_logs USING btree (user_id);
+
+
+--
 -- Name: idx_tomes_manga_id; Type: INDEX; Schema: public; Owner: postgres
 --
 
 CREATE INDEX idx_tomes_manga_id ON public.tomes USING btree (manga_id);
+
+
+--
+-- Name: pages_embedding_gemini_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX pages_embedding_gemini_idx ON public.pages USING hnsw (embedding_gemini public.halfvec_cosine_ops);
+
+
+--
+-- Name: pages_embedding_voyage_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX pages_embedding_voyage_idx ON public.pages USING hnsw (embedding_voyage public.vector_cosine_ops);
 
 
 --
@@ -5080,6 +5543,22 @@ ALTER TABLE ONLY auth.sso_domains
 
 
 --
+-- Name: webauthn_challenges webauthn_challenges_user_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: supabase_auth_admin
+--
+
+ALTER TABLE ONLY auth.webauthn_challenges
+    ADD CONSTRAINT webauthn_challenges_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: webauthn_credentials webauthn_credentials_user_id_fkey; Type: FK CONSTRAINT; Schema: auth; Owner: supabase_auth_admin
+--
+
+ALTER TABLE ONLY auth.webauthn_credentials
+    ADD CONSTRAINT webauthn_credentials_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+
+--
 -- Name: bubble_history bubble_history_bubble_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
 
@@ -5141,6 +5620,14 @@ ALTER TABLE ONLY public.profiles
 
 ALTER TABLE ONLY public.search_feedback
     ADD CONSTRAINT search_feedback_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id);
+
+
+--
+-- Name: search_logs search_logs_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.search_logs
+    ADD CONSTRAINT search_logs_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id);
 
 
 --
@@ -5288,10 +5775,40 @@ ALTER TABLE auth.sso_providers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE auth.users ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: glossary Admin full access; Type: POLICY; Schema: public; Owner: postgres
+-- Name: profiles Admin full access; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY "Admin full access" ON public.glossary USING (((auth.jwt() ->> 'role'::text) = 'Admin'::text));
+CREATE POLICY "Admin full access" ON public.profiles USING (public.is_admin());
+
+
+--
+-- Name: app_settings Admin write access; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY "Admin write access" ON public.app_settings USING (public.is_admin());
+
+
+--
+-- Name: search_logs Admins can read search logs; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY "Admins can read search logs" ON public.search_logs FOR SELECT USING ((EXISTS ( SELECT 1
+   FROM public.profiles
+  WHERE ((profiles.id = auth.uid()) AND (profiles.role = 'Admin'::public.role_type)))));
+
+
+--
+-- Name: bubble_history Authenticated insert; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY "Authenticated insert" ON public.bubble_history FOR INSERT WITH CHECK ((auth.role() = 'authenticated'::text));
+
+
+--
+-- Name: bulles Authenticated insert; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY "Authenticated insert" ON public.bulles FOR INSERT WITH CHECK (((auth.role() = 'authenticated'::text) AND (auth.uid() = id_user_createur)));
 
 
 --
@@ -5309,10 +5826,129 @@ CREATE POLICY "Enable read access for authenticated users" ON public.bubble_hist
 
 
 --
--- Name: glossary Lecture publique pour tous; Type: POLICY; Schema: public; Owner: postgres
+-- Name: search_feedback Public insert feedback; Type: POLICY; Schema: public; Owner: postgres
 --
 
-CREATE POLICY "Lecture publique pour tous" ON public.glossary FOR SELECT USING (true);
+CREATE POLICY "Public insert feedback" ON public.search_feedback FOR INSERT WITH CHECK (true);
+
+
+--
+-- Name: app_settings Public read access; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY "Public read access" ON public.app_settings FOR SELECT USING (true);
+
+
+--
+-- Name: bulles Public read access; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY "Public read access" ON public.bulles FOR SELECT USING (true);
+
+
+--
+-- Name: chapitres Public read access; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY "Public read access" ON public.chapitres FOR SELECT USING (true);
+
+
+--
+-- Name: mangas Public read access; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY "Public read access" ON public.mangas FOR SELECT USING (true);
+
+
+--
+-- Name: pages Public read access; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY "Public read access" ON public.pages FOR SELECT USING (true);
+
+
+--
+-- Name: profiles Public read access; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY "Public read access" ON public.profiles FOR SELECT USING (true);
+
+
+--
+-- Name: tomes Public read access; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY "Public read access" ON public.tomes FOR SELECT USING (true);
+
+
+--
+-- Name: search_logs Service role can insert search logs; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY "Service role can insert search logs" ON public.search_logs FOR INSERT WITH CHECK (true);
+
+
+--
+-- Name: bulles Staff delete all bubbles; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY "Staff delete all bubbles" ON public.bulles FOR DELETE USING (public.is_staff());
+
+
+--
+-- Name: banned_ips Staff full access; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY "Staff full access" ON public.banned_ips USING (public.is_staff());
+
+
+--
+-- Name: chapitres Staff full access; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY "Staff full access" ON public.chapitres USING (public.is_staff());
+
+
+--
+-- Name: mangas Staff full access; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY "Staff full access" ON public.mangas USING (public.is_staff());
+
+
+--
+-- Name: pages Staff full access; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY "Staff full access" ON public.pages USING (public.is_staff());
+
+
+--
+-- Name: tomes Staff full access; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY "Staff full access" ON public.tomes USING (public.is_staff());
+
+
+--
+-- Name: bubble_history Staff read access; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY "Staff read access" ON public.bubble_history FOR SELECT USING (public.is_staff());
+
+
+--
+-- Name: search_feedback Staff read feedback; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY "Staff read feedback" ON public.search_feedback FOR SELECT USING (public.is_staff());
+
+
+--
+-- Name: bulles Staff update all bubbles; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY "Staff update all bubbles" ON public.bulles FOR UPDATE USING (public.is_staff());
 
 
 --
@@ -5330,16 +5966,98 @@ CREATE POLICY "Users can view their own feedback" ON public.search_feedback FOR 
 
 
 --
+-- Name: bulles Users delete own pending bubbles; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY "Users delete own pending bubbles" ON public.bulles FOR DELETE USING (((auth.uid() = id_user_createur) AND (statut = 'Proposé'::public.statut_bulle)));
+
+
+--
+-- Name: bubble_history Users read own history; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY "Users read own history" ON public.bubble_history FOR SELECT USING ((auth.uid() = user_id));
+
+
+--
+-- Name: bulles Users update own pending bubbles; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY "Users update own pending bubbles" ON public.bulles FOR UPDATE USING (((auth.uid() = id_user_createur) AND (statut = 'Proposé'::public.statut_bulle))) WITH CHECK (((auth.uid() = id_user_createur) AND (statut = 'Proposé'::public.statut_bulle)));
+
+
+--
+-- Name: profiles Users update own profile; Type: POLICY; Schema: public; Owner: postgres
+--
+
+CREATE POLICY "Users update own profile" ON public.profiles FOR UPDATE USING ((auth.uid() = id));
+
+
+--
+-- Name: app_settings; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: banned_ips; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.banned_ips ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: bubble_history; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
 ALTER TABLE public.bubble_history ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: glossary; Type: ROW SECURITY; Schema: public; Owner: postgres
+-- Name: bulles; Type: ROW SECURITY; Schema: public; Owner: postgres
 --
 
-ALTER TABLE public.glossary ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.bulles ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: chapitres; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.chapitres ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: mangas; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.mangas ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: pages; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.pages ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: profiles; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: search_feedback; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.search_feedback ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: search_logs; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.search_logs ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: tomes; Type: ROW SECURITY; Schema: public; Owner: postgres
+--
+
+ALTER TABLE public.tomes ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: messages; Type: ROW SECURITY; Schema: realtime; Owner: supabase_realtime_admin
@@ -6718,6 +7436,24 @@ GRANT ALL ON FUNCTION public.inner_product(public.vector, public.vector) TO serv
 
 
 --
+-- Name: FUNCTION is_admin(); Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON FUNCTION public.is_admin() TO anon;
+GRANT ALL ON FUNCTION public.is_admin() TO authenticated;
+GRANT ALL ON FUNCTION public.is_admin() TO service_role;
+
+
+--
+-- Name: FUNCTION is_staff(); Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON FUNCTION public.is_staff() TO anon;
+GRANT ALL ON FUNCTION public.is_staff() TO authenticated;
+GRANT ALL ON FUNCTION public.is_staff() TO service_role;
+
+
+--
 -- Name: FUNCTION ivfflat_bit_support(internal); Type: ACL; Schema: public; Owner: supabase_admin
 --
 
@@ -6868,6 +7604,15 @@ GRANT ALL ON FUNCTION public.l2_normalize(public.vector) TO service_role;
 
 
 --
+-- Name: FUNCTION match_page_embeddings_dinov3(query_embedding public.vector, match_count integer); Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON FUNCTION public.match_page_embeddings_dinov3(query_embedding public.vector, match_count integer) TO anon;
+GRANT ALL ON FUNCTION public.match_page_embeddings_dinov3(query_embedding public.vector, match_count integer) TO authenticated;
+GRANT ALL ON FUNCTION public.match_page_embeddings_dinov3(query_embedding public.vector, match_count integer) TO service_role;
+
+
+--
 -- Name: FUNCTION match_pages(query_embedding public.vector, match_threshold double precision, match_count integer); Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -6877,12 +7622,48 @@ GRANT ALL ON FUNCTION public.match_pages(query_embedding public.vector, match_th
 
 
 --
+-- Name: FUNCTION match_pages_gemini(query_embedding public.halfvec, match_threshold double precision, match_count integer); Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON FUNCTION public.match_pages_gemini(query_embedding public.halfvec, match_threshold double precision, match_count integer) TO anon;
+GRANT ALL ON FUNCTION public.match_pages_gemini(query_embedding public.halfvec, match_threshold double precision, match_count integer) TO authenticated;
+GRANT ALL ON FUNCTION public.match_pages_gemini(query_embedding public.halfvec, match_threshold double precision, match_count integer) TO service_role;
+
+
+--
 -- Name: FUNCTION match_pages_hybrid(query_embedding public.vector, query_text text, match_threshold double precision, match_count integer); Type: ACL; Schema: public; Owner: postgres
 --
 
 GRANT ALL ON FUNCTION public.match_pages_hybrid(query_embedding public.vector, query_text text, match_threshold double precision, match_count integer) TO anon;
 GRANT ALL ON FUNCTION public.match_pages_hybrid(query_embedding public.vector, query_text text, match_threshold double precision, match_count integer) TO authenticated;
 GRANT ALL ON FUNCTION public.match_pages_hybrid(query_embedding public.vector, query_text text, match_threshold double precision, match_count integer) TO service_role;
+
+
+--
+-- Name: FUNCTION match_pages_phash(query_phash bit, max_distance integer, match_count integer); Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON FUNCTION public.match_pages_phash(query_phash bit, max_distance integer, match_count integer) TO anon;
+GRANT ALL ON FUNCTION public.match_pages_phash(query_phash bit, max_distance integer, match_count integer) TO authenticated;
+GRANT ALL ON FUNCTION public.match_pages_phash(query_phash bit, max_distance integer, match_count integer) TO service_role;
+
+
+--
+-- Name: FUNCTION match_pages_visual(query_embedding public.vector, match_threshold double precision, match_count integer); Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON FUNCTION public.match_pages_visual(query_embedding public.vector, match_threshold double precision, match_count integer) TO anon;
+GRANT ALL ON FUNCTION public.match_pages_visual(query_embedding public.vector, match_threshold double precision, match_count integer) TO authenticated;
+GRANT ALL ON FUNCTION public.match_pages_visual(query_embedding public.vector, match_threshold double precision, match_count integer) TO service_role;
+
+
+--
+-- Name: FUNCTION match_phash(query_phash text, threshold double precision); Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON FUNCTION public.match_phash(query_phash text, threshold double precision) TO anon;
+GRANT ALL ON FUNCTION public.match_phash(query_phash text, threshold double precision) TO authenticated;
+GRANT ALL ON FUNCTION public.match_phash(query_phash text, threshold double precision) TO service_role;
 
 
 --
@@ -7428,6 +8209,14 @@ GRANT SELECT ON TABLE auth.audit_log_entries TO postgres WITH GRANT OPTION;
 
 
 --
+-- Name: TABLE custom_oauth_providers; Type: ACL; Schema: auth; Owner: supabase_auth_admin
+--
+
+GRANT ALL ON TABLE auth.custom_oauth_providers TO postgres;
+GRANT ALL ON TABLE auth.custom_oauth_providers TO dashboard_user;
+
+
+--
 -- Name: TABLE flow_state; Type: ACL; Schema: auth; Owner: supabase_auth_admin
 --
 
@@ -7601,6 +8390,22 @@ GRANT SELECT ON TABLE auth.users TO postgres WITH GRANT OPTION;
 
 
 --
+-- Name: TABLE webauthn_challenges; Type: ACL; Schema: auth; Owner: supabase_auth_admin
+--
+
+GRANT ALL ON TABLE auth.webauthn_challenges TO postgres;
+GRANT ALL ON TABLE auth.webauthn_challenges TO dashboard_user;
+
+
+--
+-- Name: TABLE webauthn_credentials; Type: ACL; Schema: auth; Owner: supabase_auth_admin
+--
+
+GRANT ALL ON TABLE auth.webauthn_credentials TO postgres;
+GRANT ALL ON TABLE auth.webauthn_credentials TO dashboard_user;
+
+
+--
 -- Name: TABLE pg_stat_statements; Type: ACL; Schema: extensions; Owner: postgres
 --
 
@@ -7682,15 +8487,6 @@ GRANT ALL ON SEQUENCE public.chapitres_id_seq TO service_role;
 
 
 --
--- Name: TABLE glossary; Type: ACL; Schema: public; Owner: postgres
---
-
-GRANT ALL ON TABLE public.glossary TO anon;
-GRANT ALL ON TABLE public.glossary TO authenticated;
-GRANT ALL ON TABLE public.glossary TO service_role;
-
-
---
 -- Name: TABLE mangas; Type: ACL; Schema: public; Owner: postgres
 --
 
@@ -7742,6 +8538,24 @@ GRANT ALL ON TABLE public.profiles TO service_role;
 GRANT ALL ON TABLE public.search_feedback TO anon;
 GRANT ALL ON TABLE public.search_feedback TO authenticated;
 GRANT ALL ON TABLE public.search_feedback TO service_role;
+
+
+--
+-- Name: TABLE search_logs; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON TABLE public.search_logs TO anon;
+GRANT ALL ON TABLE public.search_logs TO authenticated;
+GRANT ALL ON TABLE public.search_logs TO service_role;
+
+
+--
+-- Name: SEQUENCE search_logs_id_seq; Type: ACL; Schema: public; Owner: postgres
+--
+
+GRANT ALL ON SEQUENCE public.search_logs_id_seq TO anon;
+GRANT ALL ON SEQUENCE public.search_logs_id_seq TO authenticated;
+GRANT ALL ON SEQUENCE public.search_logs_id_seq TO service_role;
 
 
 --
@@ -8181,5 +8995,5 @@ ALTER EVENT TRIGGER pgrst_drop_watch OWNER TO supabase_admin;
 -- PostgreSQL database dump complete
 --
 
-\unrestrict pxxoPHNGFlNQrIw9hFYPm7b0quGDZRskbRc38cvCcwJYXP1lnLl3ZwxbjkA8JXg
+\unrestrict l8tB4NLScuGXcB8BerO3ABtuIw8Uuq5q8LOlcWeGTkPhTBVMEGOOo6E2QfVtfuQ
 
