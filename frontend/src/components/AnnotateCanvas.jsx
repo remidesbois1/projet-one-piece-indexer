@@ -1,6 +1,7 @@
 import React from 'react';
 import { cn } from "@/lib/utils";
 import { Loader2, MousePointer2 } from "lucide-react";
+import { toast } from "sonner";
 
 export default function AnnotateCanvas({
     canEdit,
@@ -128,7 +129,7 @@ export default function AnnotateCanvas({
                             className={cn(
                                 "absolute border-2 z-10 transition-colors cursor-pointer group",
                                 colorClass,
-                                isShiftPressed && "cursor-move"
+                                canEdit && isShiftPressed && "cursor-move"
                             )}
                             onMouseEnter={() => setHoveredBubble(bubble)}
                             onMouseLeave={() => setHoveredBubble(null)}
@@ -138,9 +139,14 @@ export default function AnnotateCanvas({
                                 }
                             }}
                             onClick={(e) => {
-                                if (isShiftPressed) return;
                                 e.stopPropagation();
-                                handleEditBubble(bubble);
+                                if (isShiftPressed) return;
+                                if (canEdit) {
+                                    handleEditBubble(bubble);
+                                } else {
+                                    navigator.clipboard.writeText(bubble.texte_propose || "");
+                                    toast.success("Texte copié !");
+                                }
                             }}
                         >
                             <div className={cn(
@@ -150,7 +156,7 @@ export default function AnnotateCanvas({
                                 #{index + 1}
                             </div>
 
-                            {isShiftPressed && (
+                            {canEdit && isShiftPressed && (
                                 <>
                                     {[
                                         { h: 'nw', c: 'top-0 left-0 -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize' },
