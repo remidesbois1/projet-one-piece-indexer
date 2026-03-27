@@ -18,7 +18,8 @@ export function useAnnotationInteractions({
     pageStatus,
     isSubmitting,
     showApiKeyModal,
-    showDescModal
+    showDescModal,
+    onUpdateGeometry
 }) {
     const [isDrawing, setIsDrawing] = useState(false);
     const [startPoint, setStartPoint] = useState(null);
@@ -124,14 +125,18 @@ export function useAnnotationInteractions({
                         w: currentBox.w,
                         h: currentBox.h
                     };
-                    updateBubbleGeometry(targetId, geometry)
-                        .then(() => {
-                            toast.success("Position mise à jour");
-                        })
-                        .catch(err => {
-                            console.error("Erreur update geometry:", err);
-                            toast.error("Erreur lors de la mise à jour de la position");
-                        });
+                    if (onUpdateGeometry) {
+                        onUpdateGeometry(targetId, geometry);
+                    } else {
+                        updateBubbleGeometry(targetId, geometry)
+                            .then(() => {
+                                toast.success("Position mise à jour");
+                            })
+                            .catch(err => {
+                                console.error("Erreur update geometry:", err);
+                                toast.error("Erreur lors de la mise à jour de la position");
+                            });
+                    }
                 }
             } 
             setActiveInteraction({ type: null, handle: null, startX: 0, startY: 0, initialBox: null, targetId: null });

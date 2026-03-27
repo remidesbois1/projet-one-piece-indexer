@@ -12,7 +12,7 @@ import { AlertCircle, Loader2 } from "lucide-react";
 
 import { toast } from "sonner";
 
-const ValidationForm = ({ annotationData, onValidationSuccess, onCancel, onReject }) => {
+const ValidationForm = ({ annotationData, onValidationSuccess, onCancel, onReject, isSandbox = false }) => {
   const { session } = useAuth();
   const [text, setText] = useState('');
   const [isAiFailure, setIsAiFailure] = useState(false);
@@ -54,15 +54,14 @@ const ValidationForm = ({ annotationData, onValidationSuccess, onCancel, onRejec
       x: annotationData.x, y: annotationData.y,
       w: annotationData.w, h: annotationData.h,
       texte_propose: text,
-      // Provide temporary ID to handleSuccess for optimistic replacement if needed
       tempId: typeof tempId === 'string' ? tempId : null
     };
 
-    // Optimistic closure/return
     const optimisticBubble = { ...finalBubbleData, id: tempId, isOptimistic: true };
     onValidationSuccess(optimisticBubble);
 
-    // Background API call
+    if (isSandbox) return;
+
     try {
       if (isEditing) {
         const response = await updateBubbleText(annotationData.id, text);
@@ -74,7 +73,6 @@ const ValidationForm = ({ annotationData, onValidationSuccess, onCancel, onRejec
     } catch (error) {
       console.error("Erreur soumission background", error);
       toast.error("Erreur d'enregistrement en arrière-plan.");
-      // In a real app, we might want to revert the optimistic UI here
     }
   };
 

@@ -66,13 +66,13 @@ export default function AnnotateCanvas({
                     </div>
                 )}
 
-                {((rectangle && imageDimensions) || (pendingAnnotation && imageDimensions)) && (
+                {((rectangle && imageDimensions?.width > 0) || (pendingAnnotation && imageDimensions?.width > 0)) && (
                     <div
                         style={{
-                            left: (pendingAnnotation?.x || rectangle.x) * (imageDimensions.width / imageDimensions.naturalWidth),
-                            top: (pendingAnnotation?.y || rectangle.y) * (imageDimensions.width / imageDimensions.naturalWidth),
-                            width: (pendingAnnotation?.w || rectangle.w) * (imageDimensions.width / imageDimensions.naturalWidth),
-                            height: (pendingAnnotation?.h || rectangle.h) * (imageDimensions.width / imageDimensions.naturalWidth),
+                            left: (pendingAnnotation ? pendingAnnotation.x : rectangle.x) * (imageDimensions.width / imageDimensions.naturalWidth),
+                            top: (pendingAnnotation ? pendingAnnotation.y : rectangle.y) * (imageDimensions.width / imageDimensions.naturalWidth),
+                            width: (pendingAnnotation ? pendingAnnotation.w : rectangle.w) * (imageDimensions.width / imageDimensions.naturalWidth),
+                            height: (pendingAnnotation ? pendingAnnotation.h : rectangle.h) * (imageDimensions.width / imageDimensions.naturalWidth),
                         }}
                         className={cn(
                             "absolute border-2 border-dashed transition-all duration-300 z-30",

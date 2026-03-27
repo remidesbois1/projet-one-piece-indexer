@@ -2,16 +2,16 @@ import React from 'react';
 import Link from 'next/link';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { 
-    ArrowLeft, 
-    ChevronLeft, 
-    ChevronRight, 
-    FileText, 
-    AlignLeft, 
-    MapPin, 
-    Users, 
-    Send, 
-    Settings2 
+import {
+    ArrowLeft,
+    ChevronLeft,
+    ChevronRight,
+    FileText,
+    AlignLeft,
+    MapPin,
+    Users,
+    Send,
+    Settings2
 } from "lucide-react";
 import AnnotateOcrModelSelector from './AnnotateOcrModelSelector';
 import AnnotateBubbleScanner from './AnnotateBubbleScanner';
@@ -43,31 +43,35 @@ export default function AnnotateLeftSidebar({
     setShowDescModal,
     setShowApiKeyModal,
     handleSubmitPage,
-    role
+    role,
+    isSandbox = false
 }) {
     const isStaff = role === 'Admin' || role === 'Modo';
 
     return (
         <div className="hidden lg:flex w-[280px] shrink-0 h-full flex-col border-r border-slate-200 bg-white z-40 relative shadow-sm">
-            {/* Header Info */}
             <div className="p-4 border-b border-slate-100 flex-none space-y-4 z-10">
                 <Link
-                    href={fromSearch ? `/${mangaSlug}/search` : `/${mangaSlug}/dashboard`}
+                    href={!mangaSlug ? "/" : (fromSearch ? `/${mangaSlug}/search` : `/${mangaSlug}/dashboard`)}
                     className="inline-flex items-center text-[11px] font-bold text-slate-400 hover:text-slate-700 uppercase tracking-wider transition-colors"
                 >
                     <ArrowLeft size={12} className="mr-2" />
-                    {fromSearch ? "Retour Recherche" : "Retour Dashboard"}
+                    {!mangaSlug ? "Retour Accueil" : (fromSearch ? "Retour Recherche" : "Retour Dashboard")}
                 </Link>
 
                 <div className="flex items-center justify-between">
                     <div>
                         <div className="flex items-baseline gap-1.5">
                             <h2 className="text-xl font-black text-slate-900 tracking-tight">
-                                Ch.{page.chapitres?.numero}
+                                {page.chapitres ? `Ch.${page.chapitres.numero}` : "Mode Local"}
                             </h2>
-                            <span className="text-xs font-bold text-slate-400">Vol.{page.chapitres?.tomes?.numero}</span>
+                            {page.chapitres?.tomes && (
+                                <span className="text-xs font-bold text-slate-400">Vol.{page.chapitres.tomes.numero}</span>
+                            )}
                         </div>
-                        <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mt-0.5">Page {page.numero_page} sur {chapterPages.length}</div>
+                        <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mt-0.5">
+                            {chapterPages.length > 0 ? `Page ${page.numero_page} sur ${chapterPages.length}` : "Page de test"}
+                        </div>
                     </div>
                     <Badge variant="secondary" className="bg-slate-50 text-slate-600 border border-slate-200/60 font-bold px-2 py-0.5 text-[10px] uppercase tracking-wide">
                         {page.statut.replace(/_/g, ' ')}
@@ -76,8 +80,7 @@ export default function AnnotateLeftSidebar({
             </div>
 
             <div className="flex-1 flex flex-col p-4 gap-3 overflow-hidden bg-slate-50/50">
-                {/* Navigation */}
-                {!isGuest && (
+                {!isGuest && !isSandbox && (
                     <div className="flex-none p-3 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-2">
                         <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-0.5">Navigation</h3>
                         <div className="flex gap-2">
@@ -102,6 +105,7 @@ export default function AnnotateLeftSidebar({
                             loadModel={loadModel}
                             downloadProgress={downloadProgress}
                             geminiKey={geminiKey}
+                            isSandbox={isSandbox}
                         />
 
                         <AnnotateBubbleScanner
@@ -116,7 +120,7 @@ export default function AnnotateLeftSidebar({
                     </>
                 )}
 
-                {role === 'User' && (
+                {role === 'User' && !isSandbox && (
                     <div className="flex-none p-4 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-5 overflow-y-auto max-h-[500px]">
                         <div className="flex items-center gap-2 pb-2 border-b border-slate-50">
                             <div className="bg-indigo-50 p-1.5 rounded-lg border border-indigo-100/50">
@@ -169,7 +173,7 @@ export default function AnnotateLeftSidebar({
                 )}
             </div>
 
-            {!isGuest && isStaff && (
+            {!isGuest && isStaff && !isSandbox && (
                 <div className="flex-none p-4 border-t border-slate-100 bg-white flex flex-col gap-2.5 z-10">
                     <div className="grid grid-cols-2 gap-2">
                         <Button variant="outline" size="sm" className="h-8 text-[11px] font-bold text-slate-600 bg-slate-50 border-slate-200/60 hover:bg-slate-100 hover:text-slate-900 w-full" onClick={() => setShowDescModal(true)}>

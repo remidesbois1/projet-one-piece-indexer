@@ -206,43 +206,43 @@ function MangaCard({ manga, index }) {
 const features = [
     {
         icon: ScanText,
-        title: "OCR Local — TrOCR Fine-tuned",
+        title: "OCR Local - TrOCR Fine-tuned",
         badge: "WebGPU",
-        description: "Modèle TrOCR fine-tuné sur la typographie manga, exécuté directement dans le navigateur via WebGPU. Zéro coût serveur.",
-        details: ["CER 1.83%", "WER 6.03%", "ONNX", "Web Worker"],
+        description: "Modèles spécialisés (Base/Large) fine-tunés sur la typographie manga, exécutés via WebGPU.",
+        details: ["TrOCR Large", "558M Params", "2.33 Go ONNX", "Split Multi-lignes", "CER 1.83%", "WER 6.03%"],
     },
     {
         icon: Zap,
-        title: "OCR Serverless — Poneglyph",
+        title: "OCR Serverless - LightOnOCR",
         badge: "SOTA",
-        description: "Modèle de pointe (Qwen3-VL-2B) fine-tuné déployé en serverless sur GPU NVIDIA L4 via Modal. Précision et rapidité extrême pour les textes complexes.",
-        details: ["CER < 0.8%", "WER < 2.4%", "Modal.com", "L4 GPU", "Serverless"],
+        description: "Modèle de pointe (Architecture LightOnOCR fine-tuné) déployé sur Modal (GPU L4). Précision extrême pour les cas complexes.",
+        details: ["LightOnOCR", "CER < 0.5%", "WER < 2%", "GPU L4", "Serverless"],
     },
     {
-        icon: Cpu,
-        title: "OCR Cloud — Gemini Flash-Lite",
-        description: "Alternative côté serveur via Google Gemini 3.1 Flash-Lite. Également utilisé pour générer le corpus de distillation des modèles locaux.",
-        details: ["~0.00008$ / OCR", "Distillation"],
+        icon: BrainCircuit,
+        title: "OCR Cloud - Gemini Flash-Lite",
+        description: "Fallback côté serveur et moteur de distillation pour l'entraînement des modèles locaux. Génère le corpus de vérité terrain.",
+        details: ["~0.00008$ / OCR"],
     },
     {
         icon: Eye,
-        title: "Détection de Bulles — YOLO11",
+        title: "Détection de Bulles - YOLO11",
         badge: "WebGPU",
-        description: "YOLO11 Medium fine-tuné pour détecter les zones de texte sur chaque planche, exécuté côté client via ONNX Runtime Web.",
-        details: ["mAP50 0.992", "Temps réel", "ONNX"],
+        description: "YOLO11 Nano fine-tuné pour isoler chaque zone de texte, exécuté via ONNX Runtime Web avec une précision quasi-parfaite.",
+        details: ["mAP50 0.994", "YOLO11 Nano", "ONNX", "WebGPU"],
     },
     {
         icon: Workflow,
-        title: "Tri des Bulles — ResNet",
-        badge: "WebGPU",
-        description: "Modèle ResNet spécialisé pour ordonner les bulles selon le sens de lecture japonais, garantissant une transcription cohérente.",
-        details: ["98.3% Accuracy", "170 MB", "ONNX", "Web Worker"],
+        title: "Tri des Bulles - ReaderNet V5",
+        badge: "ML",
+        description: "Architecture Global-Local (MobileNetV3 + MLP) pour ordonner les bulles selon le sens de lecture japonais, optimisée pour le navigateur.",
+        details: ["ReaderNet V5", "98.0% Accuracy", "2.47 MB ONNX", "Web Worker"],
     },
     {
         icon: Search,
         title: "Recherche Sémantique & Indexation",
-        description: "Chaque page est encodée en vecteurs par Voyage AI et Gemini Embedding 2, stockée dans PostgreSQL (pgvector). Fusion de recherche texte et vision.",
-        details: ["voyage-4-large", "gemini-embedding-2", "pgvector"],
+        description: "Architecture hybride multicouche (Voyage AI + Gemini Multimodal) avec consensus scoring (1.15x) et stockage vectoriel pgvector.",
+        details: ["voyage-4-large", "gemini-embedding-2-preview", "pgvector"],
     },
 ];
 
@@ -261,6 +261,10 @@ export default function LandingPageClient({ mangas = [] }) {
                     <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-500">
                         <a href="#features" className="hover:text-slate-900 transition-colors duration-200">Fonctionnalités</a>
                         <a href="#mangas" className="hover:text-slate-900 transition-colors duration-200">Mangas</a>
+                        <Link href="/sandbox" className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#2F7AAF]/10 text-[#2F7AAF] border border-[#2F7AAF]/20 hover:bg-[#2F7AAF]/20 transition-colors duration-200">
+                            <Cpu size={14} />
+                            <span>Sandbox</span>
+                        </Link>
                         <a href="#about" className="hover:text-slate-900 transition-colors duration-200">À propos</a>
                     </nav>
                 </div>
@@ -331,6 +335,24 @@ export default function LandingPageClient({ mangas = [] }) {
                         {features.map((feature, i) => (
                             <FeatureCard key={i} {...feature} delay={i * 80} />
                         ))}
+                    </div>
+
+                    <div className="mt-12 p-8 rounded-2xl bg-gradient-to-br from-[#2F7AAF]/5 to-sky-50 border border-[#2F7AAF]/10 flex flex-col md:flex-row items-center justify-between gap-8">
+                        <div className="max-w-xl text-left">
+                            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-white border border-[#2F7AAF]/20 text-[#2F7AAF] text-[11px] font-bold uppercase tracking-wider mb-4">
+                                Démonstration Technique
+                            </div>
+                            <h3 className="text-2xl font-bold text-slate-900 mb-3">Testez l'annotation en local</h3>
+                            <p className="text-slate-600 text-sm leading-relaxed">
+                                Curieux de voir comment l'IA détecte les bulles et transcrit le texte ? La <strong>Sandbox</strong> vous permet d'uploader vos propres images et de tester l'inférence locale (WebGPU) sans aucun compte ni installation.
+                            </p>
+                        </div>
+                        <Link href="/sandbox">
+                            <Button className="bg-[#2F7AAF] hover:bg-[#2a6591] text-white px-8 h-12 text-sm font-semibold shadow-lg shadow-[#2F7AAF]/20 whitespace-nowrap cursor-pointer">
+                                Ouvrir la Sandbox
+                                <ArrowRight className="ml-2 h-4 w-4" />
+                            </Button>
+                        </Link>
                     </div>
                 </div>
             </section>

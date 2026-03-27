@@ -27,7 +27,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 
 
-import { LogOut, User, Shield, ShieldAlert, Book, Sparkles, Menu, Search, FileText, Image as ImageIcon, Languages, Settings2, Library } from "lucide-react";
+import { LogOut, User, Shield, ShieldAlert, Book, Sparkles, Menu, Search, FileText, Image as ImageIcon, Languages, Settings2, Library, Cpu } from "lucide-react";
 
 const Header = ({ onOpenApiKeyModal }) => {
     const { user, signOut, isGuest } = useAuth();
@@ -114,6 +114,12 @@ const Header = ({ onOpenApiKeyModal }) => {
                                 Explorateur
                             </Link>
                         </>
+                    )}
+                    {pathname === '/' && (
+                        <Link href="/sandbox" prefetch={false} className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#2F7AAF]/10 text-[#2F7AAF] border border-[#2F7AAF]/20 hover:bg-[#2F7AAF]/20 transition-colors duration-200 text-sm font-medium">
+                            <Cpu size={14} />
+                            <span>Sandbox</span>
+                        </Link>
                     )}
                 </nav>
 
@@ -225,8 +231,15 @@ const Header = ({ onOpenApiKeyModal }) => {
                                             <div className="p-1.5 bg-slate-100 group-hover:bg-white rounded border border-transparent group-hover:border-slate-200 shadow-sm transition-all text-slate-600">
                                                 <Search size={18} />
                                             </div>
-                                            Recherche
                                         </Link>
+                                        {pathname === '/' && (
+                                            <Link href="/sandbox" prefetch={false} className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-50 text-[#2F7AAF] font-medium transition-all group">
+                                                <div className="p-1.5 bg-[#2F7AAF]/10 rounded border border-[#2F7AAF]/20 shadow-sm text-[#2F7AAF]">
+                                                    <Cpu size={18} />
+                                                </div>
+                                                Sandbox Annotation
+                                            </Link>
+                                        )}
 
                                         {!isGuest && (
                                             <>

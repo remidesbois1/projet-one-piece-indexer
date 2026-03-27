@@ -12,7 +12,9 @@ export function useAnnotationMetadata({
     imageRef,
     showDescModal,
     setShowDescModal,
-    setShowApiKeyModal
+    setShowApiKeyModal,
+    onSaveDescription = null,
+    onFetchSuggestions = null
 }) {
     const [formData, setFormData] = useState({
         content: "",
@@ -92,12 +94,12 @@ export function useAnnotationMetadata({
 
     const fetchSuggestions = useCallback(async () => {
         try {
-            const res = await getMetadataSuggestions();
+            const res = onFetchSuggestions ? await onFetchSuggestions() : await getMetadataSuggestions();
             setSuggestions(res.data);
         } catch (err) {
             console.error("Erreur suggestions:", err);
         }
-    }, []);
+    }, [onFetchSuggestions]);
 
     useEffect(() => {
         if (showDescModal) {
@@ -139,7 +141,11 @@ export function useAnnotationMetadata({
                 }
             }
 
-            await savePageDescription(pageId, payload, null, geminiEmb);
+            if (onSaveDescription) {
+                await onSaveDescription(payload, geminiEmb);
+            } else {
+                await savePageDescription(pageId, payload, null, geminiEmb);
+            }
             toast.success("Description et vecteurs enregistrés !");
         } catch (error) {
             setPage(previousPage);

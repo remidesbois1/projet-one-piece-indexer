@@ -29,7 +29,8 @@ export default function AnnotateEditorDialog({
     debugImageUrl,
     runLocalOcr,
     activeModelKey,
-    OCR_MODELS
+    OCR_MODELS,
+    isSandbox = false
 }) {
     return (
         <Dialog
@@ -88,6 +89,7 @@ export default function AnnotateEditorDialog({
                                 <ValidationForm
                                     annotationData={pendingAnnotation}
                                     onValidationSuccess={handleSuccess}
+                                    isSandbox={isSandbox}
                                     onCancel={() => {
                                         setPendingAnnotation(null);
                                         setDebugImageUrl(null);
@@ -112,20 +114,22 @@ export default function AnnotateEditorDialog({
                                     </div>
                                 )}
 
-                                <div className="mt-4 pt-4 border-t border-slate-100 flex justify-center">
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="text-xs text-slate-500 hover:text-slate-900"
-                                        onClick={() => runLocalOcr()}
-                                    >
-                                        {OCR_MODELS[activeModelKey]?.type === 'local' ? (
-                                            <><Sparkles className="h-3 w-3 mr-1 text-indigo-500" /> Essayer un modèle Cloud</>
-                                        ) : (
-                                            <><RotateCcw className="h-3 w-3 mr-1" /> Relancer l'analyse {OCR_MODELS[activeModelKey]?.label}</>
-                                        )}
-                                    </Button>
-                                </div>
+                                {!isSandbox && (
+                                    <div className="mt-4 pt-4 border-t border-slate-100 flex justify-center">
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="text-xs text-slate-500 hover:text-slate-900"
+                                            onClick={() => runLocalOcr()}
+                                        >
+                                            {OCR_MODELS[activeModelKey]?.type === 'local' ? (
+                                                <><Sparkles className="h-3 w-3 mr-1 text-indigo-500" /> Essayer un modèle Cloud</>
+                                            ) : (
+                                                <><RotateCcw className="h-3 w-3 mr-1" /> Relancer l'analyse {OCR_MODELS[activeModelKey]?.label}</>
+                                            )}
+                                        </Button>
+                                    </div>
+                                )}
                             </div>
                         </DraggableWrapper>
                     </div>

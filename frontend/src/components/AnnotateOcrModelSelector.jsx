@@ -13,38 +13,41 @@ export default function AnnotateOcrModelSelector({
     loadModel,
     downloadProgress,
     geminiKey,
+    isSandbox = false
 }) {
     return (
         <div className="flex-none p-3 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-3">
             <div className="flex items-center justify-between mb-1">
                 <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-0.5">Moteur OCR</h3>
-                <button
-                    onClick={toggleOcrPreference}
-                    className={cn(
-                        "relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none",
-                        preferLocalOCR ? "bg-emerald-500" : "bg-blue-500"
-                    )}
-                >
-                    <span className={cn(
-                        "inline-block h-3 w-3 transform rounded-full bg-white transition-transform shadow-sm",
-                        preferLocalOCR ? "translate-x-3.5" : "translate-x-0.5"
-                    )} />
-                </button>
+                {!isSandbox && (
+                    <button
+                        onClick={toggleOcrPreference}
+                        className={cn(
+                            "relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none",
+                            preferLocalOCR ? "bg-emerald-500" : "bg-blue-500"
+                        )}
+                    >
+                        <span className={cn(
+                            "inline-block h-3 w-3 transform rounded-full bg-white transition-transform shadow-sm",
+                            preferLocalOCR ? "translate-x-3.5" : "translate-x-0.5"
+                        )} />
+                    </button>
+                )}
             </div>
 
             <div className="flex items-center gap-2.5 bg-slate-50 p-2 rounded-lg border border-slate-100/80">
-                <div className={cn("p-1.5 rounded-md", preferLocalOCR ? "bg-emerald-100/50 text-emerald-600" : "bg-blue-100/50 text-blue-600")}>
-                    {preferLocalOCR ? <Cpu size={14} /> : <CloudLightning size={14} />}
+                <div className={cn("p-1.5 rounded-md", (preferLocalOCR || isSandbox) ? "bg-emerald-100/50 text-emerald-600" : "bg-blue-100/50 text-blue-600")}>
+                    {(preferLocalOCR || isSandbox) ? <Cpu size={14} /> : <CloudLightning size={14} />}
                 </div>
                 <div className="flex flex-col">
-                    <span className="text-[11px] font-bold text-slate-800 leading-tight">{preferLocalOCR ? "Mode Local" : "Cloud API"}</span>
-                    <span className="text-[9px] font-bold text-slate-400 mt-0.5">{preferLocalOCR ? "Inférence locale" : "API Distante"}</span>
+                    <span className="text-[11px] font-bold text-slate-800 leading-tight">{(preferLocalOCR || isSandbox) ? "Mode Local" : "Cloud API"}</span>
+                    <span className="text-[9px] font-bold text-slate-400 mt-0.5">{(preferLocalOCR || isSandbox) ? "Inférence locale" : "API Distante"}</span>
                 </div>
             </div>
 
             <div className="flex flex-col gap-1.5">
                 {Object.values(OCR_MODELS)
-                    .filter(m => preferLocalOCR ? m.type === 'local' : m.type === 'api')
+                    .filter(m => (preferLocalOCR || isSandbox) ? m.type === 'local' : m.type === 'api')
                     .map((m) => (
                         <button
                             key={m.key}
@@ -77,7 +80,7 @@ export default function AnnotateOcrModelSelector({
                     ))}
             </div>
 
-            {preferLocalOCR ? (
+            {preferLocalOCR || isSandbox ? (
                 <div>
                     {OCR_MODELS[activeModelKey]?.type === 'local' ? (
                         <>
