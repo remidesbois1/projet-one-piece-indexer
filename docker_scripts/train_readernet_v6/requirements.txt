@@ -1,0 +1,10 @@
+supabase
+python-dotenv
+requests
+pillow
+pillow-avif-plugin
+onnx
+onnxruntime
+huggingface_hub
+tqdm
+scikit-learn
