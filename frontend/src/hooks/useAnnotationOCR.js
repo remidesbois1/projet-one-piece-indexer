@@ -17,10 +17,11 @@ export function useAnnotationOCR({
     setIsModalOpen,
     setOcrSource,
     setDebugImageUrl,
-    setShowApiKeyModal
+    setShowApiKeyModal,
+    isSandbox = false
 }) {
     const { worker, modelStatus, loadModel, switchModel, downloadProgress, runOcr, activeModelKey } = useWorker();
-    const [preferLocalOCR, setPreferLocalOCR] = useState(false);
+    const [preferLocalOCR, setPreferLocalOCR] = useState(isSandbox);
     const [geminiKey, setGeminiKey] = useState(null);
     const [ocrResults, setOcrResults] = useState({});
     const lastRequestId = useRef(0);
@@ -30,7 +31,7 @@ export function useAnnotationOCR({
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
-            setPreferLocalOCR(localStorage.getItem('preferLocalOCR') !== 'false');
+            setPreferLocalOCR(isSandbox || localStorage.getItem('preferLocalOCR') !== 'false');
             const loadKey = () => setGeminiKey(localStorage.getItem('google_api_key'));
             loadKey();
             window.addEventListener('storage', loadKey);

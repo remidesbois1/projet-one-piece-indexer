@@ -74,7 +74,6 @@ self.addEventListener('message', async (event) => {
 
             self.postMessage({ status: 'complete', boxes: sortedBoxes });
         } catch (err) {
-            console.error("[Worker] Run Error:", err);
             self.postMessage({ status: 'error', error: err.message });
         }
     }

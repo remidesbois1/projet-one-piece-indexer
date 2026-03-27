@@ -190,7 +190,7 @@ export default function SandboxClient() {
     } = useAnnotationOCR({
         imageRef, pageId: 'sandbox', rectangle, pendingAnnotation, setPendingAnnotation,
         setIsSubmitting, setLoadingText, setIsModalOpen, setOcrSource,
-        setDebugImageUrl, setShowApiKeyModal
+        setDebugImageUrl, setShowApiKeyModal, isSandbox: true
     });
 
     const {

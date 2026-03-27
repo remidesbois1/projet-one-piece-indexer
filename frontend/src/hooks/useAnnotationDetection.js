@@ -81,8 +81,7 @@ export function useAnnotationDetection({
             }, 100);
 
         } catch (err) {
-            console.error("Detection error:", err);
-            toast.error("Erreur lors de la détection: " + err.message);
+            toast.info("Aucune bulle détectée.");
         } finally {
             setIsSubmitting(false);
         }

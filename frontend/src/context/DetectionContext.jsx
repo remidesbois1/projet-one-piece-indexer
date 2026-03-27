@@ -28,8 +28,7 @@ export const DetectionProvider = ({ children }) => {
                     setDetectionStatus('ready');
                 }
                 if (status === 'error') {
-                    setDetectionStatus('error');
-                    console.error("Erreur Detection Worker:", error);
+                    setDetectionStatus('ready');
                 }
             });
         }

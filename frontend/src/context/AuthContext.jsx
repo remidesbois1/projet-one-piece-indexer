@@ -28,13 +28,35 @@ export function AuthProvider({ children }) {
             setIsGuest(localStorage.getItem('guest_mode') === 'true');
         }
 
-        supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
+        const initAuth = async () => {
+            const { data: { session: currentSession } } = await supabase.auth.getSession();
+
+            if (currentSession) {
+                const { error } = await supabase.auth.getUser();
+                if (error) {
+                    await supabase.auth.signOut();
+                    setSession(null);
+                    setLoading(false);
+                    return;
+                }
+            }
+
             setSession(currentSession);
             if (currentSession?.user) {
                 fetchRole(currentSession.user.id);
             }
             setLoading(false);
-        });
+        };
+
+        // Suppress Supabase "Invalid Refresh Token" console errors on startup
+        const originalError = console.error;
+        console.error = (...args) => {
+            if (typeof args[0] === 'string' && args[0].includes('AuthApiError')) return;
+            if (args[0] instanceof Error && args[0].message?.includes('Refresh Token Not Found')) return;
+            originalError.apply(console, args);
+        };
+
+        initAuth();
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
             (_event, newSession) => {
@@ -56,7 +78,10 @@ export function AuthProvider({ children }) {
             }
         );
 
-        return () => subscription.unsubscribe();
+        return () => {
+            console.error = originalError;
+            subscription.unsubscribe();
+        };
     }, []);
 
     const value = {
