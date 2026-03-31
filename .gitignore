@@ -1,4 +1,5 @@
-backend/node_modules
-.env
+**/node_modules
+**/.env
+**/.env.*
 temp_uploads/
 start_dev.bat

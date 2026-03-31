@@ -1,11 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import AddTomeForm from '@/components/AddTomeForm';
 import AddChapterForm from '@/components/AddChapterForm';
-import IpBanManager from '@/components/IpBanManager';
-import CoverManager from '@/components/CoverManager';
-import AiModelManager from '@/components/AiModelManager';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
@@ -24,6 +21,18 @@ import { useSearchParams, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from "@/components/ui/button";
 import { getAllMangas, toggleMangaEnabled } from '@/lib/api';
+
+const IpBanManager = React.lazy(() => import('@/components/IpBanManager'));
+const CoverManager = React.lazy(() => import('@/components/CoverManager'));
+const AiModelManager = React.lazy(() => import('@/components/AiModelManager'));
+
+function TabSkeleton() {
+    return (
+        <div className="flex items-center justify-center py-16">
+            <div className="h-8 w-8 animate-spin border-2 border-slate-200 border-t-indigo-600 rounded-full" />
+        </div>
+    );
+}
 
 export default function AdminDashboard() {
     const searchParams = useSearchParams();
@@ -173,16 +182,22 @@ export default function AdminDashboard() {
                     </TabsContent>
 
                     <TabsContent value="covers" className="m-0 p-8 outline-none">
-                        <CoverManager />
+                        <Suspense fallback={<TabSkeleton />}>
+                            <CoverManager />
+                        </Suspense>
                     </TabsContent>
 
 
                     <TabsContent value="ai" className="m-0 p-8 outline-none">
-                        <AiModelManager mangaSlug={params.mangaSlug} />
+                        <Suspense fallback={<TabSkeleton />}>
+                            <AiModelManager mangaSlug={params.mangaSlug} />
+                        </Suspense>
                     </TabsContent>
 
                     <TabsContent value="security" className="m-0 p-8 outline-none">
-                        <IpBanManager />
+                        <Suspense fallback={<TabSkeleton />}>
+                            <IpBanManager />
+                        </Suspense>
                     </TabsContent>
                 </div>
             </Tabs>

@@ -1,8 +1,6 @@
 "use client";
 
-import React from 'react';
-import BubbleReviewList from '@/components/BubbleReviewList';
-import PageReviewList from '@/components/PageReviewList';
+import React, { Suspense } from 'react';
 
 import {
     Tabs,
@@ -13,6 +11,17 @@ import {
 import { Card } from "@/components/ui/card";
 import { ShieldCheck, MessageSquareDashed, FileCheck } from "lucide-react";
 import { useManga } from '@/context/MangaContext';
+
+const BubbleReviewList = React.lazy(() => import('@/components/BubbleReviewList'));
+const PageReviewList = React.lazy(() => import('@/components/PageReviewList'));
+
+function ReviewSkeleton() {
+    return (
+        <div className="flex items-center justify-center py-16">
+            <div className="h-8 w-8 animate-spin border-2 border-slate-200 border-t-slate-600 rounded-full" />
+        </div>
+    );
+}
 
 export default function ModerationPage() {
     const { currentManga } = useManga();
@@ -58,13 +67,17 @@ export default function ModerationPage() {
 
                     <TabsContent value="bubbles" className="animate-in fade-in slide-in-from-bottom-2 duration-500">
                         <Card className="border-none shadow-none bg-transparent">
-                            <BubbleReviewList />
+                            <Suspense fallback={<ReviewSkeleton />}>
+                                <BubbleReviewList />
+                            </Suspense>
                         </Card>
                     </TabsContent>
 
                     <TabsContent value="pages" className="animate-in fade-in slide-in-from-bottom-2 duration-500">
                         <Card className="border-none shadow-none bg-transparent">
-                            <PageReviewList />
+                            <Suspense fallback={<ReviewSkeleton />}>
+                                <PageReviewList />
+                            </Suspense>
                         </Card>
                     </TabsContent>
                 </Tabs>
