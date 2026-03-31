@@ -1,5 +1,5 @@
 "use client";
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -46,8 +46,10 @@ export function MangaProvider({ children }) {
         }
     };
 
+    const value = useMemo(() => ({ mangaSlug, currentManga, loading }), [mangaSlug, currentManga, loading]);
+
     return (
-        <MangaContext.Provider value={{ mangaSlug, currentManga, loading }}>
+        <MangaContext.Provider value={value}>
             {children}
         </MangaContext.Provider>
     );

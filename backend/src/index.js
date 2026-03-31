@@ -8,19 +8,25 @@ const app = express();
 // to correctly identify the client IP for rate limiting and blocking.
 app.set('trust proxy', 1);
 
-app.use(cors({
-  origin: [
-    'https://onepiece-index.com',
-    'https://www.onepiece-index.com',
-    'https://poneglyph.fr',
-    'https://www.poneglyph.fr',
-    'http://localhost:5173',
-    'http://localhost:3000'
-  ],
-  credentials: true
-}));
+const allowedOrigins = [
+  'https://onepiece-index.com',
+  'https://www.onepiece-index.com',
+  'https://poneglyph.fr',
+  'https://www.poneglyph.fr',
+];
+
+if (process.env.NODE_ENV !== 'production') {
+  allowedOrigins.push('http://localhost:5173', 'http://localhost:3000');
+}
+
+if (process.env.ALLOWED_ORIGINS) {
+  allowedOrigins.push(...process.env.ALLOWED_ORIGINS.split(','));
+}
+
+app.use(cors({ origin: allowedOrigins, credentials: true }));
 
 const rateLimit = require('express-rate-limit');
+const { supabase } = require('./config/supabaseClient');
 
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -45,6 +51,14 @@ const publicLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: "Too many requests, please try again later." }
+});
+
+const loginLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  message: { error: "Trop de tentatives, réessayez dans 1 minute." },
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
 const PORT = process.env.PORT || 3001;
@@ -76,6 +90,18 @@ app.get('/', (req, res) => {
     message: "API Projet Poneglyph fonctionnelle.",
     timestamp: new Date().toISOString()
   });
+});
+
+app.post('/api/login', loginLimiter, async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) return res.status(400).json({ error: 'Email et mot de passe requis.' });
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) return res.status(401).json({ error: error.message });
+    res.json({ session: data.session });
+  } catch {
+    res.status(500).json({ error: 'Erreur serveur.' });
+  }
 });
 
 app.use('/api/tomes', tomeRoutes);

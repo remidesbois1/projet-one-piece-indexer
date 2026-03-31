@@ -25,13 +25,19 @@ export default function LoginPage() {
         setError(null);
 
         try {
-            const { error } = await supabase.auth.signInWithPassword({
-                email: email,
-                password: password,
+            const res = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password }),
             });
 
-            if (error) throw error;
+            const data = await res.json();
 
+            if (!res.ok) {
+                throw new Error(data.error || 'Erreur de connexion.');
+            }
+
+            await supabase.auth.setSession(data.session);
             router.push(nextUrl);
 
         } catch (error) {

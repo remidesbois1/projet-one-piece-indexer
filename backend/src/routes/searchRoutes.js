@@ -7,13 +7,14 @@ const { generateGeminiEmbedding } = require('../utils/geminiClient');
 
 const DUAL_OVERLAP_BONUS = 1.15;
 
-function getUserFromReq(req) {
+async function getUserFromReq(req) {
     try {
         const auth = req.headers.authorization;
         if (!auth) return {};
         const token = auth.replace('Bearer ', '');
-        const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString());
-        return { user_id: payload.sub, user_email: payload.email };
+        const { data: { user } } = await supabase.auth.getUser(token);
+        if (!user) return {};
+        return { user_id: user.id, user_email: user.email };
     } catch { return {}; }
 }
 
@@ -49,6 +50,7 @@ router.get('/', async (req, res) => {
     const filterArc = arc && arc !== '' ? arc : null;
     const filterTome = tome && tome !== '' ? parseInt(tome) : null;
 
+    const userInfo = await getUserFromReq(req);
     const searchLog = {
         raw_query: q,
         model_provider: 'dual',
@@ -58,7 +60,7 @@ router.get('/', async (req, res) => {
         filter_arc: filterArc,
         filter_tome: filterTome,
         rerank_enabled: shouldRerank,
-        ...getUserFromReq(req),
+        ...userInfo,
     };
 
     const totalStart = Date.now();

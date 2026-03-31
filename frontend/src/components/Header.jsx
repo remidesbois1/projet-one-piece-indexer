@@ -1,5 +1,5 @@
 "use client";
-import React from 'react';
+import React, { useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
@@ -52,21 +52,18 @@ const Header = ({ onOpenApiKeyModal }) => {
     const isAdmin = profile?.role === 'Admin';
     const isModo = profile?.role === 'Modo';
 
-    
-    const getLinkStyle = (path) => {
+    const getLinkStyle = useCallback((path) => {
         const fullPath = `/${mangaSlug}${path}`;
         const isActive = pathname === fullPath;
         return `text-sm font-medium transition-colors duration-200 ${isActive ? "text-[#2F7AAF] font-semibold" : "text-slate-500 hover:text-slate-900"}`;
-    };
+    }, [mangaSlug, pathname]);
 
-    
-    const getInitials = (email) => {
+    const getInitials = useCallback((email) => {
         if (!email) return "U";
         return email.substring(0, 2).toUpperCase();
-    };
+    }, []);
 
-    
-    const getHref = (path) => `/${mangaSlug}${path}`;
+    const getHref = useCallback((path) => `/${mangaSlug}${path}`, [mangaSlug]);
 
     if (!mangaSlug) return null; 
 

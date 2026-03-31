@@ -1,5 +1,5 @@
 "use client";
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
 const AuthContext = createContext();
@@ -59,28 +59,32 @@ export function AuthProvider({ children }) {
         return () => subscription.unsubscribe();
     }, []);
 
-    const value = {
+    const loginAsGuest = useCallback(() => {
+        setIsGuest(true);
+        setRole(null);
+        if (typeof window !== 'undefined') {
+            localStorage.setItem('guest_mode', 'true');
+        }
+        setSession(null);
+    }, []);
+
+    const signOut = useCallback(() => {
+        setIsGuest(false);
+        setRole(null);
+        if (typeof window !== 'undefined') {
+            localStorage.removeItem('guest_mode');
+        }
+        return supabase.auth.signOut();
+    }, []);
+
+    const value = useMemo(() => ({
         session,
         user: session?.user,
         role,
         isGuest,
-        loginAsGuest: () => {
-            setIsGuest(true);
-            setRole(null);
-            if (typeof window !== 'undefined') {
-                localStorage.setItem('guest_mode', 'true');
-            }
-            setSession(null);
-        },
-        signOut: () => {
-            setIsGuest(false);
-            setRole(null);
-            if (typeof window !== 'undefined') {
-                localStorage.removeItem('guest_mode');
-            }
-            return supabase.auth.signOut();
-        },
-    };
+        loginAsGuest,
+        signOut,
+    }), [session, role, isGuest, loginAsGuest, signOut]);
 
     return (
         <AuthContext.Provider value={value}>

@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import JSZip from 'jszip';
 import { useAuth } from '@/context/AuthContext';
 import { useManga } from '@/context/MangaContext';
 import { getTomes, uploadPageToR2, batchCreatePages } from '@/lib/api';
@@ -111,6 +110,7 @@ export default function UploadTomePage() {
         setError('');
 
         try {
+            const { default: JSZip } = await import('jszip');
             const zip = await JSZip.loadAsync(file);
             const imageFiles = [];
             const validExtensions = /\.(jpg|jpeg|png|webp|avif|bmp)$/i;

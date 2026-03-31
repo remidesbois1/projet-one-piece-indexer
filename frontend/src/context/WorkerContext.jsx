@@ -1,5 +1,5 @@
 "use client";
-import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState, useMemo, useCallback } from 'react';
 
 const WorkerContext = createContext();
 
@@ -117,14 +117,9 @@ export const WorkerProvider = ({ children }) => {
         };
     }, []);
 
-    const loadModel = (modelKey) => {
+    const loadModel = useCallback((modelKey) => {
         const key = modelKey || activeModelKey;
         const modelData = OCR_MODELS[key];
-
-        if (modelData?.type === 'api') {
-            setModelStatus('ready');
-            return;
-        }
 
         if (modelData?.type === 'api') {
             setModelStatus('ready');
@@ -136,9 +131,9 @@ export const WorkerProvider = ({ children }) => {
             setDownloadProgress(0);
             workerRef.current.postMessage({ type: 'init', modelKey: key });
         }
-    };
+    }, [activeModelKey, modelStatus]);
 
-    const switchModel = (newKey) => {
+    const switchModel = useCallback((newKey) => {
         if (newKey === activeModelKey && modelStatus === 'ready') return;
         localStorage.setItem('ocrModelKey', newKey);
         setActiveModelKey(newKey);
@@ -153,24 +148,27 @@ export const WorkerProvider = ({ children }) => {
         // User must click "Load" to start the worker/download.
         setModelStatus('idle');
         setDownloadProgress(0);
-    };
+    }, [activeModelKey, modelStatus]);
 
-    const runOcr = async (blob, requestId = null) => {
+    const runOcr = useCallback(async (blob, requestId = null) => {
         if (workerRef.current && modelStatus === 'ready') {
             workerRef.current.postMessage({ type: 'run', imageBlob: blob, requestId });
         }
-    };
+    }, [modelStatus]);
+
+    const activeWorker = activeModelKey === 'lighton' ? lightonWorkerRef.current : workerRef.current;
+    const value = useMemo(() => ({
+        worker: activeWorker,
+        modelStatus,
+        loadModel,
+        switchModel,
+        downloadProgress,
+        runOcr,
+        activeModelKey,
+    }), [activeWorker, modelStatus, loadModel, switchModel, downloadProgress, runOcr, activeModelKey]);
 
     return (
-        <WorkerContext.Provider value={{
-            worker: activeModelKey === 'lighton' ? lightonWorkerRef.current : workerRef.current,
-            modelStatus,
-            loadModel,
-            switchModel,
-            downloadProgress,
-            runOcr,
-            activeModelKey,
-        }}>
+        <WorkerContext.Provider value={value}>
             {children}
         </WorkerContext.Provider>
     );
