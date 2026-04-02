@@ -8,3 +8,4 @@ onnxruntime
 huggingface_hub
 tqdm
 scikit-learn
+torchvision

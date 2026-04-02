@@ -8,7 +8,7 @@ from pathlib import Path
 from PIL import Image
 from supabase import create_client, Client
 from tqdm import tqdm
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedShuffleSplit
 from dotenv import load_dotenv
 
 try:
@@ -76,12 +76,14 @@ def generate_pairs(normalized):
             dy = b["cy"] - a["cy"]
             dist = math.sqrt(dx * dx + dy * dy)
             angle = math.atan2(dy, dx) / math.pi
-            pairs.append({
-                "a": {"x": a["x"], "y": a["y"], "w": a["w"], "h": a["h"]},
-                "b": {"x": b["x"], "y": b["y"], "w": b["w"], "h": b["h"]},
-                "rel": {"dx": dx, "dy": dy, "dist": dist, "angle": angle},
-                "label": 1 if i < j else 0,
-            })
+            pairs.append(
+                {
+                    "a": {"x": a["x"], "y": a["y"], "w": a["w"], "h": a["h"]},
+                    "b": {"x": b["x"], "y": b["y"], "w": b["w"], "h": b["h"]},
+                    "rel": {"dx": dx, "dy": dy, "dist": dist, "angle": angle},
+                    "label": 1 if i < j else 0,
+                }
+            )
     return pairs
 
 
@@ -107,7 +109,33 @@ def main():
         print("No data found.")
         return
 
-    train_pages, val_pages = train_test_split(pages, test_size=TEST_SIZE, random_state=RANDOM_SEED)
+    # Stratified split by bubble count (grouped into bins for stability)
+    bubble_counts = [len(p["bulles"]) for p in pages]
+    # Bin into groups: 2-4, 5-7, 8-10, 11-14, 15+
+    strata = []
+    for count in bubble_counts:
+        if count <= 4:
+            strata.append("few")
+        elif count <= 7:
+            strata.append("medium")
+        elif count <= 10:
+            strata.append("normal")
+        elif count <= 14:
+            strata.append("many")
+        else:
+            strata.append("lots")
+
+    sss = StratifiedShuffleSplit(
+        n_splits=1, test_size=TEST_SIZE, random_state=RANDOM_SEED
+    )
+    train_idx, val_idx = next(sss.split(pages, strata))
+
+    train_pages = [pages[i] for i in train_idx]
+    val_pages = [pages[i] for i in val_idx]
+
+    print(f"Stratified split: {len(train_pages)} train, {len(val_pages)} val")
+    print(f"  Train bubble counts: {[len(p['bulles']) for p in train_pages[:10]]}...")
+    print(f"  Val bubble counts:   {[len(p['bulles']) for p in val_pages[:10]]}...")
 
     for split_name, split_pages in [("train", train_pages), ("val", val_pages)]:
         img_dir = OUTPUT_DIR / split_name / "images"
@@ -126,17 +154,23 @@ def main():
                 img_name = f"page_{page['id']}.png"
                 canvas.save(img_dir / img_name)
 
-                sorted_bubbles = sorted(page["bulles"], key=lambda b: b["order"])
+                sorted_bubbles = sorted(
+                    page["bulles"],
+                    key=lambda b: b["order"]
+                    if b.get("order") is not None
+                    else float("inf"),
+                )
                 normalized = normalize_bubbles(sorted_bubbles, ratio, pad_left)
                 pairs = generate_pairs(normalized)
 
-                annotations.append({
-                    "image": img_name,
-                    "canvas": {"w": TARGET_W, "h": TARGET_H},
-                    "num_bubbles": len(normalized),
-                    "bubbles": normalized,
-                    "pairs": pairs,
-                })
+                annotations.append(
+                    {
+                        "image": img_name,
+                        "canvas": {"w": TARGET_W, "h": TARGET_H},
+                        "num_bubbles": len(normalized),
+                        "pairs": pairs,
+                    }
+                )
             except Exception as e:
                 print(f"\n  Error on page {page['id']}: {e}")
 
@@ -144,10 +178,12 @@ def main():
         with open(ann_path, "w") as f:
             json.dump(annotations, f)
 
-        total_pairs = sum(a["num_bubbles"] * (a["num_bubbles"] - 1) for a in annotations)
+        total_pairs = sum(
+            a["num_bubbles"] * (a["num_bubbles"] - 1) for a in annotations
+        )
         print(f"  {len(annotations)} pages, {total_pairs} pairs -> {ann_path}")
 
-    print("\nDataset export complete.")
+    print("\nDataset export complete (stratified split).")
 
 
 if __name__ == "__main__":

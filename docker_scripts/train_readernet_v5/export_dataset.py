@@ -126,7 +126,7 @@ def main():
                 img_name = f"page_{page['id']}.png"
                 canvas.save(img_dir / img_name)
 
-                sorted_bubbles = sorted(page["bulles"], key=lambda b: b["order"])
+                sorted_bubbles = sorted(page["bulles"], key=lambda b: b["order"] if b.get("order") is not None else float("inf"))
                 normalized = normalize_bubbles(sorted_bubbles, ratio, pad_left)
                 pairs = generate_pairs(normalized)
 

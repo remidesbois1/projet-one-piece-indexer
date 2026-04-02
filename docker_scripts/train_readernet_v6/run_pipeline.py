@@ -1,24 +1,24 @@
-from export_dataset import main as export_main
-from train_readernet import train
-# uploader is optional if token and repo are not set up yet, but we include it.
-from uploader import upload
-from pathlib import Path
+import subprocess
+import sys
 
-def run():
-    print("--- Starting Pipeline for ReaderNet V6 ---")
-    dataset_ann = Path(__file__).resolve().parent / "dataset" / "train" / "annotations.json"
-    if dataset_ann.exists():
-        print(f"Dataset already exists at {dataset_ann.parent}. Skipping export.")
-    else:
-        export_main()
-    
-    print("\n--- Starting Training ---")
-    onnx_path = train()
-    
-    if onnx_path and Path(onnx_path).exists():
-        upload(onnx_path)
-    else:
-        print(f"ONNX file not found or train failed.")
+
+def run(cmd):
+    print(f"\n>>> {cmd}")
+    result = subprocess.run(cmd, shell=True)
+    if result.returncode != 0:
+        print(f"FAILED: {cmd}")
+        sys.exit(1)
+
 
 if __name__ == "__main__":
-    run()
+    # Step 1: Export dataset from Supabase (stratified split)
+    run(f"{sys.executable} export_dataset.py")
+
+    # Step 2: Train ReaderNet V6
+    run(f"{sys.executable} train_readernet_v6.py")
+
+    # Step 3: Export to ONNX
+    run(f"{sys.executable} train_readernet_v6.py export")
+
+    # Step 4: Upload to HuggingFace
+    run(f"{sys.executable} uploader.py")
