@@ -50,14 +50,13 @@ class LightonOCR:
             print("--- Download complete ---")
 
         print("--- Loading LightonOCR model into GPU (bfloat16)... ---")
-        actual_model_path = os.path.join(self.model_path, "weights-merged")
         try:
             self.processor = AutoProcessor.from_pretrained(
                 "lightonai/LightOnOCR-2-1B",
                 trust_remote_code=True
             )
             self.model = AutoModelForImageTextToText.from_pretrained(
-                actual_model_path,
+                self.model_path,
                 dtype=torch.bfloat16,
                 device_map="auto",
                 trust_remote_code=True

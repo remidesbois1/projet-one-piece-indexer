@@ -87,32 +87,6 @@ export const WorkerProvider = ({ children }) => {
             });
         }
 
-        if (!lightonWorkerRef.current && typeof window !== 'undefined') {
-            lightonWorkerRef.current = new Worker(new URL('../workers/lighton.worker.js', import.meta.url), {
-                type: 'module'
-            });
-
-            lightonWorkerRef.current.addEventListener('message', (e) => {
-                const { type, status, progress, text, error, requestId } = e.data;
-
-                if (type === 'progress') {
-                    setModelStatus('loading');
-                    // MLC Progress is an object usually
-                    if (progress && progress.progress) {
-                        setDownloadProgress(Math.round(progress.progress * 100));
-                        setCurrentFile(progress.text || "Loading LightOnOCR...");
-                    }
-                }
-                if (type === 'ready') {
-                    setModelStatus('ready');
-                }
-                if (type === 'error') {
-                    setModelStatus('error');
-                    console.error("Worker LightOn Error:", error);
-                }
-            });
-        }
-
         return () => {
         };
     }, []);
