@@ -1,0 +1,9 @@
+supabase
+requests
+pillow
+tqdm
+scikit-learn
+python-dotenv
+huggingface-hub
+datasets
+pillow-avif-plugin
