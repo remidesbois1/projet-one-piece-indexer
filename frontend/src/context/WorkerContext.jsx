@@ -45,6 +45,14 @@ export const OCR_MODELS = {
         cer: '< 0.5%',
         size: 'API Cloud',
         type: 'api'
+    },
+    lighton_local: {
+        key: 'lighton_local',
+        label: 'LightON Poneglyph (Local)',
+        description: 'ONNX WebGPU (~1.6 Go)',
+        cer: '< 0.5%',
+        size: '~1.6 Go',
+        type: 'local'
     }
 };
 
@@ -87,6 +95,30 @@ export const WorkerProvider = ({ children }) => {
             });
         }
 
+        if (!lightonWorkerRef.current && typeof window !== 'undefined') {
+            lightonWorkerRef.current = new Worker(new URL('../workers/lighton.worker.js', import.meta.url), {
+                type: 'module'
+            });
+
+            lightonWorkerRef.current.addEventListener('message', (e) => {
+                const { status, progress, file, error, modelKey } = e.data;
+
+                if (status === 'download_progress') {
+                    setModelStatus('loading');
+                    setDownloadProgress(Math.round(progress || 0));
+                    setCurrentFile(file || "");
+                }
+                if (status === 'ready') {
+                    setModelStatus('ready');
+                    if (modelKey) setActiveModelKey(modelKey);
+                }
+                if (status === 'error' && (modelStatus === 'loading' || modelStatus === 'switching')) {
+                    setModelStatus('error');
+                    console.error("Erreur chargement modèle LightON:", error);
+                }
+            });
+        }
+
         return () => {
         };
     }, []);
@@ -100,10 +132,12 @@ export const WorkerProvider = ({ children }) => {
             return;
         }
 
-        if (workerRef.current && (modelStatus === 'idle' || modelStatus === 'error')) {
+        const activeWorker = key === 'lighton_local' ? lightonWorkerRef.current : workerRef.current;
+
+        if (activeWorker && (modelStatus === 'idle' || modelStatus === 'error')) {
             setModelStatus('loading');
             setDownloadProgress(0);
-            workerRef.current.postMessage({ type: 'init', modelKey: key });
+            activeWorker.postMessage({ type: 'init', modelKey: key });
         }
     }, [activeModelKey, modelStatus]);
 
@@ -125,12 +159,13 @@ export const WorkerProvider = ({ children }) => {
     }, [activeModelKey, modelStatus]);
 
     const runOcr = useCallback(async (blob, requestId = null) => {
-        if (workerRef.current && modelStatus === 'ready') {
-            workerRef.current.postMessage({ type: 'run', imageBlob: blob, requestId });
+        const activeWorker = activeModelKey === 'lighton_local' ? lightonWorkerRef.current : workerRef.current;
+        if (activeWorker && modelStatus === 'ready') {
+            activeWorker.postMessage({ type: 'run', imageBlob: blob, requestId });
         }
-    }, [modelStatus]);
+    }, [activeModelKey, modelStatus]);
 
-    const activeWorker = activeModelKey === 'lighton' ? lightonWorkerRef.current : workerRef.current;
+    const activeWorker = activeModelKey === 'lighton_local' ? lightonWorkerRef.current : workerRef.current;
     const value = useMemo(() => ({
         worker: activeWorker,
         modelStatus,
