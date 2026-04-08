@@ -7,6 +7,8 @@ ENV PATH=${CUDA_HOME}/bin:${PATH}
 ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
 # Set PyTorch global index to ALWAYS use CUDA whl (cu124 for PyTorch 2.5.1)
 ENV PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu124
+# Force unbuffered Python output for real-time RunPod logs
+ENV PYTHONUNBUFFERED=1
 
 # 3. System dependencies (Stable layer)
 RUN apt-get update && apt-get install -y \

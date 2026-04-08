@@ -3,6 +3,7 @@ transformers>=5.0.0
 datasets
 evaluate
 jiwer
+python-Levenshtein
 pillow
 pypdfium2
 bitsandbytes

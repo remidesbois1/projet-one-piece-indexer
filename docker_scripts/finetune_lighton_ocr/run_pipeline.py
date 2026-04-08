@@ -2,6 +2,12 @@ import os
 import shutil
 import subprocess
 import sys
+
+# Force unbuffered stdout/stderr for RunPod real-time logs
+os.environ["PYTHONUNBUFFERED"] = "1"
+sys.stdout.reconfigure(line_buffering=True)
+sys.stderr.reconfigure(line_buffering=True)
+
 import requests
 from huggingface_hub import HfApi, login
 from pathlib import Path
@@ -31,7 +37,7 @@ def terminate_runpod(is_error=False):
         return
 
     if is_error:
-        print("\n⏳ ERROR: Pipeline failed. Autodestruct in 10 minutes to allow log reading...")
+        print("\n⏳ ERROR: Pipeline failed. Autodestruct in 10 minutes to allow log reading...", flush=True)
         time.sleep(600)
 
     print(f"🛑 Terminating Pod ID: {pod_id}")
@@ -44,76 +50,53 @@ def terminate_runpod(is_error=False):
     except Exception as e:
         print(f"❌ Failed to terminate: {e}")
 
-print("🚀 Starting LightOnOCR-2-1B Fine-Tuning Pipeline...")
+print("🚀 Starting LightOnOCR-2-1B Fine-Tuning Pipeline...", flush=True)
 login(token=os.environ["HF_TOKEN"])
+
+def run_step(label, script):
+    """Run a sub-script with real-time unbuffered output."""
+    print(f"\n{label}", flush=True)
+    result = subprocess.run(
+        [sys.executable, "-u", script],
+        env={**os.environ, "PYTHONUNBUFFERED": "1"},
+    )
+    if result.returncode != 0:
+        print(f"❌ {script} failed.", flush=True)
+        terminate_runpod(is_error=True)
+        sys.exit(1)
 
 # 1. Dataset Export
 dataset_dir = Path("lighton_dataset")
 if dataset_dir.exists() and (dataset_dir / "train" / "metadata.jsonl").exists():
-    print("✅ Dataset already exists. Skipping export.")
+    print("✅ Dataset already exists. Skipping export.", flush=True)
 else:
-    print("\n1️⃣  Exporting Dataset from Supabase...")
-    result = subprocess.run([sys.executable, "export_dataset.py"], capture_output=False)
-    if result.returncode != 0:
-        print("❌ Dataset export failed.")
-        terminate_runpod(is_error=True)
-        sys.exit(1)
+    run_step("1️⃣  Exporting Dataset from Supabase...", "export_dataset.py")
 
 # 2. Fine-Tuning
 model_out = Path("outputs_lighton_manga/final_lora_merged")
 if model_out.exists() and (model_out / "config.json").exists():
-    print("✅ Final model already exists. Skipping training.")
+    print("✅ Final model already exists. Skipping training.", flush=True)
 else:
-    print("\n2️⃣  Starting Fine-Tuning (SFT/LoRA)...")
-    result = subprocess.run([sys.executable, "train_lighton_ocr.py"], capture_output=False)
-    if result.returncode != 0:
-        print("❌ Fine-tuning failed.")
-        terminate_runpod(is_error=True)
-        sys.exit(1)
+    run_step("2️⃣  Starting Fine-Tuning (SFT/LoRA)...", "train_lighton_ocr.py")
 
-# 3. GGUF Export
-gguf_file = Path("outputs_lighton_manga/lighton-ocr-2-1b-manga-Q4_K_M.gguf")
-if gguf_file.exists():
-    print("✅ GGUF file already exists. Skipping export.")
-else:
-    print("\n3\ufe0f\u20e3  Exporting to GGUF format for llama.cpp/WASM...")
-    result = subprocess.run([sys.executable, "export_to_gguf.py"], capture_output=False)
-    if result.returncode != 0:
-        print("\u26a0\ufe0f GGUF conversion failed. Skipping GGUF, uploading safetensors only.")
-
-# 4. Upload to Hugging Face
-print("\n4️⃣  Uploading to Hugging Face...")
-repo_id = os.getenv("HF_REPO", "Remidesbois/lighton-ocr-2-1b-manga-gguf")
+# 3. Upload to Hugging Face
+print("\n3️⃣  Uploading to Hugging Face...", flush=True)
+repo_id = os.getenv("HF_REPO", "Remidesbois/LightonOCR-2-1b-poneglyph")
 api = HfApi()
 
 try:
     api.create_repo(repo_id=repo_id, exist_ok=True, private=False)
-    print(f"📦 Uploading GGUF models to {repo_id}...")
-    
-    # Upload everything in outputs_lighton_manga ending with .gguf
-    for file in Path("outputs_lighton_manga").glob("*.gguf"):
-        print(f"  Uploading {file.name}...")
-        api.upload_file(
-            path_or_fileobj=str(file),
-            path_in_repo=file.name,
-            repo_id=repo_id,
-            repo_type="model"
-        )
-    
-    # Optional: Upload original weights too if needed
-    print(f"📦 Uploading full weights (merged)...")
+    print(f"📦 Uploading merged weights to {repo_id} (repo root)...", flush=True)
     api.upload_folder(
         folder_path=str(model_out),
         repo_id=repo_id,
         repo_type="model",
-        path_in_repo="weights-merged"
     )
-
-    print("✅ Upload completed.")
+    print("✅ Upload completed.", flush=True)
 except Exception as e:
-    print(f"❌ Upload failed: {e}")
+    print(f"❌ Upload failed: {e}", flush=True)
     terminate_runpod(is_error=True)
     sys.exit(1)
 
-print("\n🎉 LightOn Pipeline Finished!")
+print("\n🎉 LightOn Pipeline Finished!", flush=True)
 terminate_runpod()
