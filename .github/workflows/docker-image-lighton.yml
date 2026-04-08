@@ -26,6 +26,6 @@ jobs:
         with:
           context: ./docker_scripts/finetune_lighton_ocr
           push: true
-          tags: remidesbois1/lighton-ocr-finetune:latest
+          tags: remidesbois/lighton-ocr-finetune:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
