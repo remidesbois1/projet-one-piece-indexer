@@ -10,6 +10,8 @@ from supabase import create_client, Client
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 from dotenv import load_dotenv
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 
 try:
     import pillow_avif
@@ -107,6 +109,34 @@ def main():
         valid_data, test_size=TEST_SIZE, random_state=RANDOM_SEED
     )
 
+    # Pre-download all unique pages in parallel
+    all_page_ids = set()
+    for split_data in [train_data, test_data]:
+        for b in split_data:
+            all_page_ids.add((b["id_page"], b["url_image"]))
+
+    print(f"\nDownloading {len(all_page_ids)} unique pages in parallel...", flush=True)
+    page_cache = {}
+    page_cache_lock = threading.Lock()
+    session = requests.Session()
+
+    def download_page(page_id, url):
+        try:
+            resp = session.get(url, timeout=30)
+            resp.raise_for_status()
+            img = Image.open(io.BytesIO(resp.content)).convert("RGB")
+            with page_cache_lock:
+                page_cache[page_id] = img
+        except Exception as e:
+            print(f"  ⚠️ Failed to download page {page_id}: {e}", flush=True)
+
+    with ThreadPoolExecutor(max_workers=16) as executor:
+        futures = [executor.submit(download_page, pid, url) for pid, url in all_page_ids]
+        for f in tqdm(as_completed(futures), total=len(futures), desc="Downloading pages"):
+            pass
+
+    print(f"  -> {len(page_cache)} pages cached.", flush=True)
+
     for split_name, split_data in [("train", train_data), ("test", test_data)]:
         split_dir = OUTPUT_DIR / split_name
         split_dir.mkdir(parents=True, exist_ok=True)
@@ -114,27 +144,22 @@ def main():
         img_dir.mkdir(parents=True, exist_ok=True)
 
         jsonl_entries = []
-        page_cache = {}
 
-        print(f"\nProcessing '{split_name}' ({len(split_data)} images)...")
+        print(f"\nProcessing '{split_name}' ({len(split_data)} images)...", flush=True)
         for b in tqdm(split_data, desc=split_name):
             try:
                 file_name = f"{b['id']}.png"
                 img_path = img_dir / file_name
-                
-                # Cache check: avoid re-downloading if volume is used
-                if not img_path.exists():
-                    if b["id_page"] not in page_cache:
-                        resp = requests.get(b["url_image"])
-                        resp.raise_for_status()
-                        page_cache[b["id_page"]] = Image.open(io.BytesIO(resp.content)).convert("RGB")
 
-                    page_img = page_cache[b["id_page"]]
+                if not img_path.exists():
+                    page_img = page_cache.get(b["id_page"])
+                    if page_img is None:
+                        continue
                     processed = process_bubble_image(page_img, b["x"], b["y"], b["w"], b["h"])
                     processed.save(img_path, "PNG")
 
                 rel_img_path = f"images/{file_name}"
-                
+
                 entry = {
                     "messages": [
                         {
@@ -152,18 +177,18 @@ def main():
                     ]
                 }
                 jsonl_entries.append(entry)
-                
+
             except Exception as e:
-                print(f"\n  Error on bubble {b['id']}: {e}")
+                print(f"\n  Error on bubble {b['id']}: {e}", flush=True)
 
         jsonl_path = split_dir / "metadata.jsonl"
         with open(jsonl_path, "w", encoding="utf-8") as f:
             for entry in jsonl_entries:
                 f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-                
-        print(f"  -> Saved {len(jsonl_entries)} entries to {jsonl_path}")
 
-    print(f"\nDone! Dataset in: {OUTPUT_DIR}")
+        print(f"  -> Saved {len(jsonl_entries)} entries to {jsonl_path}", flush=True)
+
+    print(f"\nDone! Dataset in: {OUTPUT_DIR}", flush=True)
 
 
 if __name__ == "__main__":

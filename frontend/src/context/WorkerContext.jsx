@@ -22,14 +22,6 @@ export const OCR_MODELS = {
         size: '~2.3 Go',
         type: 'local'
     },
-    poneglyph: {
-        key: 'poneglyph',
-        label: 'Poneglyph',
-        description: 'FireRed OCR - Serverless',
-        cer: '< 0.8%',
-        size: '~4.2 Go (Cloud)',
-        type: 'api'
-    },
     gemini: {
         key: 'gemini',
         label: 'Gemini 3.1 Flash Lite',
@@ -42,7 +34,7 @@ export const OCR_MODELS = {
         key: 'lighton',
         label: 'LightON Poneglyph',
         description: 'Serveur Cloud (Modal GPU)',
-        cer: '< 0.5%',
+        cer: '< 0.1%',
         size: 'API Cloud',
         type: 'api'
     },

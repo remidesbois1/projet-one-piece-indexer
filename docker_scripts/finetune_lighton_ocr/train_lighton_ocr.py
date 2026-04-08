@@ -10,13 +10,18 @@ from transformers import (
     LightOnOcrForConditionalGeneration,
     LightOnOcrProcessor,
     Seq2SeqTrainingArguments,
-    Seq2SeqTrainer
+    Seq2SeqTrainer,
+    TrainerCallback,
 )
+from Levenshtein import distance as levenshtein_distance
 
-# Optimized for RTX 3090 (24GB VRAM)
+# Optimized for RTX 5090 (32GB VRAM)
 torch.set_num_threads(8)
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
+torch.backends.cudnn.benchmark = True
+if hasattr(torch, "compile"):
+    torch._dynamo.config.suppress_errors = True
 
 BASE_PATH = "./lighton_dataset"
 TRAIN_FILE = os.path.join(BASE_PATH, "train", "metadata.jsonl")
@@ -190,33 +195,82 @@ def compute_metrics(eval_preds):
             final_labels.append(l)
     
     if not final_labels:
-        return {"cer": 0, "wer": 0}
-        
+        return {"cer": 0, "wer": 0, "exact_match": 0, "avg_levenshtein": 0}
+
     cer = cer_metric.compute(predictions=final_preds, references=final_labels)
     wer = wer_metric.compute(predictions=final_preds, references=final_labels)
-    
-    # Pretty print results
-    print("\n" + "="*50)
-    print(" RESULTATS EVALUATION")
-    print("-" * 50)
-    print(f" CER: {cer:.4f} ({cer*100:.2f}%)")
-    print(f" WER: {wer:.4f} ({wer*100:.2f}%)")
-    print("-" * 50)
-    
-    # Print some examples (top 3)
-    print(" ECHANTILLONS (TOP 3)")
-    print("-" * 50)
-    indices = np.random.choice(len(final_labels), min(3, len(final_labels)), replace=False)
-    for idx in indices:
-        print(f" REF:  {final_labels[idx]}")
-        print(f" PRED: {final_preds[idx]}")
-        print("-" * 30)
-    print("=" * 50 + "\n")
-    
-    return {"cer": cer, "wer": wer}
+
+    exact_matches = sum(1 for p, l in zip(final_preds, final_labels) if p == l)
+    exact_match_rate = exact_matches / len(final_labels)
+    lev_distances = [levenshtein_distance(p, l) for p, l in zip(final_preds, final_labels)]
+    avg_lev = sum(lev_distances) / len(lev_distances)
+
+    per_sample_cer = []
+    for p, l in zip(final_preds, final_labels):
+        s_cer = cer_metric.compute(predictions=[p], references=[l]) if l else 0.0
+        per_sample_cer.append(s_cer)
+
+    ranked = sorted(range(len(per_sample_cer)), key=lambda i: per_sample_cer[i], reverse=True)
+
+    P = lambda msg: print(msg, flush=True)
+    P("\n" + "=" * 60)
+    P(" RESULTATS EVALUATION")
+    P("-" * 60)
+    P(f" CER:             {cer:.4f}  ({cer*100:.2f}%)")
+    P(f" WER:             {wer:.4f}  ({wer*100:.2f}%)")
+    P(f" Exact Match:     {exact_matches}/{len(final_labels)}  ({exact_match_rate*100:.1f}%)")
+    P(f" Avg Levenshtein: {avg_lev:.2f} chars")
+    P("-" * 60)
+
+    # Top 5 worst errors
+    n_show = min(5, len(ranked))
+    P(f" TOP {n_show} PIRES ERREURS (tri par CER decroissant)")
+    P("-" * 60)
+    for rank, idx in enumerate(ranked[:n_show], 1):
+        P(f"  #{rank}  CER={per_sample_cer[idx]:.4f}  Lev={lev_distances[idx]}")
+        P(f"   REF:  {final_labels[idx]}")
+        P(f"   PRED: {final_preds[idx]}")
+        P("")
+    P("=" * 60 + "\n")
+
+    return {
+        "cer": cer,
+        "wer": wer,
+        "exact_match": exact_match_rate,
+        "avg_levenshtein": avg_lev,
+    }
+
+class LiveMetricsCallback(TrainerCallback):
+    """Prints key metrics in real-time after every eval and log step."""
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if logs is None:
+            return
+        step = state.global_step
+        parts = [f"step={step}"]
+        for key in ["loss", "learning_rate", "eval_loss", "eval_cer", "eval_wer",
+                    "eval_exact_match", "eval_avg_levenshtein"]:
+            if key in logs:
+                val = logs[key]
+                parts.append(f"{key}={val:.6f}" if isinstance(val, float) else f"{key}={val}")
+        print(f"[LIVE] {' | '.join(parts)}", flush=True)
+
+    def on_evaluate(self, args, state, control, metrics=None, **kwargs):
+        if metrics is None:
+            return
+        step = state.global_step
+        print(f"\n{'='*60}", flush=True)
+        print(f" EVAL @ step {step}", flush=True)
+        for k, v in sorted(metrics.items()):
+            if isinstance(v, float):
+                print(f"  {k}: {v:.6f}", flush=True)
+            else:
+                print(f"  {k}: {v}", flush=True)
+        print(f"{'='*60}\n", flush=True)
+
 
 if __name__ == "__main__":
-    print(f"Loading processor for {MODEL_ID}...")
+    print(f"Loading processor for {MODEL_ID}...", flush=True)
     processor = LightOnOcrProcessor.from_pretrained(MODEL_ID)
     
     # Use left-padding for generation
@@ -264,11 +318,11 @@ if __name__ == "__main__":
             output_dir=OUTPUT_DIR,
             learning_rate=1e-4,
             num_train_epochs=3,
-            per_device_train_batch_size=2,
-            per_device_eval_batch_size=2,
-            gradient_accumulation_steps=8,
+            per_device_train_batch_size=4,
+            per_device_eval_batch_size=4,
+            gradient_accumulation_steps=4,
             gradient_checkpointing=True,
-            optim="adamw_torch",
+            optim="adamw_torch_fused",
             bf16=dtype == torch.bfloat16,
             fp16=dtype == torch.float16,
             logging_steps=10,
@@ -280,7 +334,9 @@ if __name__ == "__main__":
             remove_unused_columns=False,
             report_to="none",
             predict_with_generate=True,
-            dataloader_num_workers=0
+            dataloader_num_workers=4,
+            dataloader_pin_memory=True,
+            torch_compile=False,
         )
 
         data_collator_fn = CustomDataCollator(processor)
@@ -291,7 +347,8 @@ if __name__ == "__main__":
             train_dataset=train_dataset,
             eval_dataset=test_dataset,
             data_collator=data_collator_fn,
-            compute_metrics=compute_metrics
+            compute_metrics=compute_metrics,
+            callbacks=[LiveMetricsCallback()],
         )
 
     merge_only = "--merge-only" in sys.argv

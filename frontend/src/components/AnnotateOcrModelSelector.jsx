@@ -74,7 +74,7 @@ export default function AnnotateOcrModelSelector({
                                 )}
                             </div>
                             <div className="text-[8px] font-semibold text-slate-400 leading-tight">
-                                {m.key === 'poneglyph' ? `CER ${m.cer} - Serverless` : m.key === 'gemini' ? "Vision AI · Google" : `CER ${m.cer} · ${m.size}`}
+                                {m.key === 'gemini' ? "Vision AI · Google" : `CER ${m.cer} · ${m.size}`}
                             </div>
                         </button>
                     ))}

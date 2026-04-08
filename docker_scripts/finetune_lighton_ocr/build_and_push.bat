@@ -1,5 +1,5 @@
 @echo off
-set DOCKER_USER=remidesbois1
+set DOCKER_USER=remidesbois
 set IMAGE_NAME=lighton-ocr-finetune
 set TAG=latest
 

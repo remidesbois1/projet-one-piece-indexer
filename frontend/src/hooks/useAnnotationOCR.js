@@ -71,7 +71,7 @@ export function useAnnotationOCR({
         const { areaToCrop, requestId, modelKey } = apiTaskQueue.current.splice(taskIndex, 1)[0];
         try {
             const blob = await cropImage(imageRef.current, areaToCrop);
-            const endpoint = modelKey === 'lighton' ? '/api/local_lighton' : '/api/ocr';
+            const endpoint = '/api/local_lighton';
             const response = await fetch(endpoint, {
                 method: 'POST',
                 body: blob
@@ -81,7 +81,7 @@ export function useAnnotationOCR({
                 const result = await response.json();
                 handleOcrCompletion(requestId, result.text, modelKey);
             } else {
-                throw new Error(modelKey === 'lighton' ? "Erreur API Modal Lighton" : "Erreur Serveur Poneglyph");
+                throw new Error("Erreur API Modal LightOn");
             }
         } catch (err) {
             console.error("API Task Error:", err);
@@ -143,7 +143,7 @@ export function useAnnotationOCR({
 
             activeRequests.current.add(requestId);
 
-            if (modelData.key === 'poneglyph' || modelData.key === 'lighton') {
+            if (modelData.key === 'lighton') {
                 apiTaskQueue.current.push({ areaToCrop, requestId, modelKey: modelData.key });
                 processNextApiTask();
                 return;
@@ -175,7 +175,7 @@ export function useAnnotationOCR({
             lastRequestId.current = requestId;
 
             if (ocrResults[requestId] !== undefined) {
-                setOcrSource((modelData?.key === 'poneglyph' || modelData?.key === 'lighton') ? modelData?.key : 'local');
+                setOcrSource((modelData?.key === 'lighton') ? modelData?.key : 'local');
                 setPendingAnnotation(prev => ({ ...prev, texte_propose: ocrResults[requestId] }));
                 setIsModalOpen(true);
                 return;
@@ -183,8 +183,8 @@ export function useAnnotationOCR({
 
             if (activeRequests.current.has(requestId)) {
                 setIsSubmitting(true);
-                setLoadingText((modelData?.key === 'poneglyph' || modelData?.key === 'lighton') ? `Analyse ${modelData.label}...` : "Analyse Locale...");
-                if (modelData?.key === 'poneglyph' || modelData?.key === 'lighton') processNextApiTask();
+                setLoadingText((modelData?.key === 'lighton') ? `Analyse ${modelData.label}...` : "Analyse Locale...");
+                if (modelData?.key === 'lighton') processNextApiTask();
                 return;
             }
 

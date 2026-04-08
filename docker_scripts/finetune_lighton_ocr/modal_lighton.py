@@ -101,6 +101,9 @@ class LightonOCR:
                 
             input_len = inputs["input_ids"].shape[1]
             output_text = self.processor.tokenizer.decode(generated_ids[0][input_len:], skip_special_tokens=True).strip()
+            if "\n" in output_text:
+                output_text = output_text.split("\n")[0].strip()
+            # -------------------------------------------------------------
 
             return {"text": output_text}
             
