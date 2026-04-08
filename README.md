@@ -23,7 +23,7 @@ Le **Projet Poneglyph** est une plateforme de haute performance dédiée à la n
 
 * **Framework :** React 19 / Next.js & Vite.
 * **CSS** : [ShadCn UI](https://ui.shadcn.com/)
-* **OCR Hybride :** **TrOCR Fine-tuned** (Local via WebGPU) & **FireRed-OCR** (Cloud via Modal).
+* **OCR Hybride :** **TrOCR Fine-tuned** (Local via WebGPU) & **LightOnOCR** (Cloud via Modal).
 * **Détection de Bulles Locale :** **YOLO V11 Medium Fine-tuned** [`Remidesbois/YoloPiece_BubbleDetector`](https://huggingface.co/Remidesbois/YoloPiece_BubbleDetector) exécuté via WebGPU.
 * **State Management :** Context API & LocalStorage.
 
@@ -32,7 +32,7 @@ Le **Projet Poneglyph** est une plateforme de haute performance dédiée à la n
 * **Serveur API :** Node.js / Express.
 * **Base de Données :** Supabase (PostgreSQL) avec l'extension **pgvector**.
 * **LLM & Embeddings :** Google Gemini 3.1 Flash-Lite, Voyage AI (`voyage-4-large`) & Gemini Multimodal (`gemini-embedding-2-preview`).
-* **Inférence GPU Cloud :** Modal (pour l'OCR FireRed de haute précision).
+* **Inférence GPU Cloud :** Modal (pour l'OCR LightOn de haute précision).
 
 ---
 
@@ -86,15 +86,16 @@ Deux modèles spécialisés pour le français et les polices de manga, sélectio
 
 > **Note de compatibilité :** L'OCR local nécessite un navigateur compatible WebGPU (Chrome 113+, Edge, Firefox Nightly).
 
-### **FireRed-OCR "Poneglyph" (Cloud via Modal)**
+### **LightOn-OCR "Poneglyph" (Cloud via Modal)**
 
 Nouveau modèle de pointe pour une précision extrême, déployé en mode *serverless* sur **Modal**.
 
-* **Modèle :** [`Remidesbois/firered-ocr-onepiece`](https://huggingface.co/Remidesbois/firered-ocr-onepiece) (Architecture FireRed-OCR / Qwen3-VL).
-* **Précision :** CER **< 0.8%** - WER **< 2.4%** (SOTA pour mon projet).
+* **Modèle :** [`Remidesbois/LightonOCR-2-1b-poneglyph`](https://huggingface.co/Remidesbois/LightonOCR-2-1b-poneglyph) (Architecture LightOnOCR-2-1B).
+* **Précision :** CER **< 0.1%** - WER **< 0.1%**.
 * **Infrastructure :** Inférence sur GPU **NVIDIA L4** via la plateforme Modal.
-* **Usage :** Idéal pour les textes difficiles, les bulles denses ou les configurations sans support WebGPU.
-* **Coût :** ~0,000222 $ / secondes où le container est en cours d'éxécution.
+* **Usage :** Idéal pour les textes complexes, les onomatopées ou les configurations sans support WebGPU.
+* **Optimisation :** Post-processing de troncature automatique pour garantir 0% d'hallucination et un CER et WER effectif de 0%.
+* **Coût :** ~0,000222 $ / seconde où le container est en cours d'exécution.
 
 > Modal offre 30$ de crédit par mois (~37.5h d'inférence), au delà de ce seuil, le service se coupe.
 
