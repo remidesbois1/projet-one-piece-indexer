@@ -15,10 +15,13 @@ from transformers import (
 )
 from Levenshtein import distance as levenshtein_distance
 
-# Optimized for RTX 3090 (24GB VRAM)
+# Optimized for RTX 5090 (32GB VRAM)
 torch.set_num_threads(8)
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
+torch.backends.cudnn.benchmark = True
+if hasattr(torch, "compile"):
+    torch._dynamo.config.suppress_errors = True
 
 BASE_PATH = "./lighton_dataset"
 TRAIN_FILE = os.path.join(BASE_PATH, "train", "metadata.jsonl")
@@ -315,11 +318,11 @@ if __name__ == "__main__":
             output_dir=OUTPUT_DIR,
             learning_rate=1e-4,
             num_train_epochs=3,
-            per_device_train_batch_size=2,
-            per_device_eval_batch_size=2,
-            gradient_accumulation_steps=8,
+            per_device_train_batch_size=4,
+            per_device_eval_batch_size=4,
+            gradient_accumulation_steps=4,
             gradient_checkpointing=True,
-            optim="adamw_torch",
+            optim="adamw_torch_fused",
             bf16=dtype == torch.bfloat16,
             fp16=dtype == torch.float16,
             logging_steps=10,
@@ -331,7 +334,9 @@ if __name__ == "__main__":
             remove_unused_columns=False,
             report_to="none",
             predict_with_generate=True,
-            dataloader_num_workers=0
+            dataloader_num_workers=4,
+            dataloader_pin_memory=True,
+            torch_compile=False,
         )
 
         data_collator_fn = CustomDataCollator(processor)

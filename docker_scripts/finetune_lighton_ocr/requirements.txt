@@ -1,4 +1,4 @@
-torch==2.5.1+cu124
+torch==2.7.0+cu128
 transformers>=5.0.0
 datasets
 evaluate
