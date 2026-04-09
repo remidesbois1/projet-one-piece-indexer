@@ -81,21 +81,27 @@ Deux modèles spécialisés pour le français et les polices de manga, sélectio
 | **Taille ONNX** | ~1.33 Go | ~2.33 Go |
 | **CER (brut)** | 2.90% | **1.83%** |
 | **WER (brut)** | 9.20% | **6.03%** |
-| **Use case** | Appareils modestes, chargement rapide | Précision maximale, GPU récent |
+| **Use case** | Appareils modestes, chargement rapide | Meilleure précision, GPU intégré plus puissant |
 | **Coût** | 0 $/OCR | 0 $/OCR |
 
 > **Note de compatibilité :** L'OCR local nécessite un navigateur compatible WebGPU (Chrome 113+, Edge, Firefox Nightly).
 
-### **LightOn-OCR "Poneglyph" (Cloud via Modal)**
+### **LightOn-OCR "Poneglyph" (Cloud via Modal / Local)**
 
-Nouveau modèle de pointe pour une précision extrême, déployé en mode *serverless* sur **Modal**.
+Nouveau modèle de pointe pour une précision extrême, déployé en mode *serverless* sur **Modal** et disponible en local pour ceux ayant une bonne carte graphique (4Go de VRAM)
 
 * **Modèle :** [`Remidesbois/LightonOCR-2-1b-poneglyph`](https://huggingface.co/Remidesbois/LightonOCR-2-1b-poneglyph) (Architecture LightOnOCR-2-1B).
+* **Modèle ONNX:** [`Remidesbois/LightonOCR-2-1b-poneglyph-onnx`](https://huggingface.co/Remidesbois/LightonOCR-2-1b-poneglyph-onnx).
 * **Précision :** CER **< 0.1%** - WER **< 0.1%**.
 * **Infrastructure :** Inférence sur GPU **NVIDIA L4** via la plateforme Modal.
 * **Usage :** Idéal pour les textes complexes, les onomatopées ou les configurations sans support WebGPU.
 * **Optimisation :** Post-processing de troncature automatique pour garantir 0% d'hallucination et un CER et WER effectif de 0%.
-* **Coût :** ~0,000222 $ / seconde où le container est en cours d'exécution.
+* **Coût :** ~0,000222 $ / seconde d'éxécution / 0$ en local.
+
+> LightonOCR reste relativement "lent", surtout sur des machines peu puissantes :
+   - 10-15 secondes par bulle sur RTX 500 Ada (équivalent RTX 3050/4050 laptop)
+   - 5-8 secondes par bulle sur RTX 3090.
+> La vitesse doit pouvoir être optimisé en jouant avec la quantization, je dois faire des tests car 
 
 > Modal offre 30$ de crédit par mois (~37.5h d'inférence), au delà de ce seuil, le service se coupe.
 
@@ -103,8 +109,8 @@ Nouveau modèle de pointe pour une précision extrême, déployé en mode *serve
 
 Détecte instantanément les bulles sur la planche.
 
-* **Performance :** (Mean Average Precision) mAP50 de **0.992**.
-* **Architecture :** YOLO11 Medium Fine-tuned.
+* **Performance :** (Mean Average Precision) mAP50 de **0.994**.
+* **Architecture :** YOLO11 Nano Fine-tuned.
 * **Exécution :** WebGPU (via ONNX Runtime Web).
 
 ### **Modèle de Tri des Bulles**
@@ -118,7 +124,7 @@ Une fois les bulles détectées, un modèle spécialisé les trie intelligemment
 |---|---|
 | **Architecture** | Global-Local (MobileNetV3 + MLP) |
 | **Précision (Val)** | **98.0%** |
-| **Taille ONNX** | **2.47 MB** (vs 170 MB) |
+| **Taille ONNX** | **2.47 MB** (vs 170 MB pour la version précédente) |
 | **Exécution** | Local (Web worker) - Infér. unique par page |
 
 ### **Google Gemini ~~2.5~~ 3.1 Flash-Lite (Cloud)**
@@ -126,7 +132,7 @@ Une fois les bulles détectées, un modèle spécialisé les trie intelligemment
 Fallback pour les configurations ne supportant pas WebGPU.
 
 * **Coût :** 500 requêtes gratuites sur le free plan, au delà : 0.00008$ / OCR.
-* **Rôle clé :** Gemini 2.5 Flash-Lite a servi en grande partie à générer le corpus de "distillation" pour entraîner les modèles locaux.
+* **Rôle clé :** Gemini 2.5 Flash-Lite a servi en grande partie à générer le corpus de "distillation" pour entraîner les modèles ouverts.
 
 ---
 
@@ -155,17 +161,17 @@ Le projet expose une API sécurisée pour les développeurs.
 Approche rigoureuse pour maintenir un coût de fonctionnement minimal (**≈ 5 € / mois**).
 
 * **Watermarking dynamique :** Protection des visuels.
-* **Confidentialité :** Clés API personnelles stockées en LocalStorage (Optionnel - Uniquement pour l'OCR/Analyse). La recherche sémantique utilise désormais les clés serveur.
+* **Confidentialité :** Clés API personnelles stockées en LocalStorage (Optionnel/Admin seulement - Uniquement pour l'OCR/Analyse via Gemini). La recherche sémantique utilise désormais les clés serveur.
 * **Edge Computing :** Déport de la charge d'inférence (OCR/Detection) sur le client pour réduire les coûts serveur.
 
 ---
 
 ## **Pipeline MLOps (Amélioration Continue)**
 
-Le script `/script_docker` automatise le cycle de vie du modèle IA :
+Les scripts `/script_docker` automatise le cycle de vie des modèle IA :
 
-1. **Extraction :** Récupération des bulles validées (Supabase).
-2. **Fine-Tuning :** Entraînement incrémental de TrOCR (Base & Large), de FireRed, et des modèles de détection/tri des bulles, sur les nouvelles données.
+1. **Extraction :** Récupération des bulles/pages validées (Supabase).
+2. **Fine-Tuning :** Entraînement de TrOCR (Base & Large), ~~de FireRed~~, de lightonOCR, et des modèles de détection/tri des bulles, sur les nouvelles données.
 3. **Déploiement :** Push automatique vers Hugging Face si les métriques (CER/WER, mAP50) sont validées.
 
 ---
@@ -213,19 +219,6 @@ cd backend && npm install && npm run dev
 cd frontend && npm install && npm run dev
 
 ```
-
----
-
-## **Roadmap**
-
-* [x] Recherche Vectorielle & Sémantique
-* [x] Inférence locale WebGPU (OCR + YOLO)
-* [x] OCR Cloud Haute Précision (FireRed-OCR / Modal)
-* [x] Pipeline MLOps automatisé
-* [ ] Support multilingue (Anglais)
-* [ ] Se renseigner sur WebNN (évolution de WebGPU) pour permettre aux modèles de tourner sur les NPU
-
----
 
 ## **Avertissement Légal**
 
