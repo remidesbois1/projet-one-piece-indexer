@@ -193,7 +193,7 @@ export async function generateGeminiEmbedding(text, imageSource, apiKey) {
 
         if (!response.ok) {
             const err = await response.json();
-             throw new Error(err.error?.message || "Erreur Gemini Embedding");
+            throw new Error(err.error?.message || "Erreur Gemini Embedding");
         }
 
         const res = await response.json();
@@ -205,4 +205,61 @@ export async function generateGeminiEmbedding(text, imageSource, apiKey) {
     }
 }
 
+export async function generateOneShotBubbles(imageSource, apiKey) {
+    if (!apiKey) throw new Error("Clé API manquante");
 
+    let blob;
+    try {
+        const fullRect = {
+            x: 0,
+            y: 0,
+            w: imageSource.naturalWidth,
+            h: imageSource.naturalHeight
+        };
+        blob = await cropImage(imageSource, fullRect);
+    } catch (e) {
+        console.error("Image processing error:", e);
+        throw new Error("Erreur lors du traitement de l'image.");
+    }
+
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({
+        model: "gemini-3-flash-preview",
+        generationConfig: {
+            responseMimeType: "application/json",
+            thinkingConfig: {
+                thinkingBudget: 800
+            }
+        }
+    });
+
+    const base64Data = await blobToBase64(blob);
+
+    const imagePart = {
+        inlineData: {
+            data: base64Data,
+            mimeType: "image/jpeg",
+        },
+    };
+
+    const prompt = `à partir de cette page, extrait tout le texte de chaque bulle dans le bon ordre de lecture japonais (en haut à droite -> en bas à gauche) Avec leurs position bbox. Dans un format json :
+[
+  {
+    "content": "texte",
+    "pos": [ymin, xmin, ymax, xmax]
+  }
+]
+- Corrige aussi la casse : "TRES BIEN, ..." devient : "Très bien, ..."
+Position normalisé à 1000 que tu va re-normaliser derrière selon la page.`;
+
+    try {
+        const result = await model.generateContent([prompt, imagePart]);
+        const response = await result.response;
+        const text = response.text();
+        return { data: JSON.parse(text) };
+    } catch (error) {
+        handleGeminiError(error);
+        console.error("Gemini API One-Shot Error:", error);
+        throw error;
+    }
+}

@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, reorderBubbles, savePageDescription, getMetadataSuggestions, getPages } from '@/lib/api';
-import { analyzeBubble, generatePageDescription, generateGeminiEmbedding } from '@/lib/geminiClient';
+import { analyzeBubble, generatePageDescription, generateGeminiEmbedding, generateOneShotBubbles } from '@/lib/geminiClient';
 import ApiKeyForm from '@/components/ApiKeyForm';
 import { useAuth } from '@/context/AuthContext';
 import { OCR_MODELS } from '@/context/WorkerContext';
@@ -40,6 +40,7 @@ export default function AnnotatePage() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [loadingText, setLoadingText] = useState("Analyse en cours...");
     const [pendingAnnotation, setPendingAnnotation] = useState(null);
+    const [isOneShotLoading, setIsOneShotLoading] = useState(false);
     const [rectangle, setRectangle] = useState(null);
     const [imageDimensions, setImageDimensions] = useState(null);
     const [ocrSource, setOcrSource] = useState(null);
@@ -102,7 +103,7 @@ export default function AnnotatePage() {
     const {
         isAutoDetecting, setIsAutoDetecting, queueLength, detectionStatus,
         loadDetectionModel, detectionProgress, handleExecuteDetection,
-        processNextBubble
+        processNextBubble, detectBubbles
     } = useAnnotationDetection({
         imageRef, pageId, setRectangle, setPendingAnnotation, setDebugImageUrl,
         runLocalOcr, runBackgroundOcr, setIsSubmitting, setLoadingText
@@ -185,7 +186,12 @@ export default function AnnotatePage() {
     useEffect(() => {
         if (isAutoDetecting) return;
         if (rectangle && imageRef.current) {
-            const analysisData = { id_page: parseInt(pageId, 10), ...rectangle, texte_propose: '' };
+            const analysisData = {
+                id: `manual-${Date.now()}`,
+                id_page: parseInt(pageId, 10), 
+                ...rectangle, 
+                texte_propose: '' 
+            };
             setPendingAnnotation(analysisData);
             setDebugImageUrl(null);
             runLocalOcr();
@@ -278,6 +284,126 @@ export default function AnnotatePage() {
         }
     };
 
+    const handleOneShot = async () => {
+        if (!imageRef.current) return;
+        const key = geminiKey || localStorage.getItem('google_api_key');
+        if (!key) {
+            toast.error("Clé API Google requise pour l'extraction One-Shot.");
+            setShowApiKeyModal(true);
+            return;
+        }
+
+        setIsOneShotLoading(true);
+        try {
+            let yoloPromise = Promise.resolve(null);
+            if (detectionStatus === 'ready') {
+                yoloPromise = fetch(imageRef.current.src)
+                    .then(r => r.blob())
+                    .then(b => detectBubbles(b))
+                    .catch(e => {
+                        console.error('YOLO Failed', e);
+                        return null;
+                    });
+            }
+
+            const [result, yoloBoxes] = await Promise.all([
+                generateOneShotBubbles(imageRef.current, key),
+                yoloPromise
+            ]);
+
+            if (!result || !result.data || !Array.isArray(result.data)) {
+                throw new Error("Format de réponse invalide.");
+            }
+
+            const h = imageRef.current.naturalHeight;
+            const w = imageRef.current.naturalWidth;
+            
+            const newBubblesConfig = result.data.reduce((acc, idx) => {
+                const [ymin, xmin, ymax, xmax] = idx.pos;
+                let geminiBox = {
+                    id_page: parseInt(pageId, 10),
+                    x: Math.round((xmin / 1000) * w),
+                    y: Math.round((ymin / 1000) * h),
+                    w: Math.round(((xmax - xmin) / 1000) * w),
+                    h: Math.round(((ymax - ymin) / 1000) * h),
+                    texte_propose: idx.content
+                };
+
+                if (detectionStatus === 'ready') {
+                    // YOLO is loaded, so we enforce intersection
+                    const boxes = yoloBoxes || [];
+                    let bestYoloBox = null;
+                    let bestIou = 0;
+                    for (const yBox of boxes) {
+                        const x1 = Math.max(geminiBox.x, yBox.x);
+                        const y1 = Math.max(geminiBox.y, yBox.y);
+                        const x2 = Math.min(geminiBox.x + geminiBox.w, yBox.x + yBox.w);
+                        const y2 = Math.min(geminiBox.y + geminiBox.h, yBox.y + yBox.h);
+
+                        if (x2 < x1 || y2 < y1) continue;
+                        const intersection = (x2 - x1) * (y2 - y1);
+                        const areaGemini = geminiBox.w * geminiBox.h;
+                        const areaYolo = yBox.w * yBox.h;
+                        const iou = intersection / (areaGemini + areaYolo - intersection);
+
+                        if (iou > 0.1 && iou > bestIou) {
+                            bestIou = iou;
+                            bestYoloBox = yBox;
+                        }
+                    }
+
+                    if (bestYoloBox) {
+                        geminiBox.x = Math.round(bestYoloBox.x);
+                        geminiBox.y = Math.round(bestYoloBox.y);
+                        geminiBox.w = Math.round(bestYoloBox.w);
+                        geminiBox.h = Math.round(bestYoloBox.h);
+                        acc.push(geminiBox);
+                    }
+                    // If no intersection, we ignore it (inversement logic)
+                } else {
+                    // YOLO not active, keep original Gemini box
+                    acc.push(geminiBox);
+                }
+
+                return acc;
+            }, []);
+
+            if (newBubblesConfig.length === 0) {
+                toast.error("Aucune bulle détectée.");
+                setIsOneShotLoading(false);
+                return;
+            }
+
+            toast.info(`Création de ${newBubblesConfig.length} bulles en cours...`);
+            
+            const createdBubbles = [];
+            const { createBubble } = await import('@/lib/api');
+            for (const bubbleConfig of newBubblesConfig) {
+                try {
+                    const res = await createBubble(bubbleConfig);
+                    createdBubbles.push(res.data);
+                } catch (e) {
+                    console.error("Erreur création bulle One-Shot", e);
+                }
+            }
+            
+            if (createdBubbles.length > 0) {
+                setExistingBubbles(prev => {
+                    const combined = [...prev, ...createdBubbles];
+                    return combined.sort((a, b) => a.order - b.order);
+                });
+                toast.success(`${createdBubbles.length} bulles créées avec succès.`);
+            } else {
+                toast.error("Échec de la création des bulles.");
+            }
+        } catch (error) {
+            console.error(error);
+            toast.error("Service d'extraction indisponible ou erreur d'API.");
+        } finally {
+            setIsOneShotLoading(false);
+        }
+    };
+
     if (error) return <div className="p-8 text-red-500">{error}</div>;
     if (!page) return null;
 
@@ -311,6 +437,8 @@ export default function AnnotatePage() {
                 setShowDescModal={setShowDescModal}
                 setShowApiKeyModal={setShowApiKeyModal}
                 handleSubmitPage={handleSubmitPage}
+                handleOneShot={handleOneShot}
+                isOneShotLoading={isOneShotLoading}
             />
 
             <div className="flex flex-col flex-1 overflow-hidden min-w-0 bg-slate-50 relative">

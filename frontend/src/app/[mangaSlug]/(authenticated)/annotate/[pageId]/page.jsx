@@ -1,6 +1,4 @@
 import AnnotateClient from './AnnotateClient';
-import { WorkerProvider } from '@/context/WorkerContext';
-import { DetectionProvider } from '@/context/DetectionContext';
 
 export async function generateMetadata({ params }) {
     const { mangaSlug, pageId } = await params;
@@ -14,10 +12,6 @@ export async function generateMetadata({ params }) {
 
 export default function Page() {
     return (
-        <WorkerProvider>
-            <DetectionProvider>
-                <AnnotateClient />
-            </DetectionProvider>
-        </WorkerProvider>
+        <AnnotateClient />
     );
 }

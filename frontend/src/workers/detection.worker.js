@@ -23,25 +23,50 @@ self.addEventListener('message', async (event) => {
 
             console.log("[Worker] Loading models...");
 
-            const resp1 = await fetch(MODEL_PATH);
-            const buf1 = new Uint8Array(await resp1.arrayBuffer());
+            const fetchWithProgress = async (url, baseProgress, maxProgress) => {
+                const response = await fetch(url);
+                const contentLength = response.headers.get('content-length');
+                const total = contentLength ? parseInt(contentLength, 10) : 0;
+                let loaded = 0;
+                const chunks = [];
+                const reader = response.body.getReader();
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    chunks.push(value);
+                    loaded += value.byteLength;
+                    if (total) {
+                        const progress = baseProgress + (loaded / total) * (maxProgress - baseProgress);
+                        self.postMessage({ status: 'download_progress', progress });
+                    } else {
+                        const progress = baseProgress + (maxProgress - baseProgress) * Math.min(0.9, loaded / 10000000);
+                        self.postMessage({ status: 'download_progress', progress });
+                    }
+                }
+                self.postMessage({ status: 'download_progress', progress: maxProgress });
+                
+                const arrayBuffer = new Uint8Array(loaded);
+                let offset = 0;
+                for (const chunk of chunks) {
+                    arrayBuffer.set(chunk, offset);
+                    offset += chunk.byteLength;
+                }
+                return arrayBuffer;
+            };
+
+            const buf1 = await fetchWithProgress(MODEL_PATH, 0, 50);
             detectionSession = await ort.InferenceSession.create(buf1, {
                 executionProviders: ['webgpu', 'wasm'],
                 graphOptimizationLevel: 'all'
             });
 
             try {
-                const resp2 = await fetch(ORDER_MODEL_PATH);
-                if (resp2.ok) {
-                    const buf2 = new Uint8Array(await resp2.arrayBuffer());
-                    orderSession = await ort.InferenceSession.create(buf2, {
-                        executionProviders: ['webgpu', 'wasm'],
-                        graphOptimizationLevel: 'all'
-                    });
-                    console.log("[Worker] ReaderNet V5 loaded");
-                } else {
-                    console.warn("[Worker] ReaderNet V5 not found at", ORDER_MODEL_PATH);
-                }
+                const buf2 = await fetchWithProgress(ORDER_MODEL_PATH, 50, 100);
+                orderSession = await ort.InferenceSession.create(buf2, {
+                    executionProviders: ['webgpu', 'wasm'],
+                    graphOptimizationLevel: 'all'
+                });
+                console.log("[Worker] ReaderNet V5 loaded");
             } catch (e) {
                 console.warn("[Worker] Failed to load ReaderNet V5:", e.message);
             }

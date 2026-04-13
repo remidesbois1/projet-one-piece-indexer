@@ -95,6 +95,7 @@ export function useAnnotationDetection({
         loadDetectionModel,
         detectionProgress,
         handleExecuteDetection,
-        processNextBubble
+        processNextBubble,
+        detectBubbles
     };
 }

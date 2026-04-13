@@ -1,5 +1,3 @@
-import { WorkerProvider } from '@/context/WorkerContext';
-import { DetectionProvider } from '@/context/DetectionContext';
 import SandboxClient from './SandboxClient';
 
 export const metadata = {
@@ -9,10 +7,6 @@ export const metadata = {
 
 export default function SandboxPage() {
     return (
-        <WorkerProvider>
-            <DetectionProvider>
-                <SandboxClient />
-            </DetectionProvider>
-        </WorkerProvider>
+        <SandboxClient />
     );
 }

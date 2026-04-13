@@ -81,9 +81,30 @@ self.addEventListener('message', async (event) => {
                 currentModelId = null;
             }
 
+            let downloadProgressMap = {};
             const progressCallback = (data) => {
                 if (data.status === 'progress') {
-                    self.postMessage({ status: 'download_progress', file: data.file, progress: data.progress });
+                    downloadProgressMap[data.file] = data;
+                    
+                    let totalLoaded = 0;
+                    let totalExpected = 0;
+
+                    for (const key in downloadProgressMap) {
+                        const fileData = downloadProgressMap[key];
+                        if (fileData.total) {
+                            totalLoaded += fileData.loaded || 0;
+                            totalExpected += fileData.total;
+                        }
+                    }
+
+                    const realisticTotal = Math.max(totalExpected, 500_000_000); 
+                    const overallProgress = (totalLoaded / realisticTotal) * 100;
+                    
+                    self.postMessage({ 
+                        status: 'download_progress', 
+                        file: data.file, 
+                        progress: Math.min(overallProgress, 100) 
+                    });
                 }
             };
 
