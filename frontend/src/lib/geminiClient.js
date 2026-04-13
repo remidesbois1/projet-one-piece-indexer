@@ -224,12 +224,12 @@ export async function generateOneShotBubbles(imageSource, apiKey) {
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
-        model: "gemini-3-flash-preview",
+        model: "gemma-4-26b-a4b-it",
         generationConfig: {
-            responseMimeType: "application/json",
+            responseMimeType: "application/json"/*,
             thinkingConfig: {
                 thinkingBudget: 800
-            }
+            }*/
         }
     });
 
@@ -255,8 +255,14 @@ Position normalisé à 1000 que tu va re-normaliser derrière selon la page.`;
     try {
         const result = await model.generateContent([prompt, imagePart]);
         const response = await result.response;
-        const text = response.text();
-        return { data: JSON.parse(text) };
+        const candidates = response.candidates;
+        if (candidates?.[0]?.content?.parts) {
+            const answerPart = candidates[0].content.parts.find(p => !p.thought && p.text);
+            if (answerPart) {
+                return { data: JSON.parse(answerPart.text) };
+            }
+        }
+        return { data: JSON.parse(response.text()) };
     } catch (error) {
         handleGeminiError(error);
         console.error("Gemini API One-Shot Error:", error);
