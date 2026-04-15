@@ -46,7 +46,7 @@ print("🚀 Starting Automated Fine-Tuning Pipeline (LARGE)...")
 login(token=os.environ["HF_TOKEN"])
 
 print("\n1️⃣  Downloading Dataset from Supabase...")
-result = subprocess.run([sys.executable, "export_dataset/export_trocr_dataset.py"], capture_output=False)
+result = subprocess.run([sys.executable, "-u", "export_dataset/export_trocr_dataset.py"], capture_output=False)
 if result.returncode != 0:
     print("❌ Dataset download failed.")
     terminate_runpod()
@@ -71,7 +71,7 @@ if final_model_path.exists() and (final_model_path / "config.json").exists():
     print("✅ Modèle final déjà existant ! Sauf si vous voulez tout refaire, on passe directement à l'export.")
     print("   (Si vous voulez réentraîner, supprimez le dossier outputs_trocr_manga_large avant de lancer)")
 else:
-    result = subprocess.run([sys.executable, "finetunescript.py"], capture_output=False)
+    result = subprocess.run([sys.executable, "-u", "finetunescript.py"], capture_output=False)
     if result.returncode != 0:
         print("❌ Fine-tuning failed.")
         terminate_runpod()
@@ -84,7 +84,7 @@ if not model_dir.exists():
     terminate_runpod()
     sys.exit(1)
 
-result = subprocess.run([sys.executable, "export_onnx.py"], capture_output=False)
+result = subprocess.run([sys.executable, "-u", "export_onnx.py"], capture_output=False)
 if result.returncode != 0:
     print("❌ ONNX Export failed.")
     terminate_runpod()

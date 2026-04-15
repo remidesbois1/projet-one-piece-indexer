@@ -1,8 +1,8 @@
 import os
 import pandas as pd
 import torch
+from datasets import load_dataset
 from PIL import Image
-from torch.utils.data import Dataset
 from transformers import (
     TrOCRProcessor,
     VisionEncoderDecoderModel,
@@ -27,41 +27,48 @@ LOGS_DIR = "./logs"
 cer_metric = evaluate.load("cer")
 wer_metric = evaluate.load("wer")
 
-class MangaOCRDataset(Dataset):
-    def __init__(self, df, processor, img_dir, decoder_start_token_id, max_target_length=64, name="Dataset"):
-        self.df = df
-        self.processor = processor
-        self.img_dir = img_dir
-        self.max_target_length = max_target_length
-        self.decoder_start_token_id = decoder_start_token_id
-        print(f"📦 [{name}] {len(self.df)} images (chargement à la volée)")
-
-    def __len__(self):
-        return len(self.df)
-
-    def __getitem__(self, idx):
-        item = self.df.iloc[idx]
-        file_name = item['file_name']
-        image = Image.open(os.path.join(self.img_dir, file_name)).convert("RGB")
-        pixel_values = self.processor(image, return_tensors="pt").pixel_values.squeeze()
+def prepare_dataset(file_path, base_dir, processor, decoder_start_token_id, max_target_length=64):
+    print(f"Loading and pre-processing dataset from {file_path}...")
+    dataset = load_dataset("csv", data_files=file_path, split="train")
+    
+    def process_examples(examples):
+        image_paths = [os.path.join(base_dir, fn) for fn in examples['file_name']]
+        images = [Image.open(path).convert("RGB") for path in image_paths]
         
-        labels = self.processor.tokenizer(
-            item['text'],
-            padding="max_length",
-            max_length=self.max_target_length,
-            truncation=True
+        pixel_values = processor(images=images, return_tensors="pt").pixel_values
+        
+        texts = [str(t) if t is not None else "" for t in examples["text"]]
+        labels_tokens = processor.tokenizer(
+            texts, padding="max_length", max_length=max_target_length, truncation=True
         ).input_ids
-
-        decoder_input_ids = [self.decoder_start_token_id] + labels[:-1]
-        decoder_input_ids = [tid if tid != -100 else self.processor.tokenizer.pad_token_id for tid in decoder_input_ids]
-
-        labels = [label if label != self.processor.tokenizer.pad_token_id else -100 for label in labels]
-
+        
+        batch_labels = []
+        batch_decoder_input_ids = []
+        
+        for labels in labels_tokens:
+            decoder_input_ids = [decoder_start_token_id] + labels[:-1]
+            decoder_input_ids = [tid if tid != -100 else processor.tokenizer.pad_token_id for tid in decoder_input_ids]
+            
+            labels = [l if l != processor.tokenizer.pad_token_id else -100 for l in labels]
+            batch_labels.append(labels)
+            batch_decoder_input_ids.append(decoder_input_ids)
+            
         return {
-            "pixel_values": pixel_values,
-            "labels": torch.tensor(labels),
-            "decoder_input_ids": torch.tensor(decoder_input_ids),
+            "pixel_values": [pv for pv in pixel_values],
+            "labels": batch_labels,
+            "decoder_input_ids": batch_decoder_input_ids
         }
+        
+    dataset = dataset.map(
+        process_examples,
+        batched=True,
+        batch_size=16,
+        num_proc=4,
+        desc="Processing images and tags",
+        remove_columns=dataset.column_names
+    )
+    dataset.set_format(type="torch", columns=["pixel_values", "labels", "decoder_input_ids"])
+    return dataset
 
 def compute_metrics(pred):
     labels_ids = pred.label_ids
@@ -78,15 +85,11 @@ def compute_metrics(pred):
 
 if __name__ == "__main__":
     processor = TrOCRProcessor.from_pretrained(MODEL_ID)
-    
-    train_df = pd.read_csv(os.path.join(TRAIN_DIR, "metadata.csv"))
-    test_df = pd.read_csv(os.path.join(TEST_DIR, "metadata.csv"))
-    
     decoder_start_id = processor.tokenizer.cls_token_id or processor.tokenizer.bos_token_id or 2
     print(f"ℹ️  decoder_start_token_id = {decoder_start_id}")
-
-    train_dataset = MangaOCRDataset(train_df, processor, TRAIN_DIR, decoder_start_id, name="Train")
-    test_dataset = MangaOCRDataset(test_df, processor, TEST_DIR, decoder_start_id, name="Test")
+    
+    train_dataset = prepare_dataset(os.path.join(TRAIN_DIR, "metadata.csv"), TRAIN_DIR, processor, decoder_start_id)
+    test_dataset = prepare_dataset(os.path.join(TEST_DIR, "metadata.csv"), TEST_DIR, processor, decoder_start_id)
 
     model = VisionEncoderDecoderModel.from_pretrained(MODEL_ID)
 
@@ -126,7 +129,7 @@ if __name__ == "__main__":
         lr_scheduler_type="cosine",
         warmup_ratio=0.1,
         
-        dataloader_num_workers=0,
+        dataloader_num_workers=4,
         dataloader_pin_memory=True,
         
         logging_dir=LOGS_DIR,
@@ -137,6 +140,7 @@ if __name__ == "__main__":
         save_total_limit=3,
         
         logging_first_step=True,
+        remove_unused_columns=False,
     )
 
     trainer = Seq2SeqTrainer(
