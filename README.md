@@ -79,8 +79,8 @@ Deux modèles spécialisés pour le français et les polices de manga, sélectio
 | **HuggingFace** | [`Remidesbois/trocr-onepiece-fr`](https://huggingface.co/Remidesbois/trocr-onepiece-fr) | [`Remidesbois/trocr-onepiece-fr-large`](https://huggingface.co/Remidesbois/trocr-onepiece-fr-large) |
 | **Paramètres** | ~334M | ~558M |
 | **Taille ONNX** | ~1.33 Go | ~2.33 Go |
-| **CER (brut)** | 2.90% | **1.83%** |
-| **WER (brut)** | 9.20% | **6.03%** |
+| **CER (brut)** | 2.90% | **1.16%** |
+| **WER (brut)** | 9.20% | **4.19%** |
 | **Use case** | Appareils modestes, chargement rapide | Meilleure précision, GPU intégré plus puissant |
 | **Coût** | 0 $/OCR | 0 $/OCR |
 
