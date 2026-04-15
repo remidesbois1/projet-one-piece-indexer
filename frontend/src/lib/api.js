@@ -130,3 +130,12 @@ export const uploadPageToR2 = (formData) => apiClient.post('/admin/upload/page',
 export const batchCreatePages = (data) => apiClient.post('/admin/tomes/batch-pages', data);
 export const getAllMangas = () => apiClient.get('/admin/mangas/all');
 export const toggleMangaEnabled = (id) => apiClient.patch(`/admin/mangas/${id}/toggle`);
+
+// Color page management
+export const updateColorCrop = (pageId, colorCropData) => apiClient.put(`/admin/pages/${pageId}/color-crop`, { color_crop_data: colorCropData });
+export const validateColor = (pageId, validated = true) => apiClient.put(`/admin/pages/${pageId}/validate-color`, { validated });
+export const uploadColorVariant = (pageId, formData) => apiClient.post(`/admin/pages/${pageId}/upload-color`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 60000,
+});
+export const deleteColorVariant = (pageId) => apiClient.delete(`/admin/pages/${pageId}/color`);

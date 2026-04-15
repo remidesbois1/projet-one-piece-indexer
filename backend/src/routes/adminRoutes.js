@@ -211,6 +211,7 @@ router.get('/hierarchy', authMiddleware, roleCheck(['Admin', 'Modo']), async (re
           id, numero, titre,
           pages (
             id, numero_page, statut, url_image,
+            url_image_color, color_crop_data, color_validated, color_source_pages,
             bulles ( count )
           )
         )
@@ -568,12 +569,20 @@ router.post('/tomes/batch-pages', authMiddleware, roleCheck(['Admin']), express.
         throw chapError;
       }
 
-      const pagesToInsert = chapter.pages.map(p => ({
-        id_chapitre: newChap.id,
-        numero_page: p.numero_page,
-        url_image: p.url_image,
-        statut: 'not_started'
-      }));
+      const pagesToInsert = chapter.pages.map(p => {
+        const pageRow = {
+          id_chapitre: newChap.id,
+          numero_page: p.numero_page,
+          url_image: p.url_image,
+          statut: 'not_started'
+        };
+        // Color variant fields (all optional)
+        if (p.url_image_color) pageRow.url_image_color = p.url_image_color;
+        if (p.color_crop_data) pageRow.color_crop_data = p.color_crop_data;
+        if (p.color_validated !== undefined) pageRow.color_validated = !!p.color_validated;
+        if (p.color_source_pages) pageRow.color_source_pages = p.color_source_pages;
+        return pageRow;
+      });
 
       const { error: pagesError } = await supabaseAdmin
         .from('pages')
@@ -581,7 +590,8 @@ router.post('/tomes/batch-pages', authMiddleware, roleCheck(['Admin']), express.
 
       if (pagesError) throw pagesError;
 
-      results.push({ numero: chapter.numero, id: newChap.id, pages: pagesToInsert.length });
+      const colorCount = pagesToInsert.filter(p => p.url_image_color).length;
+      results.push({ numero: chapter.numero, id: newChap.id, pages: pagesToInsert.length, color_pages: colorCount });
     }
 
     res.status(201).json({ message: "Batch créé avec succès.", results });
@@ -837,6 +847,156 @@ router.post('/ai-models/trigger-backfill-voyage', authMiddleware, roleCheck(['Ad
   })();
 });
 
+
+// ── Color page management endpoints ──────────────────────────────────────────
+
+// Update color alignment/crop data for a page
+router.put('/pages/:id/color-crop', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+  const { id } = req.params;
+  const { color_crop_data } = req.body;
+
+  if (!color_crop_data) {
+    return res.status(400).json({ error: "color_crop_data est requis." });
+  }
+
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('pages')
+      .update({
+        color_crop_data,
+        color_validated: false, // reset validation when crop changes
+      })
+      .eq('id', id)
+      .select('id, color_crop_data, color_validated')
+      .single();
+
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: "Page non trouvée." });
+
+    res.json(data);
+  } catch (error) {
+    console.error("Erreur update color-crop:", error);
+    res.status(500).json({ error: "Erreur lors de la mise à jour des données de recadrage couleur." });
+  }
+});
+
+// Validate or invalidate color alignment for a page
+router.put('/pages/:id/validate-color', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+  const { id } = req.params;
+  const { validated } = req.body;
+
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('pages')
+      .update({ color_validated: !!validated })
+      .eq('id', id)
+      .select('id, color_validated')
+      .single();
+
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: "Page non trouvée." });
+
+    res.json(data);
+  } catch (error) {
+    console.error("Erreur validate-color:", error);
+    res.status(500).json({ error: "Erreur lors de la validation couleur." });
+  }
+});
+
+// Upload a color variant for an existing page (post-upload scenario)
+router.post('/pages/:id/upload-color', authMiddleware, roleCheck(['Admin']), upload.single('file'), async (req, res) => {
+  const { id } = req.params;
+  const file = req.file;
+  const { color_crop_data, color_source_pages } = req.body;
+
+  if (!file) {
+    return res.status(400).json({ error: "Un fichier image est requis." });
+  }
+
+  try {
+    // Verify page exists and get its context for building the storage key
+    const { data: page, error: pageError } = await supabaseAdmin
+      .from('pages')
+      .select('id, numero_page, id_chapitre, chapitres(numero, id_tome)')
+      .eq('id', id)
+      .single();
+
+    if (pageError || !page) {
+      return res.status(404).json({ error: "Page non trouvée." });
+    }
+
+    const fileBuffer = fs.readFileSync(file.path);
+    const contentType = file.mimetype || 'image/avif';
+    const ext = contentType.includes('avif') ? 'avif' : contentType.includes('webp') ? 'webp' : 'jpg';
+    const key = `tome-${page.chapitres.id_tome}/chapitre-${page.chapitres.numero}/${page.numero_page}-color.${ext}`;
+
+    await s3Client.send(new PutObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: key,
+      Body: fileBuffer,
+      ContentType: contentType,
+      CacheControl: 'public, max-age=31536000',
+    }));
+
+    const publicUrl = `${PUBLIC_URL_BASE}/${key}`;
+
+    const updateData = {
+      url_image_color: publicUrl,
+      color_validated: false,
+    };
+    if (color_crop_data) {
+      updateData.color_crop_data = typeof color_crop_data === 'string'
+        ? JSON.parse(color_crop_data) : color_crop_data;
+    }
+    if (color_source_pages) {
+      updateData.color_source_pages = typeof color_source_pages === 'string'
+        ? JSON.parse(color_source_pages) : color_source_pages;
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('pages')
+      .update(updateData)
+      .eq('id', id)
+      .select('id, url_image_color, color_crop_data, color_validated, color_source_pages')
+      .single();
+
+    if (error) throw error;
+
+    res.json(data);
+  } catch (error) {
+    console.error("Erreur upload-color:", error);
+    res.status(500).json({ error: "Erreur lors de l'upload de la variante couleur." });
+  } finally {
+    if (file && fs.existsSync(file.path)) fs.unlinkSync(file.path);
+  }
+});
+
+// Remove color variant from a page
+router.delete('/pages/:id/color', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('pages')
+      .update({
+        url_image_color: null,
+        color_crop_data: null,
+        color_validated: false,
+        color_source_pages: null,
+      })
+      .eq('id', id)
+      .select('id')
+      .single();
+
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: "Page non trouvée." });
+
+    res.json({ message: "Variante couleur supprimée.", id: data.id });
+  } catch (error) {
+    console.error("Erreur delete color:", error);
+    res.status(500).json({ error: "Erreur lors de la suppression de la variante couleur." });
+  }
+});
 
 module.exports = router;
 
