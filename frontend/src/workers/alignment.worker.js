@@ -1,374 +1,193 @@
-const OPENCV_PATH = '/opencv/opencv.js';
-
-let cv = null;
-let ready = false;
-
-function loadOpenCV() {
-    return new Promise((resolve, reject) => {
-        if (cv && ready) return resolve(cv);
-
-        try {
-            importScripts(OPENCV_PATH);
-        } catch (e) {
-            reject(new Error('Failed to import OpenCV: ' + e.message));
-            return;
-        }
-
-        if (typeof self.cv === 'undefined') {
-            reject(new Error('cv is undefined after importScripts'));
-            return;
-        }
-
-        if (self.cv.Mat) {
-            cv = self.cv;
-            ready = true;
-            resolve(cv);
-            return;
-        }
-
-        if (typeof self.cv.onRuntimeInitialized !== 'undefined') {
-            const prev = self.cv.onRuntimeInitialized;
-            self.cv.onRuntimeInitialized = () => {
-                prev();
-                cv = self.cv;
-                ready = true;
-                resolve(cv);
-            };
-        } else if (typeof self.cv['then'] === 'function') {
-            self.cv.then(instance => {
-                cv = instance;
-                ready = true;
-                resolve(cv);
-            }).catch(reject);
-        } else {
-            cv = self.cv;
-            ready = true;
-            resolve(cv);
-        }
-    });
-}
-
-function imageDataToMat(imageData, cv) {
-    const mat = new cv.Mat(imageData.height, imageData.width, cv.CV_8UC4);
-    mat.data.set(imageData.data);
-    return mat;
-}
-
-function toGrayscale(mat, cv) {
-    const gray = new cv.Mat();
-    if (mat.channels() === 4) {
-        cv.cvtColor(mat, gray, cv.COLOR_RGBA2GRAY);
-    } else if (mat.channels() === 3) {
-        cv.cvtColor(mat, gray, cv.COLOR_RGB2GRAY);
-    } else {
-        mat.copyTo(gray);
-    }
-    return gray;
-}
-
-function equalizeHistogram(gray, cv) {
-    const eq = new cv.Mat();
-    cv.equalizeHist(gray, eq);
-    return eq;
-}
-
-function detectAndComputeORB(gray, cv, maxFeatures = 2000) {
-    const orb = cv.ORB.create(maxFeatures);
-    const keypoints = new cv.KeyPointVector();
-    const descriptors = new cv.Mat();
-    orb.detectAndCompute(gray, new cv.Mat(), keypoints, descriptors);
-    orb.delete();
-    return { keypoints, descriptors };
-}
-
-function matchFeatures(desc1, desc2, cv) {
-    const bf = cv.BFMatcher.create(cv.NORM_HAMMING);
-    const matches = new cv.DMatchVectorVector();
-    bf.knnMatch(desc1, desc2, matches, 2);
-    bf.delete();
-
-    const goodMatches = [];
-    const RATIO_THRESH = 0.75;
-
-    for (let i = 0; i < matches.size(); i++) {
-        const match = matches.get(i);
-        if (match.size() >= 2) {
-            const m = match.get(0);
-            const n = match.get(1);
-            if (m.distance < RATIO_THRESH * n.distance) {
-                goodMatches.push(m);
-            }
-        }
-    }
-    matches.delete();
-
-    return goodMatches;
-}
-
-function estimateAffineRANSAC(kp1, kp2, goodMatches, cv) {
-    const srcPts = [];
-    const dstPts = [];
-
-    for (const m of goodMatches) {
-        const pt1 = kp1.get(m.queryIdx).pt;
-        const pt2 = kp2.get(m.trainIdx).pt;
-        srcPts.push(pt2.x, pt2.y);
-        dstPts.push(pt1.x, pt1.y);
-    }
-
-    if (srcPts.length < 6) return null;
-
-    const srcMat = cv.matFromArray(srcPts.length / 2, 1, cv.CV_32FC2, srcPts);
-    const dstMat = cv.matFromArray(dstPts.length / 2, 1, cv.CV_32FC2, dstPts);
-
-    const inliers = new cv.Mat();
-    const affineMat = cv.estimateAffine2D(srcMat, dstMat, inliers, cv.RANSAC, 3.0, 2000, 0.99, 30);
-
-    const inlierCount = cv.countNonZero(inliers);
-
-    srcMat.delete();
-    dstMat.delete();
-    inliers.delete();
-
-    if (affineMat.empty()) {
-        affineMat.delete();
-        return null;
-    }
-
-    return {
-        matrix: affineMat,
-        inlierCount,
-        totalPoints: srcPts.length / 2,
-        confidence: inlierCount / (srcPts.length / 2)
-    };
-}
-
-function fallbackNCC(grayBw, grayColor, cv) {
-    const bwW = grayBw.cols;
-    const bwH = grayBw.rows;
-    const colW = grayColor.cols;
-    const colH = grayColor.rows;
-
-    const scaleH = bwH / colH;
-    const scaledW = Math.round(colW * scaleH);
-    const scaledColor = new cv.Mat();
-    cv.resize(grayColor, scaledColor, new cv.Size(scaledW, bwH));
-
-    const searchRangeX = Math.min(scaledW - bwW, 200);
-    const searchRangeY = Math.min(0, 0);
-
-    if (searchRangeX <= 0) {
-        const offsetX = Math.round((scaledW - bwW) / 2);
-        const mat = cv.Mat.eye(2, 3, cv.CV_64FC1);
-        mat.data64F[0] = scaleH;
-        mat.data64F[2] = -offsetX * scaleH;
-        mat.data64F[4] = scaleH;
-        mat.data64F[5] = 0;
-        scaledColor.delete();
-        return { matrix: mat, inlierCount: 0, totalPoints: 0, confidence: 0.5, fallback: true };
-    }
-
-    let bestX = Math.round((scaledW - bwW) / 2);
-    let bestNcc = -Infinity;
-
-    const step = 2;
-    for (let dx = 0; dx <= searchRangeX; dx += step) {
-        const roi = scaledColor.roi(new cv.Rect(dx, 0, bwW, bwH));
-        const ncc = computeNCC(grayBw, roi, cv);
-        if (ncc > bestNcc) {
-            bestNcc = ncc;
-            bestX = dx;
-        }
-        roi.delete();
-    }
-
-    for (let dx = Math.max(0, bestX - step); dx <= Math.min(searchRangeX, bestX + step); dx++) {
-        if (dx === bestX) continue;
-        const roi = scaledColor.roi(new cv.Rect(dx, 0, bwW, bwH));
-        const ncc = computeNCC(grayBw, roi, cv);
-        if (ncc > bestNcc) {
-            bestNcc = ncc;
-            bestX = dx;
-        }
-        roi.delete();
-    }
-
-    scaledColor.delete();
-
-    const mat = cv.Mat.eye(2, 3, cv.CV_64FC1);
-    mat.data64F[0] = scaleH;
-    mat.data64F[2] = -bestX * scaleH;
-    mat.data64F[4] = scaleH;
-    mat.data64F[5] = 0;
-
-    return { matrix: mat, inlierCount: 0, totalPoints: 0, confidence: bestNcc, fallback: true };
-}
-
-function computeNCC(mat1, mat2, cv) {
-    const m1 = new cv.Mat();
-    const m2 = new cv.Mat();
-    mat1.convertTo(m1, cv.CV_32F);
-    mat2.convertTo(m2, cv.CV_32F);
-
-    const mean1 = new cv.Mat();
-    const mean2 = new cv.Mat();
-    const stddev1 = new cv.Mat();
-    const stddev2 = new cv.Mat();
-    cv.meanStdDev(m1, mean1, stddev1);
-    cv.meanStdDev(m2, mean2, stddev2);
-
-    const s1 = stddev1.data64F[0];
-    const s2 = stddev2.data64F[0];
-    if (s1 < 1e-6 || s2 < 1e-6) {
-        m1.delete(); m2.delete(); mean1.delete(); mean2.delete(); stddev1.delete(); stddev2.delete();
-        return 0;
-    }
-
-    const mu1 = mean1.data64F[0];
-    const mu2 = mean2.data64F[0];
-
-    cv.subtract(m1, new cv.Scalar(mu1), m1);
-    cv.subtract(m2, new cv.Scalar(mu2), m2);
-
-    const num = new cv.Mat();
-    cv.multiply(m1, m2, num);
-    const numerator = cv.sum(num).data32F[0];
-
-    m1.delete(); m2.delete(); mean1.delete(); mean2.delete(); stddev1.delete(); stddev2.delete(); num.delete();
-
-    return numerator / (s1 * s2 * mat1.rows * mat1.cols);
-}
-
 self.addEventListener('message', async (event) => {
     const { type } = event.data;
 
     if (type === 'init') {
-        try {
-            await loadOpenCV();
-            self.postMessage({ status: 'ready' });
-        } catch (err) {
-            self.postMessage({ status: 'error', error: err.message });
-        }
+        self.postMessage({ status: 'ready' });
+        return;
     }
 
     if (type === 'align') {
         const { bwImageData, colorImageData, pageId } = event.data;
 
-        if (!cv) {
-            self.postMessage({ status: 'error', error: 'OpenCV not loaded', pageId });
-            return;
-        }
-
-        let bwMat, colorMat, grayBw, grayColor, eqBw, eqColor;
-        let kp1, desc1, kp2, desc2;
-        let result = null;
-
         try {
-            bwMat = imageDataToMat(bwImageData, cv);
-            colorMat = imageDataToMat(colorImageData, cv);
+            self.postMessage({ status: 'progress', pageId, step: 'préparation_données' });
 
-            grayBw = toGrayscale(bwMat, cv);
-            grayColor = toGrayscale(colorMat, cv);
+            const Wb = bwImageData.width;
+            const Wc = colorImageData.width;
+            const baseScale = Wb / Wc;
 
-            eqBw = equalizeHistogram(grayBw, cv);
-            eqColor = equalizeHistogram(grayColor, cv);
+            self.postMessage({ status: 'progress', pageId, step: 'recherche_grossiere' });
 
-            const feat1 = detectAndComputeORB(eqBw, cv, 2000);
-            const feat2 = detectAndComputeORB(eqColor, cv, 2000);
-            kp1 = feat1.keypoints;
-            desc1 = feat1.descriptors;
-            kp2 = feat2.keypoints;
-            desc2 = feat2.descriptors;
+            const fastW = 150;
+            const scaleToFast = fastW / Wb;
+            const fastBW = await resizeImage(bwImageData, fastW, Math.round(bwImageData.height * scaleToFast));
 
-            const numKp1 = kp1.size();
-            const numKp2 = kp2.size();
+            const fastInk = getInkPixels(fastBW, 1, 100);
 
-            self.postMessage({
-                status: 'progress',
-                pageId,
-                step: 'features',
-                keypoints_bw: numKp1,
-                keypoints_color: numKp2
-            });
+            if (fastInk.length < 50) {
+                throw new Error("Page vide ou aucun trait détecté.");
+            }
 
-            let affineResult = null;
-            let usedFallback = false;
+            let bestMAD = Infinity;
+            let bestM_fast = 1.0;
+            let bestTx_fast = 0;
+            let bestTy_fast = 0;
 
-            if (desc1.rows >= 2 && desc2.rows >= 2) {
-                const goodMatches = matchFeatures(desc1, desc2, cv);
+            for (let m = 0.80; m <= 1.20; m += 0.02) {
+                const colW = Math.round(fastW * m);
+                const colH = Math.round(colorImageData.height * baseScale * m * scaleToFast);
+                const fastCol = await resizeImage(colorImageData, colW, colH);
 
-                self.postMessage({
-                    status: 'progress',
-                    pageId,
-                    step: 'matching',
-                    good_matches: goodMatches.length
-                });
-
-                if (goodMatches.length >= 6) {
-                    affineResult = estimateAffineRANSAC(kp1, kp2, goodMatches, cv, pageId);
-
-                    if (affineResult) {
-                        self.postMessage({
-                            status: 'progress',
-                            pageId,
-                            step: 'ransac',
-                            inliers: affineResult.inlierCount,
-                            total: affineResult.totalPoints,
-                            confidence: Math.round(affineResult.confidence * 100) / 100
-                        });
+                const maxT = Math.floor(fastW * 0.4);
+                for (let ty = -maxT; ty <= maxT; ty += 2) {
+                    for (let tx = -maxT; tx <= maxT; tx += 2) {
+                        const mad = computeMAD(fastInk, fastCol, tx, ty);
+                        if (mad < bestMAD) {
+                            bestMAD = mad;
+                            bestM_fast = m;
+                            bestTx_fast = tx;
+                            bestTy_fast = ty;
+                        }
                     }
                 }
             }
 
-            if (!affineResult || affineResult.confidence < 0.3) {
-                if (affineResult) affineResult.matrix.delete();
-                affineResult = fallbackNCC(grayBw, grayColor, cv);
-                usedFallback = true;
+            self.postMessage({ status: 'progress', pageId, step: 'affinage_echelle' });
 
-                self.postMessage({
-                    status: 'progress',
-                    pageId,
-                    step: 'fallback_ncc',
-                    confidence: Math.round(affineResult.confidence * 100) / 100
-                });
+            const medW = 500;
+            const scaleToMed = medW / Wb;
+            const medBW = await resizeImage(bwImageData, medW, Math.round(bwImageData.height * scaleToMed));
+            const medInk = getInkPixels(medBW, 2, 80);
+
+            bestMAD = Infinity;
+            let bestM_med = bestM_fast;
+            let bestTx_med = 0;
+            let bestTy_med = 0;
+
+            const baseTx_med = Math.round(bestTx_fast * (medW / fastW));
+            const baseTy_med = Math.round(bestTy_fast * (medW / fastW));
+
+            for (let m = bestM_fast - 0.04; m <= bestM_fast + 0.04; m += 0.005) {
+                const colW = Math.round(medW * m);
+                const colH = Math.round(colorImageData.height * baseScale * m * scaleToMed);
+                const medCol = await resizeImage(colorImageData, colW, colH);
+
+                for (let ty = baseTy_med - 10; ty <= baseTy_med + 10; ty += 1) {
+                    for (let tx = baseTx_med - 10; tx <= baseTx_med + 10; tx += 1) {
+                        const mad = computeMAD(medInk, medCol, tx, ty);
+                        if (mad < bestMAD) {
+                            bestMAD = mad;
+                            bestM_med = m;
+                            bestTx_med = tx;
+                            bestTy_med = ty;
+                        }
+                    }
+                }
             }
 
-            const mat = affineResult.matrix;
-            const transform = [
-                mat.data64F[0], mat.data64F[1], mat.data64F[2],
-                mat.data64F[3], mat.data64F[4], mat.data64F[5]
-            ];
+            self.postMessage({ status: 'progress', pageId, step: 'pixel_perfect' });
 
-            result = {
+            const finalScale = baseScale * bestM_med;
+            const finalColW = Math.round(colorImageData.width * finalScale);
+            const finalColH = Math.round(colorImageData.height * finalScale);
+
+            const finalCol = await resizeImage(colorImageData, finalColW, finalColH);
+
+            const origInk = getInkPixels(bwImageData, 4, 100);
+
+            const baseTx_orig = Math.round(bestTx_med * (Wb / medW));
+            const baseTy_orig = Math.round(bestTy_med * (Wb / medW));
+
+            bestMAD = Infinity;
+            let finalTx = baseTx_orig;
+            let finalTy = baseTy_orig;
+
+            for (let ty = baseTy_orig - 6; ty <= baseTy_orig + 6; ty += 1) {
+                for (let tx = baseTx_orig - 6; tx <= baseTx_orig + 6; tx += 1) {
+                    const mad = computeMAD(origInk, finalCol, tx, ty);
+                    if (mad < bestMAD) {
+                        bestMAD = mad;
+                        finalTx = tx;
+                        finalTy = ty;
+                    }
+                }
+            }
+
+            const transform = [finalScale, 0, 0, finalScale, finalTx, finalTy];
+
+            self.postMessage({
                 status: 'complete',
                 pageId,
                 transform,
-                stats: {
-                    keypoints_bw: numKp1,
-                    keypoints_color: numKp2,
-                    good_matches: affineResult.totalPoints,
-                    inliers: affineResult.inlierCount,
-                    confidence: Math.round(affineResult.confidence * 100) / 100,
-                    fallback: usedFallback
-                }
-            };
+                stats: { scale: finalScale.toFixed(5), tx: finalTx, ty: finalTy }
+            });
 
-            self.postMessage(result);
-
-            mat.delete();
         } catch (err) {
             self.postMessage({ status: 'error', error: err.message, pageId });
-        } finally {
-            if (bwMat) bwMat.delete();
-            if (colorMat) colorMat.delete();
-            if (grayBw) grayBw.delete();
-            if (grayColor) grayColor.delete();
-            if (eqBw) eqBw.delete();
-            if (eqColor) eqColor.delete();
-            if (kp1) kp1.delete();
-            if (desc1) desc1.delete();
-            if (kp2) kp2.delete();
-            if (desc2) desc2.delete();
         }
     }
 });
+
+async function resizeImage(imgData, targetWidth, targetHeight) {
+    const bitmap = await createImageBitmap(imgData);
+    const canvas = new OffscreenCanvas(targetWidth, targetHeight);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(bitmap, 0, 0, targetWidth, targetHeight);
+    const data = ctx.getImageData(0, 0, targetWidth, targetHeight);
+    bitmap.close();
+    return data;
+}
+
+function getInkPixels(imgData, step, threshold) {
+    const points = [];
+    const w = imgData.width;
+    const h = imgData.height;
+    const data = imgData.data;
+
+    for (let y = 0; y < h; y += step) {
+        for (let x = 0; x < w; x += step) {
+            const idx = (y * w + x) * 4;
+            const lum = (data[idx] * 2 + data[idx + 1] * 5 + data[idx + 2]) >> 3;
+            if (lum < threshold) {
+                points.push({ x, y, lum });
+            }
+        }
+    }
+
+    const maxPoints = 5000;
+    if (points.length > maxPoints) {
+        const subsampled = [];
+        const skip = points.length / maxPoints;
+        for (let i = 0; i < points.length; i += skip) {
+            subsampled.push(points[Math.floor(i)]);
+        }
+        return subsampled;
+    }
+    return points;
+}
+
+function computeMAD(inkPixels, colorData, tx, ty) {
+    let diff = 0;
+    let valid = 0;
+    const w = colorData.width;
+    const h = colorData.height;
+    const data = colorData.data;
+
+    for (let i = 0; i < inkPixels.length; i++) {
+        const p = inkPixels[i];
+
+        const cx = Math.round(p.x - tx);
+        const cy = Math.round(p.y - ty);
+
+        if (cx >= 0 && cx < w && cy >= 0 && cy < h) {
+            const idx = (cy * w + cx) * 4;
+            const colLum = (data[idx] * 2 + data[idx + 1] * 5 + data[idx + 2]) >> 3;
+            diff += Math.abs(p.lum - colLum);
+            valid++;
+        }
+    }
+
+    if (valid < inkPixels.length * 0.25) return Infinity;
+
+    return diff / valid;
+}

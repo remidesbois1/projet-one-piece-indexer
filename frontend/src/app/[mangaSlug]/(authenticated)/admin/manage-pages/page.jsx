@@ -56,8 +56,6 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { cn, getProxiedImageUrl } from "@/lib/utils";
 
-// ── helpers ──────────────────────────────────────────────────────────────────
-
 function getColorStats(pages) {
     const total = pages.length;
     const withColor = pages.filter(p => p.url_image_color).length;
@@ -74,43 +72,34 @@ function getTomeColorStats(tome) {
     return getColorStats(allPages);
 }
 
-// ── component ────────────────────────────────────────────────────────────────
-
 export default function ManagePagesPage() {
     const { currentManga, mangaSlug } = useManga();
     const params = useParams();
     const pageTitle = currentManga ? `Pages Couleur : ${currentManga.titre}` : "Gestion Pages Couleur";
 
-    // ─ hierarchy state ─
     const [hierarchy, setHierarchy] = useState([]);
     const [loading, setLoading] = useState(true);
 
-    // ─ selection state ─
     const [selectedTome, setSelectedTome] = useState(null);
     const [selectedChapter, setSelectedChapter] = useState(null);
     const [selectedPage, setSelectedPage] = useState(null);
 
-    // ─ alignment state ─
-    const [previewMode, setPreviewMode] = useState('side'); // 'side' | 'overlay' | 'diff'
+    const [previewMode, setPreviewMode] = useState('side');
     const [overlayOpacity, setOverlayOpacity] = useState(0.5);
     const [manualOffsetX, setManualOffsetX] = useState(0);
     const [manualOffsetY, setManualOffsetY] = useState(0);
     const [isAligning, setIsAligning] = useState(false);
     const [alignProgress, setAlignProgress] = useState(null);
 
-    // ─ upload state ─
     const [uploadingColor, setUploadingColor] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
 
-    // ─ action feedback ─
-    const [actionMsg, setActionMsg] = useState(null); // { type: 'success'|'error', text: '...' }
+    const [actionMsg, setActionMsg] = useState(null);
 
-    // ─ canvas refs for preview ─
     const previewCanvasRef = useRef(null);
     const bwCanvasRef = useRef(null);
     const colorCanvasRef = useRef(null);
 
-    // ── load hierarchy ──────────────────────────────────────────────────────
     useEffect(() => {
         loadHierarchy();
         return () => terminateAlignmentWorker();
@@ -128,15 +117,12 @@ export default function ManagePagesPage() {
         }
     };
 
-    // clear action messages after 4s
     useEffect(() => {
         if (actionMsg) {
             const t = setTimeout(() => setActionMsg(null), 4000);
             return () => clearTimeout(t);
         }
     }, [actionMsg]);
-
-    // ── selection handlers ──────────────────────────────────────────────────
 
     const handleTomeClick = (tome) => {
         if (selectedTome?.id === tome.id) {
@@ -158,13 +144,10 @@ export default function ManagePagesPage() {
 
     const handlePageSelect = (page) => {
         setSelectedPage(page);
-        // Reset manual offsets when selecting a new page
         const crop = page.color_crop_data;
         setManualOffsetX(crop?.manual_offset_x || 0);
         setManualOffsetY(crop?.manual_offset_y || 0);
     };
-
-    // ── navigate between pages ──────────────────────────────────────────────
 
     const navigatePage = useCallback((direction) => {
         if (!selectedChapter || !selectedPage) return;
@@ -176,7 +159,6 @@ export default function ManagePagesPage() {
         }
     }, [selectedChapter, selectedPage]);
 
-    // keyboard navigation
     useEffect(() => {
         const onKeyDown = (e) => {
             if (e.key === 'ArrowLeft') {
@@ -191,8 +173,6 @@ export default function ManagePagesPage() {
         return () => window.removeEventListener('keydown', onKeyDown);
     }, [navigatePage]);
 
-    // ── alignment ───────────────────────────────────────────────────────────
-
     const runAlignment = async () => {
         if (!selectedPage || !selectedPage.url_image || !selectedPage.url_image_color) return;
 
@@ -203,7 +183,6 @@ export default function ManagePagesPage() {
             await initAlignmentWorker();
             setAlignProgress('Chargement des images...');
 
-            // Load both images
             const [bwImageData, colorImageData] = await Promise.all([
                 loadImageDataFromUrl(getProxiedImageUrl(selectedPage.url_image)),
                 loadImageDataFromUrl(getProxiedImageUrl(selectedPage.url_image_color)),
@@ -215,7 +194,6 @@ export default function ManagePagesPage() {
                 setAlignProgress(progress.step || 'Alignement...');
             });
 
-            // Save crop data to backend
             const cropData = {
                 affine: result.transform,
                 manual_offset_x: 0,
@@ -224,7 +202,6 @@ export default function ManagePagesPage() {
 
             await updateColorCrop(selectedPage.id, cropData);
 
-            // Update local state
             updatePageInHierarchy(selectedPage.id, {
                 color_crop_data: cropData,
                 color_validated: false,
@@ -243,12 +220,9 @@ export default function ManagePagesPage() {
         }
     };
 
-    // ── validate ────────────────────────────────────────────────────────────
-
     const handleValidate = async (validated = true) => {
         if (!selectedPage) return;
         try {
-            // If there are manual offsets, save them first
             if (manualOffsetX !== 0 || manualOffsetY !== 0) {
                 const currentCrop = selectedPage.color_crop_data || {};
                 const updatedCrop = {
@@ -269,8 +243,6 @@ export default function ManagePagesPage() {
         }
     };
 
-    // ── upload color for a single page ──────────────────────────────────────
-
     const handleUploadColor = async (e) => {
         const file = e.target.files?.[0];
         if (!file || !selectedPage) return;
@@ -279,7 +251,6 @@ export default function ManagePagesPage() {
         setUploadProgress(0);
 
         try {
-            // Process: resize to 1500px height + AVIF client-side, then upload
             const img = await loadImageFromFile(file);
             const targetHeight = 1500;
             const scale = targetHeight / img.height;
@@ -290,7 +261,6 @@ export default function ManagePagesPage() {
             canvas.height = targetHeight;
             canvas.getContext('2d').drawImage(img, 0, 0, targetWidth, targetHeight);
 
-            // Try AVIF, fallback to WebP
             let blob = await new Promise(r => canvas.toBlob(r, 'image/avif', 0.82));
             let ext = 'avif';
             if (!blob) {
@@ -320,12 +290,9 @@ export default function ManagePagesPage() {
         } finally {
             setUploadingColor(false);
             setUploadProgress(0);
-            // Reset file input
             e.target.value = '';
         }
     };
-
-    // ── delete color ────────────────────────────────────────────────────────
 
     const handleDeleteColor = async () => {
         if (!selectedPage?.url_image_color) return;
@@ -346,8 +313,6 @@ export default function ManagePagesPage() {
         }
     };
 
-    // ── utility: update page in local hierarchy state ────────────────────────
-
     const updatePageInHierarchy = useCallback((pageId, updates) => {
         setHierarchy(prev => prev.map(tome => ({
             ...tome,
@@ -359,13 +324,11 @@ export default function ManagePagesPage() {
             }))
         })));
 
-        // Also update selectedPage if it matches
         setSelectedPage(prev => {
             if (prev && prev.id === pageId) return { ...prev, ...updates };
             return prev;
         });
 
-        // Also update selectedChapter pages
         setSelectedChapter(prev => {
             if (!prev) return prev;
             return {
@@ -377,8 +340,6 @@ export default function ManagePagesPage() {
         });
     }, []);
 
-    // ── image loading helpers ───────────────────────────────────────────────
-
     async function loadImageDataFromUrl(url) {
         const img = await new Promise((resolve, reject) => {
             const image = new window.Image();
@@ -388,15 +349,12 @@ export default function ManagePagesPage() {
             image.src = url;
         });
 
-        const maxH = 1500;
-        const scale = maxH / img.height;
-        const w = Math.round(img.width * scale);
         const canvas = document.createElement('canvas');
-        canvas.width = w;
-        canvas.height = maxH;
+        canvas.width = img.width;
+        canvas.height = img.height;
         const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, w, maxH);
-        return ctx.getImageData(0, 0, w, maxH);
+        ctx.drawImage(img, 0, 0);
+        return ctx.getImageData(0, 0, img.width, img.height);
     }
 
     function loadImageFromFile(file) {
@@ -409,8 +367,6 @@ export default function ManagePagesPage() {
         });
     }
 
-    // ── derived values ──────────────────────────────────────────────────────
-
     const hasColor = !!selectedPage?.url_image_color;
     const hasCropData = !!selectedPage?.color_crop_data?.affine;
     const isValidated = !!selectedPage?.color_validated;
@@ -419,13 +375,56 @@ export default function ManagePagesPage() {
     const canGoPrev = currentPageIdx > 0;
     const canGoNext = selectedChapter ? currentPageIdx < selectedChapter.pages.length - 1 : false;
 
-    // ── RENDER ──────────────────────────────────────────────────────────────
+    useEffect(() => {
+        if (!selectedPage || !previewCanvasRef.current || previewMode === 'side') return;
+
+        const canvas = previewCanvasRef.current;
+        const ctx = canvas.getContext('2d');
+
+        const bwImg = new window.Image();
+        const colImg = new window.Image();
+        bwImg.crossOrigin = 'anonymous';
+        colImg.crossOrigin = 'anonymous';
+
+        Promise.all([
+            new Promise(r => { bwImg.onload = r; bwImg.src = getProxiedImageUrl(selectedPage.url_image); }),
+            selectedPage.url_image_color
+                ? new Promise(r => { colImg.onload = r; colImg.src = getProxiedImageUrl(selectedPage.url_image_color); })
+                : Promise.resolve(null)
+        ]).then(() => {
+            canvas.width = bwImg.width;
+            canvas.height = bwImg.height;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(bwImg, 0, 0);
+
+            if (colImg.src && selectedPage.url_image_color) {
+                ctx.save();
+
+                if (previewMode === 'diff') {
+                    ctx.globalCompositeOperation = 'difference';
+                } else {
+                    ctx.globalAlpha = overlayOpacity;
+                }
+
+                const crop = selectedPage.color_crop_data;
+                if (crop && crop.affine) {
+                    const [a, b, c, d, tx, ty] = crop.affine;
+                    ctx.setTransform(a, b, c, d, tx + manualOffsetX, ty + manualOffsetY);
+                } else {
+                    ctx.setTransform(1, 0, 0, 1, manualOffsetX, manualOffsetY);
+                }
+
+                ctx.drawImage(colImg, 0, 0);
+                ctx.restore();
+            }
+        });
+    }, [selectedPage, previewMode, overlayOpacity, manualOffsetX, manualOffsetY]);
 
     return (
         <div className="flex flex-col h-[calc(100vh-3.5rem)]">
             {pageTitle && <title>{pageTitle}</title>}
 
-            {/* Top bar */}
             <div className="flex items-center justify-between px-4 py-2 border-b bg-white shrink-0">
                 <div className="flex items-center gap-3">
                     <Link href={`/${params.mangaSlug}/admin?tab=content`}>
@@ -453,10 +452,8 @@ export default function ManagePagesPage() {
                 </div>
             </div>
 
-            {/* Main 3-column layout */}
             <div className="flex-1 flex overflow-hidden min-h-0">
 
-                {/* ── Column 1: Tome/Chapter tree ── */}
                 <div className="w-[260px] min-w-[220px] border-r bg-slate-50 flex flex-col min-h-0">
                     <div className="p-3 font-semibold text-slate-700 border-b bg-slate-100 text-sm shrink-0">
                         Volumes
@@ -549,7 +546,6 @@ export default function ManagePagesPage() {
                     </ScrollArea>
                 </div>
 
-                {/* ── Column 2: Page grid ── */}
                 <div className="w-[300px] min-w-[250px] border-r bg-white flex flex-col min-h-0">
                     <div className="p-3 font-semibold text-slate-700 border-b bg-slate-50 flex justify-between items-center text-sm shrink-0">
                         <span>Pages</span>
@@ -584,7 +580,6 @@ export default function ManagePagesPage() {
                                                     : "border-slate-200 hover:border-slate-300 hover:shadow-sm"
                                             )}
                                         >
-                                            {/* B&W thumbnail */}
                                             <div className="w-full aspect-[2/3] bg-slate-100 rounded overflow-hidden relative">
                                                 {page.url_image ? (
                                                     <Image
@@ -601,7 +596,6 @@ export default function ManagePagesPage() {
                                                     </div>
                                                 )}
 
-                                                {/* Color status indicator */}
                                                 <div className={cn(
                                                     "absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center text-white text-[10px] font-bold shadow",
                                                     pageValidated
@@ -619,7 +613,6 @@ export default function ManagePagesPage() {
                                                 </div>
                                             </div>
 
-                                            {/* Color mini thumbnail */}
                                             {pageHasColor && (
                                                 <div className="w-full aspect-[2/3] bg-rose-50 rounded overflow-hidden relative mt-1 border border-rose-200">
                                                     <Image
@@ -644,7 +637,6 @@ export default function ManagePagesPage() {
                     </ScrollArea>
                 </div>
 
-                {/* ── Column 3: Alignment editor ── */}
                 <div className="flex-1 bg-slate-50/50 flex flex-col min-h-0">
                     <div className="p-3 font-semibold text-slate-700 border-b bg-white flex justify-between items-center text-sm shrink-0">
                         <span>Editeur d'alignement</span>
@@ -687,7 +679,6 @@ export default function ManagePagesPage() {
                                 </div>
                             ) : (
                                 <div className="space-y-5">
-                                    {/* Status bar */}
                                     <div className="flex items-center gap-3 flex-wrap">
                                         <Badge variant="outline" className={cn(
                                             "text-xs px-2 py-1",
@@ -716,7 +707,6 @@ export default function ManagePagesPage() {
                                         )}
                                     </div>
 
-                                    {/* ── No color: upload prompt ── */}
                                     {!hasColor && (
                                         <div className="bg-white rounded-xl border-2 border-dashed border-slate-200 p-8 text-center space-y-4">
                                             <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mx-auto">
@@ -751,10 +741,8 @@ export default function ManagePagesPage() {
                                         </div>
                                     )}
 
-                                    {/* ── Has color: preview + controls ── */}
                                     {hasColor && (
                                         <>
-                                            {/* Preview mode selector */}
                                             <div className="flex items-center gap-3">
                                                 <Label className="text-xs text-slate-500">Aperçu:</Label>
                                                 <div className="flex gap-1">
@@ -791,7 +779,6 @@ export default function ManagePagesPage() {
                                                 )}
                                             </div>
 
-                                            {/* Image preview area */}
                                             <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
                                                 {previewMode === 'side' && (
                                                     <div className="grid grid-cols-2 gap-0">
@@ -821,54 +808,16 @@ export default function ManagePagesPage() {
                                                         </div>
                                                     </div>
                                                 )}
-                                                {previewMode === 'overlay' && (
-                                                    <div className="relative aspect-[2/3]">
-                                                        <Image
-                                                            src={getProxiedImageUrl(selectedPage.url_image)}
-                                                            alt="B&W"
-                                                            fill
-                                                            sizes="60vw"
-                                                            className="object-contain"
+                                                {(previewMode === 'overlay' || previewMode === 'diff') && (
+                                                    <div className="relative aspect-[2/3] w-full h-full flex items-center justify-center bg-slate-100 overflow-hidden border rounded-lg">
+                                                        <canvas
+                                                            ref={previewCanvasRef}
+                                                            className="w-full h-full object-contain shadow-inner"
                                                         />
-                                                        <div
-                                                            className="absolute inset-0"
-                                                            style={{ opacity: overlayOpacity }}
-                                                        >
-                                                            <Image
-                                                                src={getProxiedImageUrl(selectedPage.url_image_color)}
-                                                                alt="Color overlay"
-                                                                fill
-                                                                sizes="60vw"
-                                                                className="object-contain"
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                )}
-                                                {previewMode === 'diff' && (
-                                                    <div className="relative aspect-[2/3]">
-                                                        <Image
-                                                            src={getProxiedImageUrl(selectedPage.url_image)}
-                                                            alt="B&W"
-                                                            fill
-                                                            sizes="60vw"
-                                                            className="object-contain"
-                                                        />
-                                                        <div
-                                                            className="absolute inset-0 mix-blend-difference"
-                                                        >
-                                                            <Image
-                                                                src={getProxiedImageUrl(selectedPage.url_image_color)}
-                                                                alt="Color diff"
-                                                                fill
-                                                                sizes="60vw"
-                                                                className="object-contain"
-                                                            />
-                                                        </div>
                                                     </div>
                                                 )}
                                             </div>
 
-                                            {/* Manual offset controls */}
                                             <div className="bg-white rounded-xl border border-slate-200 p-4 space-y-3">
                                                 <div className="flex items-center gap-2">
                                                     <Move className="h-4 w-4 text-slate-500" />
@@ -899,9 +848,7 @@ export default function ManagePagesPage() {
                                                 </div>
                                             </div>
 
-                                            {/* Action buttons */}
                                             <div className="flex items-center gap-2 flex-wrap">
-                                                {/* Align button */}
                                                 <Button
                                                     variant="outline"
                                                     size="sm"
@@ -914,10 +861,9 @@ export default function ManagePagesPage() {
                                                     ) : (
                                                         <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
                                                     )}
-                                                    {isAligning ? (alignProgress || 'Alignement...') : 'Aligner (ORB+RANSAC)'}
+                                                    {isAligning ? (alignProgress || 'Alignement...') : 'Aligner'}
                                                 </Button>
 
-                                                {/* Validate button */}
                                                 {!isValidated ? (
                                                     <Button
                                                         size="sm"
@@ -939,7 +885,6 @@ export default function ManagePagesPage() {
                                                     </Button>
                                                 )}
 
-                                                {/* Replace color */}
                                                 <label className="cursor-pointer">
                                                     <input
                                                         type="file"
@@ -958,7 +903,6 @@ export default function ManagePagesPage() {
                                                     </div>
                                                 </label>
 
-                                                {/* Delete color */}
                                                 <Button
                                                     variant="ghost"
                                                     size="sm"
@@ -974,7 +918,6 @@ export default function ManagePagesPage() {
                                                 <Progress value={uploadProgress} className="h-1.5" />
                                             )}
 
-                                            {/* Crop data info */}
                                             {hasCropData && (
                                                 <div className="bg-slate-50 rounded-lg p-3 border border-slate-200 space-y-1">
                                                     <div className="flex items-center gap-1.5">
