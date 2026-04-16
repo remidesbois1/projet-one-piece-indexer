@@ -1,0 +1,6 @@
+supabase
+python-dotenv
+requests
+pillow
+tqdm
+pillow-avif-plugin

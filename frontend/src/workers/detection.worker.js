@@ -44,7 +44,7 @@ self.addEventListener('message', async (event) => {
                     }
                 }
                 self.postMessage({ status: 'download_progress', progress: maxProgress });
-                
+
                 const arrayBuffer = new Uint8Array(loaded);
                 let offset = 0;
                 for (const chunk of chunks) {
