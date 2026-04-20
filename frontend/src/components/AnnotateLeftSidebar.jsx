@@ -11,10 +11,12 @@ import {
     MapPin,
     Users,
     Send,
-    Settings2
+    Settings2,
+    Palette
 } from "lucide-react";
 import AnnotateOcrModelSelector from './AnnotateOcrModelSelector';
 import AnnotateBubbleScanner from './AnnotateBubbleScanner';
+import { Switch } from '@/components/ui/switch';
 
 export default function AnnotateLeftSidebar({
     fromSearch,
@@ -46,7 +48,10 @@ export default function AnnotateLeftSidebar({
     role,
     isSandbox = false,
     handleOneShot,
-    isOneShotLoading
+    isOneShotLoading,
+    showColor,
+    setShowColor,
+    hasColorVariant
 }) {
     const isStaff = role === 'Admin' || role === 'Modo';
 
@@ -140,6 +145,20 @@ export default function AnnotateLeftSidebar({
                                         </span>
                                     )}
                                 </Button>
+                            </div>
+                        )}
+
+                        {role === 'Admin' && hasColorVariant && (
+                            <div className="flex-none p-3 rounded-xl border border-purple-200/60 bg-purple-50/30 shadow-sm flex items-center justify-between gap-3">
+                                <div className="flex items-center gap-2">
+                                    <Palette size={14} className="text-purple-600" />
+                                    <span className="text-[11px] font-bold text-purple-700 uppercase tracking-wider">Version Colorisée</span>
+                                </div>
+                                <Switch
+                                    checked={showColor}
+                                    onCheckedChange={setShowColor}
+                                    className="data-[state=checked]:bg-purple-600"
+                                />
                             </div>
                         )}
                     </>

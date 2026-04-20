@@ -1,6 +1,13 @@
+ultralytics>=8.3.0
 supabase
 python-dotenv
 requests
 pillow
+onnx
+onnxruntime
+huggingface_hub
+pandas
+pyyaml
+scikit-learn
 tqdm
 pillow-avif-plugin

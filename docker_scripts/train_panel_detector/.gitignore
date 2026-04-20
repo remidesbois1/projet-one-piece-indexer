@@ -1,1 +1,5 @@
 dataset/
+dataset_yolo/
+runs/
+*.onnx
+.env

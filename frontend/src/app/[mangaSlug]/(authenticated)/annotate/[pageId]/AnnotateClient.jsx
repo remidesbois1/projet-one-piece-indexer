@@ -56,6 +56,7 @@ export default function AnnotatePage() {
     const [chapterPages, setChapterPages] = useState([]);
     const [navContext, setNavContext] = useState({ prev: null, next: null });
     const [isMobile, setIsMobile] = useState(false);
+    const [showColor, setShowColor] = useState(false);
 
     useEffect(() => {
         const checkMobile = () => setIsMobile(window.innerWidth < 1024);
@@ -439,6 +440,9 @@ export default function AnnotatePage() {
                 handleSubmitPage={handleSubmitPage}
                 handleOneShot={handleOneShot}
                 isOneShotLoading={isOneShotLoading}
+                showColor={showColor}
+                setShowColor={setShowColor}
+                hasColorVariant={!!page.url_image_color}
             />
 
             <div className="flex flex-col flex-1 overflow-hidden min-w-0 bg-slate-50 relative">
@@ -500,6 +504,14 @@ export default function AnnotatePage() {
                         handleMouseMove={handleMouseMove}
                         handleMouseUp={handleMouseUp}
                         imageUrl={getProxiedImageUrl(page.url_image, pageId, session?.access_token)}
+                        colorOverlay={
+                            showColor && page.url_image_color
+                                ? {
+                                    url: getProxiedImageUrl(page.url_image, pageId, session?.access_token, 'color'),
+                                    cropData: page.color_crop_data,
+                                }
+                                : null
+                        }
                         isSubmitting={isSubmitting}
                         loadingText={loadingText}
                         rectangle={rectangle}
