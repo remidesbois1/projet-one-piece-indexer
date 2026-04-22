@@ -14,7 +14,8 @@ import {
     Upload,
     BookOpen,
     Eye,
-    EyeOff
+    EyeOff,
+    Palette
 } from "lucide-react";
 
 import { useSearchParams, useParams } from 'next/navigation';
@@ -123,6 +124,23 @@ export default function AdminDashboard() {
                             <Link href={`/${params.mangaSlug}/admin/upload-tome`}>
                                 <Button className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg">
                                     <Upload className="h-4 w-4 mr-2" />
+                                    Ouvrir
+                                </Button>
+                            </Link>
+                        </div>
+                        <div className="flex items-center justify-between rounded-xl bg-gradient-to-r from-rose-50 to-pink-50 border border-rose-200 p-6">
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                                    <Palette className="h-5 w-5 text-rose-500" />
+                                    Gestion Pages Couleur
+                                </h3>
+                                <p className="text-sm text-slate-500 mt-1">
+                                    Gérez les variantes couleur, alignez et validez les pages existantes.
+                                </p>
+                            </div>
+                            <Link href={`/${params.mangaSlug}/admin/manage-pages`}>
+                                <Button className="bg-rose-500 hover:bg-rose-600 text-white shadow-lg">
+                                    <Palette className="h-4 w-4 mr-2" />
                                     Ouvrir
                                 </Button>
                             </Link>

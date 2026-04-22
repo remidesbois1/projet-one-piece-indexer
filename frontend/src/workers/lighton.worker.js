@@ -70,7 +70,6 @@ async function ocrSingleImage(imageBlob) {
         console.log('[Worker] input_ids shape:', inputs.input_ids.dims);
         console.log('[Worker] input_ids sample:', inputs.input_ids.tolist()[0].slice(0, 10));
 
-        // Create a fresh NaN-safety processor for each attempt
         const nanProcessor = createNanSafetyProcessor();
 
         const outputs = await model.generate({
@@ -86,9 +85,6 @@ async function ocrSingleImage(imageBlob) {
 
         console.log('[Worker] Tokens bruts:', generatedTokens.slice(0, 20));
 
-        // --- Overflow detection (two methods) ---
-
-        // Method 1: NaN detected in logits by the safety processor
         if (nanProcessor.wasNanDetected()) {
             console.warn(`[Worker] FP16 overflow confirmed via NaN at attempt ${attempt + 1}/${MAX_ATTEMPTS}`);
             if (attempt < MAX_ATTEMPTS - 1) continue;
@@ -96,8 +92,7 @@ async function ocrSingleImage(imageBlob) {
             return '';
         }
 
-        // Method 2: Fallback — check for bad token 151935 in output
-        // (in case NaN appears in a position not sampled by the sparse check)
+
         const badCount = generatedTokens.filter(t => t === BAD_TOKEN_ID).length;
         if (generatedTokens.length > 2 && badCount > generatedTokens.length * 0.5) {
             console.warn(`[Worker] FP16 overflow detected via bad tokens: ${badCount}/${generatedTokens.length} at attempt ${attempt + 1}/${MAX_ATTEMPTS}`);
@@ -106,7 +101,6 @@ async function ocrSingleImage(imageBlob) {
             return '';
         }
 
-        // --- Success path ---
         console.log('[Worker] Tokens décodés (avec spéciaux):', tokenizer.decode(generatedTokens, { skip_special_tokens: false }).trim());
 
         const decoded = tokenizer.decode(generatedTokens, {

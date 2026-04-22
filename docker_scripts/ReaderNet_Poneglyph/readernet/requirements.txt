@@ -1,0 +1,13 @@
+torch
+torchvision
+onnxruntime
+supabase
+python-dotenv
+requests
+pillow==10.4.0
+onnx
+huggingface_hub
+tqdm
+scikit-learn
+pillow-avif-plugin==1.4.3
+numpy

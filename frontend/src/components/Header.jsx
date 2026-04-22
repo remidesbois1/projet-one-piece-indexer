@@ -110,6 +110,9 @@ const Header = ({ onOpenApiKeyModal }) => {
                             <Link href={getHref('/admin/data')} prefetch={false} className={getLinkStyle('/admin/data')}>
                                 Explorateur
                             </Link>
+                            <Link href={getHref('/admin/manage-pages')} prefetch={false} className={getLinkStyle('/admin/manage-pages')}>
+                                Couleur
+                            </Link>
                         </>
                     )}
                     {pathname === '/' && (
@@ -289,6 +292,12 @@ const Header = ({ onOpenApiKeyModal }) => {
                                                                 <Settings2 size={18} />
                                                             </div>
                                                             Explorateur de données
+                                                        </Link>
+                                                        <Link href={getHref('/admin/manage-pages')} prefetch={false} className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-50 text-slate-700 font-medium transition-all group">
+                                                            <div className="p-1.5 bg-rose-50 rounded border border-rose-100 shadow-sm text-rose-600 ">
+                                                                <ImageIcon size={18} />
+                                                            </div>
+                                                            Pages Couleur
                                                         </Link>
                                                     </>
                                                 )}

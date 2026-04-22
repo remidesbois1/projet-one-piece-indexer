@@ -43,7 +43,7 @@ export function AuthProvider({ children }) {
 
             setSession(currentSession);
             if (currentSession?.user) {
-                fetchRole(currentSession.user.id);
+                await fetchRole(currentSession.user.id);
             }
             setLoading(false);
         };

@@ -102,6 +102,15 @@ def fetch_data():
 
 
 def main():
+    # --- VÉRIFICATION DE L'EXISTENCE DU DATASET ---
+    train_ann_path = OUTPUT_DIR / "train" / "annotations.json"
+    val_ann_path = OUTPUT_DIR / "val" / "annotations.json"
+
+    if train_ann_path.exists() and val_ann_path.exists():
+        print(f"Dataset already exists in {OUTPUT_DIR}. Skipping download.")
+        return
+    # ----------------------------------------------
+
     pages = fetch_data()
     if not pages:
         print("No data found.")

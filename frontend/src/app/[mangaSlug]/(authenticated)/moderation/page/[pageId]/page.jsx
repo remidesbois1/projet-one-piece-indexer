@@ -27,9 +27,10 @@ import {
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
 
 
-import { Check, X, ArrowLeft, Pencil, FileText, Settings2, Save, Plus, Loader2, Sparkles, Code } from "lucide-react";
+import { Check, X, ArrowLeft, Pencil, FileText, Settings2, Save, Plus, Loader2, Sparkles, Code, Palette } from "lucide-react";
 
 export default function PageReview() {
     const params = useParams();
@@ -240,6 +241,37 @@ export default function PageReview() {
     };
 
     const [rejectingBubbleId, setRejectingBubbleId] = useState(null);
+    const [showColor, setShowColor] = useState(false);
+    const { role } = useAuth();
+    const colorCanvasRef = useRef(null);
+
+    useEffect(() => {
+        if (!showColor || !page?.url_image_color || !imageRef.current || !colorCanvasRef.current) return;
+
+        const bwImg = imageRef.current;
+        const canvas = colorCanvasRef.current;
+        const colImg = new window.Image();
+        colImg.crossOrigin = 'anonymous';
+        colImg.onload = () => {
+            canvas.width = bwImg.naturalWidth;
+            canvas.height = bwImg.naturalHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const crop = page.color_crop_data;
+            if (crop?.affine) {
+                const [a, b, c, d, tx, ty] = crop.affine;
+                const ox = crop.manual_offset_x || 0;
+                const oy = crop.manual_offset_y || 0;
+                ctx.setTransform(a, b, c, d, tx + ox, ty + oy);
+            } else {
+                const ox = crop?.manual_offset_x || 0;
+                const oy = crop?.manual_offset_y || 0;
+                ctx.setTransform(1, 0, 0, 1, ox, oy);
+            }
+            ctx.drawImage(colImg, 0, 0);
+        };
+        colImg.src = getProxiedImageUrl(page.url_image, pageId, session?.access_token, 'color');
+    }, [showColor, page, pageId, session]);
 
     const handleConfirmRejectBubble = async (comment) => {
         if (!rejectingBubbleId) return;
@@ -315,6 +347,18 @@ export default function PageReview() {
                             <span className="hidden xl:inline">Métadonnées</span>
                         </Button>
 
+                        {role === 'Admin' && page.url_image_color && (
+                            <div className="flex items-center gap-2 px-3 h-9 rounded-md border border-purple-200 bg-purple-50/50">
+                                <Palette size={14} className="text-purple-600" />
+                                <span className="text-[11px] font-bold text-purple-700 uppercase tracking-wider hidden sm:inline">Couleur</span>
+                                <Switch
+                                    checked={showColor}
+                                    onCheckedChange={setShowColor}
+                                    className="data-[state=checked]:bg-purple-600"
+                                />
+                            </div>
+                        )}
+
                         <Button
                             variant="ghost"
                             size="icon"
@@ -351,7 +395,7 @@ export default function PageReview() {
                     >
                         <img
                             ref={imageRef}
-                            src={getProxiedImageUrl(page.url_image)}
+                            src={getProxiedImageUrl(page.url_image, pageId, session?.access_token)}
                             crossOrigin="anonymous"
                             alt={`Page ${page.numero_page}`}
                             className="max-w-full h-auto block rounded-sm pointer-events-none"
@@ -360,6 +404,13 @@ export default function PageReview() {
                                 naturalWidth: e.target.naturalWidth
                             })}
                         />
+
+                        {showColor && page.url_image_color && (
+                            <canvas
+                                ref={colorCanvasRef}
+                                className="absolute top-0 left-0 max-w-full h-auto block rounded-sm pointer-events-none"
+                            />
+                        )}
 
 
                         {imageDimensions && bubbles.map((bubble, index) => {

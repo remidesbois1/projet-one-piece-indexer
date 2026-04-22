@@ -1,3 +1,8 @@
+import warnings
+# On ignore les warnings inutiles qui spamment la console
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", category=FutureWarning)
+
 import json
 import os
 import random
@@ -9,16 +14,16 @@ from pathlib import Path
 from PIL import Image
 from torch.utils.data import Dataset, DataLoader
 from torchvision.ops import roi_align
+from torch.nn.utils.rnn import pad_sequence
 from tqdm import tqdm
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 
 CANVAS_H = 256
 CANVAS_W = 384
-GEOM_DIM = 24
 FEAT_DIM = 128
 BUBBLE_CROP_SIZE = 32
-BATCH_SIZE = 48
+BATCH_SIZE = 8  # Réduit car on batch par PAGE complète maintenant
 EPOCHS = 180
 LR = 3e-4
 
@@ -91,17 +96,6 @@ class BubbleCropEncoder(nn.Module):
     def forward(self, x):
         return self.proj(self.net(x).flatten(1))
 
-def extract_roi_feat(feat_map, boxes_xywh, roi_size=4):
-    B, C, H, W = feat_map.shape
-    x, y, w, h = boxes_xywh[:, 0], boxes_xywh[:, 1], boxes_xywh[:, 2], boxes_xywh[:, 3]
-    batch_idx = torch.arange(B, device=feat_map.device, dtype=feat_map.dtype)
-    rois = torch.stack([batch_idx, x * W, y * H, (x + w) * W, (y + h) * H], dim=1)
-    return roi_align(feat_map, rois, output_size=roi_size, spatial_scale=1.0, aligned=True).flatten(1)
-
-def select_fpn_level(box_w, box_h):
-    area = (box_w * CANVAS_W) * (box_h * CANVAS_H)
-    return int(torch.clamp(torch.floor(torch.log2(torch.sqrt(area) / 56 + 1e-6) + 2), min=0, max=2).item())
-
 class FourierPositionalEncoding(nn.Module):
     def __init__(self, in_dim, num_freqs=8):
         super().__init__()
@@ -113,50 +107,8 @@ class FourierPositionalEncoding(nn.Module):
         x_exp = x.unsqueeze(-1) * self.freqs * np.pi
         return torch.cat([x.unsqueeze(-1), torch.sin(x_exp), torch.cos(x_exp)], dim=-1).view(B, -1)
 
-
 # ---------------------------------------------------------------------------
-# Les Têtes de Prédiction
-# ---------------------------------------------------------------------------
-
-class RankHead(nn.Module):
-    def __init__(self, feat_roi_dim, crop_enc_dim=64, num_freqs=8):
-        super().__init__()
-        self.geom_enc = FourierPositionalEncoding(9, num_freqs=num_freqs)
-        in_dim = FEAT_DIM + feat_roi_dim + crop_enc_dim + self.geom_enc.out_dim
-        
-        self.mlp = nn.Sequential(
-            nn.Linear(in_dim, 512), nn.LayerNorm(512), nn.SiLU(inplace=True), nn.Dropout(0.2),
-            nn.Linear(512, 128), nn.SiLU(inplace=True),
-            nn.Linear(128, 1)
-        )
-
-    def forward(self, global_feat, roi, crop, geom_indiv):
-        g_feat = self.geom_enc(geom_indiv)
-        x = torch.cat([global_feat, roi, crop, g_feat], dim=1)
-        return self.mlp(x)
-
-
-class PairwiseHead(nn.Module):
-    def __init__(self, feat_roi_dim, crop_enc_dim=64, num_freqs=8):
-        super().__init__()
-        self.geom_enc = FourierPositionalEncoding(GEOM_DIM, num_freqs=num_freqs)
-        in_dim = FEAT_DIM + feat_roi_dim * 2 + crop_enc_dim * 2 + self.geom_enc.out_dim
-        
-        self.mlp = nn.Sequential(
-            nn.Linear(in_dim, 1024), nn.LayerNorm(1024), nn.SiLU(inplace=True), nn.Dropout(0.25),
-            nn.Linear(1024, 256), nn.SiLU(inplace=True), nn.Dropout(0.15),
-            nn.Linear(256, 128), nn.SiLU(inplace=True),
-            nn.Linear(128, 1)
-        )
-
-    def forward(self, global_feat, feat_a, feat_b, crop_feat_a, crop_feat_b, geom):
-        g_feat = self.geom_enc(geom)
-        x = torch.cat([global_feat, feat_a, feat_b, crop_feat_a, crop_feat_b, g_feat], dim=1)
-        return self.mlp(x)
-
-
-# ---------------------------------------------------------------------------
-# Modèle Principal : ReaderNet V8 (Avec Correction de Vitesse)
+# Modèle Principal : ReaderNet V8 (Architecture Contextuelle)
 # ---------------------------------------------------------------------------
 
 class ReaderNetV8(nn.Module):
@@ -164,149 +116,184 @@ class ReaderNetV8(nn.Module):
         super().__init__()
         self.backbone = FPNBackbone(out_channels=FEAT_DIM)
         self.crop_encoder = BubbleCropEncoder(out_dim=64)
+        
+        self.geom_enc = FourierPositionalEncoding(9, num_freqs=8)
+        
         feat_roi_dim = FEAT_DIM * 16 # 4x4 ROI
+        raw_token_dim = FEAT_DIM + feat_roi_dim + 64 + self.geom_enc.out_dim
+        
+        # Projection pour avoir une dimension propre et divisible par nhead
+        self.d_model = 1024
+        self.feature_proj = nn.Linear(raw_token_dim, self.d_model)
 
-        self.rank_head = RankHead(feat_roi_dim=feat_roi_dim)
-        self.pair_head = PairwiseHead(feat_roi_dim=feat_roi_dim)
+        # Le Transformer qui permet aux bulles de se "regarder"
+        encoder_layer = nn.TransformerEncoderLayer(d_model=self.d_model, nhead=8, batch_first=True, dim_feedforward=2048, dropout=0.1)
+        self.context_encoder = nn.TransformerEncoder(encoder_layer, num_layers=3)
+
+        # Prédiction Pairwise (Bulle i vs Bulle j)
+        self.pair_head = nn.Sequential(
+            nn.Linear(self.d_model * 2, 512), nn.LayerNorm(512), nn.SiLU(inplace=True), nn.Dropout(0.2),
+            nn.Linear(512, 128), nn.SiLU(inplace=True),
+            nn.Linear(128, 1)
+        )
+
+        # Prédiction Rank Absolu
+        self.rank_head = nn.Sequential(
+            nn.Linear(self.d_model, 256), nn.LayerNorm(256), nn.SiLU(inplace=True), nn.Dropout(0.2),
+            nn.Linear(256, 128), nn.SiLU(inplace=True),
+            nn.Linear(128, 1)
+        )
 
         grid_y = torch.linspace(-1, 1, CANVAS_H).view(1, 1, CANVAS_H, 1).expand(1, 1, CANVAS_H, CANVAS_W)
         grid_x = torch.linspace(-1, 1, CANVAS_W).view(1, 1, 1, CANVAS_W).expand(1, 1, CANVAS_H, CANVAS_W)
         self.register_buffer("grid_y", grid_y)
         self.register_buffer("grid_x", grid_x)
 
-    def _run_backbone(self, image):
-        B = image.shape[0]
-        x = torch.cat([image, self.grid_x.expand(B, -1, -1, -1), self.grid_y.expand(B, -1, -1, -1)], dim=1)
-        return self.backbone(x)
-
-    def _dedup_backbone(self, image, img_ids):
-        unique_ids, inv = torch.unique(img_ids, return_inverse=True)
-        B_u = unique_ids.shape[0]
-        B = image.shape[0]
-
-        if B_u == B:
-            return self._run_backbone(image)
-
-        seen, indices = set(), []
-        for i, uid in enumerate(img_ids.tolist()):
-            if uid not in seen:
-                indices.append(i)
-                seen.add(uid)
-                if len(seen) == B_u:
-                    break
-        indices = torch.tensor(indices, device=image.device)
-        unique_imgs = image[indices]
-
-        p1_u, p2_u, p3_u = self._run_backbone(unique_imgs)
-        return p1_u[inv], p2_u[inv], p3_u[inv]
-
-    def _extract_multiscale_roi(self, fpn_maps, box_xywh):
-        B = box_xywh.shape[0]
-        results = torch.zeros(B, FEAT_DIM * 16, dtype=fpn_maps[0].dtype, device=box_xywh.device)
+    def _extract_multiscale_roi(self, fpn_maps, box_xywh, batch_indices):
+        N_total = box_xywh.shape[0]
+        results = torch.zeros(N_total, FEAT_DIM * 16, dtype=fpn_maps[0].dtype, device=box_xywh.device)
+        
         for lvl in range(3):
-            mask = torch.zeros(B, dtype=torch.bool, device=box_xywh.device)
-            for i in range(B):
-                if select_fpn_level(box_xywh[i, 2], box_xywh[i, 3]) == lvl: mask[i] = True
+            mask = torch.zeros(N_total, dtype=torch.bool, device=box_xywh.device)
+            for i in range(N_total):
+                area = (box_xywh[i, 2] * CANVAS_W) * (box_xywh[i, 3] * CANVAS_H)
+                tgt_lvl = int(torch.clamp(torch.floor(torch.log2(torch.sqrt(area) / 56 + 1e-6) + 2), min=0, max=2).item())
+                if tgt_lvl == lvl: mask[i] = True
+            
             if mask.any():
-                results[mask] = extract_roi_feat(fpn_maps[lvl][mask], box_xywh[mask], roi_size=4)
+                b_idx = batch_indices[mask].to(fpn_maps[lvl].dtype)
+                x, y, w, h = box_xywh[mask, 0], box_xywh[mask, 1], box_xywh[mask, 2], box_xywh[mask, 3]
+                rois = torch.stack([b_idx, x * CANVAS_W, y * CANVAS_H, (x + w) * CANVAS_W, (y + h) * CANVAS_H], dim=1)
+                results[mask] = roi_align(fpn_maps[lvl], rois, output_size=4, spatial_scale=1.0, aligned=True).flatten(1)
         return results
 
-    def forward(self, image, geom, crop_a, crop_b, img_ids=None):
-        B = image.shape[0]
+    def forward(self, images, geoms, crops, padding_mask):
+        B, N, _ = geoms.shape
         
-        # L'OPTIMISATION QUI SAUVE LA VITESSE EST DE RETOUR ICI
-        if self.training and img_ids is not None and B > 1:
-            p1, p2, p3 = self._dedup_backbone(image, img_ids)
-        else:
-            p1, p2, p3 = self._run_backbone(image)
-            
-        fpn_maps = (p1, p2, p3)
-        global_feat = F.adaptive_avg_pool2d(p3, 1).flatten(1)
+        # 1. Image Globale
+        x = torch.cat([images, self.grid_x.expand(B, -1, -1, -1), self.grid_y.expand(B, -1, -1, -1)], dim=1)
+        p1, p2, p3 = self.backbone(x)
+        global_feat = F.adaptive_avg_pool2d(p3, 1).flatten(1) # (B, FEAT_DIM)
 
-        feat_a = self._extract_multiscale_roi(fpn_maps, geom[:, :4])
-        feat_b = self._extract_multiscale_roi(fpn_maps, geom[:, 4:8])
-        crop_feat_a = self.crop_encoder(crop_a)
-        crop_feat_b = self.crop_encoder(crop_b)
+        # 2. Features Locales (Aplatis pour traiter tout le batch d'un coup)
+        flat_geoms = geoms.view(B * N, -1)
+        flat_crops = crops.view(B * N, 1, BUBBLE_CROP_SIZE, BUBBLE_CROP_SIZE)
+        batch_indices = torch.arange(B, device=images.device).view(B, 1).expand(B, N).reshape(-1)
 
-        # 1. Prédiction Pairwise
-        pair_logit = self.pair_head(global_feat, feat_a, feat_b, crop_feat_a, crop_feat_b, geom)
+        roi_feats = self._extract_multiscale_roi((p1, p2, p3), flat_geoms[:, :4], batch_indices)
+        crop_feats = self.crop_encoder(flat_crops)
+        geom_feats = self.geom_enc(flat_geoms)
 
-        # 2. RankNet
-        geom_a_indiv = torch.stack([geom[:,0], geom[:,1], geom[:,2], geom[:,3], geom[:,12], geom[:,16], geom[:,18], geom[:,20], geom[:,21]], dim=1)
-        geom_b_indiv = torch.stack([geom[:,4], geom[:,5], geom[:,6], geom[:,7], geom[:,13], geom[:,17], geom[:,19], geom[:,22], geom[:,23]], dim=1)
+        # 3. Assemblage des Tokens
+        global_feats_exp = global_feat.unsqueeze(1).expand(-1, N, -1).reshape(B * N, -1)
+        raw_tokens = torch.cat([global_feats_exp, roi_feats, crop_feats, geom_feats], dim=-1)
+        raw_tokens = raw_tokens.view(B, N, -1)
 
-        score_a = self.rank_head(global_feat, feat_a, crop_feat_a, geom_a_indiv)
-        score_b = self.rank_head(global_feat, feat_b, crop_feat_b, geom_b_indiv)
+        # Projection linéaire pour adapter la dimension au Transformer
+        tokens = self.feature_proj(raw_tokens)
+
+        # 4. Contexte Global via Transformer
+        context_tokens = self.context_encoder(tokens, src_key_padding_mask=padding_mask)
+
+        # 5. Prédictions
+        # Rank Absolu:
+        rank_logits = self.rank_head(context_tokens).squeeze(-1) # (B, N)
         
-        rank_logit = score_a - score_b 
+        # Pairwise (Bulle i vs Bulle j):
+        tokens_i = context_tokens.unsqueeze(2).expand(B, N, N, -1)
+        tokens_j = context_tokens.unsqueeze(1).expand(B, N, N, -1)
+        pair_inputs = torch.cat([tokens_i, tokens_j], dim=-1)
+        pair_logits = self.pair_head(pair_inputs).squeeze(-1) # (B, N, N)
 
-        return pair_logit, rank_logit, score_a, score_b
+        return pair_logits, rank_logits
 
 
 # ---------------------------------------------------------------------------
-# Dataset & Utils
+# Dataset au niveau PAGE
 # ---------------------------------------------------------------------------
 
-def build_geom_features(pair):
-    a, b, rel = pair["a"], pair["b"], pair["rel"]
-    ax, ay, aw, ah = a["x"], a["y"], a["w"], a["h"]
-    bx, by, bw, bh = b["x"], b["y"], b["w"], b["h"]
-    return [
-        ax, ay, aw, ah, bx, by, bw, bh, rel["dx"], rel["dy"], rel["dist"], rel["angle"],
-        aw*ah, bw*bh, max(0, min(ax+aw, bx+bw) - max(ax, bx)), max(0, min(ay+ah, by+bh) - max(ay, by)),
-        1.0 - (ax + aw/2), 1.0 - (bx + bw/2), ah/(aw+1e-6), bh/(bw+1e-6),
-        ax+aw/2, ay+ah/2, bx+bw/2, by+bh/2
-    ]
-
-class PagePairDataset(Dataset):
+class PageDataset(Dataset):
     def __init__(self, annotations, images_dir, augment=False):
         self.augment = augment
-        self.page_images, self.samples = {}, []
+        self.samples = []
+        
         for page in annotations:
             img_path = os.path.join(images_dir, page["image"])
-            if os.path.exists(img_path):
-                img = Image.open(img_path).convert("L").resize((CANVAS_W, CANVAS_H), Image.BILINEAR)
-                self.page_images[page["image"]] = np.array(img, dtype=np.float32) / 255.0
-                for pair in page["pairs"]:
-                    self.samples.append((page["image"], pair["a"], pair["b"], build_geom_features(pair), pair["label"]))
+            if not os.path.exists(img_path): continue
+            
+            # Extraire les bulles uniques
+            nodes = []
+            for pair in page["pairs"]:
+                a_tuple = (pair["a"]["x"], pair["a"]["y"], pair["a"]["w"], pair["a"]["h"])
+                b_tuple = (pair["b"]["x"], pair["b"]["y"], pair["b"]["w"], pair["b"]["h"])
+                if a_tuple not in nodes: nodes.append(a_tuple)
+                if b_tuple not in nodes: nodes.append(b_tuple)
+                
+            node_idx = {n: i for i, n in enumerate(nodes)}
+            N = len(nodes)
+            if N < 2: continue
 
-        self.img_names = list(self.page_images.keys())
-        self.name_to_id = {name: i for i, name in enumerate(self.img_names)}
+            # Matrice d'adjacence des paires
+            target_matrix = np.zeros((N, N), dtype=np.float32)
+            for pair in page["pairs"]:
+                a_tuple = (pair["a"]["x"], pair["a"]["y"], pair["a"]["w"], pair["a"]["h"])
+                b_tuple = (pair["b"]["x"], pair["b"]["y"], pair["b"]["w"], pair["b"]["h"])
+                i, j = node_idx[a_tuple], node_idx[b_tuple]
+                target_matrix[i, j] = pair["label"]
+                target_matrix[j, i] = 1.0 - pair["label"]
+
+            self.samples.append((img_path, nodes, target_matrix, page["image"]))
 
     def __len__(self): return len(self.samples)
 
     def _crop(self, img_np, box):
-        x1, y1 = max(0, int(box["x"] * CANVAS_W)), max(0, int(box["y"] * CANVAS_H))
-        x2, y2 = min(CANVAS_W, int((box["x"] + box["w"]) * CANVAS_W)), min(CANVAS_H, int((box["y"] + box["h"]) * CANVAS_H))
+        x, y, w, h = box
+        x1, y1 = max(0, int(x * CANVAS_W)), max(0, int(y * CANVAS_H))
+        x2, y2 = min(CANVAS_W, int((x + w) * CANVAS_W)), min(CANVAS_H, int((y + h) * CANVAS_H))
         if x2 <= x1 or y2 <= y1: return np.zeros((BUBBLE_CROP_SIZE, BUBBLE_CROP_SIZE), dtype=np.float32)
         return np.array(Image.fromarray((img_np[y1:y2, x1:x2]*255).astype(np.uint8)).resize((BUBBLE_CROP_SIZE, BUBBLE_CROP_SIZE)), dtype=np.float32) / 255.0
 
     def __getitem__(self, idx):
-        img_name, _, _, geom, label = self.samples[idx]
-        img, geom = self.page_images[img_name].copy(), list(geom)
-        
+        img_path, nodes, target_matrix, img_name = self.samples[idx]
+        img = Image.open(img_path).convert("L").resize((CANVAS_W, CANVAS_H), Image.BILINEAR)
+        img_np = np.array(img, dtype=np.float32) / 255.0
+
         if self.augment and random.random() > 0.4:
-            img = np.clip(img ** random.uniform(0.6, 1.5), 0, 1)
-        if self.augment and random.random() > 0.5:
-            img = np.clip(img + np.random.normal(0, random.uniform(0.01, 0.04), img.shape), 0, 1).astype(np.float32)
-            
-        crop_a = self._crop(img, {"x": geom[0], "y": geom[1], "w": geom[2], "h": geom[3]})
-        crop_b = self._crop(img, {"x": geom[4], "y": geom[5], "w": geom[6], "h": geom[7]})
+            img_np = np.clip(img_np ** random.uniform(0.6, 1.5), 0, 1)
 
-        img_id = self.name_to_id[img_name]
+        geoms, crops = [], []
+        for (x, y, w, h) in nodes:
+            geom = [x, y, w, h, w*h, 1.0-(x+w/2), h/(w+1e-6), x+w/2, y+h/2]
+            geoms.append(geom)
+            crops.append(self._crop(img_np, (x, y, w, h)))
 
-        return (torch.from_numpy(img).unsqueeze(0), torch.tensor(geom, dtype=torch.float32),
-                torch.from_numpy(crop_a).unsqueeze(0), torch.from_numpy(crop_b).unsqueeze(0),
-                torch.tensor([label], dtype=torch.float32), img_id, img_name)
+        return (
+            torch.from_numpy(img_np).unsqueeze(0),
+            torch.tensor(geoms, dtype=torch.float32),
+            torch.tensor(np.array(crops), dtype=torch.float32).unsqueeze(1),
+            torch.tensor(target_matrix, dtype=torch.float32),
+            img_name
+        )
 
-class FocalLoss(nn.Module):
-    def __init__(self, gamma=2.5):
-        super().__init__()
-        self.gamma = gamma
-        self.bce = nn.BCEWithLogitsLoss(reduction="none")
-    def forward(self, inputs, targets):
-        bce_loss = self.bce(inputs, targets)
-        return ((1 - torch.exp(-bce_loss)) ** self.gamma * bce_loss).mean()
+def collate_pages(batch):
+    imgs, geoms, crops, target_matrices, img_names = zip(*batch)
+    imgs = torch.stack(imgs)
+    
+    # Padding des séquences (bulles)
+    geoms_padded = pad_sequence(geoms, batch_first=True, padding_value=0.0)
+    crops_padded = pad_sequence(crops, batch_first=True, padding_value=0.0)
+    
+    B, max_N = len(batch), geoms_padded.shape[1]
+    
+    targets_padded = torch.zeros(B, max_N, max_N)
+    padding_mask = torch.ones(B, max_N, dtype=torch.bool) # True = pad
+    
+    for b in range(B):
+        N = geoms[b].shape[0]
+        targets_padded[b, :N, :N] = target_matrices[b]
+        padding_mask[b, :N] = False
+
+    return imgs, geoms_padded, crops_padded, targets_padded, padding_mask, img_names
 
 # ---------------------------------------------------------------------------
 # Training Loop
@@ -317,15 +304,23 @@ def train():
     with open(dataset_dir / "train/annotations.json") as f: train_ann = json.load(f)
     with open(dataset_dir / "val/annotations.json") as f: val_ann = json.load(f)
 
-    train_loader = DataLoader(PagePairDataset(train_ann, str(dataset_dir/"train/images"), augment=True), batch_size=BATCH_SIZE, shuffle=True, num_workers=4)
-    val_loader = DataLoader(PagePairDataset(val_ann, str(dataset_dir/"val/images")), batch_size=BATCH_SIZE, shuffle=False, num_workers=2)
+    train_loader = DataLoader(
+        PageDataset(train_ann, str(dataset_dir/"train/images"), augment=True), 
+        batch_size=BATCH_SIZE, shuffle=True, collate_fn=collate_pages, 
+        num_workers=4, persistent_workers=True, pin_memory=True
+    )
+    val_loader = DataLoader(
+        PageDataset(val_ann, str(dataset_dir/"val/images")), 
+        batch_size=BATCH_SIZE, shuffle=False, collate_fn=collate_pages, 
+        num_workers=2, persistent_workers=True, pin_memory=True
+    )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = ReaderNetV8().to(device)
     
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=1e-2)
     scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=LR*5, total_steps=EPOCHS*len(train_loader), pct_start=0.08)
-    criterion = FocalLoss()
+    bce_loss = nn.BCEWithLogitsLoss(reduction='none')
     scaler = torch.amp.GradScaler("cuda") if device.type == "cuda" else None
 
     best_val_exact = 0.0
@@ -333,16 +328,28 @@ def train():
 
     for epoch in range(EPOCHS):
         model.train()
-        total_loss, correct, total = 0.0, 0, 0
+        total_loss = 0.0
 
         pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{EPOCHS}")
-        for imgs, geoms, crops_a, crops_b, labels, img_ids, _ in pbar:
-            imgs, geoms, crops_a, crops_b, labels, img_ids = [x.to(device, non_blocking=True) for x in (imgs, geoms, crops_a, crops_b, labels, img_ids)]
+        for imgs, geoms, crops, targets, pad_mask, _ in pbar:
+            imgs, geoms, crops, targets, pad_mask = [x.to(device, non_blocking=True) for x in (imgs, geoms, crops, targets, pad_mask)]
             optimizer.zero_grad(set_to_none=True)
 
             with torch.autocast("cuda", enabled=(scaler is not None)):
-                pair_logit, rank_logit, _, _ = model(imgs, geoms, crops_a, crops_b, img_ids)
-                loss = criterion(pair_logit, labels) + criterion(rank_logit, labels)
+                pair_logits, rank_logits = model(imgs, geoms, crops, pad_mask)
+                
+                # Masque pour ignorer le padding et la diagonale (i == j)
+                valid_2d_mask = (~pad_mask.unsqueeze(1)) & (~pad_mask.unsqueeze(2))
+                valid_2d_mask.diagonal(dim1=1, dim2=2).fill_(False)
+                
+                # Loss Pairwise
+                loss_pair = bce_loss(pair_logits, targets)[valid_2d_mask].mean()
+                
+                # Loss Rank (Supervision faible basée sur le nombre de bulles qu'elle précède)
+                target_ranks = targets.sum(dim=2) / ( (~pad_mask).sum(dim=1, keepdim=True).float() + 1e-6)
+                loss_rank = bce_loss(rank_logits, target_ranks)[~pad_mask].mean()
+
+                loss = loss_pair + loss_rank * 0.5
 
             if scaler:
                 scaler.scale(loss).backward()
@@ -355,78 +362,51 @@ def train():
                 optimizer.step()
                 
             scheduler.step()
-            total_loss += loss.item() * imgs.size(0)
-            
-            final_logit = pair_logit + rank_logit
-            correct += ((final_logit > 0).float() == labels).sum().item()
-            total += labels.size(0)
+            total_loss += loss.item()
             pbar.set_postfix(loss=f"{loss.item():.4f}")
 
-        # --- VALIDATION RANKNET ---
+        # --- VALIDATION EXACT MATCH AVEC GRAPHE DIRIGÉ ---
         model.eval()
-        v_correct_pairs, v_total_pairs = 0, 0
-        page_bubble_scores = {}
-        page_gt_pairs = {}
+        exact_pages, total_pages = 0, 0
 
         with torch.no_grad():
-            for imgs, geoms, crops_a, crops_b, labels, img_ids, img_names in tqdm(val_loader, desc="Val", leave=False):
-                imgs, geoms, crops_a, crops_b, labels, img_ids = [x.to(device, non_blocking=True) for x in (imgs, geoms, crops_a, crops_b, labels, img_ids)]
+            for imgs, geoms, crops, targets, pad_mask, _ in tqdm(val_loader, desc="Val", leave=False):
+                imgs, geoms, crops, pad_mask = [x.to(device, non_blocking=True) for x in (imgs, geoms, crops, pad_mask)]
                 
                 with torch.autocast("cuda", enabled=(scaler is not None)):
-                    pair_logit, rank_logit, score_a, score_b = model(imgs, geoms, crops_a, crops_b, img_ids)
+                    pair_logits, rank_logits = model(imgs, geoms, crops, pad_mask)
                 
-                final_logit = pair_logit + rank_logit
-                v_correct_pairs += ((final_logit > 0).float() == labels).sum().item()
-                v_total_pairs += labels.size(0)
+                # Passage des probabilités
+                pair_probs = torch.sigmoid(pair_logits).cpu().numpy()
+                rank_scores = torch.sigmoid(rank_logits).cpu().numpy()
+                targets_np = targets.numpy()
+                pad_mask_np = pad_mask.cpu().numpy()
 
-                geoms_np = geoms.cpu().numpy()
-                sa_np = score_a.cpu().numpy()
-                sb_np = score_b.cpu().numpy()
-                lbl_np = labels.cpu().numpy()
-
-                for i, img_name in enumerate(img_names):
-                    if img_name not in page_bubble_scores:
-                        page_bubble_scores[img_name] = {}
-                        page_gt_pairs[img_name] = []
+                B = imgs.size(0)
+                for b in range(B):
+                    N = (~pad_mask_np[b]).sum()
+                    if N < 2: continue
                     
-                    box_a = tuple(np.round(geoms_np[i, :4], 4))
-                    box_b = tuple(np.round(geoms_np[i, 4:8], 4))
-                    
-                    page_bubble_scores[img_name][box_a] = sa_np[i][0]
-                    page_bubble_scores[img_name][box_b] = sb_np[i][0]
-                    page_gt_pairs[img_name].append((box_a, box_b, lbl_np[i][0]))
+                    # On combine le "Out-Degree" du graphe pairwise avec le rank absolu
+                    pred_matrix = pair_probs[b, :N, :N]
+                    pred_combined_scores = pred_matrix.sum(axis=1) + 0.1 * rank_scores[b, :N]
+                    pred_order = np.argsort(-pred_combined_scores).tolist()
 
-        exact_pages = 0
-        total_pages = len(page_bubble_scores)
+                    gt_matrix = targets_np[b, :N, :N]
+                    gt_scores = gt_matrix.sum(axis=1)
+                    gt_order = np.argsort(-gt_scores).tolist()
 
-        for img_name in page_bubble_scores:
-            scores = page_bubble_scores[img_name]
-            nodes = list(scores.keys())
-            node_idx = {n: i for i, n in enumerate(nodes)}
-            N = len(nodes)
-            
-            target_matrix = np.zeros((N, N))
-            for box_a, box_b, lbl in page_gt_pairs[img_name]:
-                target_matrix[node_idx[box_a], node_idx[box_b]] = lbl
-                target_matrix[node_idx[box_b], node_idx[box_a]] = 1 - lbl
-                
-            gt_scores = np.sum(target_matrix, axis=1)
-            gt_order = np.argsort(-gt_scores)
-            gt_sorted_nodes = [nodes[i] for i in gt_order]
-            
-            pred_sorted_nodes = sorted(nodes, key=lambda n: scores[n], reverse=True)
-            
-            if pred_sorted_nodes == gt_sorted_nodes:
-                exact_pages += 1
+                    if pred_order == gt_order:
+                        exact_pages += 1
+                    total_pages += 1
 
         val_exact = exact_pages / total_pages if total_pages > 0 else 0.0
-        val_pair = v_correct_pairs / v_total_pairs if v_total_pairs > 0 else 0.0
 
         if val_exact > best_val_exact:
             best_val_exact = val_exact
             torch.save(model.state_dict(), str(model_path))
 
-        print(f"Epoch {epoch+1:3d} | Loss: {total_loss/total:.4f} | ValPair: {val_pair:.3f} | ValExact: {val_exact:.3f} | Best: {best_val_exact:.3f}", flush=True)
+        print(f"Epoch {epoch+1:3d} | Loss: {total_loss/len(train_loader):.4f} | ValExact: {val_exact:.3f} | Best: {best_val_exact:.3f}", flush=True)
 
 if __name__ == "__main__":
     train()

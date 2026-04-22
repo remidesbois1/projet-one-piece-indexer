@@ -13,7 +13,7 @@ router.get('/', async (req, res) => {
 
     const { data, error } = await supabase
         .from('pages')
-        .select('id, numero_page, url_image, statut')
+        .select('id, numero_page, url_image, url_image_color, color_validated, statut')
         .eq('id_chapitre', id_chapitre)
         .order('numero_page', { ascending: true });
 
@@ -59,15 +59,25 @@ router.put('/:id/submit-review', authMiddleware, async (req, res) => {
 router.get('/:id/image', async (req, res) => {
     const { id } = req.params;
     const token = req.query.token;
+    const variant = req.query.variant; // 'color' for color variant
 
     try {
         const { data: page, error } = await supabase
             .from('pages')
-            .select('url_image')
+            .select('url_image, url_image_color')
             .eq('id', id)
             .single();
 
         if (error || !page) return res.status(404).json({ error: "Page non trouvée" });
+
+        // Determine which URL to serve
+        let imageUrl = page.url_image;
+        if (variant === 'color') {
+            if (!page.url_image_color) {
+                return res.status(404).json({ error: "Pas de variante couleur pour cette page" });
+            }
+            imageUrl = page.url_image_color;
+        }
 
         let isAuthenticated = false;
         if (token) {
@@ -76,7 +86,7 @@ router.get('/:id/image', async (req, res) => {
         }
 
         const imageResponse = await axios({
-            url: page.url_image,
+            url: imageUrl,
             responseType: 'arraybuffer'
         });
         const imageBuffer = Buffer.from(imageResponse.data, 'binary');

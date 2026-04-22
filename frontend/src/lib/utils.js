@@ -4,12 +4,14 @@ import { twMerge } from "tailwind-merge"
 export function cn(...inputs) {
     return twMerge(clsx(inputs))
 }
-export function getProxiedImageUrl(url, pageId = null, token = null) {
+export function getProxiedImageUrl(url, pageId = null, token = null, variant = null) {
     if (pageId) {
         const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001/api';
-        let imageUrl = `${backendUrl}/pages/${pageId}/image`;
-        if (token) imageUrl += `?token=${token}`;
-        return imageUrl;
+        const params = new URLSearchParams();
+        if (token) params.set('token', token);
+        if (variant) params.set('variant', variant);
+        const qs = params.toString();
+        return `${backendUrl}/pages/${pageId}/image${qs ? `?${qs}` : ''}`;
     }
 
     if (!url) return url;

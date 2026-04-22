@@ -6,5 +6,5 @@ export const useUserProfile = () => {
     const profile = role ? { role } : null;
     const loading = user !== undefined && role === null && user !== null;
 
-    return { profile, loading: false };
+    return { profile, loading };
 };

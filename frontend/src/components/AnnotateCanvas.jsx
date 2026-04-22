@@ -1,7 +1,51 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { cn } from "@/lib/utils";
 import { Loader2, MousePointer2 } from "lucide-react";
 import { toast } from "sonner";
+
+function ColorOverlayCanvas({ colorOverlay, imageRef, visible }) {
+    const canvasRef = useRef(null);
+
+    useEffect(() => {
+        if (!visible || !colorOverlay || !imageRef.current || !canvasRef.current) return;
+
+        const bwImg = imageRef.current;
+        const canvas = canvasRef.current;
+
+        const colImg = new window.Image();
+        colImg.crossOrigin = 'anonymous';
+        colImg.onload = () => {
+            canvas.width = bwImg.naturalWidth;
+            canvas.height = bwImg.naturalHeight;
+
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            const crop = colorOverlay.cropData;
+            if (crop?.affine) {
+                const [a, b, c, d, tx, ty] = crop.affine;
+                const ox = crop.manual_offset_x || 0;
+                const oy = crop.manual_offset_y || 0;
+                ctx.setTransform(a, b, c, d, tx + ox, ty + oy);
+            } else {
+                const ox = crop?.manual_offset_x || 0;
+                const oy = crop?.manual_offset_y || 0;
+                ctx.setTransform(1, 0, 0, 1, ox, oy);
+            }
+            ctx.drawImage(colImg, 0, 0);
+        };
+        colImg.src = colorOverlay.url;
+    }, [colorOverlay, imageRef, visible]);
+
+    if (!visible) return null;
+
+    return (
+        <canvas
+            ref={canvasRef}
+            className="absolute top-0 left-0 w-full h-full object-contain pointer-events-none"
+        />
+    );
+}
 
 export default function AnnotateCanvas({
     canEdit,
@@ -13,6 +57,7 @@ export default function AnnotateCanvas({
     handleMouseMove,
     handleMouseUp,
     imageUrl,
+    colorOverlay,
     isSubmitting,
     loadingText,
     rectangle,
@@ -57,6 +102,12 @@ export default function AnnotateCanvas({
                         naturalWidth: e.currentTarget.naturalWidth,
                         naturalHeight: e.currentTarget.naturalHeight
                     })}
+                />
+
+                <ColorOverlayCanvas
+                    colorOverlay={colorOverlay}
+                    imageRef={imageRef}
+                    visible={!!colorOverlay && !!imageDimensions}
                 />
 
                 {isSubmitting && (
