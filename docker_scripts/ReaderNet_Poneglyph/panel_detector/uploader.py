@@ -15,18 +15,18 @@ if not HF_TOKEN:
     HF_TOKEN = os.getenv("HF_TOKEN")
 
 
-def upload(onnx_path):
+def upload(onnx_path, path_in_repo="panel_detector.onnx"):
     if not HF_TOKEN:
         print("HF_TOKEN not found in .env")
         return False
 
     api = HfApi()
-    print(f"Uploading {onnx_path} to {REPO_ID}...")
+    print(f"Uploading {onnx_path} to {REPO_ID} as {path_in_repo}...")
 
     try:
         api.upload_file(
             path_or_fileobj=str(onnx_path),
-            path_in_repo="panel_detector.onnx",
+            path_in_repo=path_in_repo,
             repo_id=REPO_ID,
             token=HF_TOKEN,
         )

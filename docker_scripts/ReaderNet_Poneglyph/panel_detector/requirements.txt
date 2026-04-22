@@ -2,7 +2,8 @@ ultralytics>=8.3.0
 supabase
 python-dotenv
 requests
-pillow
+pillow==10.4.0
+torchvision
 onnx
 onnxruntime
 huggingface_hub
@@ -10,4 +11,4 @@ pandas
 pyyaml
 scikit-learn
 tqdm
-pillow-avif-plugin
+pillow-avif-plugin==1.4.3
