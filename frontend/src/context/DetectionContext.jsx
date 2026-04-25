@@ -9,6 +9,7 @@ export const DetectionProvider = ({ children }) => {
     const workerRef = useRef(null);
     const [detectionStatus, setDetectionStatus] = useState('idle'); 
     const [downloadProgress, setDownloadProgress] = useState(0);
+    const [downloadStats, setDownloadStats] = useState({ loaded: 0, total: 0 });
 
     
     useEffect(() => {
@@ -18,11 +19,14 @@ export const DetectionProvider = ({ children }) => {
             });
 
             workerRef.current.addEventListener('message', (e) => {
-                const { status, progress, error } = e.data;
+                const { status, progress, loadedBytes, totalBytes, error } = e.data;
 
                 if (status === 'download_progress') {
                     setDetectionStatus('loading');
                     setDownloadProgress(Math.round(progress || 0));
+                    if (loadedBytes && totalBytes) {
+                        setDownloadStats({ loaded: loadedBytes, total: totalBytes });
+                    }
                 }
                 if (status === 'ready') {
                     setDetectionStatus('ready');
@@ -35,15 +39,15 @@ export const DetectionProvider = ({ children }) => {
 
     }, []);
 
-    const loadDetectionModel = () => {
+    const loadDetectionModel = React.useCallback(() => {
         if (workerRef.current && detectionStatus === 'idle') {
             setDetectionStatus('loading');
             workerRef.current.postMessage({ type: 'init' });
         }
-    };
+    }, [detectionStatus]);
 
     
-    const detectBubbles = (blob) => {
+    const detectBubbles = React.useCallback((blob) => {
         return new Promise((resolve, reject) => {
             if (!workerRef.current || detectionStatus !== 'ready') {
                 return reject(new Error("Modèle de détection non prêt."));
@@ -64,7 +68,7 @@ export const DetectionProvider = ({ children }) => {
             workerRef.current.addEventListener('message', handleMessage);
             workerRef.current.postMessage({ type: 'run', imageBlob: blob });
         });
-    };
+    }, [detectionStatus]);
 
     return (
         <DetectionContext.Provider value={{
@@ -72,6 +76,7 @@ export const DetectionProvider = ({ children }) => {
             detectionStatus,
             loadDetectionModel,
             downloadProgress,
+            downloadStats,
             detectBubbles
         }}>
             {children}

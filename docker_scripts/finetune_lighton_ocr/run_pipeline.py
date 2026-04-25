@@ -24,6 +24,7 @@ if missing_vars:
 
 import time
 
+
 def terminate_runpod(is_error=False):
     pod_id = os.environ.get("RUNPOD_POD_ID")
     api_key = os.environ.get("RUNPOD_API_KEY")
@@ -31,27 +32,32 @@ def terminate_runpod(is_error=False):
     if not pod_id:
         print("ℹ️ Not running on RunPod. Skipping termination.")
         return
-    
+
     if not api_key:
         print("⚠️ RUNPOD_API_KEY is missing. Cannot terminate automatically.")
         return
 
     if is_error:
-        print("\n⏳ ERROR: Pipeline failed. Autodestruct in 10 minutes to allow log reading...", flush=True)
+        print(
+            "\n⏳ ERROR: Pipeline failed. Autodestruct in 10 minutes to allow log reading...",
+            flush=True,
+        )
         time.sleep(600)
 
     print(f"🛑 Terminating Pod ID: {pod_id}")
     url = f"https://api.runpod.io/graphql?api_key={api_key}"
-    query = f"mutation {{ podTerminate(input: {{podId: \"{pod_id}\"}}) }}"
-    
+    query = f'mutation {{ podTerminate(input: {{podId: "{pod_id}"}}) }}'
+
     try:
         response = requests.post(url, json={"query": query})
         print(f"✅ Termination status: {response.text}")
     except Exception as e:
         print(f"❌ Failed to terminate: {e}")
 
+
 print("🚀 Starting LightOnOCR-2-1B Fine-Tuning Pipeline...", flush=True)
 login(token=os.environ["HF_TOKEN"])
+
 
 def run_step(label, script):
     """Run a sub-script with real-time unbuffered output."""
@@ -64,6 +70,7 @@ def run_step(label, script):
         print(f"❌ {script} failed.", flush=True)
         terminate_runpod(is_error=True)
         sys.exit(1)
+
 
 # 1. Dataset Export
 dataset_dir = Path("lighton_dataset")

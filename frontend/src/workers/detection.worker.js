@@ -11,6 +11,39 @@ const INPUT_DIM = 1024;
 const ORDER_H = 256;
 const ORDER_W = 384;
 
+let bubbleSession = null;
+let panelSession = null;
+let panelOrderSession = null;
+let readernetSession = null;
+
+// ---------------------------------------------------------------------------
+// Progress helper
+// ---------------------------------------------------------------------------
+async function fetchModel(url, onProgress) {
+    const response = await fetch(url);
+    const contentLength = response.headers.get('content-length');
+    const total = contentLength ? parseInt(contentLength, 10) : 0;
+    let loaded = 0;
+    const chunks = [];
+    const reader = response.body.getReader();
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        loaded += value.byteLength;
+        if (total && onProgress) {
+            onProgress(loaded, total);
+        }
+    }
+    const arrayBuffer = new Uint8Array(loaded);
+    let offset = 0;
+    for (const chunk of chunks) {
+        arrayBuffer.set(chunk, offset);
+        offset += chunk.byteLength;
+    }
+    return arrayBuffer;
+}
+
 self.addEventListener('message', async (event) => {
     const { type, imageBlob } = event.data;
 
@@ -23,55 +56,65 @@ self.addEventListener('message', async (event) => {
 
             console.log("[Worker] Loading models...");
 
-            const fetchWithProgress = async (url, baseProgress, maxProgress) => {
-                const response = await fetch(url);
-                const contentLength = response.headers.get('content-length');
-                const total = contentLength ? parseInt(contentLength, 10) : 0;
-                let loaded = 0;
-                const chunks = [];
-                const reader = response.body.getReader();
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    chunks.push(value);
-                    loaded += value.byteLength;
-                    if (total) {
-                        const progress = baseProgress + (loaded / total) * (maxProgress - baseProgress);
-                        self.postMessage({ status: 'download_progress', progress });
-                    } else {
-                        const progress = baseProgress + (maxProgress - baseProgress) * Math.min(0.9, loaded / 10000000);
-                        self.postMessage({ status: 'download_progress', progress });
-                    }
+            const models = [
+                { path: BUBBLE_MODEL_PATH, name: 'Bubble Detector' },
+                { path: PANEL_MODEL_PATH, name: 'Panel Detector' },
+                { path: PANEL_ORDER_PATH, name: 'Panel Order' },
+                { path: READERNET_PATH, name: 'ReaderNet' }
+            ];
+
+            const sizes = await Promise.all(models.map(async (m) => {
+                try {
+                    const resp = await fetch(m.path, { method: 'HEAD' });
+                    return parseInt(resp.headers.get('content-length') || '0', 10);
+                } catch { return 0; }
+            }));
+
+            const totalSize = sizes.reduce((a, b) => a + b, 0);
+            let totalLoaded = 0;
+
+            const updateGlobalProgress = (loadedInFile, fileTotal) => {
+                if (totalSize > 0) {
+                    const loaded = totalLoaded + loadedInFile;
+                    const currentProgress = (loaded / totalSize) * 100;
+                    self.postMessage({
+                        status: 'download_progress',
+                        progress: currentProgress,
+                        loadedBytes: loaded,
+                        totalBytes: totalSize
+                    });
                 }
-                self.postMessage({ status: 'download_progress', progress: maxProgress });
-                
-                const arrayBuffer = new Uint8Array(loaded);
-                let offset = 0;
-                for (const chunk of chunks) {
-                    arrayBuffer.set(chunk, offset);
-                    offset += chunk.byteLength;
-                }
-                return arrayBuffer;
             };
 
-            const buf1 = await fetchWithProgress(MODEL_PATH, 0, 50);
-            detectionSession = await ort.InferenceSession.create(buf1, {
-                executionProviders: ['webgpu', 'wasm'],
-                graphOptimizationLevel: 'all'
-            });
+            // 1. Bubble Detector
+            const buf1 = await fetchModel(BUBBLE_MODEL_PATH, updateGlobalProgress);
+            bubbleSession = await ort.InferenceSession.create(buf1, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' });
+            totalLoaded += buf1.byteLength;
+            console.log("[Worker] Bubble detector loaded");
 
+            // 2. Panel Detector
+            const buf2 = await fetchModel(PANEL_MODEL_PATH, updateGlobalProgress);
+            panelSession = await ort.InferenceSession.create(buf2, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' });
+            totalLoaded += buf2.byteLength;
+            console.log("[Worker] Panel detector loaded");
+
+            // 3. Panel Order
             try {
-                const buf2 = await fetchWithProgress(ORDER_MODEL_PATH, 50, 100);
-                orderSession = await ort.InferenceSession.create(buf2, {
-                    executionProviders: ['webgpu', 'wasm'],
-                    graphOptimizationLevel: 'all'
-                });
-                console.log("[Worker] ReaderNet V5 loaded");
-            } catch (e) {
-                console.warn("[Worker] Failed to load ReaderNet V5:", e.message);
-            }
+                const buf3 = await fetchModel(PANEL_ORDER_PATH, updateGlobalProgress);
+                panelOrderSession = await ort.InferenceSession.create(buf3, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' });
+                totalLoaded += buf3.byteLength;
+                console.log("[Worker] Panel order model loaded");
+            } catch (e) { console.warn("[Worker] Failed to load panel order:", e.message); }
 
-            console.log("[Worker] Detection models loaded");
+            // 4. ReaderNet
+            try {
+                const buf4 = await fetchModel(READERNET_PATH, updateGlobalProgress);
+                readernetSession = await ort.InferenceSession.create(buf4, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' });
+                totalLoaded += buf4.byteLength;
+                console.log("[Worker] ReaderNet loaded");
+            } catch (e) { console.warn("[Worker] Failed to load ReaderNet:", e.message); }
+
+            self.postMessage({ status: 'download_progress', progress: 100 });
             self.postMessage({ status: 'ready' });
         } catch (err) {
             console.error("[Worker] Init Error:", err);

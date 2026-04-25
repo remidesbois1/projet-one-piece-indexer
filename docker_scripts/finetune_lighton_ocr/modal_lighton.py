@@ -26,7 +26,7 @@ MODEL_DIR = "/models"
     gpu="L4",
     volumes={MODEL_DIR: volume},
     timeout=600,
-    scaledown_window=180,
+    scaledown_window=300,
     secrets=[modal.Secret.from_name("huggingface-secret")],
 )
 class LightonOCR:
@@ -49,15 +49,15 @@ class LightonOCR:
             )
             print("--- Download complete ---")
 
-        print("--- Loading LightonOCR model into GPU (bfloat16)... ---")
+        print("--- Loading LightonOCR model into GPU (fp32)... ---")
         try:
             self.processor = AutoProcessor.from_pretrained(
-                "lightonai/LightOnOCR-2-1B",
+                self.model_path,
                 trust_remote_code=True
             )
             self.model = AutoModelForImageTextToText.from_pretrained(
                 self.model_path,
-                dtype=torch.bfloat16,
+                torch_dtype=torch.float32,
                 device_map="auto",
                 trust_remote_code=True
             ).eval()

@@ -37,14 +37,6 @@ export const OCR_MODELS = {
         cer: '< 0.1%',
         size: 'API Cloud',
         type: 'api'
-    },
-    lighton_local: {
-        key: 'lighton_local',
-        label: 'LightON Poneglyph (Local)',
-        description: 'ONNX WebGPU (~1.6 Go)',
-        cer: '< 0.5%',
-        size: '~1.6 Go',
-        type: 'local'
     }
 };
 
@@ -59,8 +51,6 @@ export const WorkerProvider = ({ children }) => {
         }
         return 'base';
     });
-
-    const lightonWorkerRef = useRef(null);
 
     useEffect(() => {
         if (!workerRef.current && typeof window !== 'undefined') {
@@ -87,30 +77,6 @@ export const WorkerProvider = ({ children }) => {
             });
         }
 
-        if (!lightonWorkerRef.current && typeof window !== 'undefined') {
-            lightonWorkerRef.current = new Worker(new URL('../workers/lighton.worker.js', import.meta.url), {
-                type: 'module'
-            });
-
-            lightonWorkerRef.current.addEventListener('message', (e) => {
-                const { status, progress, file, error, modelKey } = e.data;
-
-                if (status === 'download_progress') {
-                    setModelStatus('loading');
-                    setDownloadProgress(Math.round(progress || 0));
-                    setCurrentFile(file || "");
-                }
-                if (status === 'ready') {
-                    setModelStatus('ready');
-                    if (modelKey) setActiveModelKey(modelKey);
-                }
-                if (status === 'error' && (modelStatus === 'loading' || modelStatus === 'switching')) {
-                    setModelStatus('error');
-                    console.error("Erreur chargement modèle LightON:", error);
-                }
-            });
-        }
-
         return () => {
         };
     }, []);
@@ -124,12 +90,10 @@ export const WorkerProvider = ({ children }) => {
             return;
         }
 
-        const activeWorker = key === 'lighton_local' ? lightonWorkerRef.current : workerRef.current;
-
-        if (activeWorker && (modelStatus === 'idle' || modelStatus === 'error')) {
+        if (workerRef.current && (modelStatus === 'idle' || modelStatus === 'error')) {
             setModelStatus('loading');
             setDownloadProgress(0);
-            activeWorker.postMessage({ type: 'init', modelKey: key });
+            workerRef.current.postMessage({ type: 'init', modelKey: key });
         }
     }, [activeModelKey, modelStatus]);
 
@@ -144,29 +108,25 @@ export const WorkerProvider = ({ children }) => {
             return;
         }
 
-        // For local models, we just set it to idle. 
-        // User must click "Load" to start the worker/download.
         setModelStatus('idle');
         setDownloadProgress(0);
     }, [activeModelKey, modelStatus]);
 
     const runOcr = useCallback(async (blob, requestId = null) => {
-        const activeWorker = activeModelKey === 'lighton_local' ? lightonWorkerRef.current : workerRef.current;
-        if (activeWorker && modelStatus === 'ready') {
-            activeWorker.postMessage({ type: 'run', imageBlob: blob, requestId });
+        if (workerRef.current && modelStatus === 'ready') {
+            workerRef.current.postMessage({ type: 'run', imageBlob: blob, requestId });
         }
     }, [activeModelKey, modelStatus]);
 
-    const activeWorker = activeModelKey === 'lighton_local' ? lightonWorkerRef.current : workerRef.current;
     const value = useMemo(() => ({
-        worker: activeWorker,
+        worker: workerRef.current,
         modelStatus,
         loadModel,
         switchModel,
         downloadProgress,
         runOcr,
         activeModelKey,
-    }), [activeWorker, modelStatus, loadModel, switchModel, downloadProgress, runOcr, activeModelKey]);
+    }), [workerRef.current, modelStatus, loadModel, switchModel, downloadProgress, runOcr, activeModelKey]);
 
     return (
         <WorkerContext.Provider value={value}>

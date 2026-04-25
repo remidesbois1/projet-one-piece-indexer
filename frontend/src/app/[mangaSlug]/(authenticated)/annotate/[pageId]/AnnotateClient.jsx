@@ -102,7 +102,7 @@ export default function AnnotatePage() {
 
     const {
         isAutoDetecting, setIsAutoDetecting, queueLength, detectionStatus,
-        loadDetectionModel, detectionProgress, handleExecuteDetection,
+        loadDetectionModel, detectionProgress, downloadStats, handleExecuteDetection,
         processNextBubble, detectBubbles
     } = useAnnotationDetection({
         imageRef, pageId, setRectangle, setPendingAnnotation, setDebugImageUrl,
@@ -152,6 +152,12 @@ export default function AnnotatePage() {
             fetchBubbles();
         }
     }, [pageId, session?.access_token, isGuest, fetchBubbles]);
+
+    useEffect(() => {
+        if (detectionStatus === 'idle') {
+            loadDetectionModel();
+        }
+    }, [detectionStatus, loadDetectionModel]);
 
     useEffect(() => {
         const handleKeyDown = (e) => {
@@ -430,6 +436,7 @@ export default function AnnotatePage() {
                 detectionStatus={detectionStatus}
                 loadDetectionModel={loadDetectionModel}
                 detectionProgress={detectionProgress}
+                downloadStats={downloadStats}
                 handleExecuteDetection={handleExecuteDetection}
                 isSubmitting={isSubmitting}
                 isAutoDetecting={isAutoDetecting}

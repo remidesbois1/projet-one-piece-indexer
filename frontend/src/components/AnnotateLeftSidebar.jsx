@@ -36,6 +36,7 @@ export default function AnnotateLeftSidebar({
     detectionStatus,
     loadDetectionModel,
     detectionProgress,
+    downloadStats,
     handleExecuteDetection,
     isSubmitting,
     isAutoDetecting,
@@ -114,6 +115,7 @@ export default function AnnotateLeftSidebar({
                             detectionStatus={detectionStatus}
                             loadDetectionModel={loadDetectionModel}
                             detectionProgress={detectionProgress}
+                            downloadStats={downloadStats}
                             handleExecuteDetection={handleExecuteDetection}
                             isSubmitting={isSubmitting}
                             isAutoDetecting={isAutoDetecting}

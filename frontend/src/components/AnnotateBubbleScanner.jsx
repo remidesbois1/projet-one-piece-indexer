@@ -7,6 +7,7 @@ export default function AnnotateBubbleScanner({
     detectionStatus,
     loadDetectionModel,
     detectionProgress,
+    downloadStats,
     handleExecuteDetection,
     isSubmitting,
     isAutoDetecting,
@@ -23,13 +24,18 @@ export default function AnnotateBubbleScanner({
                     onClick={loadDetectionModel}
                     className="w-full h-8 text-[11px] font-bold bg-white border border-slate-200 hover:bg-slate-50 text-slate-600"
                 >
-                    <Download size={12} className="mr-1.5" /> Charger le modèle <span className="text-[10px] font-bold text-slate-400">(13MB)</span>
+                    <Download size={12} className="mr-1.5" /> Charger le modèle <span className="text-[10px] font-bold text-slate-400">(19.3MB)</span>
                 </Button>
             )}
             {detectionStatus === 'loading' && (
                 <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
                     <div className="flex justify-between text-[9px] font-bold text-slate-500 mb-1.5">
-                        <span>Téléchargement...</span>
+                        <span>
+                            {downloadStats?.total > 0 
+                                ? `${(downloadStats.loaded / (1024 * 1024)).toFixed(1)}MB / ${(downloadStats.total / (1024 * 1024)).toFixed(1)}MB`
+                                : "Téléchargement..."
+                            }
+                        </span>
                         <span>{Math.round(detectionProgress)}%</span>
                     </div>
                     <div className="h-1 w-full bg-slate-200 rounded-full overflow-hidden">

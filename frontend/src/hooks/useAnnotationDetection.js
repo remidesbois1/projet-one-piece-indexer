@@ -15,7 +15,7 @@ export function useAnnotationDetection({
     setIsSubmitting,
     setLoadingText
 }) {
-    const { detectBubbles, detectionStatus, loadDetectionModel, downloadProgress: detectionProgress } = useDetection();
+    const { detectBubbles, detectionStatus, loadDetectionModel, downloadProgress: detectionProgress, downloadStats } = useDetection();
     const [isAutoDetecting, setIsAutoDetecting] = useState(false);
     const detectionQueueRef = useRef([]);
     const [queueLength, setQueueLength] = useState(0);
@@ -94,6 +94,7 @@ export function useAnnotationDetection({
         detectionStatus,
         loadDetectionModel,
         detectionProgress,
+        downloadStats,
         handleExecuteDetection,
         processNextBubble,
         detectBubbles
