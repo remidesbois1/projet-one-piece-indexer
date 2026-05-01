@@ -2,6 +2,7 @@ import os
 import sys
 import re
 import builtins
+
 builtins.PeftConfigLike = object
 
 import torch
@@ -21,18 +22,21 @@ import jiwer
 
 
 def compute_cer(predictions, references):
-    transform = jiwer.Compose([
-        jiwer.RemoveMultipleSpaces(),
-        jiwer.Strip(),
-        jiwer.ReduceToListOfListOfChars(),
-    ])
+    transform = jiwer.Compose(
+        [
+            jiwer.RemoveMultipleSpaces(),
+            jiwer.Strip(),
+            jiwer.ReduceToListOfListOfChars(),
+        ]
+    )
     total_edits = 0
     total_chars = 0
     for pred, ref in zip(predictions, references):
         if not ref:
             continue
         measures = jiwer.process_words(
-            [" ".join(ref)], [" ".join(pred)],
+            [" ".join(ref)],
+            [" ".join(pred)],
             reference_transform=transform,
             hypothesis_transform=transform,
         )
@@ -47,6 +51,7 @@ def compute_wer(predictions, references):
         return 1.0
     preds, refs = zip(*filtered)
     return jiwer.wer(list(refs), list(preds))
+
 
 torch.set_num_threads(8)
 torch.backends.cuda.matmul.allow_tf32 = True
@@ -63,7 +68,7 @@ MODEL_ID = "lightonai/LightOnOCR-2-1B-bbox-base"
 OUTPUT_DIR = "./outputs_lighton_bbox"
 LOGS_DIR = "./logs"
 
-BBOX_PATTERN = re.compile(r'(.+?)\s*\[(\d+),(\d+),(\d+),(\d+)\]')
+BBOX_PATTERN = re.compile(r"(.+?)\s*\[(\d+),(\d+),(\d+),(\d+)\]")
 
 
 def parse_bbox_output(text):
@@ -75,7 +80,12 @@ def parse_bbox_output(text):
         match = BBOX_PATTERN.match(line)
         if match:
             bubble_text = match.group(1).strip()
-            x1, y1, x2, y2 = int(match.group(2)), int(match.group(3)), int(match.group(4)), int(match.group(5))
+            x1, y1, x2, y2 = (
+                int(match.group(2)),
+                int(match.group(3)),
+                int(match.group(4)),
+                int(match.group(5)),
+            )
             results.append({"text": bubble_text, "bbox": [x1, y1, x2, y2]})
     return results
 
@@ -235,9 +245,6 @@ class CustomDataCollator:
         return process_batch(batch_dict, self.processor, self.split_name)
 
 
-
-
-
 def run_generation_check(model, processor, dataset, split_name, n_samples=3):
     model.eval()
     device = next(model.parameters()).device
@@ -274,14 +281,20 @@ def run_generation_check(model, processor, dataset, split_name, n_samples=3):
                     clean_content.append(c)
             clean_user.append({"role": msg["role"], "content": clean_content})
 
-        prompt = processor.apply_chat_template(clean_user, add_generation_prompt=True, tokenize=False)
-        inputs = processor(text=[prompt], images=images if images else None, return_tensors="pt")
+        prompt = processor.apply_chat_template(
+            clean_user, add_generation_prompt=True, tokenize=False
+        )
+        inputs = processor(
+            text=[prompt], images=images if images else None, return_tensors="pt"
+        )
         inputs = {k: v.to(device) for k, v in inputs.items()}
 
         with torch.no_grad():
             out = model.generate(**inputs, max_new_tokens=512, do_sample=False)
-        gen_ids = out[0, inputs["input_ids"].shape[1]:]
-        pred_text = processor.tokenizer.decode(gen_ids, skip_special_tokens=True).strip()
+        gen_ids = out[0, inputs["input_ids"].shape[1] :]
+        pred_text = processor.tokenizer.decode(
+            gen_ids, skip_special_tokens=True
+        ).strip()
 
         P(f"\n--- Sample {idx} ---")
         P(f"  GT  (first 200): {gt_text[:200]}")
@@ -360,12 +373,15 @@ if __name__ == "__main__":
 
     print(f"Loading model in {dtype} on {device}...", flush=True)
     model = LightOnOcrForConditionalGeneration.from_pretrained(
-        MODEL_ID, torch_dtype=dtype, device_map={"": "cuda:0"}, attn_implementation="sdpa"
+        MODEL_ID,
+        torch_dtype=dtype,
+        device_map={"": "cuda:0"},
+        attn_implementation="sdpa",
     )
 
     peft_config = LoraConfig(
-        r=16,
-        lora_alpha=32,
+        r=32,
+        lora_alpha=64,
         target_modules=[
             "q_proj",
             "v_proj",
@@ -375,7 +391,7 @@ if __name__ == "__main__":
             "up_proj",
             "down_proj",
         ],
-        lora_dropout=0.05,
+        lora_dropout=0.03,
         bias="none",
         task_type="CAUSAL_LM",
     )
@@ -385,7 +401,7 @@ if __name__ == "__main__":
         model.print_trainable_parameters()
 
     model.generation_config.do_sample = False
-    model.generation_config.max_new_tokens = 512
+    model.generation_config.max_new_tokens = 2048
     model.generation_config.max_length = None
     model.generation_config.temperature = None
     model.generation_config.top_p = None
@@ -394,11 +410,11 @@ if __name__ == "__main__":
     if not merge_only:
         training_args = Seq2SeqTrainingArguments(
             output_dir=OUTPUT_DIR,
-            learning_rate=1e-4,
-            num_train_epochs=15,
+            learning_rate=5e-5,
+            num_train_epochs=25,
             per_device_train_batch_size=1,
             per_device_eval_batch_size=1,
-            gradient_accumulation_steps=16,
+            gradient_accumulation_steps=8,
             gradient_checkpointing=True,
             optim="paged_adamw_8bit",
             bf16=True,
@@ -419,7 +435,7 @@ if __name__ == "__main__":
             dataloader_pin_memory=True,
             torch_compile=False,
             lr_scheduler_type="cosine",
-            warmup_ratio=0.05,
+            warmup_ratio=0.10,
             weight_decay=0.01,
         )
 
@@ -470,7 +486,7 @@ if __name__ == "__main__":
     merged_model.generation_config.top_p = None
     merged_model.generation_config.top_k = None
     merged_model.generation_config.max_length = None
-    merged_model.generation_config.max_new_tokens = 512
+    merged_model.generation_config.max_new_tokens = 2048
     merged_model.save_pretrained(final_path)
     processor.save_pretrained(final_path)
     print(f"Model saved to: {final_path}", flush=True)

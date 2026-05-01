@@ -11,7 +11,9 @@ import {
     MapPin,
     Users,
     Send,
-    Settings2
+    Settings2,
+    Sparkles,
+    Cpu
 } from "lucide-react";
 import AnnotateOcrModelSelector from './AnnotateOcrModelSelector';
 import AnnotateBubbleScanner from './AnnotateBubbleScanner';
@@ -47,7 +49,9 @@ export default function AnnotateLeftSidebar({
     role,
     isSandbox = false,
     handleOneShot,
-    isOneShotLoading
+    isOneShotLoading,
+    handleOneShotPoneglyph,
+    isPoneglyphLoading
 }) {
     const isStaff = role === 'Admin' || role === 'Modo';
 
@@ -123,8 +127,27 @@ export default function AnnotateLeftSidebar({
                         />
 
                         {role === 'Admin' && handleOneShot && (
-                            <div className="flex-none p-4 rounded-xl border border-indigo-200/60 bg-indigo-50/30 shadow-sm flex flex-col gap-3">
-                                <h3 className="text-[10px] font-bold text-indigo-700 uppercase tracking-widest pl-0.5">Extraction Intégrale</h3>
+                            <div className="flex-none p-4 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-3">
+                                <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-0.5">Extraction Intégrale</h3>
+                                
+                                <Button 
+                                    onClick={handleOneShotPoneglyph} 
+                                    disabled={isPoneglyphLoading || isSubmitting || isAutoDetecting}
+                                    className="w-full h-10 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] uppercase tracking-wider font-bold shadow-md"
+                                >
+                                    {isPoneglyphLoading ? (
+                                        <span className="flex items-center gap-2">
+                                            <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                                            Analyse Poneglyph...
+                                        </span>
+                                    ) : (
+                                        <span className="flex items-center gap-2">
+                                            <Cpu size={14} />
+                                            One-Shot Poneglyph
+                                        </span>
+                                    )}
+                                </Button>
+
                                 <Button 
                                     onClick={handleOneShot} 
                                     disabled={isOneShotLoading || isSubmitting || isAutoDetecting}
@@ -133,12 +156,12 @@ export default function AnnotateLeftSidebar({
                                     {isOneShotLoading ? (
                                         <span className="flex items-center gap-2">
                                             <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                                            Analyse en cours...
+                                            Analyse Gemini...
                                         </span>
                                     ) : (
                                         <span className="flex items-center gap-2">
-                                            <FileText size={14} />
-                                            One-Shot
+                                            <Sparkles size={14} />
+                                            One-Shot Gemini
                                         </span>
                                     )}
                                 </Button>
