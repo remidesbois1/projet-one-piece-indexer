@@ -41,6 +41,7 @@ export default function AnnotatePage() {
     const [loadingText, setLoadingText] = useState("Analyse en cours...");
     const [pendingAnnotation, setPendingAnnotation] = useState(null);
     const [isOneShotLoading, setIsOneShotLoading] = useState(false);
+    const [isPoneglyphLoading, setIsPoneglyphLoading] = useState(false);
     const [rectangle, setRectangle] = useState(null);
     const [imageDimensions, setImageDimensions] = useState(null);
     const [ocrSource, setOcrSource] = useState(null);
@@ -410,6 +411,133 @@ export default function AnnotatePage() {
         }
     };
 
+    const handleOneShotPoneglyph = async () => {
+        if (!imageRef.current) return;
+
+        setIsPoneglyphLoading(true);
+        try {
+            let yoloPromise = Promise.resolve(null);
+            if (detectionStatus === 'ready') {
+                yoloPromise = fetch(imageRef.current.src)
+                    .then(r => r.blob())
+                    .then(b => detectBubbles(b))
+                    .catch(e => {
+                        console.error('YOLO Failed', e);
+                        return null;
+                    });
+            }
+
+            const imageBlob = await new Promise((resolve) => {
+                const canvas = document.createElement('canvas');
+                const img = imageRef.current;
+                canvas.width = img.naturalWidth;
+                canvas.height = img.naturalHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+                canvas.toBlob(resolve, 'image/jpeg', 0.92);
+            });
+
+            const [apiResponse, yoloBoxes] = await Promise.all([
+                fetch('/api/poneglyph_one_shot', {
+                    method: 'POST',
+                    body: imageBlob
+                }).then(r => {
+                    if (!r.ok) throw new Error("Erreur API Poneglyph");
+                    return r.json();
+                }),
+                yoloPromise
+            ]);
+
+            if (apiResponse.error) {
+                throw new Error(apiResponse.error);
+            }
+
+            if (!apiResponse.bubbles || !Array.isArray(apiResponse.bubbles)) {
+                throw new Error("Format de réponse invalide.");
+            }
+
+            const h = imageRef.current.naturalHeight;
+            const w = imageRef.current.naturalWidth;
+
+            const newBubblesConfig = apiResponse.bubbles.map((bubble) => {
+                const [x1, y1, x2, y2] = bubble.bbox;
+                let poneglyphBox = {
+                    id_page: parseInt(pageId, 10),
+                    x: Math.round((x1 / 10000) * w),
+                    y: Math.round((y1 / 10000) * h),
+                    w: Math.round(((x2 - x1) / 10000) * w),
+                    h: Math.round(((y2 - y1) / 10000) * h),
+                    texte_propose: bubble.content
+                };
+
+                if (detectionStatus === 'ready' && yoloBoxes) {
+                    let bestYoloBox = null;
+                    let bestIou = 0;
+                    for (const yBox of yoloBoxes) {
+                        const ix1 = Math.max(poneglyphBox.x, yBox.x);
+                        const iy1 = Math.max(poneglyphBox.y, yBox.y);
+                        const ix2 = Math.min(poneglyphBox.x + poneglyphBox.w, yBox.x + yBox.w);
+                        const iy2 = Math.min(poneglyphBox.y + poneglyphBox.h, yBox.y + yBox.h);
+
+                        if (ix2 < ix1 || iy2 < iy1) continue;
+                        const intersection = (ix2 - ix1) * (iy2 - iy1);
+                        const areaP = poneglyphBox.w * poneglyphBox.h;
+                        const areaY = yBox.w * yBox.h;
+                        const iou = intersection / (areaP + areaY - intersection);
+
+                        if (iou > 0.05 && iou > bestIou) {
+                            bestIou = iou;
+                            bestYoloBox = yBox;
+                        }
+                    }
+
+                    if (bestYoloBox) {
+                        poneglyphBox.x = Math.round(bestYoloBox.x);
+                        poneglyphBox.y = Math.round(bestYoloBox.y);
+                        poneglyphBox.w = Math.round(bestYoloBox.w);
+                        poneglyphBox.h = Math.round(bestYoloBox.h);
+                    }
+                }
+
+                return poneglyphBox;
+            });
+
+            if (newBubblesConfig.length === 0) {
+                toast.error("Aucune bulle détectée.");
+                setIsPoneglyphLoading(false);
+                return;
+            }
+
+            toast.info(`Création de ${newBubblesConfig.length} bulles Poneglyph...`);
+
+            const createdBubbles = [];
+            const { createBubble } = await import('@/lib/api');
+            for (const bubbleConfig of newBubblesConfig) {
+                try {
+                    const res = await createBubble(bubbleConfig);
+                    createdBubbles.push(res.data);
+                } catch (e) {
+                    console.error("Erreur création bulle Poneglyph", e);
+                }
+            }
+
+            if (createdBubbles.length > 0) {
+                setExistingBubbles(prev => {
+                    const combined = [...prev, ...createdBubbles];
+                    return combined.sort((a, b) => a.order - b.order);
+                });
+                toast.success(`${createdBubbles.length} bulles Poneglyph créées !`);
+            } else {
+                toast.error("Échec de la création des bulles.");
+            }
+        } catch (error) {
+            console.error(error);
+            toast.error("Service Poneglyph indisponible : " + error.message);
+        } finally {
+            setIsPoneglyphLoading(false);
+        }
+    };
+
     if (error) return <div className="p-8 text-red-500">{error}</div>;
     if (!page) return null;
 
@@ -446,6 +574,8 @@ export default function AnnotatePage() {
                 handleSubmitPage={handleSubmitPage}
                 handleOneShot={handleOneShot}
                 isOneShotLoading={isOneShotLoading}
+                handleOneShotPoneglyph={handleOneShotPoneglyph}
+                isPoneglyphLoading={isPoneglyphLoading}
             />
 
             <div className="flex flex-col flex-1 overflow-hidden min-w-0 bg-slate-50 relative">
