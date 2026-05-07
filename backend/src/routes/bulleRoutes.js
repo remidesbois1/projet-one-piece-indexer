@@ -8,23 +8,28 @@ const { logBubbleHistory } = require('../utils/auditLogger');
 
 router.post('/', authMiddleware, async (req, res) => {
   const { id: userId } = req.user;
-  const { id_page, x, y, w, h, texte_propose } = req.body;
+  const { id_page, x, y, w, h, texte_propose, order: explicitOrder } = req.body;
 
   if (id_page === undefined || x === undefined || y === undefined || w === undefined || h === undefined || texte_propose === undefined) {
     return res.status(400).json({ error: 'Données manquantes.' });
   }
 
   try {
-    const { data: maxOrderData, error: maxOrderError } = await supabaseAdmin
-      .from('bulles')
-      .select('order')
-      .eq('id_page', id_page)
-      .order('order', { ascending: false })
-      .limit(1)
-      .single();
+    let newOrder;
+    if (explicitOrder !== undefined && explicitOrder !== null) {
+      newOrder = explicitOrder;
+    } else {
+      const { data: maxOrderData, error: maxOrderError } = await supabaseAdmin
+        .from('bulles')
+        .select('order')
+        .eq('id_page', id_page)
+        .order('order', { ascending: false })
+        .limit(1)
+        .single();
 
-    const maxOrder = maxOrderData ? maxOrderData.order : 0;
-    const newOrder = maxOrder + 1;
+      const maxOrder = maxOrderData ? maxOrderData.order : 0;
+      newOrder = maxOrder + 1;
+    }
 
     const { data, error: insertError } = await supabaseAdmin
       .from('bulles')

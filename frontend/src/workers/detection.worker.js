@@ -127,6 +127,22 @@ self.addEventListener('message', async (event) => {
         }
     }
 
+    if (type === 'run-positions-only' && imageBlob) {
+        if (!bubbleSession) return;
+        try {
+            const bitmap = await createImageBitmap(imageBlob);
+            const { inputTensor, scale, padX, padY } = preprocessBubble(bitmap, BUBBLE_INPUT_DIM);
+            const bubbleFeeds = { [bubbleSession.inputNames[0]]: inputTensor };
+            const bubbleResults = await bubbleSession.run(bubbleFeeds);
+            const bubbleOutput = bubbleResults[bubbleSession.outputNames[0]].data;
+            const boxes = simplifyPostProcess(bubbleOutput, scale, padX, padY);
+            self.postMessage({ status: 'complete', boxes });
+        } catch (err) {
+            console.error("[Worker] Positions-only run error:", err);
+            self.postMessage({ status: 'error', error: err.message });
+        }
+    }
+
     if (type === 'run' && imageBlob) {
         if (!bubbleSession) return;
         try {
