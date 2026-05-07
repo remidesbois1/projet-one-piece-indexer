@@ -4,6 +4,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useManga } from '@/context/MangaContext';
 import Link from 'next/link';
+import { getProxiedImageUrl } from '@/lib/utils';
 
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -106,7 +107,8 @@ const PageReviewList = () => {
                 {page.url_image ? (
                   <>
                     <img
-                      src={page.url_image}
+                      src={getProxiedImageUrl(page.url_image)}
+                      crossOrigin="anonymous"
                       alt={`Page ${page.numero_page}`}
                       className="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110"
                       loading="lazy"

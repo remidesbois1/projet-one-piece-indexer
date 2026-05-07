@@ -14,7 +14,7 @@ export function getProxiedImageUrl(url, pageId = null, token = null) {
 
     if (!url) return url;
     if (url.includes('s3.onepiece-index.com')) {
-        return url.replace('https://s3.onepiece-index.com', '/s3-proxy');
+        return url.replace(/^https?:\/\/s3\.onepiece-index\.com/, '/s3-proxy');
     }
     return url;
 }
