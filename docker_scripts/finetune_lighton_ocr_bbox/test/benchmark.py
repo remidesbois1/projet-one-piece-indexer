@@ -4,8 +4,14 @@ import json
 import re
 import time
 import gc
+import requests
 import traceback
+import base64
+import io
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from dotenv import load_dotenv
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 import torch
@@ -21,6 +27,7 @@ import matplotlib.patches as mpatches
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 FINETUNE_DIR = SCRIPT_DIR.parent
+load_dotenv(FINETUNE_DIR / ".env")
 OUTPUT_DIR = SCRIPT_DIR / "output"
 GRAPHS_DIR = OUTPUT_DIR / "graphs"
 SAMPLES_DIR = OUTPUT_DIR / "samples"
@@ -32,6 +39,35 @@ BBOX_PATTERN = re.compile(r"(.+?)\s*\[(\d+),(\d+),(\d+),(\d+)\]")
 IOU_THRESHOLDS = [0.3, 0.5, 0.75, 0.9]
 
 MODEL_ID = "Remidesbois/LightonOCR-2-1b-poneglyph-bbox"
+
+GEMMA_API_KEY = os.environ.get("GEMMA_API_KEY", "")
+if not GEMMA_API_KEY:
+    print("ERROR: GEMMA_API_KEY not set. Add it to .env or environment.")
+    sys.exit(1)
+GEMMA_MODEL = "gemma-4-31b-it"
+GEMMA_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMMA_MODEL}:generateContent"
+GEMMA_MAX_WORKERS = 2
+CACHE_LIGHTON = OUTPUT_DIR / "cache_lighton.json"
+CACHE_GEMMA = OUTPUT_DIR / "cache_gemma.json"
+
+GEMMA_PROMPT = """À partir de cette page de manga, extrait tout le texte de chaque bulle de dialogue dans le bon ordre de lecture japonais (en haut à droite -> en bas à gauche) avec leurs positions bbox.
+
+Format de sortie JSON :
+[
+  {
+    "text": "texte de la bulle",
+    "bbox": [x1, y1, x2, y2]
+  }
+]
+
+Règles :
+- Corrige la casse : "TRES BIEN" devient "Très bien"
+- Reste en français
+- Coordonnées bbox normalisées entre 0 et 1000
+- (x1, y1) = coin supérieur gauche, (x2, y2) = coin inférieur droit
+- x va de 0 (gauche) à 1000 (droite), y va de 0 (haut) à 1000 (bas)
+
+Réponds uniquement avec le JSON, pas d'explication."""
 
 
 def parse_bbox_output(text):
@@ -165,12 +201,41 @@ def load_test_dataset():
     return entries
 
 
+def load_cache(path):
+    if path.exists():
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+
+def save_cache(path, cache):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(cache, f, ensure_ascii=False)
+
+
+def cache_key(entry):
+    return str(entry.get("page_id", entry.get("image_file", "")))
+
+
 def run_inference(model, processor, entries):
     device = next(model.parameters()).device
+    cache = load_cache(CACHE_LIGHTON)
     results = []
     total_time = 0
+    skipped = 0
 
     for idx, entry in enumerate(tqdm(entries, desc="Inference")):
+        key = cache_key(entry)
+
+        if key in cache:
+            r = cache[key]
+            r["idx"] = idx
+            r["gt_items"] = parse_bbox_output(r.get("gt_text", ""))
+            r["pred_items"] = parse_bbox_output(r.get("pred_text", ""))
+            results.append(r)
+            skipped += 1
+            continue
+
         gt_text = ""
         for msg in entry["messages"]:
             if msg["role"] == "assistant":
@@ -232,24 +297,217 @@ def run_inference(model, processor, entries):
             pred_items = []
             elapsed = 0
 
-        results.append(
-            {
-                "idx": idx,
-                "page_id": entry.get("page_id", idx),
-                "gt_text": gt_text,
-                "pred_text": pred_text,
-                "gt_items": gt_items,
-                "pred_items": pred_items,
-                "num_gt_bubbles": len(gt_items),
-                "num_pred_bubbles": len(pred_items),
-                "inference_time": elapsed,
-                "image_file": entry.get("image_file", ""),
-                "resized_size": entry.get("resized_size", [0, 0]),
-            }
-        )
+        r = {
+            "idx": idx,
+            "page_id": entry.get("page_id", idx),
+            "gt_text": gt_text,
+            "pred_text": pred_text,
+            "gt_items": gt_items,
+            "pred_items": pred_items,
+            "num_gt_bubbles": len(gt_items),
+            "num_pred_bubbles": len(pred_items),
+            "inference_time": elapsed,
+            "image_file": entry.get("image_file", ""),
+            "resized_size": entry.get("resized_size", [0, 0]),
+        }
+        results.append(r)
+        cache[key] = {k: v for k, v in r.items() if k != "idx"}
+        if len(cache) % 10 == 0:
+            save_cache(CACHE_LIGHTON, cache)
 
-    avg_time = total_time / max(len(results), 1)
-    print(f"  Avg inference time: {avg_time:.3f}s/sample, Total: {total_time:.1f}s")
+    save_cache(CACHE_LIGHTON, cache)
+    avg_time = total_time / max(len(results) - skipped, 1)
+    print(f"  Avg inference time: {avg_time:.3f}s/sample, Total: {total_time:.1f}s, Cached: {skipped}/{len(entries)}")
+    return results
+
+
+def call_gemma_single(image_path, api_key, max_retries=5):
+    with open(image_path, "rb") as f:
+        img_b64 = base64.b64encode(f.read()).decode("utf-8")
+
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": GEMMA_PROMPT},
+                    {"inlineData": {"mimeType": "image/jpeg", "data": img_b64}},
+                ]
+            }
+        ],
+        "generationConfig": {"responseMimeType": "application/json"},
+    }
+
+    for attempt in range(max_retries):
+        try:
+            resp = requests.post(
+                f"{GEMMA_API_URL}?key={api_key}",
+                json=payload,
+                timeout=120,
+            )
+
+            if resp.status_code == 429:
+                wait = min(60, 5 * (2 ** attempt))
+                print(f"    Rate limited, waiting {wait}s...", flush=True)
+                time.sleep(wait)
+                continue
+
+            resp.raise_for_status()
+            data = resp.json()
+
+            candidates = data.get("candidates", [])
+            if not candidates:
+                return [], ""
+
+            parts = candidates[0].get("content", {}).get("parts", [])
+            answer_text = None
+            for part in parts:
+                if not part.get("thought", False) and "text" in part:
+                    answer_text = part["text"]
+                    break
+            if not answer_text:
+                for part in parts:
+                    if "text" in part:
+                        answer_text = part["text"]
+                        break
+
+            if not answer_text:
+                return [], ""
+
+            try:
+                bubbles = json.loads(answer_text)
+            except json.JSONDecodeError:
+                json_match = re.search(r"```(?:json)?\s*(.*?)```", answer_text, re.DOTALL)
+                if json_match:
+                    bubbles = json.loads(json_match.group(1))
+                else:
+                    return [], answer_text
+
+            if not isinstance(bubbles, list):
+                return [], answer_text
+
+            items = []
+            for b in bubbles:
+                text = b.get("text", b.get("content", ""))
+                bbox = b.get("bbox", b.get("pos", []))
+                if text and len(bbox) == 4:
+                    scaled = [int(round(v * 10)) for v in bbox]
+                    items.append(
+                        {
+                            "text": str(text).strip(),
+                            "bbox": scaled,
+                        }
+                    )
+
+            raw_text = "\n".join(
+                f"{it['text']} [{it['bbox'][0]},{it['bbox'][1]},{it['bbox'][2]},{it['bbox'][3]}]"
+                for it in items
+            )
+            return items, raw_text
+
+        except requests.exceptions.RequestException as e:
+            if attempt < max_retries - 1:
+                wait = 10 * (2 ** attempt)
+                print(f"    API error: {e}, retrying in {wait}s...", flush=True)
+                time.sleep(wait)
+            else:
+                print(f"    API error after {max_retries} retries: {e}", flush=True)
+                return [], ""
+
+    return [], ""
+
+
+def run_gemma_inference(entries, api_key):
+    cache = load_cache(CACHE_GEMMA)
+    results = [None] * len(entries)
+    lock = threading.Lock()
+    completed = [0]
+    total = len(entries)
+
+    to_process = []
+    for idx, entry in enumerate(entries):
+        key = cache_key(entry)
+        if key in cache:
+            r = cache[key]
+            r["idx"] = idx
+            r["gt_items"] = parse_bbox_output(r.get("gt_text", ""))
+            r["pred_items"] = parse_bbox_output(r.get("pred_text", ""))
+            results[idx] = r
+            with lock:
+                completed[0] += 1
+        else:
+            to_process.append((idx, entry))
+
+    if to_process:
+        print(f"  [Gemma] {total - len(to_process)}/{total} cached, {len(to_process)} to process", flush=True)
+
+    def process_one(idx, entry):
+        key = cache_key(entry)
+        image_file = entry.get("image_file", "")
+        image_path = DATASET_DIR / "test" / image_file
+
+        gt_text = ""
+        for msg in entry["messages"]:
+            if msg["role"] == "assistant":
+                for c in msg["content"]:
+                    if "text" in c:
+                        gt_text = c["text"]
+
+        gt_items = parse_bbox_output(gt_text)
+
+        start_time = time.time()
+        if not image_path.exists():
+            pred_items, pred_text = [], ""
+            elapsed = 0
+        else:
+            try:
+                pred_items, pred_text = call_gemma_single(image_path, api_key)
+            except Exception as e:
+                print(f"  Gemma error on sample {idx}: {e}", flush=True)
+                pred_items, pred_text = [], ""
+            elapsed = time.time() - start_time
+
+        with lock:
+            completed[0] += 1
+            print(
+                f"  [Gemma] {completed[0]}/{total} ({elapsed:.1f}s)",
+                flush=True,
+            )
+
+        return idx, key, {
+            "idx": idx,
+            "page_id": entry.get("page_id", idx),
+            "gt_text": gt_text,
+            "pred_text": pred_text,
+            "gt_items": gt_items,
+            "pred_items": pred_items,
+            "num_gt_bubbles": len(gt_items),
+            "num_pred_bubbles": len(pred_items),
+            "inference_time": elapsed,
+            "image_file": image_file,
+            "resized_size": entry.get("resized_size", [0, 0]),
+        }
+
+    if to_process:
+        with ThreadPoolExecutor(max_workers=GEMMA_MAX_WORKERS) as executor:
+            futures = [
+                executor.submit(process_one, idx, entry)
+                for idx, entry in to_process
+            ]
+            for future in as_completed(futures):
+                idx, key, result = future.result()
+                results[idx] = result
+                cache[key] = {k: v for k, v in result.items() if k != "idx"}
+                if len(cache) % 5 == 0:
+                    save_cache(CACHE_GEMMA, cache)
+
+        save_cache(CACHE_GEMMA, cache)
+
+    total_api_time = sum(r["inference_time"] for r in results if r)
+    avg_time = total_api_time / max(len([r for r in results if r and r["inference_time"] > 0]), 1)
+    print(
+        f"  Gemma total API time: {total_api_time:.1f}s, avg: {avg_time:.2f}s/sample",
+        flush=True,
+    )
     return results
 
 
@@ -489,18 +747,18 @@ def draw_sample_result(entry, pred_items, gt_items, output_path):
 
     for item in gt_items:
         bbox = item["bbox"]
-        x1 = int(bbox[0] * w / 10000)
-        y1 = int(bbox[1] * h / 10000)
-        x2 = int(bbox[2] * w / 10000)
-        y2 = int(bbox[3] * h / 10000)
+        x1 = int(bbox[0] * w / 1000)
+        y1 = int(bbox[1] * h / 1000)
+        x2 = int(bbox[2] * w / 1000)
+        y2 = int(bbox[3] * h / 1000)
         draw.rectangle([x1, y1, x2, y2], outline="#00FF00", width=2)
 
     for item in pred_items:
         bbox = item["bbox"]
-        x1 = int(bbox[0] * w / 10000)
-        y1 = int(bbox[1] * h / 10000)
-        x2 = int(bbox[2] * w / 10000)
-        y2 = int(bbox[3] * h / 10000)
+        x1 = int(min(bbox[0], bbox[2]) * w / 1000)
+        y1 = int(min(bbox[1], bbox[3]) * h / 1000)
+        x2 = int(max(bbox[0], bbox[2]) * w / 1000)
+        y2 = int(max(bbox[1], bbox[3]) * h / 1000)
         draw.rectangle([x1, y1, x2, y2], outline="#FF0000", width=2)
 
     gt_patch = mpatches.Patch(color="#00FF00", label="Ground Truth")
@@ -515,9 +773,58 @@ def draw_sample_result(entry, pred_items, gt_items, output_path):
     plt.close(fig)
 
 
+def print_model_metrics(m, label):
+    print(f"\n  --- {label} ---")
+    print(f"  CER:              {m['cer']:.4f}")
+    print(f"  WER:              {m['wer']:.4f}")
+    print(f"  CER Median:       {m['cer_median']:.4f}")
+    print(f"  Exact Match:      {m['exact_match_rate']:.4f}")
+    print(f"  Mean IoU:         {m['mean_iou']:.4f}")
+    print(f"  Median IoU:       {m['median_iou']:.4f}")
+    print(f"  IoU P25/P75:      {m['iou_p25']:.4f} / {m['iou_p75']:.4f}")
+    print(f"  F1@0.5:           {m['f1@0_5']:.4f}")
+    print(f"  Precision@0.5:    {m['precision@0_5']:.4f}")
+    print(f"  Recall@0.5:       {m['recall@0_5']:.4f}")
+    print(f"  Detection Rate:   {m['avg_detection_rate']:.4f}")
+    print(f"  Avg Inference:    {m['avg_inference_time']:.3f}s")
+    print(f"  Combined Score:   {m['combined_score']:.4f}")
+
+
+def print_comparison(lighton_m, gemma_m):
+    keys = [
+        ("CER", "cer", False),
+        ("WER", "wer", False),
+        ("Mean IoU", "mean_iou", True),
+        ("Median IoU", "median_iou", True),
+        ("F1@0.5", "f1@0_5", True),
+        ("Precision@0.5", "precision@0_5", True),
+        ("Recall@0.5", "recall@0_5", True),
+        ("Detection Rate", "avg_detection_rate", True),
+        ("Combined Score", "combined_score", True),
+        ("Avg Inference", "avg_inference_time", False),
+    ]
+
+    print(f"\n{'=' * 70}")
+    print(f"  COMPARISON: LightOn vs Gemma {GEMMA_MODEL}")
+    print(f"{'=' * 70}")
+    print(f"  {'Metric':<20} {'LightOn':>12} {'Gemma':>12} {'Winner':>10}")
+    print(f"  {'-' * 54}")
+
+    for name, key, higher_better in keys:
+        lv = lighton_m.get(key, 0)
+        gv = gemma_m.get(key, 0)
+        if higher_better:
+            winner = "LightOn" if lv > gv else "Gemma" if gv > lv else "Tie"
+        else:
+            winner = "LightOn" if lv < gv else "Gemma" if gv < lv else "Tie"
+        print(f"  {name:<20} {lv:>12.4f} {gv:>12.4f} {winner:>10}")
+
+    print(f"{'=' * 70}")
+
+
 def main():
     print("=" * 70)
-    print("  PONEGLYPH BBOX BENCHMARK")
+    print("  PONEGLYPH BBOX BENCHMARK (LightOn vs Gemma)")
     print("=" * 70)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -537,18 +844,54 @@ def main():
     model.generation_config.do_sample = False
     model.generation_config.max_new_tokens = 2048
 
-    print(f"Running inference on {len(entries)} test samples...")
-    inference_results = run_inference(model, processor, entries)
+    print(f"\nStarting parallel inference:")
+    print(f"  - LightOn: {len(entries)} samples (local GPU)")
+    print(f"  - Gemma {GEMMA_MODEL}: {len(entries)} samples (API, {GEMMA_MAX_WORKERS} concurrent)")
 
-    print("Computing metrics...")
-    metrics = compute_all_metrics(inference_results)
+    benchmark_start = time.time()
+
+    lighton_results_holder = [None]
+    gemma_results_holder = [None]
+
+    def lighton_worker():
+        lighton_results_holder[0] = run_inference(model, processor, entries)
+
+    def gemma_worker():
+        gemma_results_holder[0] = run_gemma_inference(entries, GEMMA_API_KEY)
+
+    lighton_thread = threading.Thread(target=lighton_worker)
+    gemma_thread = threading.Thread(target=gemma_worker)
+
+    lighton_thread.start()
+    gemma_thread.start()
+
+    lighton_thread.join()
+    gemma_thread.join()
+
+    wall_time = time.time() - benchmark_start
+    print(f"\nParallel inference completed in {wall_time:.1f}s")
+
+    lighton_results = lighton_results_holder[0]
+    gemma_results = gemma_results_holder[0]
+
+    print("\nComputing LightOn metrics...")
+    lighton_metrics = compute_all_metrics(lighton_results)
+
+    print("Computing Gemma metrics...")
+    gemma_metrics = compute_all_metrics(gemma_results)
 
     for i in range(min(5, len(entries))):
         draw_sample_result(
             entries[i],
-            inference_results[i]["pred_items"],
-            inference_results[i]["gt_items"],
-            SAMPLES_DIR / f"sample_{i}.png",
+            lighton_results[i]["pred_items"],
+            lighton_results[i]["gt_items"],
+            SAMPLES_DIR / f"sample_{i}_lighton.png",
+        )
+        draw_sample_result(
+            entries[i],
+            gemma_results[i]["pred_items"],
+            gemma_results[i]["gt_items"],
+            SAMPLES_DIR / f"sample_{i}_gemma.png",
         )
 
     del model
@@ -557,33 +900,34 @@ def main():
 
     results_path = OUTPUT_DIR / "metrics.json"
     with open(results_path, "w", encoding="utf-8") as f:
-        json.dump(metrics, f, indent=2, ensure_ascii=False)
-    print(f"\nResults saved to {results_path}")
+        json.dump(lighton_metrics, f, indent=2, ensure_ascii=False)
+    print(f"LightOn results saved to {results_path}")
 
-    m = metrics
+    gemma_path = OUTPUT_DIR / "metrics_gemma.json"
+    with open(gemma_path, "w", encoding="utf-8") as f:
+        json.dump(gemma_metrics, f, indent=2, ensure_ascii=False)
+    print(f"Gemma results saved to {gemma_path}")
+
+    comparison = {
+        "lighton": {
+            k: v for k, v in lighton_metrics.items() if not isinstance(v, list)
+        },
+        "gemma": {k: v for k, v in gemma_metrics.items() if not isinstance(v, list)},
+    }
+    comparison_path = OUTPUT_DIR / "metrics_comparison.json"
+    with open(comparison_path, "w", encoding="utf-8") as f:
+        json.dump(comparison, f, indent=2, ensure_ascii=False)
+    print(f"Comparison saved to {comparison_path}")
+
     print(f"\n{'=' * 70}")
     print(f"  METRICS SUMMARY")
     print(f"{'=' * 70}")
-    print(f"  CER:              {m['cer']:.4f}")
-    print(f"  WER:              {m['wer']:.4f}")
-    print(f"  CER Median:       {m['cer_median']:.4f}")
-    print(f"  Exact Match:      {m['exact_match_rate']:.4f}")
-    print(f"  Mean IoU:         {m['mean_iou']:.4f}")
-    print(f"  Median IoU:       {m['median_iou']:.4f}")
-    print(f"  IoU P25/P75:      {m['iou_p25']:.4f} / {m['iou_p75']:.4f}")
-    print(f"  IoU P90/P95:      {m['iou_p90']:.4f} / {m['iou_p95']:.4f}")
-    print(f"  F1@0.3:           {m['f1@0_3']:.4f}")
-    print(f"  F1@0.5:           {m['f1@0_5']:.4f}")
-    print(f"  F1@0.75:          {m['f1@0_75']:.4f}")
-    print(f"  Precision@0.5:    {m['precision@0_5']:.4f}")
-    print(f"  Recall@0.5:       {m['recall@0_5']:.4f}")
-    print(f"  Mean GIoU:        {m['mean_giou']:.4f}")
-    print(f"  Detection Rate:   {m['avg_detection_rate']:.4f}")
-    print(f"  BBox Area Error:  {m['mean_bbox_area_error']:.4f}")
-    print(f"  Avg Inference:    {m['avg_inference_time']:.3f}s")
-    print(f"  Combined Score:   {m['combined_score']:.4f}")
+    print_model_metrics(lighton_metrics, "LightOn (fine-tuned)")
+    print_model_metrics(gemma_metrics, f"Gemma {GEMMA_MODEL} (one-shot API)")
+    print_comparison(lighton_metrics, gemma_metrics)
+
     print(f"\nBenchmark complete!")
-    return metrics
+    return lighton_metrics, gemma_metrics
 
 
 if __name__ == "__main__":

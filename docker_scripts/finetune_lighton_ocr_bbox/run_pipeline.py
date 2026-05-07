@@ -69,11 +69,7 @@ def run_step(label, script):
         sys.exit(1)
 
 
-dataset_dir = Path("lighton_bbox_dataset")
-if dataset_dir.exists() and (dataset_dir / "train" / "metadata.jsonl").exists():
-    print("✅ Dataset already exists. Skipping export.", flush=True)
-else:
-    run_step("1️⃣  Exporting Dataset from Supabase (full pages + bbox)...", "export_dataset.py")
+run_step("1️⃣  Exporting Dataset from Supabase (full pages + bbox)...", "export_dataset.py")
 
 model_out = Path("outputs_lighton_bbox/final_lora_merged")
 if model_out.exists() and (model_out / "config.json").exists():

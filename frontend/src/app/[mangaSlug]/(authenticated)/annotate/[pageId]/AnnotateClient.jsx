@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, reorderBubbles, savePageDescription, getMetadataSuggestions, getPages } from '@/lib/api';
 import { analyzeBubble, generatePageDescription, generateGeminiEmbedding, generateOneShotBubbles } from '@/lib/geminiClient';
@@ -30,8 +30,8 @@ export default function AnnotatePage() {
     const params = useParams();
     const searchParams = useSearchParams();
     const fromSearch = searchParams.get('from') === 'search';
-    const pageId = params?.pageId;
-    const router = useRouter();
+    const paramsPageId = params?.pageId;
+    const [pageId, setPageId] = useState(paramsPageId);
     const { mangaSlug, currentManga } = useManga();
 
     const [page, setPage] = useState(null);
@@ -57,6 +57,57 @@ export default function AnnotatePage() {
     const [chapterPages, setChapterPages] = useState([]);
     const [navContext, setNavContext] = useState({ prev: null, next: null });
     const [isMobile, setIsMobile] = useState(false);
+
+    const chapterPagesRef = useRef([]);
+    chapterPagesRef.current = chapterPages;
+
+    const pageIdRef = useRef(pageId);
+    pageIdRef.current = pageId;
+
+    const navGenerationRef = useRef(0);
+
+    useEffect(() => {
+        if (paramsPageId && String(paramsPageId) !== String(pageIdRef.current)) {
+            setPageId(paramsPageId);
+        }
+    }, [paramsPageId]);
+
+    useEffect(() => {
+        const handlePopState = () => {
+            const pathParts = window.location.pathname.split('/');
+            const urlPageId = pathParts[pathParts.length - 1];
+            if (urlPageId && String(urlPageId) !== String(pageIdRef.current)) {
+                navGenerationRef.current += 1;
+                setPageId(urlPageId);
+                setPendingAnnotation(null);
+                setRectangle(null);
+                setIsModalOpen(false);
+                setDebugImageUrl(null);
+                setError(null);
+            }
+        };
+        window.addEventListener('popstate', handlePopState);
+        return () => window.removeEventListener('popstate', handlePopState);
+    }, []);
+
+    const navigateToPage = useCallback((newPageId) => {
+        navGenerationRef.current += 1;
+        setPageId(newPageId);
+        window.history.pushState({}, '', `/${mangaSlug}/annotate/${newPageId}`);
+        setPendingAnnotation(null);
+        setRectangle(null);
+        setIsModalOpen(false);
+        setDebugImageUrl(null);
+        setError(null);
+        const pages = chapterPagesRef.current;
+        if (pages.length > 0) {
+            const currentIndex = pages.findIndex(p => p.id === parseInt(newPageId));
+            setNavContext({
+                prev: currentIndex > 0 ? pages[currentIndex - 1] : null,
+                next: currentIndex < pages.length - 1 ? pages[currentIndex + 1] : null
+            });
+        }
+    }, [mangaSlug]);
 
     useEffect(() => {
         const checkMobile = () => setIsMobile(window.innerWidth < 1024);
@@ -122,8 +173,10 @@ export default function AnnotatePage() {
 
     const fetchBubbles = useCallback(() => {
         if (pageId && (session?.access_token || isGuest)) {
+            const gen = navGenerationRef.current;
             getBubblesForPage(pageId)
                 .then(response => {
+                    if (gen !== navGenerationRef.current) return;
                     const sortedBubbles = response.data.sort((a, b) => a.order - b.order);
                     setExistingBubbles(sortedBubbles);
                 })
@@ -133,12 +186,15 @@ export default function AnnotatePage() {
 
     useEffect(() => {
         if (pageId && (session?.access_token || isGuest)) {
+            const gen = navGenerationRef.current;
             getPageById(pageId)
                 .then(response => {
+                    if (gen !== navGenerationRef.current) return;
                     setPage(response.data);
                     if (response.data.id_chapitre) {
                         getPages(response.data.id_chapitre)
                             .then(pagesRes => {
+                                if (gen !== navGenerationRef.current) return;
                                 const pages = pagesRes.data;
                                 setChapterPages(pages);
                                 const currentIndex = pages.findIndex(p => p.id === parseInt(pageId));
@@ -149,7 +205,9 @@ export default function AnnotatePage() {
                             });
                     }
                 })
-                .catch(() => setError("Impossible de charger la page."));
+                .catch(() => {
+                    if (gen === navGenerationRef.current) setError("Impossible de charger la page.");
+                });
             fetchBubbles();
         }
     }, [pageId, session?.access_token, isGuest, fetchBubbles]);
@@ -172,10 +230,10 @@ export default function AnnotatePage() {
             }
             switch (e.key) {
                 case 'ArrowLeft':
-                    if (!isGuest && navContext.prev) router.push(`/${mangaSlug}/annotate/${navContext.prev.id}`);
+                    if (!isGuest && navContext.prev) navigateToPage(navContext.prev.id);
                     break;
                 case 'ArrowRight':
-                    if (!isGuest && navContext.next) router.push(`/${mangaSlug}/annotate/${navContext.next.id}`);
+                    if (!isGuest && navContext.next) navigateToPage(navContext.next.id);
                     break;
                 case 'Escape':
                     if (isDrawing) { /* dealt with in hook but can be here too */ }
@@ -185,10 +243,10 @@ export default function AnnotatePage() {
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [navContext, router, pendingAnnotation, showDescModal, showApiKeyModal, mangaSlug, isDrawing]);
+    }, [navContext, navigateToPage, pendingAnnotation, showDescModal, showApiKeyModal, mangaSlug, isDrawing, isGuest]);
 
-    const goToPrev = () => navContext.prev && router.push(`/${mangaSlug}/annotate/${navContext.prev.id}`);
-    const goToNext = () => navContext.next && router.push(`/${mangaSlug}/annotate/${navContext.next.id}`);
+    const goToPrev = useCallback(() => navContext.prev && navigateToPage(navContext.prev.id), [navContext.prev, navigateToPage]);
+    const goToNext = useCallback(() => navContext.next && navigateToPage(navContext.next.id), [navContext.next, navigateToPage]);
 
     useEffect(() => {
         if (isAutoDetecting) return;
@@ -463,10 +521,10 @@ export default function AnnotatePage() {
                 const [x1, y1, x2, y2] = bubble.bbox;
                 let poneglyphBox = {
                     id_page: parseInt(pageId, 10),
-                    x: Math.round((x1 / 10000) * w),
-                    y: Math.round((y1 / 10000) * h),
-                    w: Math.round(((x2 - x1) / 10000) * w),
-                    h: Math.round(((y2 - y1) / 10000) * h),
+                    x: Math.round((x1 / 1000) * w),
+                    y: Math.round((y1 / 1000) * h),
+                    w: Math.round(((x2 - x1) / 1000) * w),
+                    h: Math.round(((y2 - y1) / 1000) * h),
                     texte_propose: bubble.content
                 };
 
