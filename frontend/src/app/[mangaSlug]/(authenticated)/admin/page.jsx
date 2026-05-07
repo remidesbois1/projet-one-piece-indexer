@@ -14,7 +14,8 @@ import {
     Upload,
     BookOpen,
     Eye,
-    EyeOff
+    EyeOff,
+    Zap
 } from "lucide-react";
 
 import { useSearchParams, useParams } from 'next/navigation';
@@ -80,7 +81,7 @@ export default function AdminDashboard() {
                 window.history.pushState(null, '', `?${params.toString()}`);
             }} className="w-full">
                 <div className="sticky top-0 z-20 bg-white pt-2 pb-6">
-                    <TabsList className="grid w-full grid-cols-2 lg:grid-cols-5 h-auto p-1 bg-slate-100/80 border border-slate-200">
+                    <TabsList className="grid w-full grid-cols-2 lg:grid-cols-6 h-auto p-1 bg-slate-100/80 border border-slate-200">
                         <TabsTrigger value="content" className="py-3 px-4 data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all focus-visible:ring-0">
                             <Library className="h-4 w-4 mr-2" />
                             <span className="font-medium">Bibliothèque</span>
@@ -100,6 +101,10 @@ export default function AdminDashboard() {
                         <TabsTrigger value="security" className="py-3 px-4 data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all focus-visible:ring-0 text-red-600 data-[state=active]:text-red-700">
                             <ShieldAlert className="h-4 w-4 mr-2" />
                             <span className="font-medium">Sécurité</span>
+                        </TabsTrigger>
+                        <TabsTrigger value="batch" className="py-3 px-4 data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all focus-visible:ring-0 text-indigo-600 data-[state=active]:text-indigo-700">
+                            <Zap className="h-4 w-4 mr-2" />
+                            <span className="font-medium">Batch OCR</span>
                         </TabsTrigger>
                     </TabsList>
                 </div>
@@ -198,6 +203,26 @@ export default function AdminDashboard() {
                         <Suspense fallback={<TabSkeleton />}>
                             <IpBanManager />
                         </Suspense>
+                    </TabsContent>
+
+                    <TabsContent value="batch" className="m-0 p-8 outline-none">
+                        <div className="flex items-center justify-between rounded-xl bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-200 p-6">
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                                    <Zap className="h-5 w-5 text-indigo-600" />
+                                    Batch OCR
+                                </h3>
+                                <p className="text-sm text-slate-500 mt-1">
+                                    Traitez un chapitre complet automatiquement : détection YOLO, OCR Poneglyph + LightOn, auto-validation des concordances.
+                                </p>
+                            </div>
+                            <Link href={`/${params.mangaSlug}/admin/batch-ocr`}>
+                                <Button className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg">
+                                    <Zap className="h-4 w-4 mr-2" />
+                                    Ouvrir
+                                </Button>
+                            </Link>
+                        </div>
                     </TabsContent>
                 </div>
             </Tabs>

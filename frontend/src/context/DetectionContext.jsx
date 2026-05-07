@@ -70,6 +70,29 @@ export const DetectionProvider = ({ children }) => {
         });
     }, [detectionStatus]);
 
+    const detectBubblesPositionsOnly = React.useCallback((blob) => {
+        return new Promise((resolve, reject) => {
+            if (!workerRef.current || detectionStatus !== 'ready') {
+                return reject(new Error("Modèle de détection non prêt."));
+            }
+
+            const handleMessage = (e) => {
+                const { status, boxes, error } = e.data;
+                if (status === 'complete') {
+                    workerRef.current.removeEventListener('message', handleMessage);
+                    resolve(boxes);
+                }
+                if (status === 'error') {
+                    workerRef.current.removeEventListener('message', handleMessage);
+                    reject(new Error(error));
+                }
+            };
+
+            workerRef.current.addEventListener('message', handleMessage);
+            workerRef.current.postMessage({ type: 'run-positions-only', imageBlob: blob });
+        });
+    }, [detectionStatus]);
+
     return (
         <DetectionContext.Provider value={{
             detectionWorker: workerRef.current,
@@ -77,7 +100,8 @@ export const DetectionProvider = ({ children }) => {
             loadDetectionModel,
             downloadProgress,
             downloadStats,
-            detectBubbles
+            detectBubbles,
+            detectBubblesPositionsOnly
         }}>
             {children}
         </DetectionContext.Provider>
