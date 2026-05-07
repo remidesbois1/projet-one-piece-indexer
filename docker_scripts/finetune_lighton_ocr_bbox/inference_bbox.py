@@ -40,10 +40,6 @@ messages = [
         "role": "user",
         "content": [
             {"type": "image", "url": IMAGE_PATH},
-            {
-                "type": "text",
-                "text": "Extrais le texte et les coordonnees des bulles de cette page de manga.",
-            },
         ],
     }
 ]
@@ -100,10 +96,10 @@ except:
 for i, item in enumerate(results):
     color = COLORS[i % len(COLORS)]
 
-    x1 = int(item["bbox"][0] * w / 10000)
-    y1 = int(item["bbox"][1] * h / 10000)
-    x2 = int(item["bbox"][2] * w / 10000)
-    y2 = int(item["bbox"][3] * h / 10000)
+    x1 = int(item["bbox"][0] * w / 1000)
+    y1 = int(item["bbox"][1] * h / 1000)
+    x2 = int(item["bbox"][2] * w / 1000)
+    y2 = int(item["bbox"][3] * h / 1000)
 
     for offset in range(3):
         draw.rectangle(

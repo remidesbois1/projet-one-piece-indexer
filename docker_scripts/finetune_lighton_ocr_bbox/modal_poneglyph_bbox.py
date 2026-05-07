@@ -85,10 +85,6 @@ class PoneglyphBBox:
                     "role": "user",
                     "content": [
                         {"type": "image"},
-                        {
-                            "type": "text",
-                            "text": "Extrais le texte et les coordonnées des bulles de cette page de manga.",
-                        },
                     ],
                 }
             ]

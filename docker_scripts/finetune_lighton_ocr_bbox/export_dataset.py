@@ -39,13 +39,13 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 
 OUTPUT_DIR = SCRIPT_DIR / "lighton_bbox_dataset"
 TARGET_LONGEST_SIDE = 1540
-BBOX_NORM_SCALE = 10000
+BBOX_NORM_SCALE = 1000
 TEST_SIZE = 0.2
 RANDOM_SEED = 42
 JPEG_QUALITY = 95
 MIN_BUBBLES_PER_PAGE = 1
 MIN_TEXT_LENGTH = 1
-USER_PROMPT = "Extrais le texte et les coordonnées des bulles de cette page de manga."
+USER_PROMPT = ""
 
 
 def normalize_text(text):
@@ -269,7 +269,6 @@ def main():
                         "role": "user",
                         "content": [
                             {"type": "image", "image": f"images/{file_name}"},
-                            {"type": "text", "text": USER_PROMPT},
                         ],
                     },
                     {

@@ -380,8 +380,9 @@ if __name__ == "__main__":
     )
 
     peft_config = LoraConfig(
-        r=32,
-        lora_alpha=64,
+        r=64,
+        lora_alpha=128,
+        use_dora=True,
         target_modules=[
             "q_proj",
             "v_proj",
@@ -390,8 +391,9 @@ if __name__ == "__main__":
             "gate_proj",
             "up_proj",
             "down_proj",
+            "lm_head",
         ],
-        lora_dropout=0.03,
+        lora_dropout=0.01,
         bias="none",
         task_type="CAUSAL_LM",
     )
