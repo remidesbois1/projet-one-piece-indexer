@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { GripVertical, Pencil, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export const SortableBubbleItem = ({ bubble, index, user, onEdit, onDelete, disabled }) => {
+export const SortableBubbleItem = ({ bubble, index, user, onEdit, onDelete, disabled, isAdmin }) => {
     const {
         attributes,
         listeners,
@@ -22,6 +22,9 @@ export const SortableBubbleItem = ({ bubble, index, user, onEdit, onDelete, disa
         position: 'relative',
         touchAction: 'none'
     };
+
+    const canManageOwnProposedBubble = !disabled && bubble.statut === 'Proposé' && user && bubble.id_user_createur === user.id;
+    const canDelete = isAdmin || canManageOwnProposedBubble;
 
     return (
         <li 
@@ -68,26 +71,30 @@ export const SortableBubbleItem = ({ bubble, index, user, onEdit, onDelete, disa
 
             
             <div className="flex justify-end min-w-[60px]"> 
-                {!disabled && bubble.statut === 'Proposé' && user && bubble.id_user_createur === user.id && (
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                            onClick={(e) => { e.stopPropagation(); onEdit(bubble); }}
-                            title="Modifier"
-                        >
-                            <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50"
-                            onClick={(e) => { e.stopPropagation(); onDelete(bubble.id); }}
-                            title="Supprimer"
-                        >
-                            <Trash2 className="h-4 w-4" />
-                        </Button>
+                {canDelete && (
+                    <div className={cn("flex gap-1 transition-opacity", isAdmin ? "opacity-100" : "opacity-0 group-hover:opacity-100")}>
+                        {canManageOwnProposedBubble && (
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                onClick={(e) => { e.stopPropagation(); onEdit(bubble); }}
+                                title="Modifier"
+                            >
+                                <Pencil className="h-4 w-4" />
+                            </Button>
+                        )}
+                        {canDelete && (
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                onClick={(e) => { e.stopPropagation(); onDelete(bubble.id); }}
+                                title="Supprimer"
+                            >
+                                <Trash2 className="h-4 w-4" />
+                            </Button>
+                        )}
                     </div>
                 )}
             </div>

@@ -24,7 +24,7 @@ Le **Projet Poneglyph** est une plateforme de haute performance dédiée à la n
 * **Framework :** React 19 / Next.js & Vite.
 * **CSS** : [ShadCn UI](https://ui.shadcn.com/)
 * **OCR Hybride :** **TrOCR Fine-tuned** (Local via WebGPU) & **LightOnOCR** (Cloud via Modal).
-* **Détection de Bulles Locale :** **YOLO V11 Medium Fine-tuned** [`Remidesbois/YoloPiece_BubbleDetector`](https://huggingface.co/Remidesbois/YoloPiece_BubbleDetector) exécuté via WebGPU.
+* **Détection de Bulles Locale :** **YOLO26 Nano Fine-tuned** [`Remidesbois/YoloPiece_BubbleDetector_Nano`](https://huggingface.co/Remidesbois/YoloPiece_BubbleDetector_Nano) exécuté via ONNX Runtime Web (WASM).
 * **State Management :** Context API & LocalStorage.
 
 ### **Backend & Services (Cloud)**
@@ -105,13 +105,15 @@ Nouveau modèle de pointe pour une précision extrême, déployé en mode *serve
 
 > Modal offre 30$ de crédit par mois (~37.5h d'inférence), au delà de ce seuil, le service se coupe.
 
-### **YOLO11 Fine-tuned (Détection des bulles)**
+### **YOLO26 Fine-tuned (Détection des bulles)**
 
 Détecte instantanément les bulles sur la planche.
 
-* **Performance :** (Mean Average Precision) mAP50 de **0.994**.
-* **Architecture :** YOLO11 Nano Fine-tuned.
-* **Exécution :** WebGPU (via ONNX Runtime Web).
+* **Performance :** mAP50 de **0.994** / mAP50-95 de **0.868**.
+* **Architecture :** YOLO26n (2.4M paramètres, 5.2 GFLOPs).
+* **Entraînement :** 100 epochs, early stopping (patience 20), imgsz 800, sur dataset Supabase annoté.
+* **Exécution :** ONNX Runtime Web (WASM) côté client.
+* **Modèle :** [`Remidesbois/YoloPiece_BubbleDetector_Nano`](https://huggingface.co/Remidesbois/YoloPiece_BubbleDetector_Nano)
 
 ### **Modèle de Tri des Bulles**
 

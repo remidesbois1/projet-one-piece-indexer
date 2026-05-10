@@ -18,8 +18,11 @@ export default function AnnotateAnnotationSidebar({
     user,
     handleEditBubble,
     handleDeleteBubble,
-    canEdit
+    canEdit,
+    role
 }) {
+    const isAdmin = role === 'Admin';
+
     return (
         <aside className="w-full lg:w-[380px] bg-white border-t lg:border-t-0 lg:border-l border-slate-200 flex flex-col h-[40vh] lg:h-full overflow-hidden z-10 shadow-lg shrink-0">
             <div className="flex-none p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
@@ -32,7 +35,7 @@ export default function AnnotateAnnotationSidebar({
                         <div className="flex flex-col items-center justify-center py-10 text-center border-2 border-dashed border-slate-200 rounded-lg bg-slate-50/50 text-slate-500">
                             <MousePointer2 className="h-8 w-8 mb-2 text-slate-300" />
                             <p className="text-sm font-medium">Aucune annotation</p>
-                            <p className="text-xs mt-1">Dessinez un rectangle sur l'image<br />pour commencer.</p>
+                            <p className="text-xs mt-1">Dessinez un rectangle sur l&apos;image<br />pour commencer.</p>
                         </div>
                     ) : (
                         <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -48,6 +51,7 @@ export default function AnnotateAnnotationSidebar({
                                             onEdit={handleEditBubble}
                                             onDelete={handleDeleteBubble}
                                             disabled={!canEdit}
+                                            isAdmin={isAdmin}
                                         />
                                     ))}
                                 </ul>

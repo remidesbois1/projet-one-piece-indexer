@@ -284,15 +284,16 @@ router.put('/:id', authMiddleware, async (req, res) => {
 router.delete('/:id', authMiddleware, async (req, res) => {
   const { id } = req.params;
   const userId = req.user.id;
+  const isAdmin = req.user.role === 'Admin';
   try {
     const { data: existingBubble, error: findError } = await supabaseAdmin.from('bulles').select('id, id_user_createur, statut').eq('id', id).single();
     if (findError || !existingBubble) {
       return res.status(404).json({ error: "Bulle non trouvée." });
     }
-    if (existingBubble.id_user_createur !== userId) {
+    if (!isAdmin && existingBubble.id_user_createur !== userId) {
       return res.status(403).json({ error: "Accès refusé. Vous n'êtes pas le créateur de cette bulle." });
     }
-    if (existingBubble.statut !== 'Proposé') {
+    if (!isAdmin && existingBubble.statut !== 'Proposé') {
       return res.status(403).json({ error: "Action refusée. La bulle a déjà été traitée par un modérateur." });
     }
     const { error } = await supabaseAdmin.from('bulles').delete().eq('id', id);

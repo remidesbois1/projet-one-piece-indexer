@@ -70,6 +70,7 @@ export const approvePage = (pageId) => apiClient.put(`/moderation/pages/${pageId
 export const approveAllPages = () => apiClient.put('/moderation/pages/approve-all', {});
 export const rejectPage = (pageId, comment) => apiClient.put(`/moderation/pages/${pageId}/reject`, { comment });
 export const submitPageForReview = (pageId) => apiClient.put(`/pages/${pageId}/submit-review`, {});
+export const updatePageStatus = (pageId, statut) => apiClient.put(`/pages/${pageId}/status`, { statut });
 
 export const createTome = (tomeData, mangaSlug) => apiClient.post('/admin/tomes', tomeData, { params: mangaSlug ? { manga: mangaSlug } : {} });
 export const uploadChapter = (formData) => apiClient.post('/admin/chapitres/upload', formData);

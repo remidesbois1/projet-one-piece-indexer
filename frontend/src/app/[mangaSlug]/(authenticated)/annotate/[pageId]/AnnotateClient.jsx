@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, reorderBubbles, savePageDescription, getMetadataSuggestions, getPages } from '@/lib/api';
+import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, updatePageStatus, reorderBubbles, savePageDescription, getMetadataSuggestions, getPages } from '@/lib/api';
 import { analyzeBubble, generatePageDescription, generateGeminiEmbedding, generateOneShotBubbles } from '@/lib/geminiClient';
 import ApiKeyForm from '@/components/ApiKeyForm';
 import { useAuth } from '@/context/AuthContext';
@@ -16,6 +16,7 @@ import { useAnnotationDetection } from '@/hooks/useAnnotationDetection';
 import { useAnnotationMetadata } from '@/hooks/useAnnotationMetadata';
 import { getProxiedImageUrl } from '@/lib/utils';
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { ArrowLeft, Send, X, Shield, FileText } from "lucide-react";
 import { toast } from "sonner";
@@ -24,6 +25,13 @@ import AnnotateCanvas from '@/components/AnnotateCanvas';
 import AnnotateAnnotationSidebar from '@/components/AnnotateAnnotationSidebar';
 import AnnotateEditorDialog from '@/components/AnnotateEditorDialog';
 import AnnotateMetadataModal from '@/components/AnnotateMetadataModal';
+
+const PAGE_STATUSES = [
+    { value: 'not_started', label: 'Non commencée' },
+    { value: 'in_progress', label: 'En cours' },
+    { value: 'pending_review', label: 'En revue' },
+    { value: 'completed', label: 'Validée' },
+];
 
 export default function AnnotatePage() {
     const { user, session, isGuest, role } = useAuth();
@@ -38,6 +46,7 @@ export default function AnnotatePage() {
     const [existingBubbles, setExistingBubbles] = useState([]);
     const [error, setError] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [isUpdatingPageStatus, setIsUpdatingPageStatus] = useState(false);
     const [loadingText, setLoadingText] = useState("Analyse en cours...");
     const [pendingAnnotation, setPendingAnnotation] = useState(null);
     const [isOneShotLoading, setIsOneShotLoading] = useState(false);
@@ -277,7 +286,7 @@ export default function AnnotatePage() {
     };
 
     const handleDeleteBubble = async (bubbleId) => {
-        if (isGuest || isMobile) return;
+        if (isGuest || (isMobile && role !== 'Admin')) return;
         if (window.confirm("Supprimer cette annotation ?")) {
             const previousBubbles = [...existingBubbles];
             setExistingBubbles(prev => prev.filter(b => b.id !== bubbleId));
@@ -331,6 +340,22 @@ export default function AnnotatePage() {
                 setPage(response.data);
                 toast.success("Page soumise pour validation !");
             } catch (error) { toast.error("Erreur soumission."); }
+        }
+    };
+
+    const handlePageStatusChange = async (statut) => {
+        if (role !== 'Admin' || !pageId || statut === page?.statut) return;
+
+        setIsUpdatingPageStatus(true);
+        try {
+            const response = await updatePageStatus(pageId, statut);
+            setPage(response.data);
+            toast.success("Statut de la page mis à jour.");
+            window.location.reload();
+        } catch (error) {
+            toast.error("Erreur lors du changement de statut.");
+        } finally {
+            setIsUpdatingPageStatus(false);
         }
     };
 
@@ -630,6 +655,8 @@ export default function AnnotatePage() {
                 setShowDescModal={setShowDescModal}
                 setShowApiKeyModal={setShowApiKeyModal}
                 handleSubmitPage={handleSubmitPage}
+                handlePageStatusChange={handlePageStatusChange}
+                isUpdatingPageStatus={isUpdatingPageStatus}
                 handleOneShot={handleOneShot}
                 isOneShotLoading={isOneShotLoading}
                 handleOneShotPoneglyph={handleOneShotPoneglyph}
@@ -665,6 +692,23 @@ export default function AnnotatePage() {
                     </div>
                 </header>
 
+                {!isGuest && role === 'Admin' && (
+                    <div className="lg:hidden border-b border-slate-200 bg-white px-4 py-3">
+                        <Select value={page.statut} onValueChange={handlePageStatusChange} disabled={isUpdatingPageStatus}>
+                            <SelectTrigger className="w-full h-9 bg-white border-slate-200 text-[12px] font-bold text-slate-700">
+                                <SelectValue placeholder="Choisir un état" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {PAGE_STATUSES.map(status => (
+                                    <SelectItem key={status.value} value={status.value}>
+                                        {status.label}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                )}
+
                 {isGuest && (
                     <div className="bg-amber-50 border-b border-amber-200 px-6 py-2 flex items-center justify-center gap-2 text-amber-800 text-sm font-medium">
                         <Shield className="h-4 w-4" />
@@ -679,7 +723,7 @@ export default function AnnotatePage() {
                         </div>
                         <div className="flex-1">
                             <p className="font-bold">Cette page a été refusée par la modération</p>
-                            <p className="text-red-700/80 italic font-medium">"{page.commentaire_moderation}"</p>
+                            <p className="text-red-700/80 italic font-medium">&quot;{page.commentaire_moderation}&quot;</p>
                         </div>
                     </div>
                 )}
@@ -720,6 +764,7 @@ export default function AnnotatePage() {
                         handleEditBubble={handleEditBubble}
                         handleDeleteBubble={handleDeleteBubble}
                         canEdit={canEdit}
+                        role={role}
                     />
                 </div>
             </div>
@@ -747,7 +792,7 @@ export default function AnnotatePage() {
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
                         <DialogTitle>Configuration API Google Vision</DialogTitle>
-                        <DialogDescription>Requis pour le Cloud et l'Embedding.</DialogDescription>
+                        <DialogDescription>Requis pour le Cloud et l&apos;Embedding.</DialogDescription>
                     </DialogHeader>
                     <ApiKeyForm onSave={handleSaveApiKey} />
                 </DialogContent>

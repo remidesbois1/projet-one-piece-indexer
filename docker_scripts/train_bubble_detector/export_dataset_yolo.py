@@ -1,14 +1,15 @@
+import io
+import json
 import os
 import sys
-import json
-import requests
-import io
 from pathlib import Path
+
+import requests
+from dotenv import load_dotenv
 from PIL import Image
+from sklearn.model_selection import train_test_split
 from supabase import create_client, Client
 from tqdm import tqdm
-from sklearn.model_selection import train_test_split
-from dotenv import load_dotenv
 
 try:
     import pillow_avif
@@ -16,103 +17,127 @@ except ImportError:
     pass
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = SCRIPT_DIR.parent.parent
 load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
-    env_path = Path(__file__).resolve().parent.parent.parent / ".env"
+    env_path = SCRIPT_DIR.parent.parent / ".env"
     load_dotenv(env_path)
     SUPABASE_URL = os.getenv("SUPABASE_URL")
     SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
-    print("Error: Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY")
+    print("[ERROR] SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not found in .env")
     sys.exit(1)
 
 OUTPUT_DIR = SCRIPT_DIR / "dataset"
 TEST_SIZE = 0.1
 RANDOM_SEED = 42
 
-def convert_to_yolo(size, box):
-    dw = 1. / size[0]
-    dh = 1. / size[1]
-    x = box[0] + box[2] / 2.0
-    y = box[1] + box[3] / 2.0
-    w = box[2]
-    h = box[3]
-    x = x * dw
-    w = w * dw
-    y = y * dh
-    h = h * dh
-    return (x, y, w, h)
 
-def fetch_data(supabase: Client):
-    print("Fetching pages and bubbles from Supabase...")
-    
+def convert_to_yolo(size, box):
+    dw = 1.0 / size[0]
+    dh = 1.0 / size[1]
+    x = (box[0] + box[2] / 2.0) * dw
+    y = (box[1] + box[3] / 2.0) * dh
+    w = box[2] * dw
+    h = box[3] * dh
+    return x, y, w, h
+
+
+def fetch_pages(supabase: Client):
     response = (
         supabase.table("pages")
         .select("id, url_image, bulles(x, y, w, h)")
         .execute()
     )
-    
     pages = response.data
-    valid_pages = [p for p in pages if p.get("bulles") and len(p["bulles"]) > 0]
-    print(f"Total pages with bubbles: {len(valid_pages)}")
-    return valid_pages
+    valid = [p for p in pages if p.get("bulles") and len(p["bulles"]) > 0]
+    return valid
+
+
+def process_split(split_name, split_pages, output_dir):
+    split_dir = output_dir / split_name
+    img_dir = split_dir / "images"
+    lbl_dir = split_dir / "labels"
+    img_dir.mkdir(parents=True, exist_ok=True)
+    lbl_dir.mkdir(parents=True, exist_ok=True)
+
+    errors = 0
+    for p in tqdm(split_pages, desc=f"  {split_name:>5}"):
+        try:
+            resp = requests.get(p["url_image"], timeout=15)
+            resp.raise_for_status()
+            img = Image.open(io.BytesIO(resp.content)).convert("RGB")
+            w, h = img.size
+
+            stem = f"page_{p['id']}"
+            img.save(img_dir / f"{stem}.jpg", quality=95)
+
+            with open(lbl_dir / f"{stem}.txt", "w") as f:
+                for b in p["bulles"]:
+                    yolo_box = convert_to_yolo((w, h), (b["x"], b["y"], b["w"], b["h"]))
+                    f.write(f"0 {yolo_box[0]:.6f} {yolo_box[1]:.6f} {yolo_box[2]:.6f} {yolo_box[3]:.6f}\n")
+        except Exception as e:
+            errors += 1
+            tqdm.write(f"    [WARN] page {p['id']}: {e}")
+
+    return errors
+
+
+def write_dataset_yaml(output_dir):
+    yaml_content = (
+        f"path: {output_dir.absolute().as_posix()}\n"
+        f"train: train/images\n"
+        f"val: val/images\n"
+        f"\n"
+        f"names:\n"
+        f"  0: bubble\n"
+    )
+    yaml_path = output_dir / "data.yaml"
+    with open(yaml_path, "w") as f:
+        f.write(yaml_content)
+    return yaml_path
+
 
 def main():
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-    pages = fetch_data(supabase)
+    print()
+    print("=" * 60)
+    print("  STEP 1: DATASET EXPORT")
+    print("=" * 60)
+    print()
+
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    pages = fetch_pages(supabase)
 
     if not pages:
-        print("No data found.")
-        return
+        print("  No pages with bubbles found. Aborting.")
+        sys.exit(1)
 
-    train_data, test_data = train_test_split(pages, test_size=TEST_SIZE, random_state=RANDOM_SEED)
+    print(f"  Pages with bubbles: {len(pages)}")
+    print(f"  Train/val split:    {(1 - TEST_SIZE) * 100:.0f}% / {TEST_SIZE * 100:.0f}%")
+    print()
 
-    for split_name, split_pages in [("train", train_data), ("val", test_data)]:
-        split_dir = OUTPUT_DIR / split_name
-        img_dir = split_dir / "images"
-        lbl_dir = split_dir / "labels"
-        img_dir.mkdir(parents=True, exist_ok=True)
-        lbl_dir.mkdir(parents=True, exist_ok=True)
+    train_pages, val_pages = train_test_split(
+        pages, test_size=TEST_SIZE, random_state=RANDOM_SEED
+    )
 
-        print(f"\nProcessing '{split_name}' ({len(split_pages)} pages)...")
-        for p in tqdm(split_pages, desc=split_name):
-            try:
-                img_url = p["url_image"]
-                resp = requests.get(img_url, timeout=10)
-                resp.raise_for_status()
-                img = Image.open(io.BytesIO(resp.content)).convert("RGB")
-                w, h = img.size
-                
-                img_filename = f"page_{p['id']}.jpg"
-                img.save(img_dir / img_filename, quality=95)
-                
-                label_filename = f"page_{p['id']}.txt"
-                with open(lbl_dir / label_filename, "w") as f:
-                    for b in p["bulles"]:
-                        yolo_box = convert_to_yolo((w, h), (b["x"], b["y"], b["w"], b["h"]))
-                        f.write(f"0 {' '.join([f'{x:.6f}' for x in yolo_box])}\n")
-                        
-            except Exception as e:
-                print(f"\n  Error on page {p['id']}: {e}")
+    train_errors = process_split("train", train_pages, OUTPUT_DIR)
+    val_errors = process_split("val", val_pages, OUTPUT_DIR)
 
-    yaml_content = f"""
-path: {OUTPUT_DIR.absolute().as_posix()}
-train: train/images
-val: val/images
+    yaml_path = write_dataset_yaml(OUTPUT_DIR)
 
-names:
-  0: bubble
-"""
-    with open(OUTPUT_DIR / "data.yaml", "w") as f:
-        f.write(yaml_content)
-    
-    print(f"\nDataset preparation complete. YAML at: {OUTPUT_DIR / 'data.yaml'}")
+    print()
+    print(f"  Train pages: {len(train_pages)} ({train_errors} errors)")
+    print(f"  Val pages:   {len(val_pages)} ({val_errors} errors)")
+    print(f"  Config YAML: {yaml_path}")
+    print()
+    print("=" * 60)
+    print("  DATASET EXPORT COMPLETE")
+    print("=" * 60)
+
 
 if __name__ == "__main__":
     main()

@@ -10,7 +10,6 @@ const PANEL_MODEL_PATH = 'https://huggingface.co/Remidesbois/YoloPiece_PanelDete
 const PANEL_ORDER_PATH = 'https://huggingface.co/Remidesbois/YoloPiece_PanelDetector/resolve/main/reading_order.onnx';
 const READERNET_PATH = 'https://huggingface.co/Remidesbois/ReaderNet-Poneglyph/resolve/main/readernet_poneglyph.onnx';
 
-const BUBBLE_INPUT_DIM = 1024;
 const PAGE_H = 256;
 const PAGE_W = 384;
 const BUBBLE_CROP_SIZE = 96;
@@ -131,7 +130,8 @@ self.addEventListener('message', async (event) => {
         if (!bubbleSession) return;
         try {
             const bitmap = await createImageBitmap(imageBlob);
-            const { inputTensor, scale, padX, padY } = preprocessBubble(bitmap, BUBBLE_INPUT_DIM);
+            const { height: inputH, width: inputW } = getImageInputSize(bubbleSession, 800, 800);
+            const { inputTensor, scale, padX, padY } = preprocessBubble(bitmap, inputH, inputW);
             const bubbleFeeds = { [bubbleSession.inputNames[0]]: inputTensor };
             const bubbleResults = await bubbleSession.run(bubbleFeeds);
             const bubbleOutput = bubbleResults[bubbleSession.outputNames[0]].data;
@@ -150,7 +150,8 @@ self.addEventListener('message', async (event) => {
             const { width: imgW, height: imgH } = bitmap;
 
             // 1. Detect bubbles
-            const { inputTensor, scale, padX, padY } = preprocessBubble(bitmap, BUBBLE_INPUT_DIM);
+            const { height: inputH, width: inputW } = getImageInputSize(bubbleSession, 800, 800);
+            const { inputTensor, scale, padX, padY } = preprocessBubble(bitmap, inputH, inputW);
             const bubbleFeeds = { [bubbleSession.inputNames[0]]: inputTensor };
             const bubbleResults = await bubbleSession.run(bubbleFeeds);
             const bubbleOutput = bubbleResults[bubbleSession.outputNames[0]].data;
@@ -191,31 +192,47 @@ self.addEventListener('message', async (event) => {
 // ---------------------------------------------------------------------------
 // Bubble detector preprocessing
 // ---------------------------------------------------------------------------
-function preprocessBubble(bitmap, targetSize) {
+function getImageInputSize(session, fallbackH, fallbackW) {
+    try {
+        const inputName = session.inputNames?.[0];
+        const dims = session.inputMetadata?.[inputName]?.dims;
+        const height = Number(dims?.[2]);
+        const width = Number(dims?.[3]);
+        if (Number.isFinite(height) && Number.isFinite(width) && height > 0 && width > 0) {
+            return { height, width };
+        }
+    } catch (e) {
+        console.warn("[Worker] Could not read detector input dims, using fallback", e);
+    }
+    return { height: fallbackH, width: fallbackW };
+}
+
+function preprocessBubble(bitmap, targetH, targetW) {
     const { width, height } = bitmap;
-    const scale = Math.min(targetSize / width, targetSize / height);
+    const scale = Math.min(targetW / width, targetH / height);
     const newW = Math.round(width * scale);
     const newH = Math.round(height * scale);
-    const padX = (targetSize - newW) / 2;
-    const padY = (targetSize - newH) / 2;
+    const padX = (targetW - newW) / 2;
+    const padY = (targetH - newH) / 2;
 
-    const canvas = new OffscreenCanvas(targetSize, targetSize);
+    const canvas = new OffscreenCanvas(targetW, targetH);
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#808080';
-    ctx.fillRect(0, 0, targetSize, targetSize);
+    ctx.fillRect(0, 0, targetW, targetH);
     ctx.drawImage(bitmap, padX, padY, newW, newH);
 
-    const imageData = ctx.getImageData(0, 0, targetSize, targetSize);
+    const imageData = ctx.getImageData(0, 0, targetW, targetH);
     const { data } = imageData;
-    const float32Data = new Float32Array(3 * targetSize * targetSize);
+    const pixelCount = targetW * targetH;
+    const float32Data = new Float32Array(3 * pixelCount);
 
-    for (let i = 0; i < targetSize * targetSize; i++) {
+    for (let i = 0; i < pixelCount; i++) {
         float32Data[i] = data[i * 4] / 255.0;
-        float32Data[targetSize * targetSize + i] = data[i * 4 + 1] / 255.0;
-        float32Data[2 * targetSize * targetSize + i] = data[i * 4 + 2] / 255.0;
+        float32Data[pixelCount + i] = data[i * 4 + 1] / 255.0;
+        float32Data[2 * pixelCount + i] = data[i * 4 + 2] / 255.0;
     }
 
-    const inputTensor = new ort.Tensor('float32', float32Data, [1, 3, targetSize, targetSize]);
+    const inputTensor = new ort.Tensor('float32', float32Data, [1, 3, targetH, targetW]);
     return { inputTensor, scale, padX, padY };
 }
 
