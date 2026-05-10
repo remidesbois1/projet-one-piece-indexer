@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { supabase, supabaseAdmin } = require('../config/supabaseClient');
-const { authMiddleware } = require('../middleware/auth');
+const { authMiddleware, roleCheck } = require('../middleware/auth');
 const sharp = require('sharp');
 const axios = require('axios');
 const path = require('path');
@@ -53,6 +53,28 @@ router.put('/:id/submit-review', authMiddleware, async (req, res) => {
         .single();
 
     if (error) return res.status(500).json({ error: "Erreur soumission" });
+    res.json(data);
+});
+
+router.put('/:id/status', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+    const { statut } = req.body;
+    const allowedStatuses = ['not_started', 'in_progress', 'pending_review', 'completed'];
+
+    if (!allowedStatuses.includes(statut)) {
+        return res.status(400).json({ error: "Statut invalide" });
+    }
+
+    const updatePayload = { statut };
+    if (statut !== 'in_progress') updatePayload.commentaire_moderation = null;
+
+    const { data, error } = await supabaseAdmin
+        .from('pages')
+        .update(updatePayload)
+        .eq('id', req.params.id)
+        .select('*, chapitres(numero, tomes(numero))')
+        .single();
+
+    if (error) return res.status(500).json({ error: "Erreur mise à jour statut" });
     res.json(data);
 });
 

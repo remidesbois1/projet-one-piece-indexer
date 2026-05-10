@@ -2,6 +2,7 @@ import React from 'react';
 import Link from 'next/link';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
     ArrowLeft,
     ChevronLeft,
@@ -17,6 +18,13 @@ import {
 } from "lucide-react";
 import AnnotateOcrModelSelector from './AnnotateOcrModelSelector';
 import AnnotateBubbleScanner from './AnnotateBubbleScanner';
+
+const PAGE_STATUSES = [
+    { value: 'not_started', label: 'Non commencée' },
+    { value: 'in_progress', label: 'En cours' },
+    { value: 'pending_review', label: 'En revue' },
+    { value: 'completed', label: 'Validée' },
+];
 
 export default function AnnotateLeftSidebar({
     fromSearch,
@@ -46,6 +54,8 @@ export default function AnnotateLeftSidebar({
     setShowDescModal,
     setShowApiKeyModal,
     handleSubmitPage,
+    handlePageStatusChange,
+    isUpdatingPageStatus,
     role,
     isSandbox = false,
     handleOneShot,
@@ -54,6 +64,7 @@ export default function AnnotateLeftSidebar({
     isPoneglyphLoading
 }) {
     const isStaff = role === 'Admin' || role === 'Modo';
+    const isAdmin = role === 'Admin';
 
     return (
         <div className="hidden lg:flex w-[280px] shrink-0 h-full flex-col border-r border-slate-200 bg-white z-40 relative shadow-sm">
@@ -103,6 +114,24 @@ export default function AnnotateLeftSidebar({
 
                 {!isGuest && isStaff && (
                     <>
+                        {isAdmin && handlePageStatusChange && !isSandbox && (
+                            <div className="flex-none p-3 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-2">
+                                <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-0.5">État de la page</h3>
+                                <Select value={page.statut} onValueChange={handlePageStatusChange} disabled={isUpdatingPageStatus}>
+                                    <SelectTrigger className="w-full h-9 bg-white border-slate-200 text-[12px] font-bold text-slate-700">
+                                        <SelectValue placeholder="Choisir un état" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {PAGE_STATUSES.map(status => (
+                                            <SelectItem key={status.value} value={status.value}>
+                                                {status.label}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        )}
+
                         <AnnotateOcrModelSelector
                             preferLocalOCR={preferLocalOCR}
                             toggleOcrPreference={toggleOcrPreference}

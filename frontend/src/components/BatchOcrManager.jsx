@@ -10,11 +10,12 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import {
     ArrowLeft, Play, Loader2, CheckCircle2, AlertTriangle,
-    SkipForward, Zap, X
+    SkipForward, Zap, X, Wand2
 } from "lucide-react";
 
 function performRaliement(poneglyphBubbles, yoloBoxes, imgW, imgH) {
@@ -111,6 +112,14 @@ function loadImageLocal(src) {
     });
 }
 
+function getReviewItemKey(item) {
+    return `${item.pageId}-${item.order}-${item.yoloBox.x}-${item.yoloBox.y}-${item.yoloBox.w}-${item.yoloBox.h}`;
+}
+
+function getSuggestedReviewText(item) {
+    return item.poneglyphText || item.lightonText || '';
+}
+
 export default function BatchOcrManager() {
     const { detectionStatus, loadDetectionModel, downloadProgress, detectBubblesPositionsOnly } = useDetection();
     const params = useParams();
@@ -121,6 +130,7 @@ export default function BatchOcrManager() {
     const [progress, setProgress] = useState({ current: 0, total: 0 });
     const [pageStatuses, setPageStatuses] = useState([]);
     const [reviewQueue, setReviewQueue] = useState([]);
+    const [customReviewTexts, setCustomReviewTexts] = useState({});
     const [stats, setStats] = useState({ autoValidated: 0, totalReview: 0, errors: 0 });
     const [processingReview, setProcessingReview] = useState(false);
 
@@ -383,12 +393,37 @@ export default function BatchOcrManager() {
             toast.error("Erreur: " + e.message);
         }
         URL.revokeObjectURL(item.cropUrl);
+        setCustomReviewTexts(prev => {
+            const next = { ...prev };
+            delete next[getReviewItemKey(item)];
+            return next;
+        });
         setReviewQueue(prev => prev.filter(r => r !== item));
         setProcessingReview(false);
     };
 
+    const handleCustomTextChange = (item, text) => {
+        const key = getReviewItemKey(item);
+        setCustomReviewTexts(prev => ({ ...prev, [key]: text }));
+    };
+
+    const handleChooseCustom = (item) => {
+        const key = getReviewItemKey(item);
+        const text = (customReviewTexts[key] ?? getSuggestedReviewText(item)).trim();
+        if (!text) {
+            toast.error("Le texte personnalisé est vide.");
+            return;
+        }
+        handleChoose(item, text);
+    };
+
     const handleSkip = (item) => {
         URL.revokeObjectURL(item.cropUrl);
+        setCustomReviewTexts(prev => {
+            const next = { ...prev };
+            delete next[getReviewItemKey(item)];
+            return next;
+        });
         setReviewQueue(prev => prev.filter(r => r !== item));
     };
 
@@ -417,6 +452,7 @@ export default function BatchOcrManager() {
             URL.revokeObjectURL(item.cropUrl);
         }
         setReviewQueue([]);
+        setCustomReviewTexts({});
         toast.success(`${count} bulles créées et validées !`);
         setProcessingReview(false);
     };
@@ -424,6 +460,7 @@ export default function BatchOcrManager() {
     const handleSkipAll = () => {
         reviewQueue.forEach(item => URL.revokeObjectURL(item.cropUrl));
         setReviewQueue([]);
+        setCustomReviewTexts({});
     };
 
     const handleCancel = () => {
@@ -434,6 +471,7 @@ export default function BatchOcrManager() {
     const handleReset = () => {
         setPhase('idle');
         setReviewQueue([]);
+        setCustomReviewTexts({});
         setPageStatuses([]);
         setStats({ autoValidated: 0, totalReview: 0, errors: 0 });
     };
@@ -441,17 +479,23 @@ export default function BatchOcrManager() {
     const chapters = getAllChapters();
 
     return (
-        <div className="container max-w-5xl mx-auto py-10 px-4 space-y-6">
-            <div className="flex items-center gap-3 pb-6 border-b border-slate-200">
+        <div className="container max-w-6xl mx-auto py-10 px-4 space-y-6">
+            <div className="relative overflow-hidden rounded-3xl border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/70 to-sky-50 p-6 shadow-sm">
+                <div className="absolute -right-16 -top-16 h-48 w-48 rounded-full bg-indigo-200/40 blur-3xl" />
+                <div className="relative flex items-center gap-3">
                 <Link href={`/${params.mangaSlug}/admin?tab=batch`}>
-                    <Button variant="ghost" size="sm">
+                    <Button variant="outline" size="sm" className="bg-white/80">
                         <ArrowLeft className="h-4 w-4 mr-1" />
                         Admin
                     </Button>
                 </Link>
                 <div>
-                    <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">Batch OCR</h1>
-                    <p className="text-sm text-slate-500">Traitement automatique d&apos;un chapitre complet</p>
+                    <div className="flex items-center gap-2">
+                        <Wand2 className="h-6 w-6 text-indigo-600" />
+                        <h1 className="text-3xl font-extrabold tracking-tight text-slate-950">Batch OCR</h1>
+                    </div>
+                    <p className="text-sm text-slate-600">Détection, double OCR, puis validation rapide des bulles ambiguës.</p>
+                </div>
                 </div>
             </div>
 
@@ -544,7 +588,7 @@ export default function BatchOcrManager() {
 
             {phase === 'review' && (
                 <>
-                    <Card>
+                    <Card className="border-indigo-100 shadow-sm">
                         <CardContent className="py-4">
                             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                                 <div className="flex flex-wrap gap-4">
@@ -563,7 +607,7 @@ export default function BatchOcrManager() {
                                         </div>
                                     )}
                                 </div>
-                                <div className="flex gap-2">
+                                <div className="flex flex-wrap gap-2">
                                     <Button size="sm" variant="outline" onClick={() => handleAcceptAll('lighton')} disabled={processingReview}>
                                         Tout LightOn
                                     </Button>
@@ -578,11 +622,15 @@ export default function BatchOcrManager() {
                         </CardContent>
                     </Card>
 
-                    <div className="space-y-3">
-                        {reviewQueue.map((item, idx) => (
-                            <Card key={idx} className="overflow-hidden">
-                                <div className="flex">
-                                    <div className="w-36 h-36 bg-slate-100 flex-shrink-0 flex items-center justify-center p-2 border-r border-slate-200">
+                    <div className="grid gap-3">
+                        {reviewQueue.map((item, idx) => {
+                            const itemKey = getReviewItemKey(item);
+                            const customText = customReviewTexts[itemKey] ?? getSuggestedReviewText(item);
+
+                            return (
+                            <Card key={itemKey} className="overflow-hidden border-slate-200 shadow-sm">
+                                <div className="grid gap-0 md:grid-cols-[160px_1fr_52px]">
+                                    <div className="min-h-40 bg-white flex items-center justify-center p-3 md:border-r border-slate-200">
                                         <img
                                             src={item.cropUrl}
                                             alt={`Bulle page ${item.pageNumber}`}
@@ -590,48 +638,70 @@ export default function BatchOcrManager() {
                                         />
                                     </div>
 
-                                    <div className="flex-1 p-4 space-y-3">
-                                        <div className="flex items-center gap-2">
+                                    <div className="p-4 space-y-3 bg-white">
+                                        <div className="flex flex-wrap items-center gap-2">
                                             <Badge variant="outline">Page {item.pageNumber}</Badge>
+                                            <Badge variant="outline">Ordre {item.order}</Badge>
                                             {item.rallied ? (
                                                 <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200">Rallié</Badge>
                                             ) : (
                                                 <Badge className="bg-amber-50 text-amber-700 border-amber-200">YOLO seul</Badge>
                                             )}
+                                            <span className="text-xs text-slate-400">#{idx + 1} / {reviewQueue.length}</span>
                                         </div>
 
-                                        <div className={`grid gap-3 ${item.rallied ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                                        <div className={`grid gap-2 ${item.rallied ? 'lg:grid-cols-2' : 'grid-cols-1'}`}>
                                             {item.rallied && (
-                                                <div className="p-3 rounded-lg border border-slate-200 bg-slate-50/50">
-                                                    <p className="text-xs font-semibold text-indigo-600 mb-1">Poneglyph BBox</p>
-                                                    <p className="text-sm text-slate-800">{item.poneglyphText || <em className="text-slate-400">vide</em>}</p>
+                                                <div className="p-3 rounded-lg border border-slate-200 bg-white">
+                                                    <p className="text-xs font-semibold text-slate-500 mb-1">Poneglyph BBox</p>
+                                                    <p className="min-h-10 text-sm text-slate-900 whitespace-pre-wrap">{item.poneglyphText || <em className="text-slate-400">vide</em>}</p>
                                                     <Button
                                                         size="sm"
-                                                        className="mt-2 w-full bg-indigo-600 hover:bg-indigo-700 text-white"
+                                                        variant="outline"
+                                                        className="mt-2 w-full"
                                                         onClick={() => handleChoose(item, item.poneglyphText)}
                                                         disabled={!item.poneglyphText || processingReview}
                                                     >
-                                                        Choisir
+                                                        Utiliser
                                                     </Button>
                                                 </div>
                                             )}
 
-                                            <div className="p-3 rounded-lg border border-slate-200 bg-slate-50/50">
-                                                <p className="text-xs font-semibold text-emerald-600 mb-1">LightOn Classique</p>
-                                                <p className="text-sm text-slate-800">{item.lightonText || <em className="text-slate-400">vide</em>}</p>
+                                            <div className="p-3 rounded-lg border border-slate-200 bg-white">
+                                                <p className="text-xs font-semibold text-slate-500 mb-1">LightOn Classique</p>
+                                                <p className="min-h-10 text-sm text-slate-900 whitespace-pre-wrap">{item.lightonText || <em className="text-slate-400">vide</em>}</p>
                                                 <Button
                                                     size="sm"
-                                                    className="mt-2 w-full bg-emerald-600 hover:bg-emerald-700 text-white"
+                                                    variant="outline"
+                                                    className="mt-2 w-full"
                                                     onClick={() => handleChoose(item, item.lightonText)}
                                                     disabled={!item.lightonText || processingReview}
                                                 >
-                                                    Choisir
+                                                    Utiliser
                                                 </Button>
                                             </div>
                                         </div>
+
+                                        <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+                                            <p className="mb-2 text-xs font-semibold text-slate-500">Texte à enregistrer</p>
+                                            <Textarea
+                                                value={customText}
+                                                onChange={(event) => handleCustomTextChange(item, event.target.value)}
+                                                className="min-h-16 resize-y bg-white"
+                                                placeholder="Modifier ou saisir le texte..."
+                                            />
+                                            <Button
+                                                size="sm"
+                                                className="mt-2 bg-indigo-600 text-white hover:bg-indigo-700"
+                                                onClick={() => handleChooseCustom(item)}
+                                                disabled={!customText.trim() || processingReview}
+                                            >
+                                                Valider
+                                            </Button>
+                                        </div>
                                     </div>
 
-                                    <div className="flex items-center pr-3">
+                                    <div className="flex items-center justify-center border-t border-slate-200 bg-white md:border-l md:border-t-0">
                                         <Button
                                             size="sm"
                                             variant="ghost"
@@ -643,7 +713,8 @@ export default function BatchOcrManager() {
                                     </div>
                                 </div>
                             </Card>
-                        ))}
+                            );
+                        })}
                     </div>
                 </>
             )}
