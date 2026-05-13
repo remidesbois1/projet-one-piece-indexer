@@ -1,0 +1,29 @@
+[[permission]]
+identifier = "allow-get-local-model-status"
+description = "Allows checking the local OCR model status."
+commands.allow = ["get_local_model_status"]
+
+[[permission]]
+identifier = "allow-load-local-model"
+description = "Allows loading the local OCR model in the sidecar."
+commands.allow = ["load_local_model"]
+
+[[permission]]
+identifier = "allow-download-local-model"
+description = "Allows downloading the local OCR model."
+commands.allow = ["download_local_model"]
+
+[[permission]]
+identifier = "allow-run-local-ocr"
+description = "Allows running local OCR on a selected page."
+commands.allow = ["run_local_ocr"]
+
+[[permission]]
+identifier = "allow-healthcheck-local-backend"
+description = "Allows checking whether the local OCR backend is reachable."
+commands.allow = ["healthcheck_local_backend"]
+
+[[permission]]
+identifier = "allow-get-app-version"
+description = "Allows reading the desktop app version."
+commands.allow = ["get_app_version"]
