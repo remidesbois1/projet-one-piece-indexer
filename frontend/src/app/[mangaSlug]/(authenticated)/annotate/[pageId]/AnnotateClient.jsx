@@ -14,7 +14,7 @@ import { useAnnotationInteractions } from '@/hooks/useAnnotationInteractions';
 import { useAnnotationOCR } from '@/hooks/useAnnotationOCR';
 import { useAnnotationDetection } from '@/hooks/useAnnotationDetection';
 import { useAnnotationMetadata } from '@/hooks/useAnnotationMetadata';
-import { useTauriLocalOcr } from '@/hooks/useTauriLocalOcr';
+import { useTauriLocalOcrContext } from '@/context/TauriLocalOcrContext';
 import { getProxiedImageUrl } from '@/lib/utils';
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -85,7 +85,7 @@ export default function AnnotatePage() {
 
     const containerRef = useRef(null);
     const imageRef = useRef(null);
-    const tauriLocalOcr = useTauriLocalOcr();
+    const tauriLocalOcr = useTauriLocalOcrContext();
 
     const [chapterPages, setChapterPages] = useState([]);
     const [navContext, setNavContext] = useState({ prev: null, next: null });
@@ -714,6 +714,7 @@ export default function AnnotatePage() {
                 isCheckingLocalConnection={tauriLocalOcr.isCheckingLocalConnection}
                 localModelStatus={tauriLocalOcr.localModelStatus}
                 localHealth={tauriLocalOcr.localHealth}
+                localConnectionState={tauriLocalOcr.localConnectionState}
                 isDownloadingLocalModel={tauriLocalOcr.isDownloadingLocalModel}
                 localDownloadState={tauriLocalOcr.localDownloadState}
                 localDownloadProgress={tauriLocalOcr.localDownloadProgress}

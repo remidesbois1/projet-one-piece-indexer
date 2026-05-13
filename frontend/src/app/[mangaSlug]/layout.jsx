@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import Header from '@/components/Header';
 import { MangaProvider } from "@/context/MangaContext";
+import { TauriLocalOcrProvider } from '@/context/TauriLocalOcrContext';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import ApiKeyForm from '@/components/ApiKeyForm';
 
@@ -24,17 +25,19 @@ export default function MangaLayout({ children }) {
 
     return (
         <MangaProvider>
-            <Header onOpenApiKeyModal={() => setShowApiKeyModal(true)} />
-            <main className="container mx-auto py-6 px-4 sm:px-8 max-w-[1600px] page-transition">
-                {children}
-            </main>
+            <TauriLocalOcrProvider>
+                <Header onOpenApiKeyModal={() => setShowApiKeyModal(true)} />
+                <main className="container mx-auto py-6 px-4 sm:px-8 max-w-[1600px] page-transition">
+                    {children}
+                </main>
+            </TauriLocalOcrProvider>
 
             <Dialog open={showApiKeyModal} onOpenChange={setShowApiKeyModal}>
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
                         <DialogTitle>Configuration API</DialogTitle>
                         <DialogDescription>
-                            Gérez votre clé API Google Gemini pour l'ensemble de l'application.
+                            Gérez votre clé API Google Gemini pour l&apos;ensemble de l&apos;application.
                         </DialogDescription>
                     </DialogHeader>
                     <ApiKeyForm onSave={handleSaveApiKey} />
