@@ -1,0 +1,9 @@
+fastapi[standard]
+uvicorn
+torch
+torchvision
+accelerate
+huggingface_hub
+Pillow
+pydantic
+git+https://github.com/huggingface/transformers.git

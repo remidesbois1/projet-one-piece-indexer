@@ -14,6 +14,7 @@ import { useAnnotationInteractions } from '@/hooks/useAnnotationInteractions';
 import { useAnnotationOCR } from '@/hooks/useAnnotationOCR';
 import { useAnnotationDetection } from '@/hooks/useAnnotationDetection';
 import { useAnnotationMetadata } from '@/hooks/useAnnotationMetadata';
+import { useTauriLocalOcr } from '@/hooks/useTauriLocalOcr';
 import { getProxiedImageUrl } from '@/lib/utils';
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -33,6 +34,27 @@ const PAGE_STATUSES = [
     { value: 'completed', label: 'Validée' },
 ];
 
+function imageElementToJpegBlob(img) {
+    return new Promise((resolve) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        canvas.toBlob(resolve, 'image/jpeg', 0.92);
+    });
+}
+
+async function runModalPoneglyph(imageBlob) {
+    const response = await fetch('/api/poneglyph_one_shot', {
+        method: 'POST',
+        body: imageBlob
+    });
+
+    if (!response.ok) throw new Error("Erreur API Poneglyph");
+    return response.json();
+}
+
 export default function AnnotatePage() {
     const { user, session, isGuest, role } = useAuth();
     const params = useParams();
@@ -51,6 +73,7 @@ export default function AnnotatePage() {
     const [pendingAnnotation, setPendingAnnotation] = useState(null);
     const [isOneShotLoading, setIsOneShotLoading] = useState(false);
     const [isPoneglyphLoading, setIsPoneglyphLoading] = useState(false);
+    const [poneglyphRunMode, setPoneglyphRunMode] = useState(null);
     const [rectangle, setRectangle] = useState(null);
     const [imageDimensions, setImageDimensions] = useState(null);
     const [ocrSource, setOcrSource] = useState(null);
@@ -62,6 +85,7 @@ export default function AnnotatePage() {
 
     const containerRef = useRef(null);
     const imageRef = useRef(null);
+    const tauriLocalOcr = useTauriLocalOcr();
 
     const [chapterPages, setChapterPages] = useState([]);
     const [navContext, setNavContext] = useState({ prev: null, next: null });
@@ -494,11 +518,17 @@ export default function AnnotatePage() {
         }
     };
 
-    const handleOneShotPoneglyph = async () => {
+    const handleOneShotPoneglyph = async ({ preferLocal = false } = {}) => {
         if (!imageRef.current) return;
 
+        const runMode = preferLocal ? 'local' : 'modal';
         setIsPoneglyphLoading(true);
+        setPoneglyphRunMode(runMode);
         try {
+            if (preferLocal && !tauriLocalOcr.canRunLocalOcr) {
+                throw new Error("Le modele local doit etre charge avant de lancer le one-shot local.");
+            }
+
             let yoloPromise = Promise.resolve(null);
             if (detectionStatus === 'ready') {
                 yoloPromise = fetch(imageRef.current.src)
@@ -510,24 +540,23 @@ export default function AnnotatePage() {
                     });
             }
 
-            const imageBlob = await new Promise((resolve) => {
-                const canvas = document.createElement('canvas');
-                const img = imageRef.current;
-                canvas.width = img.naturalWidth;
-                canvas.height = img.naturalHeight;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(img, 0, 0);
-                canvas.toBlob(resolve, 'image/jpeg', 0.92);
-            });
+            const imageBlob = await imageElementToJpegBlob(imageRef.current);
+            if (!imageBlob) throw new Error("Impossible de convertir l'image.");
+
+            const extractionPromise = (async () => {
+                if (preferLocal) {
+                    const localResult = await tauriLocalOcr.runLocalOcrBlob(imageBlob);
+                    if (localResult?.elapsed_ms) {
+                        toast.success(`OCR local termine en ${localResult.elapsed_ms} ms.`);
+                    }
+                    return localResult;
+                }
+
+                return runModalPoneglyph(imageBlob);
+            })();
 
             const [apiResponse, yoloBoxes] = await Promise.all([
-                fetch('/api/poneglyph_one_shot', {
-                    method: 'POST',
-                    body: imageBlob
-                }).then(r => {
-                    if (!r.ok) throw new Error("Erreur API Poneglyph");
-                    return r.json();
-                }),
+                extractionPromise,
                 yoloPromise
             ]);
 
@@ -615,10 +644,28 @@ export default function AnnotatePage() {
             }
         } catch (error) {
             console.error(error);
-            toast.error("Service Poneglyph indisponible : " + error.message);
+            toast.error(`${runMode === 'local' ? 'OCR local Poneglyph' : 'Service Modal Poneglyph'} indisponible : ${error.message}`);
         } finally {
             setIsPoneglyphLoading(false);
+            setPoneglyphRunMode(null);
         }
+    };
+
+    const handleOneShotLocalPoneglyph = () => {
+        if (!tauriLocalOcr.canRunLocalOcr) {
+            const reason = !tauriLocalOcr.isTauri
+                ? "App desktop non detectee."
+                : tauriLocalOcr.isDownloadingLocalModel
+                    ? "Telechargement du modele local en cours."
+                    : !tauriLocalOcr.localModelStatus?.installed
+                        ? "Telechargez le modele local d'abord."
+                        : !tauriLocalOcr.localModelStatus?.ready
+                            ? "Chargez le modele local en VRAM d'abord."
+                            : "OCR local indisponible.";
+            toast.error(reason);
+            return;
+        }
+        return handleOneShotPoneglyph({ preferLocal: true });
     };
 
     if (error) return <div className="p-8 text-red-500">{error}</div>;
@@ -661,6 +708,22 @@ export default function AnnotatePage() {
                 isOneShotLoading={isOneShotLoading}
                 handleOneShotPoneglyph={handleOneShotPoneglyph}
                 isPoneglyphLoading={isPoneglyphLoading}
+                poneglyphRunMode={poneglyphRunMode}
+                handleOneShotLocalPoneglyph={handleOneShotLocalPoneglyph}
+                isTauri={tauriLocalOcr.isTauri}
+                isCheckingLocalConnection={tauriLocalOcr.isCheckingLocalConnection}
+                localModelStatus={tauriLocalOcr.localModelStatus}
+                localHealth={tauriLocalOcr.localHealth}
+                isDownloadingLocalModel={tauriLocalOcr.isDownloadingLocalModel}
+                localDownloadState={tauriLocalOcr.localDownloadState}
+                localDownloadProgress={tauriLocalOcr.localDownloadProgress}
+                isLoadingLocalModel={tauriLocalOcr.isLoadingLocalModel}
+                isLocalInferencing={tauriLocalOcr.isLocalInferencing}
+                localError={tauriLocalOcr.localError}
+                canRunLocalOcr={tauriLocalOcr.canRunLocalOcr}
+                downloadLocalModel={tauriLocalOcr.downloadLocalModel}
+                loadLocalModel={tauriLocalOcr.loadLocalModel}
+                refreshLocalDiagnostics={tauriLocalOcr.refreshLocalDiagnostics}
             />
 
             <div className="flex flex-col flex-1 overflow-hidden min-w-0 bg-slate-50 relative">
