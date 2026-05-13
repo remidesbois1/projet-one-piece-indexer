@@ -1,9 +1,17 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default desktop capability - grants core permissions to the main window and poneglyph.fr",
+  "description": "Default desktop capability - grants core permissions and local OCR commands to the main window and poneglyph.fr",
   "windows": ["main"],
-  "permissions": ["core:default"],
+  "permissions": [
+    "core:default",
+    "allow-get-local-model-status",
+    "allow-load-local-model",
+    "allow-download-local-model",
+    "allow-run-local-ocr",
+    "allow-healthcheck-local-backend",
+    "allow-get-app-version"
+  ],
   "remote": {
     "urls": ["https://poneglyph.fr/**", "https://www.poneglyph.fr/**"]
   }
