@@ -14,7 +14,8 @@ import {
     Send,
     Settings2,
     Sparkles,
-    Cpu
+    Cpu,
+    CloudLightning
 } from "lucide-react";
 import AnnotateOcrModelSelector from './AnnotateOcrModelSelector';
 import AnnotateBubbleScanner from './AnnotateBubbleScanner';
@@ -61,10 +62,35 @@ export default function AnnotateLeftSidebar({
     handleOneShot,
     isOneShotLoading,
     handleOneShotPoneglyph,
-    isPoneglyphLoading
+    isPoneglyphLoading,
+    poneglyphRunMode = null,
+    handleOneShotLocalPoneglyph,
+    isTauri = false,
+    isCheckingLocalConnection = false,
+    localModelStatus = null,
+    localHealth = null,
+    isDownloadingLocalModel = false,
+    localDownloadState = null,
+    localDownloadProgress = null,
+    isLoadingLocalModel = false,
+    isLocalInferencing = false,
+    localError = null,
+    canRunLocalOcr = false,
+    downloadLocalModel,
+    loadLocalModel,
+    refreshLocalDiagnostics
 }) {
     const isStaff = role === 'Admin' || role === 'Modo';
     const isAdmin = role === 'Admin';
+    const localDisabledReason = !isTauri
+        ? "App desktop non detectee"
+        : isDownloadingLocalModel || localDownloadState?.active
+            ? "Telechargement du modele local"
+            : !localModelStatus?.installed
+                ? "Modele local non telecharge"
+                : !localModelStatus?.ready
+                    ? "Modele local non charge"
+                    : null;
 
     return (
         <div className="hidden lg:flex w-[280px] shrink-0 h-full flex-col border-r border-slate-200 bg-white z-40 relative shadow-sm">
@@ -97,7 +123,7 @@ export default function AnnotateLeftSidebar({
                 </div>
             </div>
 
-            <div className="flex-1 flex flex-col p-4 gap-3 overflow-hidden bg-slate-50/50">
+            <div className="flex-1 flex flex-col p-4 gap-3 overflow-y-auto bg-slate-50/50">
                 {!isGuest && !isSandbox && (
                     <div className="flex-none p-3 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-2">
                         <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-0.5">Navigation</h3>
@@ -142,6 +168,18 @@ export default function AnnotateLeftSidebar({
                             downloadProgress={downloadProgress}
                             geminiKey={geminiKey}
                             isSandbox={isSandbox}
+                            isTauri={isTauri}
+                            isCheckingLocalConnection={isCheckingLocalConnection}
+                            localModelStatus={localModelStatus}
+                            localHealth={localHealth}
+                            isDownloadingLocalModel={isDownloadingLocalModel}
+                            localDownloadState={localDownloadState}
+                            localDownloadProgress={localDownloadProgress}
+                            isLoadingLocalModel={isLoadingLocalModel}
+                            localError={localError}
+                            downloadLocalModel={downloadLocalModel}
+                            loadLocalModel={loadLocalModel}
+                            refreshLocalDiagnostics={refreshLocalDiagnostics}
                         />
 
                         <AnnotateBubbleScanner
@@ -159,20 +197,46 @@ export default function AnnotateLeftSidebar({
                             <div className="flex-none p-4 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-3">
                                 <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-0.5">Extraction Intégrale</h3>
                                 
+                                {handleOneShotLocalPoneglyph && (
+                                    <Button
+                                        onClick={handleOneShotLocalPoneglyph}
+                                        disabled={!canRunLocalOcr || isPoneglyphLoading || isLocalInferencing || isSubmitting || isAutoDetecting}
+                                        title={localDisabledReason || "Lancer Poneglyph local"}
+                                        className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-[11px] uppercase tracking-wider font-bold shadow-md disabled:opacity-50"
+                                    >
+                                        {(isLocalInferencing || poneglyphRunMode === 'local') ? (
+                                            <span className="flex items-center gap-2">
+                                                <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                                                OCR local...
+                                            </span>
+                                        ) : (
+                                            <span className="flex items-center gap-2">
+                                                <Cpu size={14} />
+                                                Local Poneglyph One-Shot
+                                            </span>
+                                        )}
+                                    </Button>
+                                )}
+                                {localDisabledReason && (
+                                    <div className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[9px] font-semibold text-slate-500">
+                                        Local indisponible: {localDisabledReason}
+                                    </div>
+                                )}
+
                                 <Button 
                                     onClick={handleOneShotPoneglyph} 
                                     disabled={isPoneglyphLoading || isSubmitting || isAutoDetecting}
                                     className="w-full h-10 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] uppercase tracking-wider font-bold shadow-md"
                                 >
-                                    {isPoneglyphLoading ? (
+                                    {poneglyphRunMode === 'modal' ? (
                                         <span className="flex items-center gap-2">
                                             <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                                            Analyse Poneglyph...
+                                            Analyse Modal...
                                         </span>
                                     ) : (
                                         <span className="flex items-center gap-2">
-                                            <Cpu size={14} />
-                                            One-Shot Poneglyph
+                                            <CloudLightning size={14} />
+                                            Modal Poneglyph One-Shot
                                         </span>
                                     )}
                                 </Button>

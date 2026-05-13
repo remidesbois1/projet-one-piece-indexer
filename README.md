@@ -1,194 +1,249 @@
-# **Projet Poneglyph**
+# Projet Poneglyph
 
 ![Status](https://img.shields.io/badge/Status-Live-success?style=for-the-badge)
 ![WebGPU](https://img.shields.io/badge/WebGPU-Enabled-8A2BE2?style=for-the-badge)
+![Desktop](https://img.shields.io/badge/Desktop-Tauri_v2-FFC131?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)
 
-Le **Projet Poneglyph** est une plateforme de haute performance dédiée à la numérisation, l'indexation sémantique et la recherche contextuelle de mangas et bandes dessinées. En combinant l'intelligence artificielle déportée (**WebGPU**) et une infrastructure hybride optimisée, le système permet une exploration inédite des oeuvres.
+Le **Projet Poneglyph** est une plateforme de haute performance dediee a la numerisation, l'indexation semantique et la recherche contextuelle de mangas et bandes dessinees. En combinant l'intelligence artificielle deportee (**WebGPU**) et une infrastructure hybride optimisee, le systeme permet une exploration inedite des oeuvres.
 
-**Accès Public (Mode Invité pour la Consultation et la Recherche) :** [**poneglyph.fr**](https://poneglyph.fr)
-
-**Sandbox (Test de l'OCR sans inscription) :** [**poneglyph.fr/sandbox**](https://poneglyph.fr/sandbox)
-
----
-
-### **Infrastructure Core**
-
-* **Hébergement :** VPS Cloud (Hetzner CX23 - 2 vCPU, 4 Go RAM).
-* **Orchestration :** Coolify (Gestion des conteneurs, CI/CD et Reverse Proxy).
-* **Stockage Objets :** Cloudflare R2 pour l'hébergement des planches (compatible S3).
-* **CDN & Sécurité :** Cloudflare (Gestion DNS, protection DDoS et mise en cache).
-
-### **Frontend & IA (Edge)**
-
-* **Framework :** React 19 / Next.js & Vite.
-* **CSS** : [ShadCn UI](https://ui.shadcn.com/)
-* **OCR Hybride :** **TrOCR Fine-tuned** (Local via WebGPU) & **LightOnOCR** (Cloud via Modal).
-* **Détection de Bulles Locale :** **YOLO26 Nano Fine-tuned** [`Remidesbois/YoloPiece_BubbleDetector_Nano`](https://huggingface.co/Remidesbois/YoloPiece_BubbleDetector_Nano) exécuté via ONNX Runtime Web (WASM).
-* **State Management :** Context API & LocalStorage.
-
-### **Backend & Services (Cloud)**
-
-* **Serveur API :** Node.js / Express.
-* **Base de Données :** Supabase (PostgreSQL) avec l'extension **pgvector**.
-* **LLM & Embeddings :** Google Gemini 3.1 Flash-Lite, Voyage AI (`voyage-4-large`) & Gemini Multimodal (`gemini-embedding-2-preview`).
-* **Inférence GPU Cloud :** Modal (pour l'OCR LightOn de haute précision).
+**Acces Public :** [**poneglyph.fr**](https://poneglyph.fr)
+**Sandbox OCR :** [**poneglyph.fr/sandbox**](https://poneglyph.fr/sandbox)
+**API Publique :** `https://api.poneglyph.fr/v1`
 
 ---
 
-## **Moteur de Recherche Multi-Modal**
+## Sommaire
 
-L'indexer propose deux expériences de recherche distinctes :
-
-### **1. Recherche par Mots-Clés**
-
-* Recherche instantanée via *full-text search* PostgreSQL.
-* Indexation précise au niveau de chaque bulle de dialogue.
-
-### **2. Recherche Sémantique & Conceptuelle**
-
-L'Indexer utilise une architecture de recherche hybride, multicouche et parallélisée pour une précision maximale :
-
-* **Récupération Parallèle & Multimodale :** 
-    * **Moteur 1 (Texte) :** Vectorisation par **Voyage AI** (`voyage-4-large`).
-    * **Moteur 2 (Vision-Texte) :** Vectorisation **multimodale** par **Gemini** (`gemini-embedding-2-preview`). Ce moteur fusionne les descriptions textuelles et l'analyse visuelle des planches pour une compréhension profonde de l'image.
-    * **Consensus :** Bonus de score (**1.15x**) appliqué aux pages identifiées par les deux moteurs pour prioriser le consensus.
-* **Filtrage Multicritère :** Arcs narratifs, personnages, volumes et mangas.
-
-> L'expérience sémantique est désormais entièrement gérée via les clés API côté serveur pour une expérience utilisateur fluide.
-
-### **3. Système de Feedback (RLHF Lite)**
-
-* 👍 / 👎 sur chaque résultat pour collecter des données de pertinence.
-* **Objectif :** Constitution d'un dataset pour l'entraînement futur d'un modèle de reranking spécialisé.
+- [Application Desktop (One-Click)](#application-desktop-one-click)
+- [Architecture](#architecture)
+- [Moteur de Recherche Multi-Modal](#moteur-de-recherche-multi-modal)
+- [Pipeline OCR Hybride](#pipeline-ocr-hybride)
+- [API Publique V1](#api-publique-v1)
+- [Infrastructure](#infrastructure)
+- [Developpement Local](#developpement-local)
+- [Build Desktop](#build-desktop)
+- [Pipeline MLOps](#pipeline-mlops)
+- [Securite et FinOps](#securite-et-finops)
+- [Avertissement Legal](#avertissement-legal)
 
 ---
 
-## **Pipeline d'OCR Hybride**
+## Application Desktop (One-Click)
 
-L'extraction de texte utilise une architecture conçue pour minimiser les coûts tout en maximisant la qualité.
+Poneglyph est disponible en tant qu'application desktop Windows via **Tauri v2**. L'application charge directement `https://poneglyph.fr` et ajoute un backend Python local pour l'OCR haute precision sur GPU.
 
-### **TrOCR Fine-tuned (Local)**
+### Ce que fait l'application
 
-> Pour plus de détails sur la pipeline d'ocr : [ocr_pipeline.md](https://github.com/remidesbois1/projet-poneglyph/blob/master/documentation/ocr_pipeline.md)
+| Fonctionnalite | Web | Desktop |
+|---|---|---|
+| Recherche par mots-cles | Oui | Oui |
+| Recherche semantique | Oui | Oui |
+| Navigation des volumes/pages | Oui | Oui |
+| OCR TrOCR (WebGPU local) | Oui | Oui |
+| OCR LightOn via Modal (cloud) | Oui | Oui |
+| OCR LightOn **local** (Python/GPU) | Non | **Oui** |
+| Annotation hors-ligne | Non | Non |
 
-Deux modèles spécialisés pour le français et les polices de manga, sélectionnables directement dans l'interface :
+### Prerequis pour le mode desktop avec OCR local
+
+- **Windows 10/11 64-bit**
+- **Python 3.10+** avec **PyTorch** (CUDA recommande)
+- **GPU NVIDIA** avec >= 4 Go VRAM (ou CPU lent)
+- Connexion internet (l'appli charge poneglyph.fr)
+
+> L'application fonctionne sans Python/GPU. Dans ce cas, seul l'OCR cloud (Modal) est disponible.
+
+### Installation rapide (depuis l'installer)
+
+1. Telechargez `Poneglyph_1.0.0_x64-setup.exe`
+2. Lancez l'installer
+3. Lancez **Poneglyph** depuis le menu Demarrer
+4. L'application ouvre poneglyph.fr avec les fonctionnalites OCR locales
+
+### Premier lancement avec OCR local
+
+1. Ouvrez l'application
+2. Allez sur une page d'annotation
+3. Dans le panneau OCR, cliquez sur **Telecharger le modele local** (~2 Go)
+4. Le modele est telecharge dans `%APPDATA%\poneglyph\models\`
+5. Cliquez sur **OCR local** pour lancer l'inference sur votre GPU
+
+---
+
+## Architecture
+
+### Infrastructure Core
+
+- **Hebergement :** VPS Cloud (Hetzner CX23 - 2 vCPU, 4 Go RAM)
+- **Orchestration :** Coolify (CI/CD et Reverse Proxy)
+- **Stockage Objets :** Cloudflare R2 (compatible S3)
+- **CDN et Securite :** Cloudflare (DNS, DDoS, cache)
+
+### Frontend et IA (Edge)
+
+- **Framework :** React 19 / Next.js
+- **UI :** [ShadCn UI](https://ui.shadcn.com/)
+- **OCR Hybride :** TrOCR Fine-tuned (WebGPU) + LightOnOCR (Cloud/Local)
+- **Detection de Bulles :** YOLO26 Nano via ONNX Runtime Web (WASM)
+- **Desktop :** Tauri v2 (Rust shell + Python backend)
+
+### Backend et Services (Cloud)
+
+- **API :** Node.js / Express
+- **Base de Donnees :** Supabase (PostgreSQL + pgvector)
+- **LLM et Embeddings :** Google Gemini 3.1 Flash-Lite, Voyage AI, Gemini Multimodal
+- **Inference GPU Cloud :** Modal (NVIDIA L4)
+
+### Desktop (Tauri v2)
+
+```
+┌──────────────────────────────────────────────────┐
+│  Poneglyph Desktop (.exe)                        │
+│                                                  │
+│  ┌────────────────────────────────────────────┐  │
+│  │  Tauri v2 (Rust)                           │  │
+│  │  - Charge https://poneglyph.fr             │  │
+│  │  - IPC: invoke() <-> Commandes Rust        │  │
+│  │  - Demarre le backend Python en background │  │
+│  │  - Arrete le process Python a la fermeture │  │
+│  └──────────────┬─────────────────────────────┘  │
+│                 │ HTTP (127.0.0.1:random)         │
+│  ┌──────────────▼─────────────────────────────┐  │
+│  │  local_ocr_server.py (FastAPI)              │  │
+│  │  - Charge LightOnOCR-2-1b-poneglyph-bbox   │  │
+│  │  - CUDA / MPS / CPU auto-detect            │  │
+│  │  - Endpoints: /health, /model/*, /ocr      │  │
+│  └────────────────────────────────────────────┘  │
+│                                                  │
+│  Modele: %APPDATA%\poneglyph\models\...          │
+└──────────────────────────────────────────────────┘
+```
+
+---
+
+## Moteur de Recherche Multi-Modal
+
+### Recherche par Mots-Cles
+
+Recherche instantanee via full-text search PostgreSQL, indexee au niveau de chaque bulle.
+
+### Recherche Semantique et Conceptuelle
+
+Architecture hybride, multicouche et parallelisee :
+
+- **Moteur 1 (Texte) :** Vectorisation par **Voyage AI** (`voyage-4-large`)
+- **Moteur 2 (Vision-Texte) :** Vectorisation multimodale par **Gemini** (`gemini-embedding-2-preview`)
+- **Consensus :** Bonus de score (1.15x) pour les pages identifiees par les deux moteurs
+- **Filtrage :** Arcs narratifs, personnages, volumes, mangas
+
+### Systeme de Feedback (RLHF Lite)
+
+- / sur chaque resultat pour la collecte de pertinence
+- Objectif : dataset pour l'entrainement d'un modele de reranking specialise
+
+---
+
+## Pipeline OCR Hybride
+
+### TrOCR Fine-tuned (Local WebGPU)
+
+> Details : [ocr_pipeline.md](https://github.com/remidesbois1/projet-poneglyph/blob/master/documentation/ocr_pipeline.md)
 
 | | **TrOCR Base** | **TrOCR Large** |
 |---|---|---|
-| **HuggingFace** | [`Remidesbois/trocr-onepiece-fr`](https://huggingface.co/Remidesbois/trocr-onepiece-fr) | [`Remidesbois/trocr-onepiece-fr-large`](https://huggingface.co/Remidesbois/trocr-onepiece-fr-large) |
-| **Paramètres** | ~334M | ~558M |
+| **HuggingFace** | [`trocr-onepiece-fr`](https://huggingface.co/Remidesbois/trocr-onepiece-fr) | [`trocr-onepiece-fr-large`](https://huggingface.co/Remidesbois/trocr-onepiece-fr-large) |
+| **Parametres** | ~334M | ~558M |
 | **Taille ONNX** | ~1.33 Go | ~2.33 Go |
 | **CER (brut)** | 2.90% | **1.83%** |
 | **WER (brut)** | 9.20% | **6.03%** |
-| **Use case** | Appareils modestes, chargement rapide | Meilleure précision, GPU intégré plus puissant |
-| **Coût** | 0 $/OCR | 0 $/OCR |
+| **Cout** | 0 $/OCR | 0 $/OCR |
 
-> **Note de compatibilité :** L'OCR local nécessite un navigateur compatible WebGPU (Chrome 113+, Edge, Firefox Nightly).
+### LightOn-OCR Poneglyph (Cloud Modal / Local GPU)
 
-### **LightOn-OCR "Poneglyph" (Cloud via Modal / Local)**
+Modele de pointe pour une precision extreme, deploye en serverless sur **Modal** et disponible en local via le desktop.
 
-Nouveau modèle de pointe pour une précision extrême, déployé en mode *serverless* sur **Modal** et disponible en local pour ceux ayant une bonne carte graphique (4Go de VRAM)
+- **Modele :** [`LightonOCR-2-1b-poneglyph-bbox`](https://huggingface.co/Remidesbois/LightonOCR-2-1b-poneglyph-bbox) (Architecture LightOnOCR-2-1B)
+- **Precision :** CER < 0.1% - WER < 0.1%
+- **Cloud :** GPU NVIDIA L4 via Modal (~0.000222 $/seconde)
+- **Local :** 0$/OCR, 5-15s/page selon GPU
+- **Optimisation :** Post-processing de troncature pour 0% d'hallucination
 
-* **Modèle :** [`Remidesbois/LightonOCR-2-1b-poneglyph`](https://huggingface.co/Remidesbois/LightonOCR-2-1b-poneglyph) (Architecture LightOnOCR-2-1B).
-* **Modèle ONNX:** [`Remidesbois/LightonOCR-2-1b-poneglyph-onnx`](https://huggingface.co/Remidesbois/LightonOCR-2-1b-poneglyph-onnx).
-* **Précision :** CER **< 0.1%** - WER **< 0.1%**.
-* **Infrastructure :** Inférence sur GPU **NVIDIA L4** via la plateforme Modal.
-* **Usage :** Idéal pour les textes complexes, les onomatopées ou les configurations sans support WebGPU.
-* **Optimisation :** Post-processing de troncature automatique pour garantir 0% d'hallucination et un CER et WER effectif de 0%.
-* **Coût :** ~0,000222 $ / seconde d'éxécution / 0$ en local.
+### YOLO26 Fine-tuned (Detection des Bulles)
 
-> LightonOCR reste relativement "lent", surtout sur des machines peu puissantes :
-   - 10-15 secondes par bulle sur RTX 500 Ada (équivalent RTX 3050/4050 laptop)
-   - 5-8 secondes par bulle sur RTX 3090.
-> La vitesse doit pouvoir être optimisé en jouant avec la quantization, je dois faire des tests car 
+Detection instantanee des bulles sur la planche.
 
-> Modal offre 30$ de crédit par mois (~37.5h d'inférence), au delà de ce seuil, le service se coupe.
+- **Performance :** mAP50 **0.994** / mAP50-95 **0.868**
+- **Architecture :** YOLO26n (2.4M parametres, 5.2 GFLOPs)
+- **Execution :** ONNX Runtime Web (WASM) cote client
+- **Modele :** [`YoloPiece_BubbleDetector_Nano`](https://huggingface.co/Remidesbois/YoloPiece_BubbleDetector_Nano)
 
-### **YOLO26 Fine-tuned (Détection des bulles)**
+### Modele de Tri des Bulles (ReaderNet V5)
 
-Détecte instantanément les bulles sur la planche.
+> Details : [reading_order_ml.md](https://github.com/remidesbois1/projet-poneglyph/blob/master/documentation/reading_order_ml.md)
 
-* **Performance :** mAP50 de **0.994** / mAP50-95 de **0.868**.
-* **Architecture :** YOLO26n (2.4M paramètres, 5.2 GFLOPs).
-* **Entraînement :** 100 epochs, early stopping (patience 20), imgsz 800, sur dataset Supabase annoté.
-* **Exécution :** ONNX Runtime Web (WASM) côté client.
-* **Modèle :** [`Remidesbois/YoloPiece_BubbleDetector_Nano`](https://huggingface.co/Remidesbois/YoloPiece_BubbleDetector_Nano)
-
-### **Modèle de Tri des Bulles**
-
-Une fois les bulles détectées, un modèle spécialisé les trie intelligemment dans le bon ordre de lecture.
-
-> Pour plus de détails sur le modèle de tri : [reading_order_ml.md](https://github.com/remidesbois1/projet-poneglyph/blob/master/documentation/reading_order_ml.md)
-> Modèle hébergé sur Hugging Face : [Remidesbois/ReaderNet-V5](https://huggingface.co/Remidesbois/ReaderNet-V5)
-
-| | **Modèle de Tri des Bulles (ReaderNet V5)** |
+| | **ReaderNet V5** |
 |---|---|
 | **Architecture** | Global-Local (MobileNetV3 + MLP) |
-| **Précision (Val)** | **98.0%** |
-| **Taille ONNX** | **2.47 MB** (vs 170 MB pour la version précédente) |
-| **Exécution** | Local (Web worker) - Infér. unique par page |
+| **Precision (Val)** | **98.0%** |
+| **Taille ONNX** | **2.47 MB** |
+| **Execution** | Local (Web worker) |
 
-### **Google Gemini ~~2.5~~ 3.1 Flash-Lite (Cloud)**
+### Google Gemini 3.1 Flash-Lite (Cloud Fallback)
 
-Fallback pour les configurations ne supportant pas WebGPU.
-
-* **Coût :** 500 requêtes gratuites sur le free plan, au delà : 0.00008$ / OCR.
-* **Rôle clé :** Gemini 2.5 Flash-Lite a servi en grande partie à générer le corpus de "distillation" pour entraîner les modèles ouverts.
+Fallback pour les configurations ne supportant pas WebGPU. 500 requetes gratuites, puis 0.00008$/OCR.
 
 ---
 
-## **API Publique V1**
-
-Le projet expose une API sécurisée pour les développeurs.
+## API Publique V1
 
 **Base URL :** `https://api.poneglyph.fr/v1`
 
-| Endpoint | Méthode | Description | Paramètres |
-| --- | --- | --- | --- |
-| **`/status`** | `GET` | État de l'API | - |
-| **`/stats`** | `GET` | Statistiques globales | - |
-| **`/series`** | `GET` | Liste des séries | - |
-| **`/tomes/:id`** | `GET` | Détails d'un volume | - |
-| **`/pages/:id`** | `GET` | Contenu (Image, Bulles, Meta) | - |
-| **`/quotes/random`** | `GET` | Citation aléatoire | `?min_length=15` |
-| **`/search`** | `GET` | Recherche textuelle | `?q=requete` |
+| Endpoint | Methode | Description |
+|---|---|---|
+| `/status` | GET | Etat de l'API |
+| `/stats` | GET | Statistiques globales |
+| `/series` | GET | Liste des series |
+| `/tomes/:id` | GET | Details d'un volume |
+| `/pages/:id` | GET | Contenu d'une page |
+| `/quotes/random` | GET | Citation aleatoire |
+| `/search` | GET | Recherche textuelle |
 
-> **Protection :** Les images renvoyées via l'API publique comportent un watermark et une qualité réduite.
-
----
-
-## **Sécurité & FinOps**
-
-Approche rigoureuse pour maintenir un coût de fonctionnement minimal (**≈ 5 € / mois**).
-
-* **Watermarking dynamique :** Protection des visuels.
-* **Confidentialité :** Clés API personnelles stockées en LocalStorage (Optionnel/Admin seulement - Uniquement pour l'OCR/Analyse via Gemini). La recherche sémantique utilise désormais les clés serveur.
-* **Edge Computing :** Déport de la charge d'inférence (OCR/Detection) sur le client pour réduire les coûts serveur.
+> Les images sont watermarkees et reduites en qualite.
 
 ---
 
-## **Pipeline MLOps (Amélioration Continue)**
+## Infrastructure
 
-Les scripts `/script_docker` automatise le cycle de vie des modèle IA :
-
-1. **Extraction :** Récupération des bulles/pages validées (Supabase).
-2. **Fine-Tuning :** Entraînement de TrOCR (Base & Large), ~~de FireRed~~, de lightonOCR, et des modèles de détection/tri des bulles, sur les nouvelles données.
-3. **Déploiement :** Push automatique vers Hugging Face si les métriques (CER/WER, mAP50) sont validées.
+```
+poneglyph.fr (Cloudflare CDN)
+    │
+    ├── Frontend (Next.js / Coolify)
+    │   └── WebGPU OCR + YOLO Detection
+    │
+    ├── Backend API (Node.js / Express)
+    │   ├── Supabase (PostgreSQL + pgvector)
+    │   ├── Cloudflare R2 (Images)
+    │   ├── Modal (GPU Cloud OCR)
+    │   └── Voyage AI + Gemini (Embeddings)
+    │
+    └── Desktop App (Tauri v2)
+        └── Python Backend (FastAPI + PyTorch)
+            └── LightOnOCR Local GPU Inference
+```
 
 ---
 
-## **Installation et Configuration**
+## Developpement Local
 
-### **Prérequis**
+### Prerequis
 
-* Node.js v18+
-* Docker (pour le pipeline MLOps uniquement)
+- Node.js 22+
+- Python 3.10+ (pour l'OCR local desktop)
 
-### **Variables d'environnement**
+### Variables d'environnement
 
-**Backend (`backend/.env.local`)**
-
+**Backend (`backend/.env`)**
 ```env
 PORT=3001
 SUPABASE_URL=...
@@ -196,22 +251,22 @@ SUPABASE_SERVICE_ROLE_KEY=...
 R2_ACCESS_KEY_ID=...
 R2_SECRET_ACCESS_KEY=...
 R2_BUCKET_NAME=...
-SEARCH_PROMPT="..." 
 GOOGLE_API_KEY=...
 VOYAGE_API_KEY=...
-
 ```
 
-**Frontend (`frontend/.env.local`)**
-
+**Frontend (`frontend/.env`)**
 ```env
-VITE_BACKEND_URL=http://localhost:3001/api
-VITE_SUPABASE_URL=...
-VITE_SUPABASE_ANON_KEY=...
-
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+NEXT_PUBLIC_BACKEND_URL=http://localhost:3001/api
+MODAL_OCR_API_KEY=...
+MODAL_OCR_URL=https://remisemenzin--ocr-poneglyph.modal.run
+MODAL_LIGHTON_URL=https://remisemenzin--ocr-lighton.modal.run
+MODAL_PONEGLYPH_BBOX_URL=https://remisemenzin--poneglyph-bbox.modal.run
 ```
 
-### **Démarrage**
+### Demarrage
 
 ```bash
 # Backend
@@ -219,21 +274,136 @@ cd backend && npm install && npm run dev
 
 # Frontend
 cd frontend && npm install && npm run dev
-
 ```
 
-## **Avertissement Légal**
+### Tauri Dev (Desktop)
 
-> Ce projet est une démonstration technique à but éducatif et de recherche sur l'indexation sémantique et l'IA déportée.
->
-> **Engagement de bonne foi :** Afin de respecter les droits d'auteur et de prévenir toute utilisation du service à des fins de lecture illégale, des mesures techniques restrictives ont été implémentées. Les images accessibles publiquement via la plateforme et l'API sont **systématiquement réduites en qualité** et marquées d'un **filigrane (watermark)** visible.
->
-> Ces dégradations volontaires garantissent que l'expérience ne peut se substituer à l'achat et à la lecture de l'œuvre originale. Toutes les images utilisées restent la propriété de leurs ayants droit respectifs. Si vous êtes un ayant droit et souhaitez le retrait de contenu, veuillez contacter l'administrateur du dépôt.
+```bash
+cd frontend
+npm run tauri dev
+```
+
+En mode dev, Tauri charge `http://localhost:3000` (Next.js dev server). Le backend Python est demarre automatiquement.
 
 ---
 
-## **Remerciements**
+## Build Desktop
 
-Un immense merci à **Chip Huyen** pour son ouvrage **"AI Engineering"**. La lecture de son livre a été une source d'inspiration majeure et a fourni des clés méthodologiques essentielles pour l'orchestration, l'optimisation des performances et la mise en place de l'infrastructure hybride de ce projet.
+### Build rapide
 
-> *AI Engineering by Chip Huyen (O’Reilly). Copyright 2025 Developer Experience Advisory LLC, 978-1-098-16630-4.*
+```powershell
+# Depuis la racine du repo
+.\build_desktop.ps1
+```
+
+L'installer NSIS est genere dans `frontend\src-tauri\target\release\bundle\nsis\`.
+
+### Build avec backend PyInstaller (standalone, sans Python requis)
+
+```powershell
+.\build_desktop.ps1 -PyInstaller
+```
+
+Cela cree un `local_ocr_server.exe` autonome qui ne necessite pas Python installe. Attention : l'exe fait ~3-5 Go avec PyTorch + CUDA.
+
+### Build manuel
+
+```powershell
+cd frontend
+npm install
+
+# Optionnel : build PyInstaller
+cd ..\desktop_backend
+python -m PyInstaller --onefile --name local_ocr_server local_ocr_server.py
+copy dist\local_ocr_server.exe .
+cd ..\frontend
+
+# Build Tauri
+npm run tauri build -- --bundles nsis
+```
+
+### Resultat
+
+| Fichier | Description |
+|---|---|
+| `Poneglyph_1.0.0_x64-setup.exe` | Installer NSIS |
+| `target\release\Poneglyph.exe` | Portable exe |
+
+### Comment fonctionne l'installer
+
+1. Installe l'application dans `%LOCALAPPDATA%\Poneglyph\`
+2. Cree un raccourci dans le menu Demarrer
+3. Au lancement, l'application :
+   - Ouvre une fenetre chargeant `https://poneglyph.fr`
+   - Demarre le backend Python en arriere-plan (port aleatoire sur 127.0.0.1)
+   - Injecte l'API Tauri pour la communication avec le backend local
+   - A la fermeture, tue proprement le process Python
+
+---
+
+## Pipeline MLOps
+
+Les scripts `/script_docker` automatisent le cycle de vie des modeles IA :
+
+1. **Extraction :** Recuperation des bulles/pages validees (Supabase)
+2. **Fine-Tuning :** Entrainement de TrOCR, LightOnOCR et modeles de detection/tri
+3. **Deploiement :** Push automatique vers Hugging Face si les metriques sont validees
+
+---
+
+## Securite et FinOps
+
+Cout de fonctionnement : **~5 EUR/mois**
+
+- **Watermarking dynamique** : Protection des visuels
+- **Edge Computing** : Inference deportee sur le client
+- **API Keys** : Cles serveur pour la recherche semantique
+- **Desktop** : Backend Python local uniquement sur 127.0.0.1
+- **IPC** : Acces Tauri restreint au domaine `poneglyph.fr`
+
+---
+
+## Structure du Projet
+
+```
+projet-one-piece-indexer/
+├── backend/                    # API Node.js / Express
+│   ├── src/
+│   ├── scripts/
+│   └── sql/
+├── desktop_backend/            # Backend Python OCR local (FastAPI)
+│   ├── local_ocr_server.py
+│   └── requirements.txt
+├── docker_scripts/             # Scripts MLOps (fine-tuning)
+├── documentation/              # Documentation technique
+├── frontend/
+│   ├── src/
+│   │   ├── app/                # Pages Next.js
+│   │   ├── components/         # Composants React
+│   │   ├── context/            # State management
+│   │   ├── hooks/              # Hooks (useTauriLocalOcr, etc.)
+│   │   └── lib/                # Utilitaires (api.js, supabase)
+│   ├── src-tauri/              # Shell Tauri v2 (Rust)
+│   │   ├── src/main.rs         # Commandes Tauri + spawn Python
+│   │   ├── capabilities/       # Permissions IPC
+│   │   ├── desktop-fallback/   # Page fallback hors-ligne
+│   │   ├── tauri.conf.json     # Configuration Tauri
+│   │   └── Cargo.toml
+│   └── package.json
+├── build_desktop.ps1           # Script de build desktop
+└── README.md
+```
+
+---
+
+## Avertissement Legal
+
+> Ce projet est une demonstration technique a but educatif et de recherche sur l'indexation semantique et l'IA deportee.
+>
+> Les images accessibles publiquement sont **systematiquement reduites en qualite** et marquee d'un **filigrane visible**. Ces degradations volontaires garantissent que l'experience ne peut se substituer a l'achat de l'oeuvre originale. Toutes les images restent la propriete de leurs ayants droit.
+
+---
+
+## Remerciements
+
+Un immense merci a **Chip Huyen** pour son ouvrage **"AI Engineering"** (O'Reilly), source d'inspiration majeure pour l'orchestration, l'optimisation des performances et l'infrastructure hybride de ce projet.

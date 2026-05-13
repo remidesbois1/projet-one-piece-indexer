@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Poneglyph - Bureau</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      background: #0f172a;
+      color: #e2e8f0;
+      text-align: center;
+    }
+    .container { max-width: 420px; padding: 2rem; }
+    h1 { font-size: 1.8rem; color: #3b82f6; margin-bottom: 1rem; }
+    p { color: #94a3b8; margin-bottom: 0.75rem; line-height: 1.5; }
+    a { color: #60a5fa; }
+    .spinner {
+      width: 24px; height: 24px;
+      border: 3px solid #334155;
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 1.5rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="spinner" id="spinner"></div>
+    <h1>Poneglyph</h1>
+    <p id="loading">Connexion à poneglyph.fr...</p>
+    <p id="error" class="hidden">
+      Impossible de se connecter à poneglyph.fr.<br>
+      Vérifiez votre connexion internet et <a href="https://poneglyph.fr">réessayez</a>.
+    </p>
+  </div>
+  <script>
+    window.location.href = 'https://poneglyph.fr';
+    setTimeout(function() {
+      document.getElementById('spinner').classList.add('hidden');
+      document.getElementById('loading').classList.add('hidden');
+      document.getElementById('error').classList.remove('hidden');
+    }, 8000);
+  </script>
+</body>
+</html>
