@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/sheet";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import LocalOcrStatusIndicator from '@/components/LocalOcrStatusIndicator';
 
 
 import { LogOut, User, Shield, ShieldAlert, Book, Sparkles, Menu, Search, FileText, Image as ImageIcon, Languages, Settings2, Library, Cpu } from "lucide-react";
@@ -82,6 +83,7 @@ const Header = ({ onOpenApiKeyModal }) => {
                             Projet Poneglyph
                         </span>
                     </Link>
+                    <LocalOcrStatusIndicator />
                 </div>
 
                 

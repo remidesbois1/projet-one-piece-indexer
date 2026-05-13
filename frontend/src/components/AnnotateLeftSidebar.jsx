@@ -66,24 +66,20 @@ export default function AnnotateLeftSidebar({
     poneglyphRunMode = null,
     handleOneShotLocalPoneglyph,
     isTauri = false,
-    isCheckingLocalConnection = false,
     localModelStatus = null,
-    localHealth = null,
     isDownloadingLocalModel = false,
     localDownloadState = null,
-    localDownloadProgress = null,
-    isLoadingLocalModel = false,
+    localConnectionState = null,
     isLocalInferencing = false,
-    localError = null,
-    canRunLocalOcr = false,
-    downloadLocalModel,
-    loadLocalModel,
-    refreshLocalDiagnostics
+    canRunLocalOcr = false
 }) {
     const isStaff = role === 'Admin' || role === 'Modo';
     const isAdmin = role === 'Admin';
+    const canInlineEditStatus = isAdmin && handlePageStatusChange && !isSandbox;
     const localDisabledReason = !isTauri
         ? "App desktop non detectee"
+        : localConnectionState?.status === 'offline'
+            ? "Serveur local hors ligne"
         : isDownloadingLocalModel || localDownloadState?.active
             ? "Telechargement du modele local"
             : !localModelStatus?.installed
@@ -117,9 +113,27 @@ export default function AnnotateLeftSidebar({
                             {chapterPages.length > 0 ? `Page ${page.numero_page} sur ${chapterPages.length}` : "Page de test"}
                         </div>
                     </div>
-                    <Badge variant="secondary" className="bg-slate-50 text-slate-600 border border-slate-200/60 font-bold px-2 py-0.5 text-[10px] uppercase tracking-wide">
-                        {page.statut.replace(/_/g, ' ')}
-                    </Badge>
+                    {canInlineEditStatus ? (
+                        <Select value={page.statut} onValueChange={handlePageStatusChange} disabled={isUpdatingPageStatus}>
+                            <SelectTrigger
+                                aria-label="Etat de la page"
+                                className="h-7 w-[130px] rounded-full bg-slate-50 border-slate-200 px-2 text-[10px] font-bold uppercase tracking-wide text-slate-700"
+                            >
+                                <SelectValue placeholder="Etat" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {PAGE_STATUSES.map(status => (
+                                    <SelectItem key={status.value} value={status.value}>
+                                        {status.label}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    ) : (
+                        <Badge variant="secondary" className="bg-slate-50 text-slate-600 border border-slate-200/60 font-bold px-2 py-0.5 text-[10px] uppercase tracking-wide">
+                            {page.statut.replace(/_/g, ' ')}
+                        </Badge>
+                    )}
                 </div>
             </div>
 
@@ -140,24 +154,6 @@ export default function AnnotateLeftSidebar({
 
                 {!isGuest && isStaff && (
                     <>
-                        {isAdmin && handlePageStatusChange && !isSandbox && (
-                            <div className="flex-none p-3 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-2">
-                                <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-0.5">État de la page</h3>
-                                <Select value={page.statut} onValueChange={handlePageStatusChange} disabled={isUpdatingPageStatus}>
-                                    <SelectTrigger className="w-full h-9 bg-white border-slate-200 text-[12px] font-bold text-slate-700">
-                                        <SelectValue placeholder="Choisir un état" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {PAGE_STATUSES.map(status => (
-                                            <SelectItem key={status.value} value={status.value}>
-                                                {status.label}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                        )}
-
                         <AnnotateOcrModelSelector
                             preferLocalOCR={preferLocalOCR}
                             toggleOcrPreference={toggleOcrPreference}
@@ -168,18 +164,6 @@ export default function AnnotateLeftSidebar({
                             downloadProgress={downloadProgress}
                             geminiKey={geminiKey}
                             isSandbox={isSandbox}
-                            isTauri={isTauri}
-                            isCheckingLocalConnection={isCheckingLocalConnection}
-                            localModelStatus={localModelStatus}
-                            localHealth={localHealth}
-                            isDownloadingLocalModel={isDownloadingLocalModel}
-                            localDownloadState={localDownloadState}
-                            localDownloadProgress={localDownloadProgress}
-                            isLoadingLocalModel={isLoadingLocalModel}
-                            localError={localError}
-                            downloadLocalModel={downloadLocalModel}
-                            loadLocalModel={loadLocalModel}
-                            refreshLocalDiagnostics={refreshLocalDiagnostics}
                         />
 
                         <AnnotateBubbleScanner

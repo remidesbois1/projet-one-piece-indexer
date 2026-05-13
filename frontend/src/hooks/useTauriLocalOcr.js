@@ -14,6 +14,15 @@ const INITIAL_MODEL_STATUS = {
     download: null
 };
 
+const INITIAL_CONNECTION_STATE = {
+    status: 'checking',
+    failureCount: 0,
+    lastOkAt: null,
+    lastError: null
+};
+
+const TRANSIENT_DIAGNOSTIC_GRACE_MS = 15000;
+
 async function resolveTauriInvoke() {
     if (typeof window === 'undefined') return null;
 
@@ -53,6 +62,9 @@ export function useTauriLocalOcr() {
     const [isLoadingLocalModel, setIsLoadingLocalModel] = useState(false);
     const [isLocalInferencing, setIsLocalInferencing] = useState(false);
     const [localError, setLocalError] = useState(null);
+    const [localConnectionState, setLocalConnectionState] = useState(INITIAL_CONNECTION_STATE);
+    const diagnosticFailureCountRef = useRef(0);
+    const lastDiagnosticOkAtRef = useRef(null);
 
     const getInvoke = useCallback(async () => {
         if (invokeRef.current) return invokeRef.current;
@@ -62,10 +74,82 @@ export function useTauriLocalOcr() {
             const invoke = await resolveTauriInvoke();
             invokeRef.current = invoke;
             setIsTauri(Boolean(invoke));
+            if (!invoke) {
+                setLocalConnectionState({
+                    status: 'unavailable',
+                    failureCount: 0,
+                    lastOkAt: null,
+                    lastError: "App desktop non detectee ou API locale indisponible."
+                });
+            }
             return invoke;
         } finally {
             setIsCheckingLocalConnection(false);
         }
+    }, []);
+
+    const markDiagnosticsOnline = useCallback((health = null, status = null) => {
+        const now = Date.now();
+        const message = status?.error || health?.error || status?.download?.error || null;
+
+        diagnosticFailureCountRef.current = 0;
+        lastDiagnosticOkAtRef.current = now;
+        setLocalConnectionState({
+            status: message ? 'degraded' : 'online',
+            failureCount: 0,
+            lastOkAt: now,
+            lastError: message
+        });
+        setLocalError(message);
+    }, []);
+
+    const markDiagnosticsFailure = useCallback((message) => {
+        const now = Date.now();
+        const lastOkAt = lastDiagnosticOkAtRef.current;
+        const failureCount = diagnosticFailureCountRef.current + 1;
+        const hasRecentSuccess = Boolean(lastOkAt && now - lastOkAt < TRANSIENT_DIAGNOSTIC_GRACE_MS);
+        const isTransient = hasRecentSuccess || failureCount <= 2;
+
+        diagnosticFailureCountRef.current = failureCount;
+        setLocalConnectionState({
+            status: isTransient ? 'reconnecting' : 'offline',
+            failureCount,
+            lastOkAt,
+            lastError: message
+        });
+        setLocalError(message);
+
+        setLocalHealth(prev => {
+            if (isTransient) {
+                return prev
+                    ? { ...prev, transient_error: message }
+                    : {
+                        ok: false,
+                        python_available: false,
+                        torch_available: false,
+                        cuda_available: null,
+                        device: null,
+                        error: message,
+                        transient_error: message
+                    };
+            }
+
+            return {
+                ok: false,
+                python_available: false,
+                torch_available: false,
+                cuda_available: null,
+                device: null,
+                error: message
+            };
+        });
+
+        setLocalModelStatus(prev => isTransient
+            ? { ...prev, error: message }
+            : { ...INITIAL_MODEL_STATUS, error: message }
+        );
+
+        return isTransient;
     }, []);
 
     const refreshLocalModelStatus = useCallback(async () => {
@@ -75,15 +159,14 @@ export function useTauriLocalOcr() {
         try {
             const status = await invoke('get_local_model_status');
             setLocalModelStatus(status);
-            setLocalError(status?.error || null);
+            markDiagnosticsOnline(null, status);
             return status;
         } catch (error) {
             const message = error?.message || String(error);
-            setLocalError(message);
-            setLocalModelStatus(prev => ({ ...prev, loaded: false, ready: false, error: message }));
+            markDiagnosticsFailure(message);
             return { ...INITIAL_MODEL_STATUS, error: message };
         }
-    }, [getInvoke]);
+    }, [getInvoke, markDiagnosticsFailure, markDiagnosticsOnline]);
 
     const healthcheckLocalBackend = useCallback(async () => {
         const invoke = await getInvoke();
@@ -92,16 +175,14 @@ export function useTauriLocalOcr() {
         try {
             const health = await invoke('healthcheck_local_backend');
             setLocalHealth(health);
-            if (health?.error) setLocalError(health.error);
+            markDiagnosticsOnline(health, null);
             return health;
         } catch (error) {
             const message = error?.message || String(error);
-            const health = { ok: false, python_available: false, torch_available: false, error: message };
-            setLocalError(message);
-            setLocalHealth(health);
-            return health;
+            markDiagnosticsFailure(message);
+            return { ok: false, python_available: false, torch_available: false, error: message };
         }
-    }, [getInvoke]);
+    }, [getInvoke, markDiagnosticsFailure, markDiagnosticsOnline]);
 
     const refreshLocalDiagnostics = useCallback(async () => {
         const invoke = await getInvoke();
@@ -119,6 +200,12 @@ export function useTauriLocalOcr() {
             setLocalHealth(health);
             setLocalModelStatus(status);
             setLocalError(message);
+            setLocalConnectionState({
+                status: 'unavailable',
+                failureCount: 0,
+                lastOkAt: null,
+                lastError: message
+            });
             return { health, status };
         }
 
@@ -129,25 +216,16 @@ export function useTauriLocalOcr() {
             ]);
             setLocalHealth(health);
             setLocalModelStatus(status);
-            setLocalError(status?.error || health?.error || status?.download?.error || null);
+            markDiagnosticsOnline(health, status);
             return { health, status };
         } catch (error) {
             const message = error?.message || String(error);
-            const health = {
-                ok: false,
-                python_available: false,
-                torch_available: false,
-                cuda_available: null,
-                device: null,
-                error: message
-            };
+            markDiagnosticsFailure(message);
+            const health = { ok: false, python_available: false, torch_available: false, cuda_available: null, device: null, error: message };
             const status = { ...INITIAL_MODEL_STATUS, error: message };
-            setLocalHealth(health);
-            setLocalModelStatus(status);
-            setLocalError(message);
             return { health, status };
         }
-    }, [getInvoke]);
+    }, [getInvoke, markDiagnosticsFailure, markDiagnosticsOnline]);
 
     const downloadLocalModel = useCallback(async () => {
         const invoke = await getInvoke();
@@ -192,7 +270,7 @@ export function useTauriLocalOcr() {
         try {
             const status = await invoke('load_local_model');
             setLocalModelStatus(status);
-            setLocalError(status?.error || null);
+            markDiagnosticsOnline(null, status);
             await refreshLocalDiagnostics();
             return status;
         } catch (error) {
@@ -203,7 +281,7 @@ export function useTauriLocalOcr() {
         } finally {
             setIsLoadingLocalModel(false);
         }
-    }, [getInvoke, refreshLocalDiagnostics]);
+    }, [getInvoke, markDiagnosticsOnline, refreshLocalDiagnostics]);
 
     const runLocalOcrBlob = useCallback(async (blob) => {
         const invoke = await getInvoke();
@@ -258,6 +336,7 @@ export function useTauriLocalOcr() {
 
     const canRunLocalOcr = Boolean(
         isTauri &&
+        localConnectionState.status !== 'offline' &&
         localModelStatus?.ready &&
         localModelStatus?.loaded &&
         !localModelStatus?.loading &&
@@ -271,6 +350,7 @@ export function useTauriLocalOcr() {
         isCheckingLocalConnection,
         localModelStatus,
         localHealth,
+        localConnectionState,
         isDownloadingLocalModel: isLocalDownloadActive,
         localDownloadState,
         localDownloadProgress,
