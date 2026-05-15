@@ -1,4 +1,5 @@
 import SandboxClient from './SandboxClient';
+import { TauriLocalOcrProvider } from '@/context/TauriLocalOcrContext';
 
 export const metadata = {
     title: 'Annotation Sandbox - One Piece Indexer',
@@ -7,6 +8,8 @@ export const metadata = {
 
 export default function SandboxPage() {
     return (
-        <SandboxClient />
+        <TauriLocalOcrProvider>
+            <SandboxClient />
+        </TauriLocalOcrProvider>
     );
 }

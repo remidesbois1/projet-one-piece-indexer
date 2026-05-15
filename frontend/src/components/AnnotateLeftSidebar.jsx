@@ -177,7 +177,7 @@ export default function AnnotateLeftSidebar({
                             queueLength={queueLength}
                         />
 
-                        {role === 'Admin' && handleOneShot && (
+                        {role === 'Admin' && (handleOneShot || handleOneShotPoneglyph || handleOneShotLocalPoneglyph) && (
                             <div className="flex-none p-4 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-3">
                                 <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-0.5">Extraction Intégrale</h3>
                                 
@@ -207,41 +207,45 @@ export default function AnnotateLeftSidebar({
                                     </div>
                                 )}
 
-                                <Button 
-                                    onClick={handleOneShotPoneglyph} 
-                                    disabled={isPoneglyphLoading || isSubmitting || isAutoDetecting}
-                                    className="w-full h-10 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] uppercase tracking-wider font-bold shadow-md"
-                                >
-                                    {poneglyphRunMode === 'modal' ? (
-                                        <span className="flex items-center gap-2">
-                                            <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                                            Analyse Modal...
-                                        </span>
-                                    ) : (
-                                        <span className="flex items-center gap-2">
-                                            <CloudLightning size={14} />
-                                            Modal Poneglyph One-Shot
-                                        </span>
-                                    )}
-                                </Button>
+                                {handleOneShotPoneglyph && (
+                                    <Button
+                                        onClick={handleOneShotPoneglyph}
+                                        disabled={isPoneglyphLoading || isSubmitting || isAutoDetecting}
+                                        className="w-full h-10 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] uppercase tracking-wider font-bold shadow-md"
+                                    >
+                                        {poneglyphRunMode === 'modal' ? (
+                                            <span className="flex items-center gap-2">
+                                                <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                                                Analyse Modal...
+                                            </span>
+                                        ) : (
+                                            <span className="flex items-center gap-2">
+                                                <CloudLightning size={14} />
+                                                Modal Poneglyph One-Shot
+                                            </span>
+                                        )}
+                                    </Button>
+                                )}
 
-                                <Button 
-                                    onClick={handleOneShot} 
-                                    disabled={isOneShotLoading || isSubmitting || isAutoDetecting}
-                                    className="w-full h-10 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] uppercase tracking-wider font-bold shadow-md"
-                                >
-                                    {isOneShotLoading ? (
-                                        <span className="flex items-center gap-2">
-                                            <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                                            Analyse Gemini...
-                                        </span>
-                                    ) : (
-                                        <span className="flex items-center gap-2">
-                                            <Sparkles size={14} />
-                                            One-Shot Gemini
-                                        </span>
-                                    )}
-                                </Button>
+                                {handleOneShot && (
+                                    <Button
+                                        onClick={handleOneShot}
+                                        disabled={isOneShotLoading || isSubmitting || isAutoDetecting}
+                                        className="w-full h-10 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] uppercase tracking-wider font-bold shadow-md"
+                                    >
+                                        {isOneShotLoading ? (
+                                            <span className="flex items-center gap-2">
+                                                <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                                                Analyse Gemini...
+                                            </span>
+                                        ) : (
+                                            <span className="flex items-center gap-2">
+                                                <Sparkles size={14} />
+                                                One-Shot Gemini
+                                            </span>
+                                        )}
+                                    </Button>
+                                )}
                             </div>
                         )}
                     </>
