@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { Button } from "@/components/ui/button";
 import {
     ArrowRight, Search, BookOpen, Layers, ScanText, Cpu,
-    BrainCircuit, Users, BarChart3, Eye, Globe, Workflow, ShieldCheck, Zap
+    Eye, Workflow, ShieldCheck, Zap
 } from "lucide-react";
 import Image from "next/image";
 
@@ -213,23 +213,24 @@ const features = [
     },
     {
         icon: Zap,
-        title: "OCR Serverless - LightOnOCR",
-        badge: "SOTA",
-        description: "Modèle de pointe (Architecture LightOnOCR fine-tuné) déployé sur Modal (GPU L4). Précision extrême pour les cas complexes.",
-        details: ["LightOnOCR", "CER < 0.5%", "WER < 2%", "GPU L4", "Serverless"],
+        title: "OCR LightOn - Cloud & Local",
+        badge: "Modal + Desktop",
+        description: "LightOnOCR-2-1b-poneglyph-bbox tourne sur Modal GPU L4 ou en local via l'application desktop.",
+        details: ["CER < 0.1%", "WER < 0.1%", "GPU L4", "0$/OCR local", "5-15s/page"],
     },
     {
-        icon: BrainCircuit,
-        title: "OCR Cloud - Gemini Flash-Lite",
-        description: "Fallback côté serveur et moteur de distillation pour l'entraînement des modèles locaux. Génère le corpus de vérité terrain.",
-        details: ["~0.00008$ / OCR"],
+        icon: Cpu,
+        title: "Application Desktop - Tauri v2",
+        badge: "Windows",
+        description: "Shell Rust qui charge poneglyph.fr et lance un backend Python local pour l'OCR GPU sur 127.0.0.1.",
+        details: ["Rust/Tauri v2", "FastAPI local", "LightOn local", "CUDA/MPS/CPU"],
     },
     {
         icon: Eye,
-        title: "Détection de Bulles - YOLO11",
-        badge: "WebGPU",
-        description: "YOLO11 Nano fine-tuné pour isoler chaque zone de texte, exécuté via ONNX Runtime Web avec une précision quasi-parfaite.",
-        details: ["mAP50 0.994", "YOLO11 Nano", "ONNX", "WebGPU"],
+        title: "Détection de Bulles - YOLO26",
+        badge: "WASM",
+        description: "YOLO26n fine-tuné isole chaque zone de texte côté client via ONNX Runtime Web.",
+        details: ["mAP50 0.994", "mAP50-95 0.868", "2.4M params", "5.2 GFLOPs", "ONNX"],
     },
     {
         icon: Workflow,
@@ -327,7 +328,7 @@ export default function LandingPageClient({ mangas = [] }) {
                             Architecture & Technologies
                         </h2>
                         <p className="text-slate-500 max-w-2xl mx-auto">
-                            Une infrastructure hybride Edge/Cloud conçue pour minimiser les coûts serveur en déportant l'inférence IA directement dans le navigateur.
+                            Une infrastructure hybride WebGPU, Modal et desktop Tauri pour garder l&apos;inférence rapide, maîtrisée et proche de l&apos;utilisateur.
                         </p>
                     </div>
 
@@ -342,9 +343,9 @@ export default function LandingPageClient({ mangas = [] }) {
                             <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-white border border-[#2F7AAF]/20 text-[#2F7AAF] text-[11px] font-bold uppercase tracking-wider mb-4">
                                 Démonstration Technique
                             </div>
-                            <h3 className="text-2xl font-bold text-slate-900 mb-3">Testez l'annotation en local</h3>
+                            <h3 className="text-2xl font-bold text-slate-900 mb-3">Testez l&apos;annotation en local</h3>
                             <p className="text-slate-600 text-sm leading-relaxed">
-                                Curieux de voir comment l'IA détecte les bulles et transcrit le texte ? La <strong>Sandbox</strong> vous permet d'uploader vos propres images et de tester l'inférence locale (WebGPU) sans aucun compte ni installation.
+                                Curieux de voir comment l&apos;IA détecte les bulles et transcrit le texte ? La <strong>Sandbox</strong> permet d&apos;uploader vos propres images et de tester l&apos;inférence WebGPU sans compte ni installation.
                             </p>
                         </div>
                         <Link href="/sandbox">
@@ -382,7 +383,7 @@ export default function LandingPageClient({ mangas = [] }) {
                             <div className="rounded-2xl border-2 border-dashed border-slate-200 p-8 flex flex-col items-center justify-center text-center hover:border-slate-300 transition-colors duration-300">
                                 <Layers className="h-10 w-10 text-slate-300 mb-4" />
                                 <h3 className="text-base font-semibold text-slate-900 mb-1">Bientôt plus...</h3>
-                                <p className="text-sm text-slate-500">D'autres mangas seront ajoutés prochainement.</p>
+                                <p className="text-sm text-slate-500">D&apos;autres mangas seront ajoutés prochainement.</p>
                             </div>
                         </div>
                     )}
@@ -399,17 +400,17 @@ export default function LandingPageClient({ mangas = [] }) {
                             </h2>
                             <p className="text-slate-300 max-w-2xl mx-auto mb-6 leading-relaxed">
                                 Projet Poneglyph est un outil open-source conçu pour les passionnés de manga.
-                                Grâce à l'intelligence artificielle et à la contribution de sa communauté,
+                                Grâce à l&apos;intelligence artificielle et à la contribution de sa communauté,
                                 chaque page est transcrite, indexée et rendue recherchable.
                             </p>
                             <div className="flex items-start gap-3 text-left max-w-2xl mx-auto p-4 rounded-xl bg-white/5 border border-white/10">
                                 <ShieldCheck className="h-5 w-5 text-amber-400/70 shrink-0 mt-0.5" />
                                 <p className="text-slate-400 text-xs leading-relaxed">
                                     Ce projet est une démonstration technique à but éducatif et de recherche.
-                                    Afin de respecter les droits d'auteur et prévenir toute utilisation à des fins de lecture illégale,
-                                    les images accessibles publiquement sont systématiquement réduites en qualité et marquées d'un filigrane visible.
-                                    Ces dégradations volontaires garantissent que l'expérience ne peut se substituer à l'achat
-                                    et à la lecture de l'œuvre originale. Toutes les images restent la propriété de leurs ayants droit respectifs.
+                                    Afin de respecter les droits d&apos;auteur et prévenir toute utilisation à des fins de lecture illégale,
+                                    les images accessibles publiquement sont systématiquement réduites en qualité et marquées d&apos;un filigrane visible.
+                                    Ces dégradations volontaires garantissent que l&apos;expérience ne peut se substituer à l&apos;achat
+                                    et à la lecture de l&apos;œuvre originale. Toutes les images restent la propriété de leurs ayants droit respectifs.
                                 </p>
                             </div>
                         </div>
@@ -425,8 +426,8 @@ export default function LandingPageClient({ mangas = [] }) {
                             <span className="text-sm font-semibold text-slate-900">Projet Poneglyph</span>
                         </div>
                         <p className="text-xs text-slate-400 text-center md:text-right leading-relaxed max-w-sm">
-                            Merci à <em>Chip Huyen</em> pour <em>AI Engineering</em> (O'Reilly, 2025),
-                            source d'inspiration majeure pour l'orchestration et l'infrastructure hybride de ce projet.
+                            Merci à <em>Chip Huyen</em> pour <em>AI Engineering</em> (O&apos;Reilly, 2025),
+                            source d&apos;inspiration majeure pour l&apos;orchestration et l&apos;infrastructure hybride de ce projet.
                         </p>
                     </div>
                 </div>

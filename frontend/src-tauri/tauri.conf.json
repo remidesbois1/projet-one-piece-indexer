@@ -29,7 +29,7 @@
   "bundle": {
     "active": true,
     "icon": [
-      "../public/favicon.ico"
+      "../public/ms-icon-310x310.ico"
     ],
     "resources": {
       "../../desktop_backend/": "desktop_backend/"
