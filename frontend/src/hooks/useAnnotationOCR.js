@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useWorker, OCR_MODELS } from '@/context/WorkerContext';
+import { useTauriLocalOcrContext } from '@/context/TauriLocalOcrContext';
 import { analyzeBubble } from '@/lib/geminiClient';
 import { cropImage } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -21,6 +22,7 @@ export function useAnnotationOCR({
     isSandbox = false
 }) {
     const { worker, modelStatus, loadModel, switchModel, downloadProgress, runOcr, activeModelKey } = useWorker();
+    const tauriLocalOcr = useTauriLocalOcrContext();
     const [preferLocalOCR, setPreferLocalOCR] = useState(isSandbox);
     const [geminiKey, setGeminiKey] = useState(null);
     const [ocrResults, setOcrResults] = useState({});
@@ -149,6 +151,17 @@ export function useAnnotationOCR({
                 return;
             }
 
+            if (modelData.runtime === 'tauri') {
+                if (!tauriLocalOcr.canRunLocalTextOcr) {
+                    activeRequests.current.delete(requestId);
+                    return;
+                }
+                const blob = await cropImage(imageRef.current, areaToCrop);
+                const result = await tauriLocalOcr.runLocalTextOcrBlob(blob);
+                handleOcrCompletion(requestId, result?.text || '', 'local');
+                return;
+            }
+
             if (modelData.type === 'local' && modelStatus === 'ready') {
                 const blob = await cropImage(imageRef.current, areaToCrop);
                 runOcr(blob, requestId);
@@ -159,7 +172,7 @@ export function useAnnotationOCR({
             activeRequests.current.delete(requestId);
             console.error("Background OCR Error:", err);
         }
-    }, [activeModelKey, modelStatus, imageRef, runOcr, processNextApiTask]);
+    }, [activeModelKey, modelStatus, imageRef, runOcr, processNextApiTask, tauriLocalOcr, handleOcrCompletion]);
 
     const runLocalOcr = useCallback(async (cropData = null, customRequestId = null) => {
         try {
@@ -188,7 +201,7 @@ export function useAnnotationOCR({
                 return;
             }
 
-            if (!modelData || (modelData.type === 'local' && modelStatus !== 'ready')) {
+            if (!modelData || (modelData.type === 'local' && modelData.runtime !== 'tauri' && modelStatus !== 'ready')) {
                 setIsModalOpen(true);
                 return;
             }
@@ -216,6 +229,31 @@ export function useAnnotationOCR({
                 return;
             }
 
+            if (modelData?.runtime === 'tauri') {
+                if (!tauriLocalOcr.canRunLocalTextOcr) {
+                    const reason = !tauriLocalOcr.isTauri
+                        ? "App desktop non detectee."
+                        : tauriLocalOcr.isDownloadingLocalTextModel
+                            ? "Telechargement du modele Poneglyph local en cours."
+                            : !tauriLocalOcr.localTextModelStatus?.installed
+                                ? "Telechargez le modele Poneglyph local d'abord."
+                                : !tauriLocalOcr.localTextModelStatus?.ready
+                                    ? "Chargez le modele Poneglyph local en VRAM d'abord."
+                                    : "OCR Poneglyph local indisponible.";
+                    toast.error(reason);
+                    setIsModalOpen(true);
+                    return;
+                }
+
+                setLoadingText(`Analyse ${modelData.label}...`);
+                setIsSubmitting(true);
+                activeRequests.current.add(requestId);
+                const blob = await cropImage(imageRef.current, areaToCrop);
+                const result = await tauriLocalOcr.runLocalTextOcrBlob(blob);
+                handleOcrCompletion(requestId, result?.text || '', 'local');
+                return;
+            }
+
             setLoadingText("Analyse Locale...");
             setIsSubmitting(true);
             activeRequests.current.add(requestId);
@@ -224,11 +262,12 @@ export function useAnnotationOCR({
             runOcr(blob, requestId);
         } catch (err) {
             console.error(err);
+            activeRequests.current.delete(lastRequestId.current);
             toast.error("Erreur OCR: " + err.message);
             setIsSubmitting(false);
             setIsModalOpen(true);
         }
-    }, [activeModelKey, modelStatus, preferLocalOCR, rectangle, pendingAnnotation, pageId, imageRef, handleRetryWithCloud, setLoadingText, setIsSubmitting, setOcrSource, setPendingAnnotation, setIsModalOpen, runOcr, ocrResults, processNextApiTask]);
+    }, [activeModelKey, modelStatus, preferLocalOCR, rectangle, pendingAnnotation, pageId, imageRef, handleRetryWithCloud, handleOcrCompletion, setLoadingText, setIsSubmitting, setOcrSource, setPendingAnnotation, setIsModalOpen, runOcr, ocrResults, processNextApiTask, tauriLocalOcr]);
 
     useEffect(() => {
         if (!worker) return;

@@ -17,6 +17,17 @@ const EMPTY_LOCAL_OCR = {
         dtype: null,
         download: null
     },
+    localTextModelStatus: {
+        installed: false,
+        loaded: false,
+        loading: false,
+        ready: false,
+        model_dir: '',
+        error: null,
+        device: null,
+        dtype: null,
+        download: null
+    },
     localHealth: null,
     localConnectionState: {
         status: 'unavailable',
@@ -25,18 +36,30 @@ const EMPTY_LOCAL_OCR = {
         lastError: null
     },
     isDownloadingLocalModel: false,
+    isDownloadingLocalTextModel: false,
     localDownloadState: null,
+    localTextDownloadState: null,
     localDownloadProgress: null,
+    localTextDownloadProgress: null,
     isLoadingLocalModel: false,
+    isLoadingLocalTextModel: false,
     isLocalInferencing: false,
+    isLocalTextInferencing: false,
     localError: null,
     canRunLocalOcr: false,
+    canRunLocalTextOcr: false,
     refreshLocalModelStatus: async () => null,
+    refreshLocalTextModelStatus: async () => null,
     healthcheckLocalBackend: async () => null,
     refreshLocalDiagnostics: async () => null,
     downloadLocalModel: async () => ({ ok: false, error: "OCR local indisponible." }),
+    downloadLocalTextModel: async () => ({ ok: false, error: "OCR local indisponible." }),
     loadLocalModel: async () => ({ error: "OCR local indisponible." }),
+    loadLocalTextModel: async () => ({ error: "OCR local indisponible." }),
     runLocalOcrBlob: async () => {
+        throw new Error("OCR local indisponible.");
+    },
+    runLocalTextOcrBlob: async () => {
         throw new Error("OCR local indisponible.");
     }
 };

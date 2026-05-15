@@ -1,56 +1,72 @@
-import os
-import sys
-import json
-import requests
 import io
+import json
+import os
 import re
-from pathlib import Path
-from PIL import Image
-from supabase import create_client, Client
-from tqdm import tqdm
-from sklearn.model_selection import train_test_split
-from dotenv import load_dotenv
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import sys
 import threading
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+
+import requests
+from dotenv import load_dotenv
+from PIL import Image
+from sklearn.model_selection import train_test_split
+from supabase import Client, create_client
+from tqdm import tqdm
 
 try:
-    import pillow_avif
-    print("✅ AVIF support enabled via pillow-avif-plugin")
+    import pillow_avif  # noqa: F401
+
+    print("AVIF support enabled via pillow-avif-plugin", flush=True)
 except ImportError:
-    print("⚠️ AVIF support NOT found. AVIF images will fail to open. Install pillow-avif-plugin.")
-    pass
+    print("AVIF support NOT found. AVIF images will fail to open.", flush=True)
+
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = SCRIPT_DIR.parent
+DOCKER_SCRIPTS_DIR = SCRIPT_DIR.parent
+PROJECT_ROOT = DOCKER_SCRIPTS_DIR.parent
+
+load_dotenv(SCRIPT_DIR / ".env")
+load_dotenv(DOCKER_SCRIPTS_DIR / ".env")
 load_dotenv(PROJECT_ROOT / ".env")
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
-    print(f"Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in {PROJECT_ROOT}/.env")
-    SUPABASE_URL = os.environ.get("SUPABASE_URL")
-    SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-    if not SUPABASE_URL or not SUPABASE_KEY:
-        print("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in environment variables.")
-        sys.exit(1)
+    print("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.", flush=True)
+    sys.exit(1)
 
 OUTPUT_DIR = SCRIPT_DIR / "lighton_dataset"
-TEST_SIZE = 0.2
-RANDOM_SEED = 42
+VAL_SIZE = float(os.getenv("LIGHTON_VAL_SIZE", "0.15"))
+TEST_SIZE = float(os.getenv("LIGHTON_TEST_SIZE", "0.15"))
+RANDOM_SEED = int(os.getenv("LIGHTON_RANDOM_SEED", "42"))
+MIN_TEXT_LENGTH = int(os.getenv("LIGHTON_MIN_TEXT_LENGTH", "2"))
+DOWNLOAD_WORKERS = int(os.getenv("LIGHTON_DOWNLOAD_WORKERS", "16"))
+
 
 def normalize_text(text):
     if not text:
         return ""
-    text = re.sub(r'\s+', ' ', text).strip()
-    return text
+    return re.sub(r"\s+", " ", text).strip()
+
 
 def process_bubble_image(page_image, x, y, w, h):
-    crop = page_image.crop((x, y, x + w, y + h))
-    return crop
+    img_w, img_h = page_image.size
+    x1 = max(0, min(img_w, int(round(x))))
+    y1 = max(0, min(img_h, int(round(y))))
+    x2 = max(0, min(img_w, int(round(x + w))))
+    y2 = max(0, min(img_h, int(round(y + h))))
+
+    if x2 <= x1 or y2 <= y1:
+        return None
+
+    return page_image.crop((x1, y1, x2, y2))
+
 
 def fetch_all_bubbles(supabase: Client):
-    print("Fetching validated bubbles from Supabase...")
+    print("Fetching validated bubbles from Supabase...", flush=True)
     bubbles = []
     page_size = 1000
     offset = 0
@@ -69,126 +85,280 @@ def fetch_all_bubbles(supabase: Client):
             break
 
         bubbles.extend(batch)
-        print(f"  -> {len(bubbles)} fetched so far...")
+        print(f"  -> {len(bubbles)} fetched so far...", flush=True)
 
         if len(batch) < page_size:
             break
         offset += page_size
 
-    print(f"Total: {len(bubbles)} validated bubbles.")
+    print(f"Total: {len(bubbles)} validated bubbles.", flush=True)
     return bubbles
 
-def main():
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-    bubbles = fetch_all_bubbles(supabase)
+def build_page_groups(bubbles):
+    pages = defaultdict(lambda: {"url_image": None, "bubbles": []})
 
-    valid_data = []
     for b in bubbles:
         text = normalize_text(b.get("texte_propose", ""))
-        if len(text) < 2:
+        if len(text) < MIN_TEXT_LENGTH:
             continue
-        valid_data.append({
-            "id": b["id"],
-            "x": int(b["x"]),
-            "y": int(b["y"]),
-            "w": int(b["w"]),
-            "h": int(b["h"]),
-            "text": text,
-            "url_image": b["pages"]["url_image"],
-            "id_page": b["id_page"],
-        })
 
-    print(f"After filtering (text >= 2 chars): {len(valid_data)} bubbles.")
+        page = b.get("pages") or {}
+        url_image = page.get("url_image")
+        if not url_image:
+            continue
 
-    if not valid_data:
-        print("Nothing to export.")
-        return
+        page_id = b["id_page"]
+        pages[page_id]["url_image"] = url_image
+        pages[page_id]["bubbles"].append(
+            {
+                "id": b["id"],
+                "x": int(b["x"]),
+                "y": int(b["y"]),
+                "w": int(b["w"]),
+                "h": int(b["h"]),
+                "text": text,
+                "id_page": page_id,
+                "url_image": url_image,
+            }
+        )
 
-    train_data, test_data = train_test_split(
-        valid_data, test_size=TEST_SIZE, random_state=RANDOM_SEED
+    pages = {pid: pdata for pid, pdata in pages.items() if pdata["bubbles"]}
+    total_bubbles = sum(len(pdata["bubbles"]) for pdata in pages.values())
+    print(
+        f"After filtering: {len(pages)} pages, {total_bubbles} bubbles "
+        f"(text >= {MIN_TEXT_LENGTH} chars).",
+        flush=True,
+    )
+    return pages
+
+
+def split_pages(page_ids):
+    if VAL_SIZE <= 0 or TEST_SIZE <= 0 or VAL_SIZE + TEST_SIZE >= 1:
+        raise ValueError("LIGHTON_VAL_SIZE and LIGHTON_TEST_SIZE must be > 0 and sum to < 1.")
+
+    train_ids, holdout_ids = train_test_split(
+        page_ids,
+        test_size=VAL_SIZE + TEST_SIZE,
+        random_state=RANDOM_SEED,
+        shuffle=True,
     )
 
-    # Pre-download all unique pages in parallel
-    all_page_ids = set()
-    for split_data in [train_data, test_data]:
-        for b in split_data:
-            all_page_ids.add((b["id_page"], b["url_image"]))
+    relative_test_size = TEST_SIZE / (VAL_SIZE + TEST_SIZE)
+    val_ids, test_ids = train_test_split(
+        holdout_ids,
+        test_size=relative_test_size,
+        random_state=RANDOM_SEED,
+        shuffle=True,
+    )
 
-    print(f"\nDownloading {len(all_page_ids)} unique pages in parallel...", flush=True)
+    splits = {
+        "train": sorted(train_ids),
+        "val": sorted(val_ids),
+        "test": sorted(test_ids),
+    }
+    verify_split_integrity(splits)
+    return splits
+
+
+def verify_split_integrity(splits):
+    seen = {}
+    leaks = []
+    for split_name, page_ids in splits.items():
+        for page_id in page_ids:
+            if page_id in seen:
+                leaks.append((page_id, seen[page_id], split_name))
+            seen[page_id] = split_name
+
+    if leaks:
+        details = ", ".join(f"page {pid}: {a}/{b}" for pid, a, b in leaks[:10])
+        raise RuntimeError(f"Page-level split leak detected: {details}")
+
+
+def download_pages(pages):
+    print(f"\nDownloading {len(pages)} unique pages in parallel...", flush=True)
     page_cache = {}
     page_cache_lock = threading.Lock()
-    session = requests.Session()
 
     def download_page(page_id, url):
         try:
-            resp = session.get(url, timeout=30)
+            resp = requests.get(url, timeout=30)
             resp.raise_for_status()
-            img = Image.open(io.BytesIO(resp.content)).convert("RGB")
+            with Image.open(io.BytesIO(resp.content)) as img:
+                page_img = img.convert("RGB")
             with page_cache_lock:
-                page_cache[page_id] = img
-        except Exception as e:
-            print(f"  ⚠️ Failed to download page {page_id}: {e}", flush=True)
+                page_cache[page_id] = page_img
+        except Exception as exc:
+            print(f"  Failed to download page {page_id}: {exc}", flush=True)
 
-    with ThreadPoolExecutor(max_workers=16) as executor:
-        futures = [executor.submit(download_page, pid, url) for pid, url in all_page_ids]
-        for f in tqdm(as_completed(futures), total=len(futures), desc="Downloading pages"):
+    with ThreadPoolExecutor(max_workers=DOWNLOAD_WORKERS) as executor:
+        futures = [
+            executor.submit(download_page, page_id, pdata["url_image"])
+            for page_id, pdata in pages.items()
+        ]
+        for _ in tqdm(as_completed(futures), total=len(futures), desc="Downloading pages"):
             pass
 
     print(f"  -> {len(page_cache)} pages cached.", flush=True)
+    return page_cache
 
-    for split_name, split_data in [("train", train_data), ("test", test_data)]:
-        split_dir = OUTPUT_DIR / split_name
-        split_dir.mkdir(parents=True, exist_ok=True)
-        img_dir = split_dir / "images"
-        img_dir.mkdir(parents=True, exist_ok=True)
 
-        jsonl_entries = []
+def write_split(split_name, page_ids, pages, page_cache):
+    split_dir = OUTPUT_DIR / split_name
+    img_dir = split_dir / "images"
+    img_dir.mkdir(parents=True, exist_ok=True)
 
-        print(f"\nProcessing '{split_name}' ({len(split_data)} images)...", flush=True)
-        for b in tqdm(split_data, desc=split_name):
-            try:
-                file_name = f"{b['id']}.png"
-                img_path = img_dir / file_name
+    jsonl_entries = []
+    skipped = 0
 
-                if not img_path.exists():
-                    page_img = page_cache.get(b["id_page"])
-                    if page_img is None:
-                        continue
-                    processed = process_bubble_image(page_img, b["x"], b["y"], b["w"], b["h"])
-                    processed.save(img_path, "PNG")
+    split_bubbles = []
+    for page_id in page_ids:
+        split_bubbles.extend(pages[page_id]["bubbles"])
 
-                rel_img_path = f"images/{file_name}"
+    print(
+        f"\nProcessing '{split_name}' ({len(page_ids)} pages, {len(split_bubbles)} bubbles)...",
+        flush=True,
+    )
 
-                entry = {
+    for bubble in tqdm(split_bubbles, desc=split_name):
+        try:
+            page_img = page_cache.get(bubble["id_page"])
+            if page_img is None:
+                skipped += 1
+                continue
+
+            file_name = f"{bubble['id']}.png"
+            img_path = img_dir / file_name
+
+            if not img_path.exists():
+                processed = process_bubble_image(
+                    page_img,
+                    bubble["x"],
+                    bubble["y"],
+                    bubble["w"],
+                    bubble["h"],
+                )
+                if processed is None:
+                    skipped += 1
+                    continue
+                processed.save(img_path, "PNG")
+
+            rel_img_path = f"images/{file_name}"
+            jsonl_entries.append(
+                {
+                    "id": bubble["id"],
+                    "page_id": bubble["id_page"],
+                    "split": split_name,
+                    "bbox": [bubble["x"], bubble["y"], bubble["w"], bubble["h"]],
+                    "image_file": rel_img_path,
+                    "text": bubble["text"],
                     "messages": [
                         {
                             "role": "user",
-                            "content": [
-                                {"type": "image", "image": rel_img_path}
-                            ]
+                            "content": [{"type": "image", "image": rel_img_path}],
                         },
                         {
                             "role": "assistant",
-                            "content": [
-                                {"type": "text", "text": b["text"]}
-                            ]
-                        }
-                    ]
+                            "content": [{"type": "text", "text": bubble["text"]}],
+                        },
+                    ],
                 }
-                jsonl_entries.append(entry)
+            )
+        except Exception as exc:
+            skipped += 1
+            print(f"\n  Error on bubble {bubble['id']}: {exc}", flush=True)
 
-            except Exception as e:
-                print(f"\n  Error on bubble {b['id']}: {e}", flush=True)
+    jsonl_path = split_dir / "metadata.jsonl"
+    with open(jsonl_path, "w", encoding="utf-8") as f:
+        for entry in jsonl_entries:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
-        jsonl_path = split_dir / "metadata.jsonl"
-        with open(jsonl_path, "w", encoding="utf-8") as f:
-            for entry in jsonl_entries:
-                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    print(
+        f"  -> Saved {len(jsonl_entries)} entries to {jsonl_path} "
+        f"({skipped} skipped)",
+        flush=True,
+    )
+    return len(jsonl_entries), skipped
 
-        print(f"  -> Saved {len(jsonl_entries)} entries to {jsonl_path}", flush=True)
 
-    print(f"\nDone! Dataset in: {OUTPUT_DIR}", flush=True)
+def verify_dataset(splits):
+    print("\nVerifying exported dataset...", flush=True)
+    errors = 0
+    page_to_split = {}
+
+    for split_name in splits:
+        jsonl_path = OUTPUT_DIR / split_name / "metadata.jsonl"
+        if not jsonl_path.exists():
+            print(f"  Missing {jsonl_path}", flush=True)
+            errors += 1
+            continue
+
+        with open(jsonl_path, "r", encoding="utf-8") as f:
+            entries = [json.loads(line) for line in f if line.strip()]
+
+        for entry in entries:
+            page_id = entry.get("page_id")
+            previous_split = page_to_split.get(page_id)
+            if previous_split and previous_split != split_name:
+                print(
+                    f"  Page leak: page {page_id} in {previous_split} and {split_name}",
+                    flush=True,
+                )
+                errors += 1
+            page_to_split[page_id] = split_name
+
+            image_file = entry.get("image_file") or entry["messages"][0]["content"][0]["image"]
+            img_path = OUTPUT_DIR / split_name / image_file
+            if not img_path.exists():
+                print(f"  Missing image: {img_path}", flush=True)
+                errors += 1
+
+            text = entry.get("text", "")
+            if not text:
+                print(f"  Empty text in {split_name}: {entry.get('id')}", flush=True)
+                errors += 1
+
+        print(f"  {split_name}: {len(entries)} entries checked", flush=True)
+
+    if errors:
+        raise RuntimeError(f"Dataset verification failed with {errors} errors.")
+    print("  All checks passed.", flush=True)
+
+
+def main():
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    bubbles = fetch_all_bubbles(supabase)
+    pages = build_page_groups(bubbles)
+
+    if not pages:
+        print("Nothing to export.", flush=True)
+        return
+
+    splits = split_pages(list(pages.keys()))
+    print("\nPage-level split:", flush=True)
+    for split_name, page_ids in splits.items():
+        n_bubbles = sum(len(pages[pid]["bubbles"]) for pid in page_ids)
+        print(f"  {split_name}: {len(page_ids)} pages, {n_bubbles} bubbles", flush=True)
+
+    page_cache = download_pages(pages)
+
+    stats = {}
+    for split_name, page_ids in splits.items():
+        saved, skipped = write_split(split_name, page_ids, pages, page_cache)
+        stats[split_name] = {"saved": saved, "skipped": skipped}
+
+    verify_dataset(splits)
+
+    print("\nDataset export summary", flush=True)
+    print("-" * 60, flush=True)
+    for split_name, split_stats in stats.items():
+        print(
+            f"  {split_name}: {split_stats['saved']} samples, "
+            f"{split_stats['skipped']} skipped",
+            flush=True,
+        )
+    print(f"  output: {OUTPUT_DIR}", flush=True)
+    print("Done.", flush=True)
 
 
 if __name__ == "__main__":

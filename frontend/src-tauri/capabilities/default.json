@@ -6,9 +6,13 @@
   "permissions": [
     "core:default",
     "allow-get-local-model-status",
+    "allow-get-local-text-model-status",
     "allow-load-local-model",
+    "allow-load-local-text-model",
     "allow-download-local-model",
+    "allow-download-local-text-model",
     "allow-run-local-ocr",
+    "allow-run-local-text-ocr",
     "allow-healthcheck-local-backend",
     "allow-get-app-version"
   ],

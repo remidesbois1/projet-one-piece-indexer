@@ -1,5 +1,4 @@
 import os
-import shutil
 import subprocess
 import sys
 
@@ -13,7 +12,11 @@ from huggingface_hub import HfApi, login
 from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+SCRIPT_DIR = Path(__file__).resolve().parent
+os.chdir(SCRIPT_DIR)
+load_dotenv(SCRIPT_DIR / ".env")
+load_dotenv(SCRIPT_DIR.parent / ".env")
+load_dotenv(SCRIPT_DIR.parent.parent / ".env")
 
 REQUIRED_ENV_VARS = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "HF_TOKEN"]
 missing_vars = [var for var in REQUIRED_ENV_VARS if var not in os.environ]
@@ -59,11 +62,11 @@ print("🚀 Starting LightOnOCR-2-1B Fine-Tuning Pipeline...", flush=True)
 login(token=os.environ["HF_TOKEN"])
 
 
-def run_step(label, script):
+def run_step(label, script, *script_args):
     """Run a sub-script with real-time unbuffered output."""
     print(f"\n{label}", flush=True)
     result = subprocess.run(
-        [sys.executable, "-u", script],
+        [sys.executable, "-u", script, *script_args],
         env={**os.environ, "PYTHONUNBUFFERED": "1"},
     )
     if result.returncode != 0:
@@ -72,17 +75,28 @@ def run_step(label, script):
         sys.exit(1)
 
 
+def env_flag(name):
+    return os.getenv(name, "0") not in {"0", "false", "False", ""}
+
+
+def dataset_is_ready(dataset_dir):
+    required = [dataset_dir / split / "metadata.jsonl" for split in ["train", "val", "test"]]
+    return all(path.exists() for path in required)
+
+
 # 1. Dataset Export
 dataset_dir = Path("lighton_dataset")
-if dataset_dir.exists() and (dataset_dir / "train" / "metadata.jsonl").exists():
+if dataset_dir.exists() and dataset_is_ready(dataset_dir) and not env_flag("LIGHTON_FORCE_EXPORT"):
     print("✅ Dataset already exists. Skipping export.", flush=True)
 else:
     run_step("1️⃣  Exporting Dataset from Supabase...", "export_dataset.py")
 
 # 2. Fine-Tuning
 model_out = Path("outputs_lighton_manga/final_lora_merged")
-if model_out.exists() and (model_out / "config.json").exists():
+if model_out.exists() and (model_out / "config.json").exists() and not env_flag("LIGHTON_FORCE_TRAIN"):
     print("✅ Final model already exists. Skipping training.", flush=True)
+    if not (model_out / "benchmark_test.json").exists() and env_flag("LIGHTON_RUN_BENCHMARK_IF_MISSING"):
+        run_step("2️⃣  Running final benchmark on existing model...", "train_lighton_ocr.py", "--benchmark-only")
 else:
     run_step("2️⃣  Starting Fine-Tuning (SFT/LoRA)...", "train_lighton_ocr.py")
 

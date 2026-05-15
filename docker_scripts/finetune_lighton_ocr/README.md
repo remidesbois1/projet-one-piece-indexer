@@ -26,15 +26,23 @@ Ce répertoire contient les scripts nécessaires pour fine-tuner LightOnOCR-2-1B
 3. Configurez les variables d'environnement : `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `HF_TOKEN`, `RUNPOD_API_KEY`, `RUNPOD_POD_ID`.
 
 Le pipeline va automatiquement :
-1. Exporter les bulles validées depuis Supabase (Téléchargement parallèle optimisé).
-2. Fine-tuner le modèle via LoRA (Optimisé pour RTX 5090 / Blackwell).
-3. Fusionner les poids en utilisant le meilleur checkpoint (CER minimisé).
-4. Pousser les poids fusionnés sur Hugging Face.
-5. Auto-terminer le pod si `RUNPOD_API_KEY` est fourni.
+1. Exporter les bulles validées depuis Supabase avec split strict par page (`train`/`val`/`test`).
+2. Fine-tuner le modèle via LoRA/DoRA r=65 en BF16, optimisé pour RTX 5090 / Blackwell.
+3. Évaluer en génération réelle prompt-only, sans injecter la réponse attendue dans le contexte.
+4. Fusionner les poids en utilisant le meilleur checkpoint selon le CER de validation propre.
+5. Lancer un benchmark final sur le test set tenu à l'écart et sauvegarder `benchmark_test.json`.
+6. Pousser les poids fusionnés sur Hugging Face.
+7. Auto-terminer le pod si `RUNPOD_API_KEY` est fourni.
 
-## Performances (Dataset Manga)
-- **Exact Match (EM)** : ~99.9% (Step 400)
-- **CER** : 0.0001 (0.01%)
-- **WER** : 0.0002 (0.02%)
-- **Distance Levenshtein Moyenne** : < 0.01 chars
-- **Inférence** : Optimisée pour Modal (Troncation post-processing activée pour 0% d'hallucination).
+## Réglages utiles
+- `LIGHTON_EPOCHS` : défaut `8`
+- `LIGHTON_TRAIN_BATCH` / `LIGHTON_EVAL_BATCH` : défaut `8` / `8`
+- `LIGHTON_GRAD_ACCUM` : défaut `2`
+- `LIGHTON_LR` : défaut `5e-5`
+- `LIGHTON_GEN_EVAL_MAX_SAMPLES` : défaut `256` échantillons de validation générés à chaque évaluation
+- `LIGHTON_FINAL_TEST_MAX_SAMPLES` : défaut `0` = tout le test set
+- `LIGHTON_FORCE_EXPORT=1` ou `LIGHTON_FORCE_TRAIN=1` pour forcer une étape
+
+## Métriques
+Les scores fiables sont ceux de `outputs_lighton_manga/final_lora_merged/benchmark_test.json`.
+Ils sont calculés sur le test set page-level, en génération depuis l'image seule, avec post-processing identique à l'inférence.

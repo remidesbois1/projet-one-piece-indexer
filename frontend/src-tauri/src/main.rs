@@ -13,7 +13,8 @@ use std::{
 use tauri::{AppHandle, Manager, State};
 use tokio::time::sleep;
 
-const MODEL_DIR_NAME: &str = "lighton-ocr-poneglyph-bbox";
+const BBOX_MODEL_DIR_NAME: &str = "lighton-ocr-poneglyph-bbox";
+const TEXT_MODEL_DIR_NAME: &str = "lighton-ocr-poneglyph";
 
 #[derive(Clone)]
 struct LocalBackendState {
@@ -122,9 +123,24 @@ struct PythonOcrResponse {
     elapsed_ms: Option<u64>,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+struct PythonTextOcrResponse {
+    text: String,
+    raw_text: Option<String>,
+    elapsed_ms: Option<u64>,
+}
+
 #[derive(Debug, Serialize)]
 struct LocalOcrResponse {
     bubbles: Vec<Bubble>,
+    raw_text: Option<String>,
+    elapsed_ms: Option<u64>,
+    backend: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct LocalTextOcrResponse {
+    text: String,
     raw_text: Option<String>,
     elapsed_ms: Option<u64>,
     backend: &'static str,
@@ -144,11 +160,14 @@ impl LocalBackendState {
         let port = reserve_local_port()?;
         let backend_dir = locate_desktop_backend(&app_handle)?;
 
-        let model_dir = default_model_dir()?;
-        fs::create_dir_all(&model_dir)
+        let bbox_model_dir = default_bbox_model_dir()?;
+        let text_model_dir = default_text_model_dir()?;
+        fs::create_dir_all(&bbox_model_dir)
             .map_err(|err| format!("Impossible de creer le dossier modele: {err}"))?;
+        fs::create_dir_all(&text_model_dir)
+            .map_err(|err| format!("Impossible de creer le dossier modele OCR texte: {err}"))?;
 
-        let child = spawn_backend(&backend_dir, port, &model_dir)?;
+        let child = spawn_backend(&backend_dir, port, &bbox_model_dir, &text_model_dir)?;
         {
             let mut child_guard = self
                 .inner
@@ -357,7 +376,7 @@ fn locate_desktop_backend(app_handle: &AppHandle) -> Result<PathBuf, String> {
         .ok_or_else(|| "Dossier desktop_backend introuvable.".to_string())
 }
 
-fn default_model_dir() -> Result<PathBuf, String> {
+fn default_models_base_dir() -> Result<PathBuf, String> {
     let base = if cfg!(target_os = "windows") {
         env::var_os("APPDATA").map(PathBuf::from).or_else(|| {
             env::var_os("USERPROFILE")
@@ -376,10 +395,23 @@ fn default_model_dir() -> Result<PathBuf, String> {
     }
     .ok_or_else(|| "Impossible de determiner le dossier de donnees utilisateur.".to_string())?;
 
-    Ok(base.join("poneglyph").join("models").join(MODEL_DIR_NAME))
+    Ok(base.join("poneglyph").join("models"))
 }
 
-fn spawn_backend(backend_dir: &Path, port: u16, model_dir: &Path) -> Result<Child, String> {
+fn default_bbox_model_dir() -> Result<PathBuf, String> {
+    Ok(default_models_base_dir()?.join(BBOX_MODEL_DIR_NAME))
+}
+
+fn default_text_model_dir() -> Result<PathBuf, String> {
+    Ok(default_models_base_dir()?.join(TEXT_MODEL_DIR_NAME))
+}
+
+fn spawn_backend(
+    backend_dir: &Path,
+    port: u16,
+    bbox_model_dir: &Path,
+    text_model_dir: &Path,
+) -> Result<Child, String> {
     let pyinstaller_exe = backend_dir.join("local_ocr_server.exe");
     if pyinstaller_exe.exists() {
         eprintln!(
@@ -393,7 +425,9 @@ fn spawn_backend(backend_dir: &Path, port: u16, model_dir: &Path) -> Result<Chil
             .arg("--port")
             .arg(port.to_string())
             .current_dir(backend_dir)
-            .env("PONEGLYPH_MODEL_DIR", model_dir.as_os_str())
+            .env("PONEGLYPH_MODEL_DIR", bbox_model_dir.as_os_str())
+            .env("PONEGLYPH_BBOX_MODEL_DIR", bbox_model_dir.as_os_str())
+            .env("PONEGLYPH_BASE_MODEL_DIR", text_model_dir.as_os_str())
             .env("PYTHONUNBUFFERED", "1")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -439,7 +473,9 @@ fn spawn_backend(backend_dir: &Path, port: u16, model_dir: &Path) -> Result<Chil
             .arg("--port")
             .arg(port.to_string())
             .current_dir(backend_dir)
-            .env("PONEGLYPH_MODEL_DIR", model_dir.as_os_str())
+            .env("PONEGLYPH_MODEL_DIR", bbox_model_dir.as_os_str())
+            .env("PONEGLYPH_BBOX_MODEL_DIR", bbox_model_dir.as_os_str())
+            .env("PONEGLYPH_BASE_MODEL_DIR", text_model_dir.as_os_str())
             .env("PYTHONUNBUFFERED", "1")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -471,7 +507,7 @@ async fn get_local_model_status(
     state: State<'_, LocalBackendState>,
     app_handle: AppHandle,
 ) -> Result<LocalModelStatus, String> {
-    let model_dir = default_model_dir()?.to_string_lossy().to_string();
+    let model_dir = default_bbox_model_dir()?.to_string_lossy().to_string();
 
     let port = match state.ensure_started(app_handle).await {
         Ok(port) => port,
@@ -495,6 +531,36 @@ async fn get_local_model_status(
 }
 
 #[tauri::command]
+async fn get_local_text_model_status(
+    state: State<'_, LocalBackendState>,
+    app_handle: AppHandle,
+) -> Result<LocalModelStatus, String> {
+    let model_dir = default_text_model_dir()?.to_string_lossy().to_string();
+
+    let port = match state.ensure_started(app_handle).await {
+        Ok(port) => port,
+        Err(err) => {
+            return Ok(LocalModelStatus {
+                installed: Path::new(&model_dir).join("config.json").exists(),
+                loaded: false,
+                loading: false,
+                ready: false,
+                model_dir,
+                error: Some(err),
+                device: None,
+                dtype: None,
+                download: None,
+            });
+        }
+    };
+
+    let status: PythonModelStatus = state
+        .get_json(port, "/model/status?model_key=base")
+        .await?;
+    Ok(to_local_model_status(status, state.startup_error()))
+}
+
+#[tauri::command]
 async fn load_local_model(
     state: State<'_, LocalBackendState>,
     app_handle: AppHandle,
@@ -506,11 +572,36 @@ async fn load_local_model(
     {
         Ok(status) => Ok(to_local_model_status(status, state.startup_error())),
         Err(error) => Ok(LocalModelStatus {
-            installed: default_model_dir()?.join("config.json").exists(),
+            installed: default_bbox_model_dir()?.join("config.json").exists(),
             loaded: false,
             loading: false,
             ready: false,
-            model_dir: default_model_dir()?.to_string_lossy().to_string(),
+            model_dir: default_bbox_model_dir()?.to_string_lossy().to_string(),
+            error: Some(error),
+            device: None,
+            dtype: None,
+            download: None,
+        }),
+    }
+}
+
+#[tauri::command]
+async fn load_local_text_model(
+    state: State<'_, LocalBackendState>,
+    app_handle: AppHandle,
+) -> Result<LocalModelStatus, String> {
+    let port = state.ensure_started(app_handle).await?;
+    match state
+        .post_empty_json::<PythonModelStatus>(port, "/model/load?model_key=base")
+        .await
+    {
+        Ok(status) => Ok(to_local_model_status(status, state.startup_error())),
+        Err(error) => Ok(LocalModelStatus {
+            installed: default_text_model_dir()?.join("config.json").exists(),
+            loaded: false,
+            loading: false,
+            ready: false,
+            model_dir: default_text_model_dir()?.to_string_lossy().to_string(),
             error: Some(error),
             device: None,
             dtype: None,
@@ -532,7 +623,28 @@ async fn download_local_model(
         Ok(response) => Ok(response),
         Err(error) => Ok(DownloadResponse {
             ok: false,
-            model_dir: default_model_dir()?.to_string_lossy().to_string(),
+            model_dir: default_bbox_model_dir()?.to_string_lossy().to_string(),
+            started: None,
+            download: None,
+            error: Some(error),
+        }),
+    }
+}
+
+#[tauri::command]
+async fn download_local_text_model(
+    state: State<'_, LocalBackendState>,
+    app_handle: AppHandle,
+) -> Result<DownloadResponse, String> {
+    let port = state.ensure_started(app_handle).await?;
+    match state
+        .post_empty_json::<DownloadResponse>(port, "/model/download?model_key=base")
+        .await
+    {
+        Ok(response) => Ok(response),
+        Err(error) => Ok(DownloadResponse {
+            ok: false,
+            model_dir: default_text_model_dir()?.to_string_lossy().to_string(),
             started: None,
             download: None,
             error: Some(error),
@@ -564,6 +676,36 @@ async fn run_local_ocr(
 
     Ok(LocalOcrResponse {
         bubbles: response.bubbles,
+        raw_text: response.raw_text,
+        elapsed_ms: response.elapsed_ms,
+        backend: "local-python",
+    })
+}
+
+#[tauri::command(rename_all = "snake_case")]
+async fn run_local_text_ocr(
+    image_bytes_base64: String,
+    state: State<'_, LocalBackendState>,
+    app_handle: AppHandle,
+) -> Result<LocalTextOcrResponse, String> {
+    #[derive(Serialize)]
+    struct RequestBody<'a> {
+        image_bytes_base64: &'a str,
+    }
+
+    let port = state.ensure_started(app_handle).await?;
+    let response: PythonTextOcrResponse = state
+        .post_json(
+            port,
+            "/ocr/text",
+            &RequestBody {
+                image_bytes_base64: &image_bytes_base64,
+            },
+        )
+        .await?;
+
+    Ok(LocalTextOcrResponse {
+        text: response.text,
         raw_text: response.raw_text,
         elapsed_ms: response.elapsed_ms,
         backend: "local-python",
@@ -621,9 +763,13 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             get_local_model_status,
+            get_local_text_model_status,
             load_local_model,
+            load_local_text_model,
             download_local_model,
+            download_local_text_model,
             run_local_ocr,
+            run_local_text_ocr,
             healthcheck_local_backend,
             get_app_version
         ])
