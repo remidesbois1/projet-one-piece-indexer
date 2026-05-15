@@ -4,9 +4,19 @@ description = "Allows checking the local OCR model status."
 commands.allow = ["get_local_model_status"]
 
 [[permission]]
+identifier = "allow-get-local-text-model-status"
+description = "Allows checking the local text OCR model status."
+commands.allow = ["get_local_text_model_status"]
+
+[[permission]]
 identifier = "allow-load-local-model"
 description = "Allows loading the local OCR model in the sidecar."
 commands.allow = ["load_local_model"]
+
+[[permission]]
+identifier = "allow-load-local-text-model"
+description = "Allows loading the local text OCR model in the sidecar."
+commands.allow = ["load_local_text_model"]
 
 [[permission]]
 identifier = "allow-download-local-model"
@@ -14,9 +24,19 @@ description = "Allows downloading the local OCR model."
 commands.allow = ["download_local_model"]
 
 [[permission]]
+identifier = "allow-download-local-text-model"
+description = "Allows downloading the local text OCR model."
+commands.allow = ["download_local_text_model"]
+
+[[permission]]
 identifier = "allow-run-local-ocr"
 description = "Allows running local OCR on a selected page."
 commands.allow = ["run_local_ocr"]
+
+[[permission]]
+identifier = "allow-run-local-text-ocr"
+description = "Allows running local OCR on a selected bubble."
+commands.allow = ["run_local_text_ocr"]
 
 [[permission]]
 identifier = "allow-healthcheck-local-backend"

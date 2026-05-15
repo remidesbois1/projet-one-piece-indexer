@@ -6,7 +6,11 @@ echo.
 echo Requis : .env avec SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, HF_TOKEN
 echo.
 
-docker run --gpus all --env-file ../../.env -v "%cd%\lighton_dataset:/app/lighton_dataset" lighton-ocr-finetune
+docker run --gpus all --env-file ../../.env ^
+    -v "%cd%\lighton_dataset:/app/lighton_dataset" ^
+    -v "%cd%\outputs_lighton_manga:/app/outputs_lighton_manga" ^
+    -v "%cd%\logs:/app/logs" ^
+    lighton-ocr-finetune
 
 if %ERRORLEVEL% NEQ 0 (
     echo.

@@ -1,7 +1,7 @@
 torch==2.7.0+cu128
-transformers>=5.0.0
+git+https://github.com/huggingface/transformers
+tokenizers
 datasets
-evaluate
 jiwer
 python-Levenshtein
 pillow

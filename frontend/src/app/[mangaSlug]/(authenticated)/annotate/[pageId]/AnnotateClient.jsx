@@ -526,7 +526,7 @@ export default function AnnotatePage() {
         setPoneglyphRunMode(runMode);
         try {
             if (preferLocal && !tauriLocalOcr.canRunLocalOcr) {
-                throw new Error("Le modele local doit etre charge avant de lancer le one-shot local.");
+                throw new Error("Le modele BBox local doit etre charge avant de lancer le one-shot local.");
             }
 
             let yoloPromise = Promise.resolve(null);
@@ -656,11 +656,11 @@ export default function AnnotatePage() {
             const reason = !tauriLocalOcr.isTauri
                 ? "App desktop non detectee."
                 : tauriLocalOcr.isDownloadingLocalModel
-                    ? "Telechargement du modele local en cours."
-                    : !tauriLocalOcr.localModelStatus?.installed
-                        ? "Telechargez le modele local d'abord."
-                        : !tauriLocalOcr.localModelStatus?.ready
-                            ? "Chargez le modele local en VRAM d'abord."
+                        ? "Telechargement du modele BBox local en cours."
+                        : !tauriLocalOcr.localModelStatus?.installed
+                            ? "Telechargez le modele BBox local d'abord."
+                            : !tauriLocalOcr.localModelStatus?.ready
+                                ? "Chargez le modele BBox local en VRAM d'abord."
                             : "OCR local indisponible.";
             toast.error(reason);
             return;
@@ -713,17 +713,25 @@ export default function AnnotatePage() {
                 isTauri={tauriLocalOcr.isTauri}
                 isCheckingLocalConnection={tauriLocalOcr.isCheckingLocalConnection}
                 localModelStatus={tauriLocalOcr.localModelStatus}
+                localTextModelStatus={tauriLocalOcr.localTextModelStatus}
                 localHealth={tauriLocalOcr.localHealth}
                 localConnectionState={tauriLocalOcr.localConnectionState}
                 isDownloadingLocalModel={tauriLocalOcr.isDownloadingLocalModel}
+                isDownloadingLocalTextModel={tauriLocalOcr.isDownloadingLocalTextModel}
                 localDownloadState={tauriLocalOcr.localDownloadState}
+                localTextDownloadState={tauriLocalOcr.localTextDownloadState}
                 localDownloadProgress={tauriLocalOcr.localDownloadProgress}
+                localTextDownloadProgress={tauriLocalOcr.localTextDownloadProgress}
                 isLoadingLocalModel={tauriLocalOcr.isLoadingLocalModel}
+                isLoadingLocalTextModel={tauriLocalOcr.isLoadingLocalTextModel}
                 isLocalInferencing={tauriLocalOcr.isLocalInferencing}
                 localError={tauriLocalOcr.localError}
                 canRunLocalOcr={tauriLocalOcr.canRunLocalOcr}
+                canRunLocalTextOcr={tauriLocalOcr.canRunLocalTextOcr}
                 downloadLocalModel={tauriLocalOcr.downloadLocalModel}
+                downloadLocalTextModel={tauriLocalOcr.downloadLocalTextModel}
                 loadLocalModel={tauriLocalOcr.loadLocalModel}
+                loadLocalTextModel={tauriLocalOcr.loadLocalTextModel}
                 refreshLocalDiagnostics={tauriLocalOcr.refreshLocalDiagnostics}
             />
 

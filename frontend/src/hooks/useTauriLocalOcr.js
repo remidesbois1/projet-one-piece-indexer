@@ -66,10 +66,14 @@ export function useTauriLocalOcr() {
     const [isTauri, setIsTauri] = useState(false);
     const [isCheckingLocalConnection, setIsCheckingLocalConnection] = useState(true);
     const [localModelStatus, setLocalModelStatus] = useState(INITIAL_MODEL_STATUS);
+    const [localTextModelStatus, setLocalTextModelStatus] = useState(INITIAL_MODEL_STATUS);
     const [localHealth, setLocalHealth] = useState(null);
     const [isDownloadingLocalModel, setIsDownloadingLocalModel] = useState(false);
+    const [isDownloadingLocalTextModel, setIsDownloadingLocalTextModel] = useState(false);
     const [isLoadingLocalModel, setIsLoadingLocalModel] = useState(false);
+    const [isLoadingLocalTextModel, setIsLoadingLocalTextModel] = useState(false);
     const [isLocalInferencing, setIsLocalInferencing] = useState(false);
+    const [isLocalTextInferencing, setIsLocalTextInferencing] = useState(false);
     const [localError, setLocalError] = useState(null);
     const [localConnectionState, setLocalConnectionState] = useState(INITIAL_CONNECTION_STATE);
     const diagnosticFailureCountRef = useRef(0);
@@ -174,6 +178,10 @@ export function useTauriLocalOcr() {
             ? { ...prev, error: message }
             : { ...INITIAL_MODEL_STATUS, error: message }
         );
+        setLocalTextModelStatus(prev => isTransient
+            ? { ...prev, error: message }
+            : { ...INITIAL_MODEL_STATUS, error: message }
+        );
 
         return isTransient;
     }, []);
@@ -193,6 +201,22 @@ export function useTauriLocalOcr() {
             return { ...INITIAL_MODEL_STATUS, error: message };
         }
     }, [getInvoke, markDiagnosticsFailure, markDiagnosticsOnline]);
+
+    const refreshLocalTextModelStatus = useCallback(async () => {
+        const invoke = await getInvoke();
+        if (!invoke) return INITIAL_MODEL_STATUS;
+
+        try {
+            const status = await invoke('get_local_text_model_status');
+            setLocalTextModelStatus(status);
+            markDiagnosticsOnline(null, status);
+            return status;
+        } catch (error) {
+            const message = getErrorMessage(error);
+            setLocalTextModelStatus(prev => ({ ...prev, error: message }));
+            return { ...INITIAL_MODEL_STATUS, error: message };
+        }
+    }, [getInvoke, markDiagnosticsOnline]);
 
     const healthcheckLocalBackend = useCallback(async () => {
         const invoke = await getInvoke();
@@ -225,6 +249,7 @@ export function useTauriLocalOcr() {
             const status = { ...INITIAL_MODEL_STATUS, error: message };
             setLocalHealth(health);
             setLocalModelStatus(status);
+            setLocalTextModelStatus(status);
             setLocalError(message);
             setLocalConnectionState({
                 status: 'unavailable',
@@ -235,23 +260,27 @@ export function useTauriLocalOcr() {
             return { health, status };
         }
 
-        const [healthResult, statusResult] = await Promise.allSettled([
+        const [healthResult, statusResult, textStatusResult] = await Promise.allSettled([
             invoke('healthcheck_local_backend'),
-            invoke('get_local_model_status')
+            invoke('get_local_model_status'),
+            invoke('get_local_text_model_status')
         ]);
 
         const health = healthResult.status === 'fulfilled' ? healthResult.value : null;
         const status = statusResult.status === 'fulfilled' ? statusResult.value : null;
+        const textStatus = textStatusResult.status === 'fulfilled' ? textStatusResult.value : null;
 
-        if (health || status) {
+        if (health || status || textStatus) {
             if (health) setLocalHealth(health);
             if (status) setLocalModelStatus(status);
-            const partialError = getRejectedMessage(healthResult, statusResult);
+            if (textStatus) setLocalTextModelStatus(textStatus);
+            const partialError = getRejectedMessage(healthResult, statusResult, textStatusResult);
             markDiagnosticsOnline(health, status);
             if (partialError) {
                 setLocalConnectionState(prev => ({ ...prev, lastError: partialError }));
+                if (!textStatus) setLocalTextModelStatus(prev => ({ ...prev, error: partialError }));
             }
-            return { health, status };
+            return { health, status, textStatus };
         }
 
         try {
@@ -262,7 +291,8 @@ export function useTauriLocalOcr() {
             markDiagnosticsFailure(message);
             const health = { ok: false, python_available: false, torch_available: false, cuda_available: null, device: null, error: message };
             const status = { ...INITIAL_MODEL_STATUS, error: message };
-            return { health, status };
+            const textStatus = { ...INITIAL_MODEL_STATUS, error: message };
+            return { health, status, textStatus };
         }
     }, [getInvoke, markDiagnosticsFailure, markDiagnosticsOnline]);
 
@@ -295,6 +325,35 @@ export function useTauriLocalOcr() {
         }
     }, [getInvoke, refreshLocalDiagnostics]);
 
+    const downloadLocalTextModel = useCallback(async () => {
+        const invoke = await getInvoke();
+        if (!invoke) {
+            const message = "Tauri indisponible.";
+            setLocalError(message);
+            return { ok: false, error: message };
+        }
+
+        setIsDownloadingLocalTextModel(true);
+        setLocalError(null);
+        try {
+            const result = await invoke('download_local_text_model');
+            if (!result?.ok) {
+                setLocalError(result?.error || "Telechargement du modele Poneglyph local impossible.");
+            }
+            if (result?.download) {
+                setLocalTextModelStatus(prev => ({ ...prev, download: result.download }));
+            }
+            await refreshLocalDiagnostics();
+            return result;
+        } catch (error) {
+            const message = getErrorMessage(error);
+            setLocalError(message);
+            return { ok: false, error: message };
+        } finally {
+            setIsDownloadingLocalTextModel(false);
+        }
+    }, [getInvoke, refreshLocalDiagnostics]);
+
     const loadLocalModel = useCallback(async () => {
         const invoke = await getInvoke();
         if (!invoke) {
@@ -322,6 +381,33 @@ export function useTauriLocalOcr() {
         }
     }, [getInvoke, markDiagnosticsOnline, refreshLocalDiagnostics]);
 
+    const loadLocalTextModel = useCallback(async () => {
+        const invoke = await getInvoke();
+        if (!invoke) {
+            const message = "Tauri indisponible.";
+            setLocalError(message);
+            return { ...INITIAL_MODEL_STATUS, error: message };
+        }
+
+        setIsLoadingLocalTextModel(true);
+        setLocalError(null);
+        setLocalTextModelStatus(prev => ({ ...prev, loading: true, error: null }));
+        try {
+            const status = await invoke('load_local_text_model');
+            setLocalTextModelStatus(status);
+            markDiagnosticsOnline(null, status);
+            await refreshLocalDiagnostics();
+            return status;
+        } catch (error) {
+            const message = getErrorMessage(error);
+            setLocalError(message);
+            setLocalTextModelStatus(prev => ({ ...prev, loaded: false, loading: false, ready: false, error: message }));
+            return { ...INITIAL_MODEL_STATUS, error: message };
+        } finally {
+            setIsLoadingLocalTextModel(false);
+        }
+    }, [getInvoke, markDiagnosticsOnline, refreshLocalDiagnostics]);
+
     const runLocalOcrBlob = useCallback(async (blob) => {
         const invoke = await getInvoke();
         if (!invoke) throw new Error("Tauri indisponible.");
@@ -339,6 +425,26 @@ export function useTauriLocalOcr() {
             throw new Error(message);
         } finally {
             setIsLocalInferencing(false);
+        }
+    }, [getInvoke, refreshLocalDiagnostics]);
+
+    const runLocalTextOcrBlob = useCallback(async (blob) => {
+        const invoke = await getInvoke();
+        if (!invoke) throw new Error("Tauri indisponible.");
+
+        setIsLocalTextInferencing(true);
+        setLocalError(null);
+        try {
+            const image_bytes_base64 = await blobToBase64(blob);
+            const result = await invoke('run_local_text_ocr', { image_bytes_base64 });
+            await refreshLocalDiagnostics();
+            return result;
+        } catch (error) {
+            const message = getErrorMessage(error);
+            setLocalError(message);
+            throw new Error(message);
+        } finally {
+            setIsLocalTextInferencing(false);
         }
     }, [getInvoke, refreshLocalDiagnostics]);
 
@@ -362,16 +468,21 @@ export function useTauriLocalOcr() {
 
         const intervalId = window.setInterval(() => {
             refreshLocalDiagnostics();
-        }, localModelStatus?.download?.active || isLoadingLocalModel || isLocalInferencing ? 2000 : 5000);
+        }, localModelStatus?.download?.active || localTextModelStatus?.download?.active || isLoadingLocalModel || isLoadingLocalTextModel || isLocalInferencing || isLocalTextInferencing ? 2000 : 5000);
 
         return () => window.clearInterval(intervalId);
-    }, [isTauri, isLoadingLocalModel, isLocalInferencing, localModelStatus?.download?.active, refreshLocalDiagnostics]);
+    }, [isTauri, isLoadingLocalModel, isLoadingLocalTextModel, isLocalInferencing, isLocalTextInferencing, localModelStatus?.download?.active, localTextModelStatus?.download?.active, refreshLocalDiagnostics]);
 
     const localDownloadState = localModelStatus?.download || null;
     const localDownloadProgress = localDownloadState?.total_bytes
         ? Math.min(100, (Number(localDownloadState.downloaded_bytes || 0) / Number(localDownloadState.total_bytes)) * 100)
         : null;
     const isLocalDownloadActive = Boolean(isDownloadingLocalModel || localDownloadState?.active);
+    const localTextDownloadState = localTextModelStatus?.download || null;
+    const localTextDownloadProgress = localTextDownloadState?.total_bytes
+        ? Math.min(100, (Number(localTextDownloadState.downloaded_bytes || 0) / Number(localTextDownloadState.total_bytes)) * 100)
+        : null;
+    const isLocalTextDownloadActive = Boolean(isDownloadingLocalTextModel || localTextDownloadState?.active);
 
     const canRunLocalOcr = Boolean(
         isTauri &&
@@ -381,6 +492,19 @@ export function useTauriLocalOcr() {
         !localModelStatus?.loading &&
         !isLoadingLocalModel &&
         !isLocalDownloadActive &&
+        !isLocalInferencing &&
+        !isLocalTextInferencing
+    );
+
+    const canRunLocalTextOcr = Boolean(
+        isTauri &&
+        localConnectionState.status !== 'offline' &&
+        localTextModelStatus?.ready &&
+        localTextModelStatus?.loaded &&
+        !localTextModelStatus?.loading &&
+        !isLoadingLocalTextModel &&
+        !isLocalTextDownloadActive &&
+        !isLocalTextInferencing &&
         !isLocalInferencing
     );
 
@@ -388,20 +512,31 @@ export function useTauriLocalOcr() {
         isTauri,
         isCheckingLocalConnection,
         localModelStatus,
+        localTextModelStatus,
         localHealth,
         localConnectionState,
         isDownloadingLocalModel: isLocalDownloadActive,
+        isDownloadingLocalTextModel: isLocalTextDownloadActive,
         localDownloadState,
+        localTextDownloadState,
         localDownloadProgress,
+        localTextDownloadProgress,
         isLoadingLocalModel,
+        isLoadingLocalTextModel,
         isLocalInferencing,
+        isLocalTextInferencing,
         localError,
         canRunLocalOcr,
+        canRunLocalTextOcr,
         refreshLocalModelStatus,
+        refreshLocalTextModelStatus,
         healthcheckLocalBackend,
         refreshLocalDiagnostics,
         downloadLocalModel,
+        downloadLocalTextModel,
         loadLocalModel,
-        runLocalOcrBlob
+        loadLocalTextModel,
+        runLocalOcrBlob,
+        runLocalTextOcrBlob
     };
 }

@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useDetection } from '@/context/DetectionContext';
+import { useTauriLocalOcrContext } from '@/context/TauriLocalOcrContext';
 import { getAdminHierarchy, createBubble, validateBubble } from '@/lib/api';
 import { getProxiedImageUrl, cropImage } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -15,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import {
     ArrowLeft, Play, Loader2, CheckCircle2, AlertTriangle,
-    SkipForward, Zap, X, Wand2
+    SkipForward, Zap, X, Wand2, Cpu, CloudLightning
 } from "lucide-react";
 
 function performRaliement(poneglyphBubbles, yoloBoxes, imgW, imgH) {
@@ -92,8 +93,13 @@ function imageToJpegBlob(img) {
     });
 }
 
-async function runLightOnClassic(img, rect) {
+async function runLightOnClassic(img, rect, provider, tauriLocalOcr) {
     const blob = await cropImage(img, rect);
+    if (provider === 'local') {
+        const data = await tauriLocalOcr.runLocalTextOcrBlob(blob);
+        return data?.text || '';
+    }
+
     const response = await fetch('/api/local_lighton', {
         method: 'POST',
         body: blob
@@ -101,6 +107,23 @@ async function runLightOnClassic(img, rect) {
     if (!response.ok) throw new Error("Erreur LightOn classique");
     const data = await response.json();
     return data.text || '';
+}
+
+async function runPoneglyphBBox(jpegBlob, provider, tauriLocalOcr) {
+    if (provider === 'local') {
+        return tauriLocalOcr.runLocalOcrBlob(jpegBlob);
+    }
+
+    return fetch('/api/poneglyph_one_shot', {
+        method: 'POST',
+        body: jpegBlob
+    }).then(r => {
+        if (!r.ok) throw new Error("Erreur API Poneglyph");
+        return r.json();
+    }).then(data => {
+        if (data.error) throw new Error(data.error);
+        return data;
+    });
 }
 
 function loadImageLocal(src) {
@@ -122,6 +145,7 @@ function getSuggestedReviewText(item) {
 
 export default function BatchOcrManager() {
     const { detectionStatus, loadDetectionModel, downloadProgress, detectBubblesPositionsOnly } = useDetection();
+    const tauriLocalOcr = useTauriLocalOcrContext();
     const params = useParams();
 
     const [hierarchy, setHierarchy] = useState([]);
@@ -133,6 +157,7 @@ export default function BatchOcrManager() {
     const [customReviewTexts, setCustomReviewTexts] = useState({});
     const [stats, setStats] = useState({ autoValidated: 0, totalReview: 0, errors: 0 });
     const [processingReview, setProcessingReview] = useState(false);
+    const [ocrProvider, setOcrProvider] = useState('modal');
 
     const startRequestedRef = useRef(false);
     const abortRef = useRef(false);
@@ -178,9 +203,30 @@ export default function BatchOcrManager() {
         return [];
     }, [hierarchy, selectedChapterId]);
 
+    const canUseLocalBatch = Boolean(tauriLocalOcr.canRunLocalOcr && tauriLocalOcr.canRunLocalTextOcr);
+
+    const getLocalBatchDisabledReason = () => {
+        if (!tauriLocalOcr.isTauri) return "App desktop non detectee.";
+        if (!tauriLocalOcr.localModelStatus?.ready) return "Chargez le modele BBox local.";
+        if (!tauriLocalOcr.localTextModelStatus?.ready) return "Chargez le modele Poneglyph local.";
+        return "OCR local indisponible.";
+    };
+
+    const handleProviderChange = (value) => {
+        if (value === 'local' && !canUseLocalBatch) {
+            toast.error(getLocalBatchDisabledReason());
+            return;
+        }
+        setOcrProvider(value);
+    };
+
     const handleStart = () => {
         if (!selectedChapterId) {
             toast.error("Veuillez sélectionner un chapitre.");
+            return;
+        }
+        if (ocrProvider === 'local' && !canUseLocalBatch) {
+            toast.error(getLocalBatchDisabledReason());
             return;
         }
         if (detectionStatus === 'ready') {
@@ -254,16 +300,7 @@ export default function BatchOcrManager() {
                 console.error('YOLO failed:', e);
                 return [];
             }),
-            fetch('/api/poneglyph_one_shot', {
-                method: 'POST',
-                body: jpegBlob
-            }).then(r => {
-                if (!r.ok) throw new Error("Erreur API Poneglyph");
-                return r.json();
-            }).then(data => {
-                if (data.error) throw new Error(data.error);
-                return data;
-            }).catch(e => {
+            runPoneglyphBBox(jpegBlob, ocrProvider, tauriLocalOcr).catch(e => {
                 console.error('Poneglyph failed:', e);
                 return { bubbles: [] };
             })
@@ -293,14 +330,30 @@ export default function BatchOcrManager() {
 
         console.log(`[Batch] Page ${page.numero_page}: rallied=${matches.length}, unmatched_yolo=${unmatchedYoloIndices.length}`);
 
-        const lightonPromises = yoloBoxes.map((box) => {
-            if (box.w <= 0 || box.h <= 0) return Promise.resolve('');
-            return runLightOnClassic(img, box).catch(e => {
-                console.error('LightOn failed:', e);
-                return '';
+        let lightonTexts = [];
+        if (ocrProvider === 'local') {
+            for (const box of yoloBoxes) {
+                if (box.w <= 0 || box.h <= 0) {
+                    lightonTexts.push('');
+                    continue;
+                }
+                try {
+                    lightonTexts.push(await runLightOnClassic(img, box, ocrProvider, tauriLocalOcr));
+                } catch (e) {
+                    console.error('LightOn failed:', e);
+                    lightonTexts.push('');
+                }
+            }
+        } else {
+            const lightonPromises = yoloBoxes.map((box) => {
+                if (box.w <= 0 || box.h <= 0) return Promise.resolve('');
+                return runLightOnClassic(img, box, ocrProvider, tauriLocalOcr).catch(e => {
+                    console.error('LightOn failed:', e);
+                    return '';
+                });
             });
-        });
-        const lightonTexts = await Promise.all(lightonPromises);
+            lightonTexts = await Promise.all(lightonPromises);
+        }
 
         const reviewItems = [];
         let autoValidatedCount = 0;
@@ -477,6 +530,7 @@ export default function BatchOcrManager() {
     };
 
     const chapters = getAllChapters();
+    const providerLabel = ocrProvider === 'local' ? 'Local Tauri' : 'Modal GPU';
 
     return (
         <div className="container max-w-6xl mx-auto py-10 px-4 space-y-6">
@@ -511,7 +565,7 @@ export default function BatchOcrManager() {
                         </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
-                        <div className="flex gap-3 items-end">
+                        <div className="grid gap-3 md:grid-cols-[1fr_240px_auto] md:items-end">
                             <div className="flex-1">
                                 <label className="text-sm font-medium text-slate-700 mb-1.5 block">Chapitre</label>
                                 <Select value={selectedChapterId} onValueChange={setSelectedChapterId}>
@@ -527,10 +581,36 @@ export default function BatchOcrManager() {
                                     </SelectContent>
                                 </Select>
                             </div>
-                            <Button onClick={handleStart} disabled={!selectedChapterId} className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg">
+                            <div>
+                                <label className="text-sm font-medium text-slate-700 mb-1.5 block">OCR</label>
+                                <Select value={ocrProvider} onValueChange={handleProviderChange}>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Source OCR" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="modal">
+                                            <span className="inline-flex items-center gap-2"><CloudLightning className="h-3.5 w-3.5" /> Modal GPU</span>
+                                        </SelectItem>
+                                        <SelectItem value="local" disabled={!canUseLocalBatch}>
+                                            <span className="inline-flex items-center gap-2"><Cpu className="h-3.5 w-3.5" /> Local Tauri</span>
+                                        </SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <Button onClick={handleStart} disabled={!selectedChapterId || (ocrProvider === 'local' && !canUseLocalBatch)} className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg">
                                 <Play className="h-4 w-4 mr-2" />
                                 Lancer le batch
                             </Button>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 text-xs font-semibold text-slate-600">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <Badge variant="outline" className="bg-white">Provider: {providerLabel}</Badge>
+                                {tauriLocalOcr.isTauri && <Badge variant="outline" className={tauriLocalOcr.localModelStatus?.ready ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-white"}>BBox {tauriLocalOcr.localModelStatus?.ready ? "chargé" : "non chargé"}</Badge>}
+                                {tauriLocalOcr.isTauri && <Badge variant="outline" className={tauriLocalOcr.localTextModelStatus?.ready ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-white"}>Poneglyph {tauriLocalOcr.localTextModelStatus?.ready ? "chargé" : "non chargé"}</Badge>}
+                            </div>
+                            {tauriLocalOcr.isTauri && !canUseLocalBatch && (
+                                <p className="mt-2 text-[11px] text-slate-500">Local batch disponible quand les modèles BBox et Poneglyph sont tous les deux chargés.</p>
+                            )}
                         </div>
                     </CardContent>
                 </Card>
@@ -560,7 +640,7 @@ export default function BatchOcrManager() {
                             <Loader2 className="h-5 w-5 animate-spin text-indigo-600" />
                             Traitement en cours...
                         </CardTitle>
-                        <CardDescription>Page {progress.current} / {progress.total}</CardDescription>
+                        <CardDescription>Page {progress.current} / {progress.total} - {providerLabel}</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
                         <Progress value={(progress.current / progress.total) * 100} />
@@ -653,7 +733,7 @@ export default function BatchOcrManager() {
                                         <div className={`grid gap-2 ${item.rallied ? 'lg:grid-cols-2' : 'grid-cols-1'}`}>
                                             {item.rallied && (
                                                 <div className="p-3 rounded-lg border border-slate-200 bg-white">
-                                                    <p className="text-xs font-semibold text-slate-500 mb-1">Poneglyph BBox</p>
+                                                    <p className="text-xs font-semibold text-slate-500 mb-1">Poneglyph BBox ({providerLabel})</p>
                                                     <p className="min-h-10 text-sm text-slate-900 whitespace-pre-wrap">{item.poneglyphText || <em className="text-slate-400">vide</em>}</p>
                                                     <Button
                                                         size="sm"
@@ -668,7 +748,7 @@ export default function BatchOcrManager() {
                                             )}
 
                                             <div className="p-3 rounded-lg border border-slate-200 bg-white">
-                                                <p className="text-xs font-semibold text-slate-500 mb-1">LightOn Classique</p>
+                                                <p className="text-xs font-semibold text-slate-500 mb-1">LightOn Classique ({providerLabel})</p>
                                                 <p className="min-h-10 text-sm text-slate-900 whitespace-pre-wrap">{item.lightonText || <em className="text-slate-400">vide</em>}</p>
                                                 <Button
                                                     size="sm"

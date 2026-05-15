@@ -13,8 +13,23 @@ export default function AnnotateOcrModelSelector({
     loadModel,
     downloadProgress,
     geminiKey,
-    isSandbox = false
+    isSandbox = false,
+    isTauri = false,
+    localTextModelStatus = null,
+    isDownloadingLocalTextModel = false,
+    localTextDownloadState = null,
+    localTextDownloadProgress = null,
+    isLoadingLocalTextModel = false,
+    downloadLocalTextModel,
+    loadLocalTextModel
 }) {
+    const activeModel = OCR_MODELS[activeModelKey];
+    const activeIsTauriModel = activeModel?.runtime === 'tauri';
+    const textDownloadActive = Boolean(isDownloadingLocalTextModel || localTextDownloadState?.active);
+    const textDownloadPercent = Number.isFinite(localTextDownloadProgress) ? Math.round(localTextDownloadProgress) : null;
+    const canDownloadTextModel = isTauri && activeIsTauriModel && !localTextModelStatus?.installed && !textDownloadActive;
+    const canLoadTextModel = isTauri && activeIsTauriModel && localTextModelStatus?.installed && !localTextModelStatus?.ready && !isLoadingLocalTextModel && !textDownloadActive;
+
     return (
         <div className="flex-none p-3 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-3">
             <div className="flex items-center justify-between mb-1">
@@ -48,17 +63,21 @@ export default function AnnotateOcrModelSelector({
             <div className="flex flex-col gap-1.5">
                 {Object.values(OCR_MODELS)
                     .filter(m => (preferLocalOCR || isSandbox) ? m.type === 'local' : m.type === 'api')
-                    .map((m) => (
+                    .map((m) => {
+                        const disabled = (preferLocalOCR && modelStatus === 'loading' && m.runtime !== 'tauri') || (m.runtime === 'tauri' && !isTauri);
+
+                        return (
                         <button
                             key={m.key}
                             onClick={() => switchModel(m.key)}
-                            disabled={preferLocalOCR && modelStatus === 'loading'}
+                            disabled={disabled}
+                            title={m.runtime === 'tauri' && !isTauri ? "Disponible dans l'app desktop" : m.description}
                             className={cn(
                                 "flex-1 p-2 rounded-lg border text-left transition-all duration-200",
                                 activeModelKey === m.key
                                     ? (m.type === 'api' ? "border-indigo-300 bg-indigo-50/80 ring-1 ring-indigo-200/50" : "border-emerald-300 bg-emerald-50/80 ring-1 ring-emerald-200/50")
                                     : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50",
-                                (preferLocalOCR && modelStatus === 'loading') && "opacity-50 cursor-not-allowed"
+                                disabled && "opacity-50 cursor-not-allowed"
                             )}
                         >
                             <div className="flex items-center justify-between mb-0.5">
@@ -77,12 +96,52 @@ export default function AnnotateOcrModelSelector({
                                 {m.key === 'gemini' ? "Vision AI · Google" : `CER ${m.cer} · ${m.size}`}
                             </div>
                         </button>
-                    ))}
+                        );
+                    })}
             </div>
 
             {preferLocalOCR || isSandbox ? (
                 <div>
-                    {OCR_MODELS[activeModelKey]?.type === 'local' ? (
+                    {activeIsTauriModel ? (
+                        <>
+                            {!isTauri && (
+                                <div className="text-[10px] font-bold text-slate-400 text-center py-2 bg-slate-50 rounded-lg border border-dashed border-slate-200">
+                                    Poneglyph local nécessite l&apos;app desktop.
+                                </div>
+                            )}
+                            {isTauri && canDownloadTextModel && (
+                                <Button variant="outline" size="sm" onClick={downloadLocalTextModel} className="w-full h-8 text-[11px] font-bold bg-white border border-slate-200 hover:bg-slate-50 text-slate-600">
+                                    <Download size={12} className="mr-1.5" /> Télécharger Poneglyph Local
+                                </Button>
+                            )}
+                            {isTauri && canLoadTextModel && (
+                                <Button variant="outline" size="sm" onClick={loadLocalTextModel} className="w-full h-8 text-[11px] font-bold bg-white border border-slate-200 hover:bg-slate-50 text-slate-600">
+                                    <Download size={12} className="mr-1.5" /> Charger Poneglyph Local
+                                </Button>
+                            )}
+                            {isTauri && (textDownloadActive || isLoadingLocalTextModel || localTextModelStatus?.loading) && (
+                                <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
+                                    <div className="flex justify-between text-[9px] font-bold text-slate-500 mb-1.5">
+                                        <span>{textDownloadActive ? "Téléchargement" : "Chargement"} Poneglyph Local...</span>
+                                        {textDownloadPercent !== null && <span>{textDownloadPercent}%</span>}
+                                    </div>
+                                    <div className="h-1 w-full bg-slate-200 rounded-full overflow-hidden">
+                                        <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${textDownloadPercent ?? 40}%` }} />
+                                    </div>
+                                </div>
+                            )}
+                            {isTauri && localTextModelStatus?.ready && (
+                                <div className="flex items-center justify-center gap-1.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 py-1.5 rounded-md border border-emerald-100/50">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-sm" /> Poneglyph Local opérationnel
+                                </div>
+                            )}
+                            {isTauri && localTextModelStatus?.error && !localTextModelStatus?.ready && (
+                                <div className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[9px] font-semibold text-amber-700">
+                                    {localTextModelStatus.error}
+                                </div>
+                            )}
+                        </>
+                    ) : OCR_MODELS[activeModelKey]?.type === 'local' ? (
                         <>
                             {(modelStatus === 'idle' || modelStatus === 'error') && (
                                 <Button variant="outline" size="sm" onClick={() => loadModel(activeModelKey)} className="w-full h-8 text-[11px] font-bold bg-white border border-slate-200 hover:bg-slate-50 text-slate-600">
@@ -116,7 +175,7 @@ export default function AnnotateOcrModelSelector({
                 <div>
                     {OCR_MODELS[activeModelKey]?.type === 'api' ? (
                         <>
-                            {activeModelKey === 'poneglyph' && (
+                            {activeModelKey === 'lighton' && (
                                 <div className="flex items-center justify-center gap-1.5 text-[10px] font-bold text-indigo-700 bg-indigo-50 py-1.5 rounded-md border border-indigo-100/50">
                                     <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-sm" /> Inférence Modal (Nvidia L4)
                                 </div>

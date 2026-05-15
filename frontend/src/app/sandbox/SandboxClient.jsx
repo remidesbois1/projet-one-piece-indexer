@@ -320,7 +320,7 @@ export default function SandboxClient() {
 
         try {
             if (preferLocal && !tauriLocalOcr.canRunLocalOcr) {
-                throw new Error("Le modele local doit etre charge avant de lancer le one-shot local.");
+                throw new Error("Le modele BBox local doit etre charge avant de lancer le one-shot local.");
             }
 
             let yoloPromise = Promise.resolve(null);
@@ -430,11 +430,11 @@ export default function SandboxClient() {
             const reason = !tauriLocalOcr.isTauri
                 ? "App desktop non detectee."
                 : tauriLocalOcr.isDownloadingLocalModel
-                    ? "Telechargement du modele local en cours."
+                    ? "Telechargement du modele BBox local en cours."
                     : !tauriLocalOcr.localModelStatus?.installed
-                        ? "Telechargez le modele local d'abord."
+                        ? "Telechargez le modele BBox local d'abord."
                         : !tauriLocalOcr.localModelStatus?.ready
-                            ? "Chargez le modele local en VRAM d'abord."
+                            ? "Chargez le modele BBox local en VRAM d'abord."
                             : "OCR local indisponible.";
             toast.error(reason);
             return;
@@ -545,11 +545,19 @@ export default function SandboxClient() {
                 handleOneShotLocalPoneglyph={handleOneShotLocalPoneglyph}
                 isTauri={tauriLocalOcr.isTauri}
                 localModelStatus={tauriLocalOcr.localModelStatus}
+                localTextModelStatus={tauriLocalOcr.localTextModelStatus}
                 isDownloadingLocalModel={tauriLocalOcr.isDownloadingLocalModel}
+                isDownloadingLocalTextModel={tauriLocalOcr.isDownloadingLocalTextModel}
                 localDownloadState={tauriLocalOcr.localDownloadState}
+                localTextDownloadState={tauriLocalOcr.localTextDownloadState}
+                localTextDownloadProgress={tauriLocalOcr.localTextDownloadProgress}
                 localConnectionState={tauriLocalOcr.localConnectionState}
+                isLoadingLocalTextModel={tauriLocalOcr.isLoadingLocalTextModel}
                 isLocalInferencing={tauriLocalOcr.isLocalInferencing}
                 canRunLocalOcr={tauriLocalOcr.canRunLocalOcr}
+                canRunLocalTextOcr={tauriLocalOcr.canRunLocalTextOcr}
+                downloadLocalTextModel={tauriLocalOcr.downloadLocalTextModel}
+                loadLocalTextModel={tauriLocalOcr.loadLocalTextModel}
             />
 
             <div className="flex flex-col flex-1 overflow-hidden min-w-0 bg-slate-50 relative">

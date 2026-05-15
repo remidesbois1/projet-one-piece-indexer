@@ -15,29 +15,57 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 
-MODEL_ID = "Remidesbois/LightonOCR-2-1b-poneglyph-bbox"
-MODEL_DIR_NAME = "lighton-ocr-poneglyph-bbox"
+BBOX_MODEL_KEY = "bbox"
+TEXT_MODEL_KEY = "base"
+DEFAULT_MODEL_KEY = BBOX_MODEL_KEY
+MODEL_CONFIGS = {
+    BBOX_MODEL_KEY: {
+        "id": "Remidesbois/LightonOCR-2-1b-poneglyph-bbox",
+        "dir_name": "lighton-ocr-poneglyph-bbox",
+        "label": "Poneglyph BBox",
+        "max_new_tokens": 2048,
+    },
+    TEXT_MODEL_KEY: {
+        "id": "Remidesbois/LightonOCR-2-1b-poneglyph",
+        "dir_name": "lighton-ocr-poneglyph",
+        "label": "Poneglyph OCR",
+        "max_new_tokens": 128,
+    },
+}
+TEXT_USER_PROMPT = os.getenv(
+    "LIGHTON_USER_PROMPT",
+    "\nTranscription OCR (uniquement le texte de la bulle, pas de suite) :",
+)
 MAX_IMAGE_SIZE = (1540, 1540)
 
-processor = None
-model = None
-device = None
-dtype = None
-model_loading = False
-last_error: Optional[str] = None
-download_state = {
-    "active": False,
-    "ok": None,
-    "error": None,
-    "total_bytes": None,
-    "downloaded_bytes": 0,
-    "started_at": None,
-    "finished_at": None,
+def make_download_state():
+    return {
+        "active": False,
+        "ok": None,
+        "error": None,
+        "total_bytes": None,
+        "downloaded_bytes": 0,
+        "started_at": None,
+        "finished_at": None,
+    }
+
+
+model_states = {
+    model_key: {
+        "processor": None,
+        "model": None,
+        "device": None,
+        "dtype": None,
+        "loading": False,
+        "last_error": None,
+        "download": make_download_state(),
+        "model_lock": threading.Lock(),
+        "download_lock": threading.Lock(),
+    }
+    for model_key in MODEL_CONFIGS
 }
 
-model_lock = threading.Lock()
 inference_lock = threading.Lock()
-download_lock = threading.Lock()
 
 app = FastAPI(title="Poneglyph Local OCR Backend")
 
@@ -46,7 +74,18 @@ class OcrRequest(BaseModel):
     image_bytes_base64: str
 
 
-def default_app_model_dir() -> str:
+def normalize_model_key(model_key: str) -> str:
+    if model_key not in MODEL_CONFIGS:
+        raise ValueError(f"Modele local inconnu: {model_key}")
+    return model_key
+
+
+def get_model_state(model_key: str):
+    return model_states[normalize_model_key(model_key)]
+
+
+def default_app_model_dir(model_key: str = DEFAULT_MODEL_KEY) -> str:
+    model_key = normalize_model_key(model_key)
     system = platform.system().lower()
     home = Path.home()
 
@@ -57,15 +96,23 @@ def default_app_model_dir() -> str:
     else:
         base_dir = Path(os.environ.get("XDG_DATA_HOME", home / ".local" / "share")) / "poneglyph"
 
-    return str(base_dir / "models" / MODEL_DIR_NAME)
+    return str(base_dir / "models" / MODEL_CONFIGS[model_key]["dir_name"])
 
 
-def get_model_dir() -> str:
-    return os.environ.get("PONEGLYPH_MODEL_DIR") or default_app_model_dir()
+def get_model_dir(model_key: str = DEFAULT_MODEL_KEY) -> str:
+    model_key = normalize_model_key(model_key)
+    if model_key == BBOX_MODEL_KEY:
+        return (
+            os.environ.get("PONEGLYPH_BBOX_MODEL_DIR")
+            or os.environ.get("PONEGLYPH_MODEL_DIR")
+            or default_app_model_dir(model_key)
+        )
+
+    return os.environ.get("PONEGLYPH_BASE_MODEL_DIR") or default_app_model_dir(model_key)
 
 
-def model_is_installed() -> bool:
-    return os.path.exists(os.path.join(get_model_dir(), "config.json"))
+def model_is_installed(model_key: str = DEFAULT_MODEL_KEY) -> bool:
+    return os.path.exists(os.path.join(get_model_dir(model_key), "config.json"))
 
 
 def get_torch():
@@ -101,8 +148,8 @@ def dtype_name(selected_dtype) -> str:
     return str(selected_dtype).replace("torch.", "")
 
 
-def model_dir_size_bytes() -> int:
-    model_dir = get_model_dir()
+def model_dir_size_bytes(model_key: str = DEFAULT_MODEL_KEY) -> int:
+    model_dir = get_model_dir(model_key)
     total = 0
     if not os.path.exists(model_dir):
         return total
@@ -120,12 +167,12 @@ def model_dir_size_bytes() -> int:
     return total
 
 
-def get_model_total_bytes() -> Optional[int]:
+def get_model_total_bytes(model_key: str = DEFAULT_MODEL_KEY) -> Optional[int]:
     try:
         from huggingface_hub import HfApi
 
         info = HfApi().model_info(
-            MODEL_ID,
+            MODEL_CONFIGS[normalize_model_key(model_key)]["id"],
             files_metadata=True,
             token=os.environ.get("HF_TOKEN"),
         )
@@ -134,23 +181,25 @@ def get_model_total_bytes() -> Optional[int]:
         return None
 
 
-def update_download_state(**updates) -> None:
-    with download_lock:
-        download_state.update(updates)
+def update_download_state(model_key: str, **updates) -> None:
+    state = get_model_state(model_key)
+    with state["download_lock"]:
+        state["download"].update(updates)
 
 
-def download_status_snapshot():
-    with download_lock:
-        state = dict(download_state)
+def download_status_snapshot(model_key: str = DEFAULT_MODEL_KEY):
+    model_state = get_model_state(model_key)
+    with model_state["download_lock"]:
+        state = dict(model_state["download"])
 
-    downloaded_bytes = model_dir_size_bytes()
+    downloaded_bytes = model_dir_size_bytes(model_key)
     total_bytes = state.get("total_bytes")
     if total_bytes:
         downloaded_bytes = min(downloaded_bytes, total_bytes)
 
-    with download_lock:
-        download_state["downloaded_bytes"] = downloaded_bytes
-        state = dict(download_state)
+    with model_state["download_lock"]:
+        model_state["download"]["downloaded_bytes"] = downloaded_bytes
+        state = dict(model_state["download"])
 
     return state
 
@@ -163,98 +212,103 @@ def cuda_memory_mb(torch_module, device_index: int, value_name: str) -> Optional
         return None
 
 
-def download_model() -> None:
+def download_model(model_key: str = DEFAULT_MODEL_KEY) -> None:
     from huggingface_hub import snapshot_download
 
-    model_dir = get_model_dir()
+    model_key = normalize_model_key(model_key)
+    model_dir = get_model_dir(model_key)
     os.makedirs(model_dir, exist_ok=True)
     snapshot_download(
-        repo_id=MODEL_ID,
+        repo_id=MODEL_CONFIGS[model_key]["id"],
         local_dir=model_dir,
         token=os.environ.get("HF_TOKEN"),
         local_dir_use_symlinks=False,
     )
 
 
-def download_model_worker() -> None:
-    global last_error
-
+def download_model_worker(model_key: str) -> None:
+    state = get_model_state(model_key)
     try:
-        total_bytes = get_model_total_bytes()
+        total_bytes = get_model_total_bytes(model_key)
         update_download_state(
+            model_key,
             total_bytes=total_bytes,
-            downloaded_bytes=model_dir_size_bytes(),
+            downloaded_bytes=model_dir_size_bytes(model_key),
         )
-        download_model()
-        downloaded_bytes = model_dir_size_bytes()
+        download_model(model_key)
+        downloaded_bytes = model_dir_size_bytes(model_key)
         if total_bytes:
             downloaded_bytes = min(downloaded_bytes, total_bytes)
         update_download_state(
+            model_key,
             active=False,
             ok=True,
             error=None,
             downloaded_bytes=downloaded_bytes,
             finished_at=time.time(),
         )
-        last_error = None
+        state["last_error"] = None
     except Exception as exc:
         message = str(exc)
         update_download_state(
+            model_key,
             active=False,
             ok=False,
             error=message,
-            downloaded_bytes=model_dir_size_bytes(),
+            downloaded_bytes=model_dir_size_bytes(model_key),
             finished_at=time.time(),
         )
-        last_error = message
+        state["last_error"] = message
 
 
-def start_model_download() -> bool:
-    with download_lock:
-        if download_state["active"]:
+def start_model_download(model_key: str = DEFAULT_MODEL_KEY) -> bool:
+    state = get_model_state(model_key)
+    with state["download_lock"]:
+        if state["download"]["active"]:
             return False
 
-        if model_is_installed():
-            download_state.update(
+        if model_is_installed(model_key):
+            state["download"].update(
                 active=False,
                 ok=True,
                 error=None,
-                downloaded_bytes=model_dir_size_bytes(),
+                downloaded_bytes=model_dir_size_bytes(model_key),
                 finished_at=time.time(),
             )
             return False
 
-        download_state.update(
+        state["download"].update(
             active=True,
             ok=None,
             error=None,
             total_bytes=None,
-            downloaded_bytes=model_dir_size_bytes(),
+            downloaded_bytes=model_dir_size_bytes(model_key),
             started_at=time.time(),
             finished_at=None,
         )
 
-    thread = threading.Thread(target=download_model_worker, daemon=True)
+    thread = threading.Thread(target=download_model_worker, args=(model_key,), daemon=True)
     thread.start()
     return True
 
 
-def load_model() -> None:
-    global processor, model, device, dtype, model_loading, last_error
+def load_model(model_key: str = DEFAULT_MODEL_KEY) -> None:
+    model_key = normalize_model_key(model_key)
+    state = get_model_state(model_key)
 
-    if processor is not None and model is not None:
+    if state["processor"] is not None and state["model"] is not None:
         return
 
-    with model_lock:
-        if processor is not None and model is not None:
+    with state["model_lock"]:
+        if state["processor"] is not None and state["model"] is not None:
             return
 
-        if not model_is_installed():
+        if not model_is_installed(model_key):
             raise RuntimeError(
                 "Le modele local n'est pas installe. Lancez d'abord le telechargement."
             )
 
-        model_loading = True
+        state["loading"] = True
         try:
             torch = get_torch()
             from transformers import (
@@ -262,33 +316,39 @@ def load_model() -> None:
                 LightOnOcrProcessor,
             )
 
-            model_dir = get_model_dir()
-            processor = LightOnOcrProcessor.from_pretrained(model_dir)
-            processor.image_processor.default_to_square = False
+            model_dir = get_model_dir(model_key)
+            loaded_processor = LightOnOcrProcessor.from_pretrained(model_dir)
+            loaded_processor.image_processor.default_to_square = False
+            if model_key == TEXT_MODEL_KEY:
+                loaded_processor.tokenizer.padding_side = "left"
 
-            device = pick_device(torch)
-            dtype = pick_dtype(torch, device)
+            selected_device = pick_device(torch)
+            selected_dtype = pick_dtype(torch, selected_device)
 
-            load_kwargs = {"torch_dtype": dtype}
-            if device == "cuda":
+            load_kwargs = {"torch_dtype": selected_dtype}
+            if selected_device == "cuda":
                 load_kwargs["device_map"] = "auto"
 
-            model = LightOnOcrForConditionalGeneration.from_pretrained(
+            loaded_model = LightOnOcrForConditionalGeneration.from_pretrained(
                 model_dir,
                 **load_kwargs,
             ).eval()
 
-            if device != "cuda":
-                model.to(device)
+            if selected_device != "cuda":
+                loaded_model.to(selected_device)
 
-            last_error = None
+            state["processor"] = loaded_processor
+            state["model"] = loaded_model
+            state["device"] = selected_device
+            state["dtype"] = selected_dtype
+            state["last_error"] = None
         except Exception as exc:
-            processor = None
-            model = None
-            last_error = str(exc)
+            state["processor"] = None
+            state["model"] = None
+            state["last_error"] = str(exc)
             raise
         finally:
-            model_loading = False
+            state["loading"] = False
 
 
 def parse_bubbles(output_text: str):
@@ -303,6 +363,92 @@ def parse_bubbles(output_text: str):
             bubbles.append({"content": content, "bbox": coords})
 
     return bubbles
+
+
+def model_status_payload(model_key: str = DEFAULT_MODEL_KEY):
+    model_key = normalize_model_key(model_key)
+    state = get_model_state(model_key)
+    installed = model_is_installed(model_key)
+    loaded = state["processor"] is not None and state["model"] is not None
+    return {
+        "installed": installed,
+        "loaded": loaded,
+        "loading": state["loading"],
+        "ready": installed and loaded and not state["loading"] and state["last_error"] is None,
+        "model_dir": get_model_dir(model_key),
+        "device": state["device"],
+        "dtype": dtype_name(state["dtype"]) if state["dtype"] is not None else None,
+        "error": state["last_error"],
+        "download": download_status_snapshot(model_key),
+    }
+
+
+def loaded_models_payload():
+    return {model_key: model_status_payload(model_key) for model_key in MODEL_CONFIGS}
+
+
+def decode_image_request(request: OcrRequest):
+    try:
+        return base64.b64decode(request.image_bytes_base64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        return JSONResponse(
+            status_code=400,
+            content={"error": f"Image base64 invalide: {exc}"},
+        )
+
+
+def generate_with_model(model_key: str, image, messages):
+    model_key = normalize_model_key(model_key)
+    state = get_model_state(model_key)
+    torch = get_torch()
+    loaded_processor = state["processor"]
+    loaded_model = state["model"]
+    selected_device = state["device"]
+    selected_dtype = state["dtype"]
+
+    text_prompt = loaded_processor.apply_chat_template(
+        messages,
+        add_generation_prompt=True,
+        tokenize=False,
+    )
+
+    inputs = loaded_processor(
+        text=[text_prompt],
+        images=[image],
+        return_tensors="pt",
+    )
+    inputs = {
+        key: value.to(device=selected_device, dtype=selected_dtype)
+        if value.is_floating_point()
+        else value.to(selected_device)
+        for key, value in inputs.items()
+    }
+
+    with torch.inference_mode():
+        output_ids = loaded_model.generate(
+            **inputs,
+            max_new_tokens=MODEL_CONFIGS[model_key]["max_new_tokens"],
+            do_sample=False,
+        )
+
+    gen_ids = output_ids[0, inputs["input_ids"].shape[1] :]
+    if model_key == TEXT_MODEL_KEY:
+        return loaded_processor.tokenizer.decode(gen_ids, skip_special_tokens=True).strip()
+    return loaded_processor.decode(gen_ids, skip_special_tokens=True).strip()
+
+
+def record_runtime_error(model_key: str, exc: RuntimeError) -> str:
+    message = str(exc)
+    if "out of memory" in message.lower():
+        try:
+            torch = get_torch()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
+        message = "Memoire GPU insuffisante pour l'inference locale."
+    get_model_state(model_key)["last_error"] = message
+    return message
 
 
 @app.get("/health")
@@ -343,7 +489,9 @@ def health():
             "gpu_memory_total_mb": gpu_memory_total_mb,
             "gpu_memory_allocated_mb": gpu_memory_allocated_mb,
             "gpu_memory_reserved_mb": gpu_memory_reserved_mb,
-            "model_loaded": processor is not None and model is not None,
+            "model_loaded": get_model_state(BBOX_MODEL_KEY)["processor"] is not None
+            and get_model_state(BBOX_MODEL_KEY)["model"] is not None,
+            "models": loaded_models_payload(),
         }
     except Exception as exc:
         return {
@@ -353,80 +501,70 @@ def health():
             "cuda_available": False,
             "mps_available": False,
             "error": str(exc),
-            "model_loaded": processor is not None and model is not None,
+            "model_loaded": get_model_state(BBOX_MODEL_KEY)["processor"] is not None
+            and get_model_state(BBOX_MODEL_KEY)["model"] is not None,
+            "models": loaded_models_payload(),
         }
 
 
 @app.get("/model/status")
-def model_status():
-    installed = model_is_installed()
-    loaded = processor is not None and model is not None
-    return {
-        "installed": installed,
-        "loaded": loaded,
-        "loading": model_loading,
-        "ready": installed and loaded and not model_loading and last_error is None,
-        "model_dir": get_model_dir(),
-        "device": device,
-        "dtype": dtype_name(dtype) if dtype is not None else None,
-        "error": last_error,
-        "download": download_status_snapshot(),
-    }
+def model_status(model_key: str = DEFAULT_MODEL_KEY):
+    try:
+        return model_status_payload(model_key)
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"error": str(exc)})
 
 
 @app.post("/model/load")
-def model_load():
-    global last_error
-
+def model_load(model_key: str = DEFAULT_MODEL_KEY):
     try:
-        load_model()
-        return model_status()
+        model_key = normalize_model_key(model_key)
+        load_model(model_key)
+        return model_status_payload(model_key)
     except Exception as exc:
-        last_error = str(exc)
-        status = model_status()
+        if model_key in MODEL_CONFIGS:
+            get_model_state(model_key)["last_error"] = str(exc)
+            status = model_status_payload(model_key)
+        else:
+            status = {"error": str(exc)}
         status["error"] = str(exc)
         return JSONResponse(status_code=500, content=status)
 
 
 @app.post("/model/download")
-def model_download():
+def model_download(model_key: str = DEFAULT_MODEL_KEY):
     try:
-        started = start_model_download()
+        model_key = normalize_model_key(model_key)
+        started = start_model_download(model_key)
         return {
             "ok": True,
-            "model_dir": get_model_dir(),
+            "model_dir": get_model_dir(model_key),
             "started": started,
-            "download": download_status_snapshot(),
+            "download": download_status_snapshot(model_key),
         }
     except Exception as exc:
         return JSONResponse(
             status_code=500,
             content={
                 "ok": False,
-                "model_dir": get_model_dir(),
+                "model_dir": get_model_dir(model_key) if model_key in MODEL_CONFIGS else "",
                 "error": str(exc),
-                "download": download_status_snapshot(),
+                "download": download_status_snapshot(model_key) if model_key in MODEL_CONFIGS else None,
             },
         )
 
 
 @app.post("/ocr")
 def ocr(request: OcrRequest):
-    global last_error
-
     start = time.perf_counter()
+    model_key = BBOX_MODEL_KEY
     try:
-        try:
-            image_bytes = base64.b64decode(request.image_bytes_base64, validate=True)
-        except (binascii.Error, ValueError) as exc:
-            return JSONResponse(
-                status_code=400,
-                content={"error": f"Image base64 invalide: {exc}"},
-            )
+        image_bytes = decode_image_request(request)
+        if isinstance(image_bytes, JSONResponse):
+            return image_bytes
 
-        load_model()
+        load_model(model_key)
 
-        torch = get_torch()
         from PIL import Image
 
         with inference_lock:
@@ -442,55 +580,62 @@ def ocr(request: OcrRequest):
                 }
             ]
 
-            text_prompt = processor.apply_chat_template(
-                messages,
-                add_generation_prompt=True,
-                tokenize=False,
-            )
-
-            inputs = processor(
-                text=[text_prompt],
-                images=[image],
-                return_tensors="pt",
-            )
-            inputs = {
-                key: value.to(device=device, dtype=dtype)
-                if value.is_floating_point()
-                else value.to(device)
-                for key, value in inputs.items()
-            }
-
-            with torch.no_grad():
-                output_ids = model.generate(
-                    **inputs,
-                    max_new_tokens=2048,
-                    do_sample=False,
-                )
-
-            gen_ids = output_ids[0, inputs["input_ids"].shape[1] :]
-            output_text = processor.decode(gen_ids, skip_special_tokens=True).strip()
+            output_text = generate_with_model(model_key, image, messages)
 
         elapsed_ms = int((time.perf_counter() - start) * 1000)
-        last_error = None
+        get_model_state(model_key)["last_error"] = None
         return {
             "bubbles": parse_bubbles(output_text),
             "raw_text": output_text,
             "elapsed_ms": elapsed_ms,
         }
     except RuntimeError as exc:
-        message = str(exc)
-        if "out of memory" in message.lower():
-            try:
-                torch = get_torch()
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-            except Exception:
-                pass
-            message = "Memoire GPU insuffisante pour l'inference locale."
-        last_error = message
+        message = record_runtime_error(model_key, exc)
         return JSONResponse(status_code=500, content={"error": message})
     except Exception as exc:
-        last_error = str(exc)
+        get_model_state(model_key)["last_error"] = str(exc)
+        return JSONResponse(status_code=500, content={"error": str(exc)})
+
+
+@app.post("/ocr/text")
+def text_ocr(request: OcrRequest):
+    start = time.perf_counter()
+    model_key = TEXT_MODEL_KEY
+    try:
+        image_bytes = decode_image_request(request)
+        if isinstance(image_bytes, JSONResponse):
+            return image_bytes
+
+        load_model(model_key)
+
+        from PIL import Image
+
+        with inference_lock:
+            image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image"},
+                        {"type": "text", "text": TEXT_USER_PROMPT},
+                    ],
+                }
+            ]
+            output_text = generate_with_model(model_key, image, messages)
+
+        text = output_text.split("\n")[0].strip() if "\n" in output_text else output_text.strip()
+        elapsed_ms = int((time.perf_counter() - start) * 1000)
+        get_model_state(model_key)["last_error"] = None
+        return {
+            "text": text,
+            "raw_text": output_text,
+            "elapsed_ms": elapsed_ms,
+        }
+    except RuntimeError as exc:
+        message = record_runtime_error(model_key, exc)
+        return JSONResponse(status_code=500, content={"error": message})
+    except Exception as exc:
+        get_model_state(model_key)["last_error"] = str(exc)
         return JSONResponse(status_code=500, content={"error": str(exc)})
 
 

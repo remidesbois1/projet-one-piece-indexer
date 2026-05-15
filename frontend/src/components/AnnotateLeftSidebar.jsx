@@ -67,11 +67,19 @@ export default function AnnotateLeftSidebar({
     handleOneShotLocalPoneglyph,
     isTauri = false,
     localModelStatus = null,
+    localTextModelStatus = null,
     isDownloadingLocalModel = false,
+    isDownloadingLocalTextModel = false,
     localDownloadState = null,
+    localTextDownloadState = null,
+    localTextDownloadProgress = null,
     localConnectionState = null,
+    isLoadingLocalTextModel = false,
     isLocalInferencing = false,
-    canRunLocalOcr = false
+    canRunLocalOcr = false,
+    canRunLocalTextOcr = false,
+    downloadLocalTextModel,
+    loadLocalTextModel
 }) {
     const isStaff = role === 'Admin' || role === 'Modo';
     const isAdmin = role === 'Admin';
@@ -164,6 +172,15 @@ export default function AnnotateLeftSidebar({
                             downloadProgress={downloadProgress}
                             geminiKey={geminiKey}
                             isSandbox={isSandbox}
+                            isTauri={isTauri}
+                            localTextModelStatus={localTextModelStatus}
+                            isDownloadingLocalTextModel={isDownloadingLocalTextModel}
+                            localTextDownloadState={localTextDownloadState}
+                            localTextDownloadProgress={localTextDownloadProgress}
+                            isLoadingLocalTextModel={isLoadingLocalTextModel}
+                            canRunLocalTextOcr={canRunLocalTextOcr}
+                            downloadLocalTextModel={downloadLocalTextModel}
+                            loadLocalTextModel={loadLocalTextModel}
                         />
 
                         <AnnotateBubbleScanner
@@ -185,7 +202,7 @@ export default function AnnotateLeftSidebar({
                                     <Button
                                         onClick={handleOneShotLocalPoneglyph}
                                         disabled={!canRunLocalOcr || isPoneglyphLoading || isLocalInferencing || isSubmitting || isAutoDetecting}
-                                        title={localDisabledReason || "Lancer Poneglyph local"}
+                                        title={localDisabledReason || "Lancer Poneglyph BBox local"}
                                         className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-[11px] uppercase tracking-wider font-bold shadow-md disabled:opacity-50"
                                     >
                                         {(isLocalInferencing || poneglyphRunMode === 'local') ? (
@@ -196,7 +213,7 @@ export default function AnnotateLeftSidebar({
                                         ) : (
                                             <span className="flex items-center gap-2">
                                                 <Cpu size={14} />
-                                                Local Poneglyph One-Shot
+                                                Local Poneglyph BBox One-Shot
                                             </span>
                                         )}
                                     </Button>
