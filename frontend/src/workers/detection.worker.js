@@ -14,6 +14,8 @@ const PAGE_H = 256;
 const PAGE_W = 384;
 const BUBBLE_CROP_SIZE = 96;
 const PANEL_CROP_SIZE = 224;
+const BUBBLE_SCORE_THRESHOLD = 0.25;
+const BUBBLE_DUPLICATE_IOU_THRESHOLD = 0.9;
 
 let bubbleSession = null;
 let panelSession = null;
@@ -240,22 +242,62 @@ function simplifyPostProcess(data, scale, padX, padY) {
     const boxes = [];
     for (let i = 0; i < data.length; i += 6) {
         const score = data[i + 4];
-        if (score < 0.25) continue;
+        if (score < BUBBLE_SCORE_THRESHOLD) continue;
 
         let x1 = (data[i] - padX) / scale;
         let y1 = (data[i + 1] - padY) / scale;
         let x2 = (data[i + 2] - padX) / scale;
         let y2 = (data[i + 3] - padY) / scale;
+        const w = Math.round(x2 - x1);
+        const h = Math.round(y2 - y1);
+
+        if (w <= 0 || h <= 0) continue;
 
         boxes.push({
             x: Math.round(x1),
             y: Math.round(y1),
-            w: Math.round(x2 - x1),
-            h: Math.round(y2 - y1),
+            w,
+            h,
             score: score
         });
     }
-    return boxes;
+
+    return suppressDuplicateBoxes(boxes, BUBBLE_DUPLICATE_IOU_THRESHOLD);
+}
+
+function boxArea(box) {
+    return Math.max(0, box.w) * Math.max(0, box.h);
+}
+
+function boxIou(a, b) {
+    const ax2 = a.x + a.w;
+    const ay2 = a.y + a.h;
+    const bx2 = b.x + b.w;
+    const by2 = b.y + b.h;
+
+    const ix1 = Math.max(a.x, b.x);
+    const iy1 = Math.max(a.y, b.y);
+    const ix2 = Math.min(ax2, bx2);
+    const iy2 = Math.min(ay2, by2);
+    const intersection = Math.max(0, ix2 - ix1) * Math.max(0, iy2 - iy1);
+    const union = boxArea(a) + boxArea(b) - intersection;
+    return union > 0 ? intersection / union : 0;
+}
+
+function suppressDuplicateBoxes(boxes, iouThreshold) {
+    const sorted = boxes
+        .map((box, index) => ({ ...box, index }))
+        .sort((a, b) => b.score - a.score);
+    const kept = [];
+
+    for (const box of sorted) {
+        if (kept.some(keptBox => boxIou(box, keptBox) >= iouThreshold)) continue;
+        kept.push(box);
+    }
+
+    return kept
+        .sort((a, b) => a.index - b.index)
+        .map(box => ({ x: box.x, y: box.y, w: box.w, h: box.h, score: box.score }));
 }
 
 // ---------------------------------------------------------------------------

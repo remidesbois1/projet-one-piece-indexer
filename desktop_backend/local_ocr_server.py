@@ -1,6 +1,8 @@
 import argparse
 import base64
 import binascii
+import contextlib
+import gc
 import io
 import os
 import platform
@@ -146,6 +148,29 @@ def pick_dtype(torch_module, selected_device: str):
 
 def dtype_name(selected_dtype) -> str:
     return str(selected_dtype).replace("torch.", "")
+
+
+def clear_torch_cache(torch_module) -> None:
+    gc.collect()
+    try:
+        if torch_module.cuda.is_available():
+            torch_module.cuda.empty_cache()
+    except Exception:
+        pass
+
+    try:
+        mps_module = getattr(torch_module, "mps", None)
+        if mps_module and hasattr(mps_module, "empty_cache"):
+            mps_module.empty_cache()
+    except Exception:
+        pass
+
+
+def generation_autocast_context(torch_module, selected_device: str, selected_dtype):
+    if selected_device == "cuda" and selected_dtype in {torch_module.float16, torch_module.bfloat16}:
+        return torch_module.autocast(device_type="cuda", dtype=selected_dtype)
+
+    return contextlib.nullcontext()
 
 
 def model_dir_size_bytes(model_key: str = DEFAULT_MODEL_KEY) -> int:
@@ -326,16 +351,13 @@ def load_model(model_key: str = DEFAULT_MODEL_KEY) -> None:
             selected_dtype = pick_dtype(torch, selected_device)
 
             load_kwargs = {"torch_dtype": selected_dtype}
-            if selected_device == "cuda":
-                load_kwargs["device_map"] = "auto"
 
             loaded_model = LightOnOcrForConditionalGeneration.from_pretrained(
                 model_dir,
                 **load_kwargs,
             ).eval()
 
-            if selected_device != "cuda":
-                loaded_model.to(selected_device)
+            loaded_model.to(device=selected_device, dtype=selected_dtype)
 
             state["processor"] = loaded_processor
             state["model"] = loaded_model
@@ -346,6 +368,10 @@ def load_model(model_key: str = DEFAULT_MODEL_KEY) -> None:
             state["processor"] = None
             state["model"] = None
             state["last_error"] = str(exc)
+            try:
+                clear_torch_cache(torch)
+            except Exception:
+                pass
             raise
         finally:
             state["loading"] = False
@@ -424,7 +450,7 @@ def generate_with_model(model_key: str, image, messages):
         for key, value in inputs.items()
     }
 
-    with torch.inference_mode():
+    with torch.inference_mode(), generation_autocast_context(torch, selected_device, selected_dtype):
         output_ids = loaded_model.generate(
             **inputs,
             max_new_tokens=MODEL_CONFIGS[model_key]["max_new_tokens"],
@@ -442,8 +468,7 @@ def record_runtime_error(model_key: str, exc: RuntimeError) -> str:
     if "out of memory" in message.lower():
         try:
             torch = get_torch()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            clear_torch_cache(torch)
         except Exception:
             pass
         message = "Memoire GPU insuffisante pour l'inference locale."
@@ -519,7 +544,8 @@ def model_status(model_key: str = DEFAULT_MODEL_KEY):
 def model_load(model_key: str = DEFAULT_MODEL_KEY):
     try:
         model_key = normalize_model_key(model_key)
-        load_model(model_key)
+        with inference_lock:
+            load_model(model_key)
         return model_status_payload(model_key)
     except Exception as exc:
         if model_key in MODEL_CONFIGS:
@@ -563,11 +589,10 @@ def ocr(request: OcrRequest):
         if isinstance(image_bytes, JSONResponse):
             return image_bytes
 
-        load_model(model_key)
-
         from PIL import Image
 
         with inference_lock:
+            load_model(model_key)
             image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
             image.thumbnail(MAX_IMAGE_SIZE, Image.Resampling.LANCZOS)
 
@@ -606,11 +631,10 @@ def text_ocr(request: OcrRequest):
         if isinstance(image_bytes, JSONResponse):
             return image_bytes
 
-        load_model(model_key)
-
         from PIL import Image
 
         with inference_lock:
+            load_model(model_key)
             image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
             messages = [
                 {
