@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useDetection } from '@/context/DetectionContext';
 import { useTauriLocalOcrContext } from '@/context/TauriLocalOcrContext';
-import { getAdminHierarchy, createBubble, validateBubble } from '@/lib/api';
+import { getAdminHierarchy, getBubblesForPage, createBubble, validateBubble } from '@/lib/api';
 import { getProxiedImageUrl, cropImage } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -80,6 +80,29 @@ function performRaliement(poneglyphBubbles, yoloBoxes, imgW, imgH) {
         .filter(i => !usedYolo.has(i));
 
     return { matches, unmatchedYoloIndices };
+}
+
+function boxArea(box) {
+    return Math.max(0, box.w) * Math.max(0, box.h);
+}
+
+function boxIou(a, b) {
+    const ix1 = Math.max(a.x, b.x);
+    const iy1 = Math.max(a.y, b.y);
+    const ix2 = Math.min(a.x + a.w, b.x + b.w);
+    const iy2 = Math.min(a.y + a.h, b.y + b.h);
+    const intersection = Math.max(0, ix2 - ix1) * Math.max(0, iy2 - iy1);
+    const union = boxArea(a) + boxArea(b) - intersection;
+    return union > 0 ? intersection / union : 0;
+}
+
+function toGeometry(item) {
+    return {
+        x: Number(item.x),
+        y: Number(item.y),
+        w: Number(item.w),
+        h: Number(item.h)
+    };
 }
 
 function imageToJpegBlob(img) {
@@ -161,6 +184,9 @@ export default function BatchOcrManager() {
 
     const startRequestedRef = useRef(false);
     const abortRef = useRef(false);
+    const processingBatchRef = useRef(false);
+    const processingReviewRef = useRef(false);
+    const knownPageBoxesRef = useRef(new Map());
 
     useEffect(() => {
         getAdminHierarchy().then(({ data }) => setHierarchy(data || [])).catch(console.error);
@@ -203,6 +229,18 @@ export default function BatchOcrManager() {
         return [];
     }, [hierarchy, selectedChapterId]);
 
+    const rememberPageBox = (pageId, box) => {
+        const key = String(pageId);
+        const boxes = knownPageBoxesRef.current.get(key) || [];
+        boxes.push(toGeometry(box));
+        knownPageBoxesRef.current.set(key, boxes);
+    };
+
+    const hasKnownPageBox = (pageId, box) => {
+        const boxes = knownPageBoxesRef.current.get(String(pageId)) || [];
+        return boxes.some(existingBox => boxIou(existingBox, box) >= 0.9);
+    };
+
     const canUseLocalBatch = Boolean(tauriLocalOcr.canRunLocalOcr && tauriLocalOcr.canRunLocalTextOcr);
 
     const getLocalBatchDisabledReason = () => {
@@ -239,14 +277,19 @@ export default function BatchOcrManager() {
     };
 
     const startProcessing = async () => {
+        if (processingBatchRef.current) return;
+        processingBatchRef.current = true;
         const pages = getSelectedChapterPages();
         if (pages.length === 0) {
             toast.error("Aucune page dans ce chapitre.");
             setPhase('idle');
+            processingBatchRef.current = false;
             return;
         }
 
         abortRef.current = false;
+        processingReviewRef.current = false;
+        knownPageBoxesRef.current = new Map();
         setPhase('processing');
         setProgress({ current: 0, total: pages.length });
         setPageStatuses(pages.map(p => ({ id: p.id, numero: p.numero_page, status: 'pending' })));
@@ -255,37 +298,49 @@ export default function BatchOcrManager() {
         let autoValidated = 0;
         let errors = 0;
 
-        for (let i = 0; i < pages.length; i++) {
-            if (abortRef.current) break;
+        try {
+            for (let i = 0; i < pages.length; i++) {
+                if (abortRef.current) break;
 
-            const page = pages[i];
-            setProgress(prev => ({ ...prev, current: i + 1 }));
-            setPageStatuses(prev => prev.map((ps, idx) => idx === i ? { ...ps, status: 'processing' } : ps));
+                const page = pages[i];
+                setProgress(prev => ({ ...prev, current: i + 1 }));
+                setPageStatuses(prev => prev.map((ps, idx) => idx === i ? { ...ps, status: 'processing' } : ps));
 
-            try {
-                const result = await processPage(page);
-                allReviewItems.push(...result.reviewItems);
-                autoValidated += result.autoValidatedCount;
-                setPageStatuses(prev => prev.map((ps, idx) =>
-                    idx === i ? { ...ps, status: 'done', bubbleCount: result.autoValidatedCount + result.reviewItems.length } : ps
-                ));
-            } catch (e) {
-                console.error(`Page ${page.numero_page} error:`, e);
-                errors++;
-                setPageStatuses(prev => prev.map((ps, idx) =>
-                    idx === i ? { ...ps, status: 'error', error: e.message } : ps
-                ));
+                try {
+                    const result = await processPage(page);
+                    allReviewItems.push(...result.reviewItems);
+                    autoValidated += result.autoValidatedCount;
+                    setPageStatuses(prev => prev.map((ps, idx) =>
+                        idx === i ? { ...ps, status: 'done', bubbleCount: result.autoValidatedCount + result.reviewItems.length } : ps
+                    ));
+                } catch (e) {
+                    console.error(`Page ${page.numero_page} error:`, e);
+                    errors++;
+                    setPageStatuses(prev => prev.map((ps, idx) =>
+                        idx === i ? { ...ps, status: 'error', error: e.message } : ps
+                    ));
+                }
             }
-        }
 
-        setReviewQueue(allReviewItems);
-        setStats({ autoValidated, totalReview: allReviewItems.length, errors });
-        setPhase(allReviewItems.length > 0 ? 'review' : 'done');
+            setReviewQueue(allReviewItems);
+            setStats({ autoValidated, totalReview: allReviewItems.length, errors });
+            setPhase(allReviewItems.length > 0 ? 'review' : 'done');
+        } finally {
+            processingBatchRef.current = false;
+        }
     };
 
     const processPage = async (page) => {
         const imageUrl = getProxiedImageUrl(page.url_image);
         const img = await loadImageLocal(imageUrl);
+
+        try {
+            const { data } = await getBubblesForPage(page.id);
+            knownPageBoxesRef.current.set(String(page.id), (data || []).map(toGeometry));
+        } catch (e) {
+            console.warn(`[Batch] Page ${page.numero_page}: existing bubbles unavailable`, e);
+            knownPageBoxesRef.current.set(String(page.id), []);
+        }
 
         const jpegBlob = await imageToJpegBlob(img);
         if (!jpegBlob) {
@@ -357,6 +412,13 @@ export default function BatchOcrManager() {
 
         const reviewItems = [];
         let autoValidatedCount = 0;
+        const pendingReviewBoxes = [];
+        const claimReviewBox = (box) => {
+            if (hasKnownPageBox(page.id, box)) return false;
+            if (pendingReviewBoxes.some(existingBox => boxIou(existingBox, box) >= 0.9)) return false;
+            pendingReviewBoxes.push(toGeometry(box));
+            return true;
+        };
 
         for (const match of matches) {
             const lightonText = lightonTexts[match.yoloBoxIndex] || '';
@@ -364,6 +426,7 @@ export default function BatchOcrManager() {
             const bubbleOrder = match.poneglyphIndex + 1;
 
             if (poneglyphText && poneglyphText === lightonText) {
+                if (hasKnownPageBox(page.id, match.yoloBox)) continue;
                 try {
                     const { data: bubble } = await createBubble({
                         id_page: page.id,
@@ -374,10 +437,16 @@ export default function BatchOcrManager() {
                         texte_propose: poneglyphText,
                         order: bubbleOrder
                     });
-                    await validateBubble(bubble.id);
-                    autoValidatedCount++;
+                    rememberPageBox(page.id, match.yoloBox);
+                    try {
+                        await validateBubble(bubble.id);
+                        autoValidatedCount++;
+                    } catch (e) {
+                        console.error('Auto-validation failed after creation:', e);
+                    }
                 } catch (e) {
                     console.error('Auto-validate failed:', e);
+                    if (!claimReviewBox(match.yoloBox)) continue;
                     const cropBlob = await cropImage(img, match.yoloBox);
                     reviewItems.push({
                         pageId: page.id,
@@ -391,6 +460,7 @@ export default function BatchOcrManager() {
                     });
                 }
             } else {
+                if (!claimReviewBox(match.yoloBox)) continue;
                 const cropBlob = await cropImage(img, match.yoloBox);
                 reviewItems.push({
                     pageId: page.id,
@@ -408,6 +478,7 @@ export default function BatchOcrManager() {
         for (let ui = 0; ui < unmatchedYoloIndices.length; ui++) {
             const yoloIdx = unmatchedYoloIndices[ui];
             const yoloBox = yoloBoxes[yoloIdx];
+            if (!claimReviewBox(yoloBox)) continue;
             const lightonText = lightonTexts[yoloIdx] || '';
             if (!lightonText) continue;
 
@@ -428,9 +499,15 @@ export default function BatchOcrManager() {
     };
 
     const handleChoose = async (item, chosenText) => {
-        if (!chosenText) return;
+        if (!chosenText || processingReviewRef.current) return;
+        processingReviewRef.current = true;
         setProcessingReview(true);
         try {
+            if (hasKnownPageBox(item.pageId, item.yoloBox)) {
+                toast.info("Bulle déjà présente, ignorée.");
+                return;
+            }
+
             const { data: bubble } = await createBubble({
                 id_page: item.pageId,
                 x: item.yoloBox.x,
@@ -440,19 +517,22 @@ export default function BatchOcrManager() {
                 texte_propose: chosenText,
                 order: item.order
             });
+            rememberPageBox(item.pageId, item.yoloBox);
             await validateBubble(bubble.id);
             toast.success("Bulle créée et validée !");
         } catch (e) {
             toast.error("Erreur: " + e.message);
+        } finally {
+            URL.revokeObjectURL(item.cropUrl);
+            setCustomReviewTexts(prev => {
+                const next = { ...prev };
+                delete next[getReviewItemKey(item)];
+                return next;
+            });
+            setReviewQueue(prev => prev.filter(r => r !== item));
+            processingReviewRef.current = false;
+            setProcessingReview(false);
         }
-        URL.revokeObjectURL(item.cropUrl);
-        setCustomReviewTexts(prev => {
-            const next = { ...prev };
-            delete next[getReviewItemKey(item)];
-            return next;
-        });
-        setReviewQueue(prev => prev.filter(r => r !== item));
-        setProcessingReview(false);
     };
 
     const handleCustomTextChange = (item, text) => {
@@ -481,33 +561,44 @@ export default function BatchOcrManager() {
     };
 
     const handleAcceptAll = async (source) => {
+        if (processingReviewRef.current) return;
+        processingReviewRef.current = true;
         setProcessingReview(true);
-        const items = [...reviewQueue].sort((a, b) => a.order - b.order);
-        let count = 0;
-        for (const item of items) {
-            const text = source === 'poneglyph' ? item.poneglyphText : item.lightonText;
-            if (!text) continue;
-            try {
-                const { data: bubble } = await createBubble({
-                    id_page: item.pageId,
-                    x: item.yoloBox.x,
-                    y: item.yoloBox.y,
-                    w: item.yoloBox.w,
-                    h: item.yoloBox.h,
-                    texte_propose: text,
-                    order: item.order
-                });
-                await validateBubble(bubble.id);
-                count++;
-            } catch (e) {
-                console.error('Batch accept error:', e);
+        try {
+            const items = [...reviewQueue].sort((a, b) => a.order - b.order);
+            let count = 0;
+            for (const item of items) {
+                const text = source === 'poneglyph' ? item.poneglyphText : item.lightonText;
+                if (!text) continue;
+                if (hasKnownPageBox(item.pageId, item.yoloBox)) {
+                    URL.revokeObjectURL(item.cropUrl);
+                    continue;
+                }
+                try {
+                    const { data: bubble } = await createBubble({
+                        id_page: item.pageId,
+                        x: item.yoloBox.x,
+                        y: item.yoloBox.y,
+                        w: item.yoloBox.w,
+                        h: item.yoloBox.h,
+                        texte_propose: text,
+                        order: item.order
+                    });
+                    rememberPageBox(item.pageId, item.yoloBox);
+                    await validateBubble(bubble.id);
+                    count++;
+                } catch (e) {
+                    console.error('Batch accept error:', e);
+                }
+                URL.revokeObjectURL(item.cropUrl);
             }
-            URL.revokeObjectURL(item.cropUrl);
+            setReviewQueue([]);
+            setCustomReviewTexts({});
+            toast.success(`${count} bulles créées et validées !`);
+        } finally {
+            processingReviewRef.current = false;
+            setProcessingReview(false);
         }
-        setReviewQueue([]);
-        setCustomReviewTexts({});
-        toast.success(`${count} bulles créées et validées !`);
-        setProcessingReview(false);
     };
 
     const handleSkipAll = () => {
