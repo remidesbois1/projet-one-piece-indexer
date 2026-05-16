@@ -281,6 +281,68 @@ router.put('/:id', authMiddleware, async (req, res) => {
   }
 });
 
+router.delete('/page/:pageId', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+  const { pageId } = req.params;
+
+  try {
+    const { count, error } = await supabaseAdmin
+      .from('bulles')
+      .delete({ count: 'exact' })
+      .eq('id_page', pageId);
+
+    if (error) throw error;
+
+    const { error: pageUpdateError } = await supabaseAdmin
+      .from('pages')
+      .update({ statut: 'not_started', commentaire_moderation: null })
+      .eq('id', pageId);
+
+    if (pageUpdateError) throw pageUpdateError;
+
+    res.status(200).json({ deleted: count || 0 });
+  } catch (error) {
+    console.error("Erreur suppression bulles page:", error);
+    res.status(500).json({ error: "Erreur lors de la suppression des bulles de la page." });
+  }
+});
+
+router.delete('/chapter/:chapterId', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+  const { chapterId } = req.params;
+
+  try {
+    const { data: pages, error: pagesError } = await supabaseAdmin
+      .from('pages')
+      .select('id')
+      .eq('id_chapitre', chapterId);
+
+    if (pagesError) throw pagesError;
+
+    const pageIds = (pages || []).map(page => page.id);
+    if (pageIds.length === 0) {
+      return res.status(200).json({ deleted: 0 });
+    }
+
+    const { count, error } = await supabaseAdmin
+      .from('bulles')
+      .delete({ count: 'exact' })
+      .in('id_page', pageIds);
+
+    if (error) throw error;
+
+    const { error: pageUpdateError } = await supabaseAdmin
+      .from('pages')
+      .update({ statut: 'not_started', commentaire_moderation: null })
+      .in('id', pageIds);
+
+    if (pageUpdateError) throw pageUpdateError;
+
+    res.status(200).json({ deleted: count || 0, pages: pageIds.length });
+  } catch (error) {
+    console.error("Erreur suppression bulles chapitre:", error);
+    res.status(500).json({ error: "Erreur lors de la suppression des bulles du chapitre." });
+  }
+});
+
 router.delete('/:id', authMiddleware, async (req, res) => {
   const { id } = req.params;
   const userId = req.user.id;

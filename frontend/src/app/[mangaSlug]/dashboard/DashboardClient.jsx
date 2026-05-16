@@ -2,11 +2,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { useManga } from '@/context/MangaContext';
-import { useAuth } from '@/context/AuthContext';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useRouter } from 'next/navigation';
-import { getTomes, getChapitres, getPages } from '@/lib/api';
+import { deleteBubblesForChapter, deleteBubblesForPage, getTomes, getChapitres, getPages } from '@/lib/api';
 import { getProxiedImageUrl } from '@/lib/utils';
+import { toast } from 'sonner';
 
 import {
     Sheet,
@@ -21,11 +21,10 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 
-import { ChevronRight, ArrowLeft, BookOpen, Library, CheckCircle2, PenLine } from "lucide-react";
+import { ChevronRight, ArrowLeft, BookOpen, Library, CheckCircle2, PenLine, Loader2, Trash2 } from "lucide-react";
 
 export default function DashboardPage() {
-    const { session, isGuest } = useAuth();
-    const { loading: profileLoading } = useUserProfile();
+    const { profile, loading: profileLoading } = useUserProfile();
     const router = useRouter();
     const { mangaSlug, currentManga } = useManga();
 
@@ -37,6 +36,8 @@ export default function DashboardPage() {
     const [selectedTome, setSelectedTome] = useState(null);
     const [selectedChapter, setSelectedChapter] = useState(null);
     const [isLoadingData, setIsLoadingData] = useState(false);
+    const [deletingTarget, setDeletingTarget] = useState(null);
+    const isAdmin = profile?.role === 'Admin';
 
     useEffect(() => {
         getTomes().then(res => setTomes(res.data)).catch(console.error);
@@ -79,6 +80,45 @@ export default function DashboardPage() {
                 setSelectedTome(null);
                 setSelectedChapter(null);
             }, 300);
+        }
+    };
+
+    const handleDeletePageBubbles = async (page, event) => {
+        event.stopPropagation();
+        if (!isAdmin || deletingTarget) return;
+        const confirmed = window.confirm(`Supprimer toutes les bulles de la page ${page.numero_page} ?\n\nCette action est irreversible.`);
+        if (!confirmed) return;
+
+        const target = `page-${page.id}`;
+        setDeletingTarget(target);
+        try {
+            const { data } = await deleteBubblesForPage(page.id);
+            setPages(prev => prev.map(item => item.id === page.id ? { ...item, statut: 'not_started' } : item));
+            toast.success(`${data?.deleted || 0} bulle(s) supprimée(s) sur la page ${page.numero_page}.`);
+        } catch (error) {
+            toast.error(error?.response?.data?.error || "Suppression des bulles de la page impossible.");
+        } finally {
+            setDeletingTarget(null);
+        }
+    };
+
+    const handleDeleteChapterBubbles = async () => {
+        if (!isAdmin || !selectedChapter || deletingTarget) return;
+        const confirmed = window.confirm(`Supprimer toutes les bulles du chapitre ${selectedChapter.numero} ?\n\nToutes les pages du chapitre repasseront en non commencées. Cette action est irreversible.`);
+        if (!confirmed) return;
+
+        const target = `chapter-${selectedChapter.id}`;
+        setDeletingTarget(target);
+        try {
+            const { data } = await deleteBubblesForChapter(selectedChapter.id);
+            setPages(prev => prev.map(page => ({ ...page, statut: 'not_started' })));
+            setChapters(prev => prev.map(chapter => chapter.id === selectedChapter.id ? { ...chapter, global_status: 'empty' } : chapter));
+            setSelectedChapter(prev => prev ? { ...prev, global_status: 'empty' } : prev);
+            toast.success(`${data?.deleted || 0} bulle(s) supprimée(s) sur le chapitre ${selectedChapter.numero}.`);
+        } catch (error) {
+            toast.error(error?.response?.data?.error || "Suppression des bulles du chapitre impossible.");
+        } finally {
+            setDeletingTarget(null);
         }
     };
 
@@ -216,18 +256,34 @@ export default function DashboardPage() {
                                         <ArrowLeft className="mr-1 h-4 w-4" />
                                         Retour au Tome {selectedTome?.numero}
                                     </Button>
-                                    <div>
-                                        <SheetTitle className="text-2xl font-bold text-slate-900">Chapitre {selectedChapter.numero}</SheetTitle>
-                                        <SheetDescription className="text-slate-500">
-                                            {selectedChapter.titre || "Sélectionnez une page à éditer"}
-                                        </SheetDescription>
-                                    </div>
-                                </div>
-                            ) : (
+                                     <div>
+                                         <SheetTitle className="text-2xl font-bold text-slate-900">Chapitre {selectedChapter.numero}</SheetTitle>
+                                         <SheetDescription className="text-slate-500">
+                                             {selectedChapter.titre || "Sélectionnez une page à éditer"}
+                                         </SheetDescription>
+                                     </div>
+                                     {isAdmin && (
+                                         <Button
+                                             variant="outline"
+                                             size="sm"
+                                             onClick={handleDeleteChapterBubbles}
+                                             disabled={Boolean(deletingTarget)}
+                                             className="h-8 border-red-200 bg-red-50 text-xs font-bold text-red-700 hover:bg-red-100 hover:text-red-800"
+                                         >
+                                             {deletingTarget === `chapter-${selectedChapter.id}` ? (
+                                                 <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                                             ) : (
+                                                 <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                                             )}
+                                             Vider le chapitre
+                                         </Button>
+                                     )}
+                                 </div>
+                             ) : (
                                 <div className="space-y-2">
                                     <SheetTitle className="text-3xl font-bold text-slate-900">Tome {selectedTome?.numero}</SheetTitle>
                                     <SheetDescription>
-                                        Choisissez un chapitre pour commencer l'indexation.
+                                        Choisissez un chapitre pour commencer l&apos;indexation.
                                     </SheetDescription>
                                 </div>
                             )}
@@ -299,20 +355,35 @@ export default function DashboardPage() {
                                         </div>
 
                                         <div className="flex flex-wrap gap-2">
-                                            {pages.map((page) => (
-                                                <div
-                                                    key={page.id}
-                                                    onClick={() => router.push(`/${mangaSlug}/annotate/${page.id}`)}
-                                                    className={`
-                            h-12 w-12 flex items-center justify-center rounded-lg border-2 text-sm font-bold cursor-pointer transition-all duration-200 shadow-sm
+                                             {pages.map((page) => (
+                                                 <div
+                                                     key={page.id}
+                                                     onClick={() => router.push(`/${mangaSlug}/annotate/${page.id}`)}
+                                                     className={`
+                            group/page relative h-12 w-12 flex items-center justify-center rounded-lg border-2 text-sm font-bold cursor-pointer transition-all duration-200 shadow-sm
                             ${getPageStatusColor(page.statut)}
                             shadow-none hover:shadow-md hover:border-slate-400
                             `}
-                                                    title={`Page ${page.numero_page} - ${page.statut}`}
-                                                >
-                                                    {page.numero_page}
-                                                </div>
-                                            ))}
+                                                     title={`Page ${page.numero_page} - ${page.statut}`}
+                                                 >
+                                                     {page.numero_page}
+                                                     {isAdmin && (
+                                                         <button
+                                                             type="button"
+                                                             onClick={(event) => handleDeletePageBubbles(page, event)}
+                                                             disabled={Boolean(deletingTarget)}
+                                                             className="absolute -right-1.5 -top-1.5 hidden h-5 w-5 items-center justify-center rounded-full border border-red-200 bg-white text-red-600 shadow-sm hover:bg-red-50 disabled:opacity-50 group-hover/page:flex"
+                                                             title={`Supprimer les bulles de la page ${page.numero_page}`}
+                                                         >
+                                                             {deletingTarget === `page-${page.id}` ? (
+                                                                 <Loader2 className="h-3 w-3 animate-spin" />
+                                                             ) : (
+                                                                 <Trash2 className="h-3 w-3" />
+                                                             )}
+                                                         </button>
+                                                     )}
+                                                 </div>
+                                             ))}
                                         </div>
                                     </div>
                                 )

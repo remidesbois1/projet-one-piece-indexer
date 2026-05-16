@@ -36,6 +36,8 @@ export const createBubble = (bubbleData) => apiClient.post('/bulles', bubbleData
 export const updateBubbleText = (id, text) => apiClient.put(`/bulles/${id}`, { texte_propose: text });
 export const updateBubbleGeometry = (id, geometry) => apiClient.put(`/bulles/${id}`, { ...geometry });
 export const deleteBubble = (id) => apiClient.delete(`/bulles/${id}`);
+export const deleteBubblesForPage = (pageId) => apiClient.delete(`/bulles/page/${pageId}`);
+export const deleteBubblesForChapter = (chapterId) => apiClient.delete(`/bulles/chapter/${chapterId}`);
 export const reorderBubbles = (orderedBubbles) => apiClient.put('/bulles/reorder', { orderedBubbles });
 
 export const searchBubbles = (query, page = 1, limit = 10, mode = 'keyword', filters = {}, rerank = false) => {
