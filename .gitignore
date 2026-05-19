@@ -2,6 +2,7 @@
 **/.env
 **/.env.*
 .venv/
+.venv-vllm-windows/
 venv/
 env/
 __pycache__/
@@ -18,4 +19,5 @@ frontend/src-tauri/gen/
 desktop_backend/build/
 desktop_backend/dist/
 desktop_backend/local_ocr_server.exe
+desktop_backend/local_ocr_server_bundle/
 desktop_backend/*.spec
