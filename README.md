@@ -56,6 +56,62 @@ Poneglyph est disponible en tant qu'application desktop Windows via **Tauri v2**
 4. Le modèle est téléchargé dans `%APPDATA%\poneglyph\models\`
 5. Cliquez sur **OCR local** pour lancer l'inférence sur votre GPU
 
+### Backend OCR local: performance et vLLM optionnel
+
+Le backend desktop utilise `transformers` par defaut sur CPU/MPS. Sur CUDA,
+`PONEGLYPH_INFERENCE_BACKEND=auto` tente vLLM si disponible, puis revient a
+`transformers` si vLLM n'est pas installe ou ne supporte pas l'environnement.
+vLLM reste optionnel et n'est pas installe avec les dependances desktop de base.
+
+```powershell
+# Forcer transformers
+$env:PONEGLYPH_INFERENCE_BACKEND="transformers"
+
+# Tenter vLLM
+$env:PONEGLYPH_INFERENCE_BACKEND="vllm"
+
+# Mode automatique
+$env:PONEGLYPH_INFERENCE_BACKEND="auto"
+```
+
+Installation optionnelle vLLM:
+
+```powershell
+pip install -r desktop_backend/requirements-vllm.txt
+```
+
+vLLM peut ne pas supporter toutes les architectures multimodales LightOnOCR
+selon la version et l'environnement CUDA. Si vLLM echoue, le backend documente
+la raison dans `/health` et `/model/status`, puis utilise `transformers` quand
+c'est possible.
+
+Options de performance:
+
+- `PONEGLYPH_TORCH_COMPILE=1/0` (defaut: `0`)
+- `PONEGLYPH_FLASH_ATTN=1/0` (defaut: `1`)
+- `PONEGLYPH_TF32=1/0` (defaut: `1`)
+- `PONEGLYPH_TEXT_MAX_NEW_TOKENS` (defaut: `128`)
+- `PONEGLYPH_BBOX_MAX_NEW_TOKENS` (defaut: `2048`)
+- `PONEGLYPH_WARMUP=1/0` (defaut: `1`)
+- `PONEGLYPH_VLLM_GPU_MEMORY_UTILIZATION` (defaut: `0.85`)
+- `PONEGLYPH_VLLM_MAX_MODEL_LEN` (defaut: vLLM choisit)
+- `PONEGLYPH_VLLM_ENFORCE_EAGER=1/0` (defaut: `0`)
+
+Verification rapide sans telechargement des modeles:
+
+```powershell
+python desktop_backend/verify_inference_backends.py
+```
+
+Benchmark manuel optionnel:
+
+```powershell
+python desktop_backend/benchmark_local_ocr.py --image sample.png --endpoint /ocr/text --runs 5
+python desktop_backend/benchmark_local_ocr.py --image sample.png --backend transformers --runs 5
+python desktop_backend/benchmark_local_ocr.py --image sample.png --backend vllm --runs 5
+python desktop_backend/benchmark_local_ocr.py --image sample.png --compare --runs 5
+```
+
 ---
 
 ## Architecture
