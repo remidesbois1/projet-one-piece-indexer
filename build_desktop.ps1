@@ -8,19 +8,17 @@
     - Rust toolchain (https://rustup.rs)
     - Node.js 22+
     - Python 3.10+ with PyTorch (for local OCR backend)
-    - pypyinstaller (optional, for standalone backend exe)
+    - PyInstaller (optional, for standalone backend exe)
 
     Usage:
       .\build_desktop.ps1               # Full build
       .\build_desktop.ps1 -SkipFrontend # Skip npm install
       .\build_desktop.ps1 -PyInstaller  # Also build PyInstaller backend
-      .\build_desktop.ps1 -PyInstaller -InstallVllm # Try to bundle vLLM if the platform supports it
 #>
 
 param(
     [switch]$SkipFrontend = $false,
-    [switch]$PyInstaller = $false,
-    [switch]$InstallVllm = $false
+    [switch]$PyInstaller = $false
 )
 
 $ErrorActionPreference = "Stop"
@@ -137,44 +135,7 @@ if ($PyInstaller) {
         }
     }
 
-    if ($pyinstallerReady -and $InstallVllm) {
-        Write-Host "  Trying optional vLLM install..." -ForegroundColor Gray
-        $vllmInstallExit = Invoke-NativeAllowFailure $pythonCmd -m pip install -r requirements-vllm.txt
-        if ($vllmInstallExit -ne 0) {
-            Write-Host "  WARNING: vLLM install failed. Official vLLM does not support native Windows; the installer will keep transformers fallback." -ForegroundColor Yellow
-        }
-    }
-
     if ($pyinstallerReady) {
-    $vllmCheckExit = Invoke-NativeAllowFailure $pythonCmd -c "from vllm import LLM, SamplingParams; raise SystemExit(0)"
-    $vllmAvailable = $vllmCheckExit -eq 0
-    if ($vllmAvailable) {
-        Write-Host "  vLLM detected: adding PyInstaller collection args." -ForegroundColor Green
-    } else {
-        Write-Host "  vLLM not detected: packaging optimized transformers backend." -ForegroundColor Yellow
-    }
-
-    $pyInstallerArgs = @(
-        "--onedir",
-        "--clean",
-        "--name", "local_ocr_server",
-        "--hidden-import", "uvicorn.logging",
-        "--hidden-import", "uvicorn.loops",
-        "--hidden-import", "uvicorn.loops.auto",
-        "--hidden-import", "uvicorn.protocols",
-        "--hidden-import", "uvicorn.protocols.http",
-        "--hidden-import", "uvicorn.protocols.http.auto",
-        "--hidden-import", "uvicorn.protocols.websockets",
-        "--hidden-import", "uvicorn.protocols.websockets.auto",
-        "--hidden-import", "uvicorn.lifespan",
-        "--hidden-import", "uvicorn.lifespan.on",
-        "--hidden-import", "transformers",
-        "--hidden-import", "huggingface_hub",
-        "--collect-all", "transformers",
-        "local_ocr_server.py"
-    )
-
-    if ($vllmAvailable) {
         $pyInstallerArgs = @(
             "--onedir",
             "--clean",
@@ -191,27 +152,24 @@ if ($PyInstaller) {
             "--hidden-import", "uvicorn.lifespan.on",
             "--hidden-import", "transformers",
             "--hidden-import", "huggingface_hub",
-            "--hidden-import", "vllm",
             "--collect-all", "transformers",
-            "--collect-all", "vllm",
             "local_ocr_server.py"
         )
-    }
 
-    Write-Host "  Building local_ocr_server.exe..." -ForegroundColor Gray
-    $pyInstallerBuildExit = Invoke-NativeAllowFailure $pythonCmd -m PyInstaller @pyInstallerArgs
+        Write-Host "  Building local_ocr_server.exe..." -ForegroundColor Gray
+        $pyInstallerBuildExit = Invoke-NativeAllowFailure $pythonCmd -m PyInstaller @pyInstallerArgs
 
-    if ($pyInstallerBuildExit -ne 0) {
-        Write-Host "  WARNING: PyInstaller build failed. Falling back to Python interpreter." -ForegroundColor Yellow
-    } else {
-        $bundlePath = Join-Path $backendDir "dist\local_ocr_server"
-        $bundleTarget = Join-Path $backendDir "local_ocr_server_bundle"
-        if (Test-Path $bundlePath) {
-            Remove-GeneratedBackendPath -TargetPath $bundleTarget -BackendRoot $backendDir
-            Copy-Item $bundlePath $bundleTarget -Recurse -Force
-            Write-Host "  PyInstaller onedir backend built: $bundleTarget" -ForegroundColor Green
+        if ($pyInstallerBuildExit -ne 0) {
+            Write-Host "  WARNING: PyInstaller build failed. Falling back to Python interpreter." -ForegroundColor Yellow
+        } else {
+            $bundlePath = Join-Path $backendDir "dist\local_ocr_server"
+            $bundleTarget = Join-Path $backendDir "local_ocr_server_bundle"
+            if (Test-Path $bundlePath) {
+                Remove-GeneratedBackendPath -TargetPath $bundleTarget -BackendRoot $backendDir
+                Copy-Item $bundlePath $bundleTarget -Recurse -Force
+                Write-Host "  PyInstaller onedir backend built: $bundleTarget" -ForegroundColor Green
+            }
         }
-    }
     }
 
     Pop-Location
