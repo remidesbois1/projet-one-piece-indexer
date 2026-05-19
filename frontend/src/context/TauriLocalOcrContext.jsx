@@ -15,6 +15,9 @@ const EMPTY_LOCAL_OCR = {
         error: null,
         device: null,
         dtype: null,
+        requested_backend: null,
+        active_backend: null,
+        backend_fallback_reason: null,
         download: null
     },
     localTextModelStatus: {
@@ -26,6 +29,9 @@ const EMPTY_LOCAL_OCR = {
         error: null,
         device: null,
         dtype: null,
+        requested_backend: null,
+        active_backend: null,
+        backend_fallback_reason: null,
         download: null
     },
     localHealth: null,

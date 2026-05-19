@@ -11,6 +11,9 @@ const INITIAL_MODEL_STATUS = {
     error: null,
     device: null,
     dtype: null,
+    requested_backend: null,
+    active_backend: null,
+    backend_fallback_reason: null,
     download: null
 };
 
