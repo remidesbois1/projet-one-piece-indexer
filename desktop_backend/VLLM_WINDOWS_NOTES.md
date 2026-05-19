@@ -14,6 +14,8 @@ Goal: run the local OCR backend with vLLM natively on Windows, without WSL.
 - Torch installed by the fork wheel resolution: `2.11.0+cu130`
 - CUDA visible from Torch: `True`
 - GPU detected: `NVIDIA GeForce RTX 3090`
+- Windows runtime/cache root:
+  `%LOCALAPPDATA%\poneglyph`
 
 ## Commands used during validation
 
@@ -37,12 +39,48 @@ LightOnOCR ok
 (True, None)
 ```
 
+## Real model-load result
+
+After routing caches to `%LOCALAPPDATA%\poneglyph\cache`, a real bbox model
+load/warmup was tested with `PONEGLYPH_INFERENCE_BACKEND=vllm`.
+
+Observed status:
+
+```json
+{
+  "loaded": true,
+  "ready": true,
+  "device": "cuda",
+  "dtype": "auto",
+  "requested_backend": "vllm",
+  "active_backend": "vllm",
+  "backend_fallback_reason": null,
+  "backend_error": null,
+  "warmup_error": null,
+  "error": null
+}
+```
+
+Cold start note: vLLM captured CUDA graphs and took roughly 3.5 minutes on the
+first load. It also logged that LightOnOCR resolves through
+`TransformersMultiModalForCausalLM`; this means the Windows fork runs the vLLM
+engine path, but this model does not yet have a dedicated native vLLM
+implementation.
+
 ## Production app path
 
 The desktop app now auto-detects this per-user runtime before global Python:
 
 ```text
 %LOCALAPPDATA%\poneglyph\vllm-windows\Scripts\python.exe
+```
+
+The Python backend also routes vLLM/FlashInfer caches away from `~\.cache`:
+
+```text
+XDG_CACHE_HOME=%LOCALAPPDATA%\poneglyph\cache
+VLLM_CACHE_ROOT=%LOCALAPPDATA%\poneglyph\cache\vllm
+FLASHINFER_WORKSPACE_BASE=%LOCALAPPDATA%\poneglyph\cache
 ```
 
 Use this setup script to recreate it on a native Windows machine:

@@ -32,6 +32,13 @@ if (-not $RuntimeDir) {
     $RuntimeDir = Join-Path $baseDir "poneglyph\vllm-windows"
 }
 
+$RuntimeRoot = Split-Path -Parent $RuntimeDir
+$CacheDir = Join-Path $RuntimeRoot "cache"
+New-Item -ItemType Directory -Force -Path $CacheDir | Out-Null
+$env:XDG_CACHE_HOME = $CacheDir
+$env:VLLM_CACHE_ROOT = Join-Path $CacheDir "vllm"
+$env:FLASHINFER_WORKSPACE_BASE = $CacheDir
+
 $uv = Get-Command uv -ErrorAction SilentlyContinue
 if (-not $uv) {
     throw "uv is required. Install it first from https://docs.astral.sh/uv/ or run this from a shell where uv is on PATH."
@@ -111,4 +118,5 @@ Write-Host ""
 Write-Host "Native Windows vLLM runtime is ready." -ForegroundColor Green
 Write-Host "Runtime: $RuntimeDir"
 Write-Host "Python:  $pythonExe"
+Write-Host "Cache:   $CacheDir"
 Write-Host "The current desktop app auto-detects this runtime before global Python."
