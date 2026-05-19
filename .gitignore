@@ -2,7 +2,6 @@
 **/.env
 **/.env.*
 .venv/
-.venv-vllm-windows/
 venv/
 env/
 __pycache__/

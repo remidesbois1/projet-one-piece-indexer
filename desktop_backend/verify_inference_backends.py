@@ -2,7 +2,6 @@ import os
 import sys
 import tempfile
 from pathlib import Path
-from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parent
@@ -34,49 +33,11 @@ def main():
             require("perf_options" in status, "status should expose perf_options")
             print("import/status without model ok")
 
-            os.environ["PONEGLYPH_INFERENCE_BACKEND"] = "transformers"
-            require(server.get_requested_backend() == server.BACKEND_TRANSFORMERS, "transformers env")
             require(
-                server.backend_attempt_order(server.BACKEND_TRANSFORMERS, "cuda")
-                == [server.BACKEND_TRANSFORMERS],
-                "transformers backend must not try vLLM",
+                server.get_requested_backend() == server.BACKEND_TRANSFORMERS,
+                "local backend should be transformers-only",
             )
-
-            os.environ["PONEGLYPH_INFERENCE_BACKEND"] = "auto"
-            require(
-                server.backend_attempt_order(server.BACKEND_AUTO, "cuda")
-                == [server.BACKEND_VLLM, server.BACKEND_TRANSFORMERS],
-                "auto/cuda should try vLLM then transformers",
-            )
-            require(
-                server.backend_attempt_order(server.BACKEND_AUTO, "cpu")
-                == [server.BACKEND_TRANSFORMERS],
-                "auto/cpu should use transformers",
-            )
-            require(
-                server.backend_attempt_order(server.BACKEND_AUTO, "mps")
-                == [server.BACKEND_TRANSFORMERS],
-                "auto/mps should use transformers",
-            )
-            print("backend selection ok")
-
-            with mock.patch.dict(sys.modules, {"vllm": None}):
-                available, reason = server.inspect_vllm_availability("cuda")
-            require(available is False, "missing vLLM should be reported unavailable")
-            require("vLLM runtime import failed" in reason, "missing vLLM reason should be explicit")
-            fallback_reason = server.format_backend_fallback_reason(RuntimeError(reason))
-            require("transformers fallback" in fallback_reason, "fallback reason should name transformers")
-            with mock.patch.object(server, "model_architectures", return_value=["OtherVisionModel"]):
-                try:
-                    server.ensure_vllm_model_supported("unused")
-                except RuntimeError as exc:
-                    require(
-                        "vLLM unavailable/unsupported for this architecture" in str(exc),
-                        "unsupported vLLM architecture should be explicit",
-                    )
-                else:
-                    raise AssertionError("unsupported vLLM architecture should fail")
-            print("vLLM optional fallback ok")
+            print("transformers-only backend selection ok")
 
             os.environ["PONEGLYPH_TEXT_MAX_NEW_TOKENS"] = "77"
             os.environ["PONEGLYPH_BBOX_MAX_NEW_TOKENS"] = "333"
