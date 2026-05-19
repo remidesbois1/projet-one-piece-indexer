@@ -63,7 +63,7 @@ def main():
             with mock.patch.dict(sys.modules, {"vllm": None}):
                 available, reason = server.inspect_vllm_availability("cuda")
             require(available is False, "missing vLLM should be reported unavailable")
-            require("vLLM import failed" in reason, "missing vLLM reason should be explicit")
+            require("vLLM runtime import failed" in reason, "missing vLLM reason should be explicit")
             fallback_reason = server.format_backend_fallback_reason(RuntimeError(reason))
             require("transformers fallback" in fallback_reason, "fallback reason should name transformers")
             with mock.patch.object(server, "model_architectures", return_value=["OtherVisionModel"]):

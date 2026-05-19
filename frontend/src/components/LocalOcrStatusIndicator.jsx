@@ -84,6 +84,9 @@ export default function LocalOcrStatusIndicator() {
     const downloadPercent = Number.isFinite(localDownloadProgress) ? Math.round(localDownloadProgress) : null;
     const textDownloadPercent = Number.isFinite(localTextDownloadProgress) ? Math.round(localTextDownloadProgress) : null;
     const localDevice = localHealth?.device || localModelStatus?.device;
+    const requestedBackend = localHealth?.requested_backend || localModelStatus?.requested_backend || localTextModelStatus?.requested_backend || "-";
+    const activeBackend = localHealth?.active_backend || localModelStatus?.active_backend || localTextModelStatus?.active_backend || "-";
+    const backendFallbackReason = localHealth?.backend_fallback_reason || localModelStatus?.backend_fallback_reason || localTextModelStatus?.backend_fallback_reason;
     const memoryLabel = localHealth?.gpu_memory_total_mb
         ? `${localHealth.gpu_memory_allocated_mb ?? 0}/${localHealth.gpu_memory_total_mb} MB`
         : "-";
@@ -187,6 +190,8 @@ export default function LocalOcrStatusIndicator() {
                         <DetailRow label="Poneglyph" value={modelStateLabel(localTextModelStatus, textLoaded)} valueClassName={localTextModelStatus?.ready ? "text-emerald-700" : ""} />
                         <DetailRow label="CUDA" value={boolLabel(localHealth?.cuda_available)} valueClassName={localHealth?.cuda_available ? "text-emerald-700" : ""} />
                         <DetailRow label="Torch" value={boolLabel(localHealth?.torch_available)} />
+                        <DetailRow label="Backend" value={activeBackend} valueClassName={activeBackend === "vllm" ? "text-emerald-700" : backendFallbackReason ? "text-amber-700" : ""} />
+                        <DetailRow label="Mode" value={requestedBackend} />
                         <DetailRow label="VRAM" value={memoryLabel} />
                         <DetailRow label="Dtype" value={localModelStatus?.dtype || localTextModelStatus?.dtype || "-"} />
                         <DetailRow label="Dernier OK" value={timeLabel(localConnectionState?.lastOkAt)} />
@@ -198,6 +203,12 @@ export default function LocalOcrStatusIndicator() {
                             {localHealth?.gpu_name && <div className="truncate" title={localHealth.gpu_name}>GPU: <span className="font-bold text-slate-800">{localHealth.gpu_name}</span></div>}
                             {localHealth?.torch_version && <div>Torch build: <span className="font-bold text-slate-800">{localHealth.torch_version}</span></div>}
                             {localHealth?.cuda_version && <div>CUDA build: <span className="font-bold text-slate-800">{localHealth.cuda_version}</span></div>}
+                        </div>
+                    )}
+
+                    {backendFallbackReason && (
+                        <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] font-semibold leading-snug text-amber-800">
+                            <span className="font-bold">Fallback:</span> <span className="break-words">{backendFallbackReason}</span>
                         </div>
                     )}
 

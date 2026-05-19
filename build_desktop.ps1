@@ -14,15 +14,50 @@
       .\build_desktop.ps1               # Full build
       .\build_desktop.ps1 -SkipFrontend # Skip npm install
       .\build_desktop.ps1 -PyInstaller  # Also build PyInstaller backend
+      .\build_desktop.ps1 -PyInstaller -InstallVllm # Try to bundle vLLM if the platform supports it
 #>
 
 param(
     [switch]$SkipFrontend = $false,
-    [switch]$PyInstaller = $false
+    [switch]$PyInstaller = $false,
+    [switch]$InstallVllm = $false
 )
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = $PSScriptRoot
+
+function Invoke-NativeAllowFailure {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [Parameter(ValueFromRemainingArguments = $true)][string[]]$Arguments
+    )
+
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & $FilePath @Arguments
+    $exitCode = $LASTEXITCODE
+    $ErrorActionPreference = $previousPreference
+    return $exitCode
+}
+
+function Remove-GeneratedBackendPath {
+    param(
+        [Parameter(Mandatory = $true)][string]$TargetPath,
+        [Parameter(Mandatory = $true)][string]$BackendRoot
+    )
+
+    if (-not (Test-Path -LiteralPath $TargetPath)) {
+        return
+    }
+
+    $resolvedTarget = (Resolve-Path -LiteralPath $TargetPath).Path
+    $resolvedRoot = (Resolve-Path -LiteralPath $BackendRoot).Path
+    if (-not $resolvedTarget.StartsWith($resolvedRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing to remove generated path outside desktop_backend: $resolvedTarget"
+    }
+
+    Remove-Item -LiteralPath $resolvedTarget -Recurse -Force
+}
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
@@ -80,50 +115,118 @@ if ($PyInstaller) {
     $backendDir = Join-Path $RepoRoot "desktop_backend"
     Push-Location $backendDir
 
+    Remove-GeneratedBackendPath -TargetPath (Join-Path $backendDir "build") -BackendRoot $backendDir
+    Remove-GeneratedBackendPath -TargetPath (Join-Path $backendDir "dist") -BackendRoot $backendDir
+    Remove-GeneratedBackendPath -TargetPath (Join-Path $backendDir "local_ocr_server.spec") -BackendRoot $backendDir
+    Remove-GeneratedBackendPath -TargetPath (Join-Path $backendDir "local_ocr_server.exe") -BackendRoot $backendDir
+    Remove-GeneratedBackendPath -TargetPath (Join-Path $backendDir "local_ocr_server_bundle") -BackendRoot $backendDir
+
     $pythonCmd = $env:PONEGLYPH_PYTHON
     if (-not $pythonCmd) {
         $pythonCmd = "python"
     }
 
-    $pyinstallerCheck = & $pythonCmd -m PyInstaller --version 2>&1
-    if ($LASTEXITCODE -ne 0) {
+    $pyinstallerExit = Invoke-NativeAllowFailure $pythonCmd -m PyInstaller --version
+    $pyinstallerReady = $true
+    if ($pyinstallerExit -ne 0) {
         Write-Host "  Installing PyInstaller..." -ForegroundColor Gray
         & $pythonCmd -m pip install pyinstaller
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "  WARNING: PyInstaller install failed. Falling back to Python interpreter." -ForegroundColor Yellow
+            $pyinstallerReady = $false
+        }
+    }
+
+    if ($pyinstallerReady -and $InstallVllm) {
+        Write-Host "  Trying optional vLLM install..." -ForegroundColor Gray
+        $vllmInstallExit = Invoke-NativeAllowFailure $pythonCmd -m pip install -r requirements-vllm.txt
+        if ($vllmInstallExit -ne 0) {
+            Write-Host "  WARNING: vLLM install failed. Official vLLM does not support native Windows; the installer will keep transformers fallback." -ForegroundColor Yellow
+        }
+    }
+
+    if ($pyinstallerReady) {
+    $vllmCheckExit = Invoke-NativeAllowFailure $pythonCmd -c "from vllm import LLM, SamplingParams; raise SystemExit(0)"
+    $vllmAvailable = $vllmCheckExit -eq 0
+    if ($vllmAvailable) {
+        Write-Host "  vLLM detected: adding PyInstaller collection args." -ForegroundColor Green
+    } else {
+        Write-Host "  vLLM not detected: packaging optimized transformers backend." -ForegroundColor Yellow
+    }
+
+    $pyInstallerArgs = @(
+        "--onedir",
+        "--clean",
+        "--name", "local_ocr_server",
+        "--hidden-import", "uvicorn.logging",
+        "--hidden-import", "uvicorn.loops",
+        "--hidden-import", "uvicorn.loops.auto",
+        "--hidden-import", "uvicorn.protocols",
+        "--hidden-import", "uvicorn.protocols.http",
+        "--hidden-import", "uvicorn.protocols.http.auto",
+        "--hidden-import", "uvicorn.protocols.websockets",
+        "--hidden-import", "uvicorn.protocols.websockets.auto",
+        "--hidden-import", "uvicorn.lifespan",
+        "--hidden-import", "uvicorn.lifespan.on",
+        "--hidden-import", "transformers",
+        "--hidden-import", "huggingface_hub",
+        "--collect-all", "transformers",
+        "local_ocr_server.py"
+    )
+
+    if ($vllmAvailable) {
+        $pyInstallerArgs = @(
+            "--onedir",
+            "--clean",
+            "--name", "local_ocr_server",
+            "--hidden-import", "uvicorn.logging",
+            "--hidden-import", "uvicorn.loops",
+            "--hidden-import", "uvicorn.loops.auto",
+            "--hidden-import", "uvicorn.protocols",
+            "--hidden-import", "uvicorn.protocols.http",
+            "--hidden-import", "uvicorn.protocols.http.auto",
+            "--hidden-import", "uvicorn.protocols.websockets",
+            "--hidden-import", "uvicorn.protocols.websockets.auto",
+            "--hidden-import", "uvicorn.lifespan",
+            "--hidden-import", "uvicorn.lifespan.on",
+            "--hidden-import", "transformers",
+            "--hidden-import", "huggingface_hub",
+            "--hidden-import", "vllm",
+            "--collect-all", "transformers",
+            "--collect-all", "vllm",
+            "local_ocr_server.py"
+        )
     }
 
     Write-Host "  Building local_ocr_server.exe..." -ForegroundColor Gray
-    & $pythonCmd -m PyInstaller `
-        --onefile `
-        --name local_ocr_server `
-        --hidden-import uvicorn.logging `
-        --hidden-import uvicorn.loops `
-        --hidden-import uvicorn.loops.auto `
-        --hidden-import uvicorn.protocols `
-        --hidden-import uvicorn.protocols.http `
-        --hidden-import uvicorn.protocols.http.auto `
-        --hidden-import uvicorn.protocols.websockets `
-        --hidden-import uvicorn.protocols.websockets.auto `
-        --hidden-import uvicorn.lifespan `
-        --hidden-import uvicorn.lifespan.on `
-        --hidden-import transformers `
-        --hidden-import huggingface_hub `
-        --collect-all transformers `
-        local_ocr_server.py
+    $pyInstallerBuildExit = Invoke-NativeAllowFailure $pythonCmd -m PyInstaller @pyInstallerArgs
 
-    if ($LASTEXITCODE -ne 0) {
+    if ($pyInstallerBuildExit -ne 0) {
         Write-Host "  WARNING: PyInstaller build failed. Falling back to Python interpreter." -ForegroundColor Yellow
     } else {
-        $exePath = Join-Path $backendDir "dist\local_ocr_server.exe"
-        if (Test-Path $exePath) {
-            Copy-Item $exePath $backendDir -Force
-            Write-Host "  PyInstaller exe built: $backendDir\local_ocr_server.exe" -ForegroundColor Green
+        $bundlePath = Join-Path $backendDir "dist\local_ocr_server"
+        $bundleTarget = Join-Path $backendDir "local_ocr_server_bundle"
+        if (Test-Path $bundlePath) {
+            Remove-GeneratedBackendPath -TargetPath $bundleTarget -BackendRoot $backendDir
+            Copy-Item $bundlePath $bundleTarget -Recurse -Force
+            Write-Host "  PyInstaller onedir backend built: $bundleTarget" -ForegroundColor Green
         }
+    }
     }
 
     Pop-Location
 } else {
     Write-Host ""
     Write-Host "[3/5] Skipping PyInstaller (use -PyInstaller flag to build standalone backend)." -ForegroundColor Gray
+}
+
+$backendDirForCleanup = Join-Path $RepoRoot "desktop_backend"
+Remove-GeneratedBackendPath -TargetPath (Join-Path $backendDirForCleanup "build") -BackendRoot $backendDirForCleanup
+Remove-GeneratedBackendPath -TargetPath (Join-Path $backendDirForCleanup "dist") -BackendRoot $backendDirForCleanup
+Remove-GeneratedBackendPath -TargetPath (Join-Path $backendDirForCleanup "local_ocr_server.spec") -BackendRoot $backendDirForCleanup
+Remove-GeneratedBackendPath -TargetPath (Join-Path $backendDirForCleanup "local_ocr_server.exe") -BackendRoot $backendDirForCleanup
+if (-not $PyInstaller) {
+    Remove-GeneratedBackendPath -TargetPath (Join-Path $backendDirForCleanup "local_ocr_server_bundle") -BackendRoot $backendDirForCleanup
 }
 
 # --- Tauri build ---
