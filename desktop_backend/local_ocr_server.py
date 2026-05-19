@@ -39,37 +39,8 @@ TEXT_USER_PROMPT = os.getenv(
     "\nTranscription OCR (uniquement le texte de la bulle, pas de suite) :",
 )
 MAX_IMAGE_SIZE = (1540, 1540)
-BACKEND_AUTO = "auto"
 BACKEND_TRANSFORMERS = "transformers"
-BACKEND_VLLM = "vllm"
 BACKEND_NOT_LOADED = "not_loaded"
-VALID_INFERENCE_BACKENDS = {BACKEND_AUTO, BACKEND_TRANSFORMERS, BACKEND_VLLM}
-VLLM_LIGHTONOCR_ARCHITECTURES = {
-    "LightOnOCRForConditionalGeneration",
-    "LightOnOcrForConditionalGeneration",
-}
-
-
-def configure_windows_runtime_cache_env() -> None:
-    if platform.system().lower() != "windows":
-        return
-
-    base_dir = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
-    if not base_dir:
-        return
-
-    cache_dir = os.path.join(base_dir, "poneglyph", "cache")
-    os.environ.setdefault("XDG_CACHE_HOME", cache_dir)
-    os.environ.setdefault("VLLM_CACHE_ROOT", os.path.join(cache_dir, "vllm"))
-    os.environ.setdefault("FLASHINFER_WORKSPACE_BASE", cache_dir)
-
-    try:
-        os.makedirs(cache_dir, exist_ok=True)
-    except OSError:
-        pass
-
-
-configure_windows_runtime_cache_env()
 
 
 def env_bool(name: str, default: bool) -> bool:
@@ -92,45 +63,8 @@ def env_int(name: str, default: int, minimum: Optional[int] = None) -> int:
     return value
 
 
-def env_optional_int(name: str, minimum: Optional[int] = None) -> Optional[int]:
-    raw_value = os.environ.get(name)
-    if raw_value is None or raw_value.strip() == "":
-        return None
-    try:
-        value = int(raw_value)
-    except ValueError:
-        return None
-    if minimum is not None and value < minimum:
-        return None
-    return value
-
-
-def env_float(
-    name: str,
-    default: float,
-    minimum: Optional[float] = None,
-    maximum: Optional[float] = None,
-) -> float:
-    raw_value = os.environ.get(name)
-    if raw_value is None or raw_value.strip() == "":
-        return default
-    try:
-        value = float(raw_value)
-    except ValueError:
-        return default
-    if minimum is not None and value < minimum:
-        return default
-    if maximum is not None and value > maximum:
-        return default
-    return value
-
-
 def get_requested_backend() -> str:
-    requested_backend = os.environ.get("PONEGLYPH_INFERENCE_BACKEND", BACKEND_AUTO)
-    requested_backend = requested_backend.strip().lower()
-    if requested_backend not in VALID_INFERENCE_BACKENDS:
-        return BACKEND_AUTO
-    return requested_backend
+    return BACKEND_TRANSFORMERS
 
 
 def get_max_new_tokens(model_key: str) -> int:
@@ -151,29 +85,8 @@ def perf_options_payload():
         "warmup": env_bool("PONEGLYPH_WARMUP", True),
         "text_max_new_tokens": get_max_new_tokens(TEXT_MODEL_KEY),
         "bbox_max_new_tokens": get_max_new_tokens(BBOX_MODEL_KEY),
-        "vllm_gpu_memory_utilization": env_float(
-            "PONEGLYPH_VLLM_GPU_MEMORY_UTILIZATION",
-            0.85,
-            minimum=0.01,
-            maximum=1.0,
-        ),
-        "vllm_max_model_len": env_optional_int("PONEGLYPH_VLLM_MAX_MODEL_LEN", minimum=1),
-        "vllm_enforce_eager": env_bool("PONEGLYPH_VLLM_ENFORCE_EAGER", False),
     }
 
-
-def backend_attempt_order(requested_backend: str, selected_device: str):
-    if requested_backend == BACKEND_TRANSFORMERS:
-        return [BACKEND_TRANSFORMERS]
-    if requested_backend == BACKEND_VLLM:
-        return [BACKEND_VLLM, BACKEND_TRANSFORMERS]
-    if selected_device == "cuda":
-        return [BACKEND_VLLM, BACKEND_TRANSFORMERS]
-    return [BACKEND_TRANSFORMERS]
-
-
-def format_backend_fallback_reason(exc: Exception) -> str:
-    return f"vLLM unavailable, using transformers fallback: {exc}"
 
 def make_download_state():
     return {
@@ -261,29 +174,44 @@ def model_is_installed(model_key: str = DEFAULT_MODEL_KEY) -> bool:
 
 
 def configure_torch_runtime(torch_module) -> None:
-    if not env_bool("PONEGLYPH_TF32", True):
-        return
-
     try:
         if not torch_module.cuda.is_available():
             return
     except Exception:
         return
 
-    try:
-        torch_module.backends.cuda.matmul.allow_tf32 = True
-    except Exception:
-        pass
+    cuda_backends = getattr(torch_module.backends, "cuda", None)
+    if cuda_backends is not None:
+        for flag_name in ("enable_flash_sdp", "enable_mem_efficient_sdp", "enable_math_sdp"):
+            flag = getattr(cuda_backends, flag_name, None)
+            if callable(flag):
+                try:
+                    flag(True)
+                except Exception:
+                    pass
 
-    try:
-        torch_module.backends.cudnn.allow_tf32 = True
-    except Exception:
-        pass
+    cudnn_backend = getattr(torch_module.backends, "cudnn", None)
+    if cudnn_backend is not None:
+        try:
+            cudnn_backend.benchmark = True
+        except Exception:
+            pass
 
-    try:
-        torch_module.set_float32_matmul_precision("high")
-    except Exception:
-        pass
+    if env_bool("PONEGLYPH_TF32", True):
+        try:
+            torch_module.backends.cuda.matmul.allow_tf32 = True
+        except Exception:
+            pass
+
+        try:
+            torch_module.backends.cudnn.allow_tf32 = True
+        except Exception:
+            pass
+
+        try:
+            torch_module.set_float32_matmul_precision("high")
+        except Exception:
+            pass
 
 
 def get_torch():
@@ -291,18 +219,6 @@ def get_torch():
 
     configure_torch_runtime(torch)
     return torch
-
-
-def inspect_vllm_availability(selected_device: str):
-    if selected_device != "cuda":
-        return False, f"vLLM backend requires CUDA; selected device is {selected_device}"
-
-    try:
-        from vllm import LLM, SamplingParams  # noqa: F401
-    except Exception as exc:
-        return False, f"vLLM runtime import failed: {exc}"
-
-    return True, None
 
 
 def pick_device(torch_module) -> str:
@@ -501,13 +417,9 @@ def start_model_download(model_key: str = DEFAULT_MODEL_KEY) -> bool:
     return True
 
 
-def model_is_loaded_for_request(model_key: str, requested_backend: str) -> bool:
+def model_is_loaded(model_key: str) -> bool:
     state = get_model_state(model_key)
-    return (
-        state["processor"] is not None
-        and state["model"] is not None
-        and state["requested_backend"] == requested_backend
-    )
+    return state["processor"] is not None and state["model"] is not None
 
 
 def clear_loaded_model_state(state) -> None:
@@ -555,6 +467,8 @@ def load_transformers_model(model_key: str, selected_device: str, selected_dtype
             model = LightOnOcrForConditionalGeneration.from_pretrained(
                 model_dir,
                 torch_dtype=selected_dtype,
+                low_cpu_mem_usage=True,
+                use_safetensors=True,
                 **attention_kwargs,
             ).eval()
             return model, attention_name
@@ -590,8 +504,6 @@ def load_transformers_backend(
     loaded_processor,
     selected_device: str,
     selected_dtype,
-    requested_backend: str,
-    fallback_reason: Optional[str] = None,
 ) -> None:
     state = get_model_state(model_key)
     torch = get_torch()
@@ -612,99 +524,13 @@ def load_transformers_backend(
     state["model"] = loaded_model
     state["device"] = selected_device
     state["dtype"] = selected_dtype
-    state["requested_backend"] = requested_backend
+    state["requested_backend"] = BACKEND_TRANSFORMERS
     state["active_backend"] = BACKEND_TRANSFORMERS
-    state["backend_fallback_reason"] = fallback_reason
-    state["backend_error"] = fallback_reason
+    state["backend_fallback_reason"] = None
+    state["backend_error"] = None
     state["attention_implementation"] = attention_implementation
     state["compiled"] = compiled
     state["compile_error"] = compile_error
-    state["last_error"] = None
-
-
-def model_architectures(model_dir: str):
-    try:
-        from transformers import AutoConfig
-
-        config = AutoConfig.from_pretrained(
-            model_dir,
-            local_files_only=True,
-            trust_remote_code=True,
-        )
-        return list(getattr(config, "architectures", []) or [])
-    except Exception as exc:
-        raise RuntimeError(f"Impossible d'inspecter l'architecture du modele pour vLLM: {exc}") from exc
-
-
-def ensure_vllm_model_supported(model_dir: str) -> None:
-    architectures = model_architectures(model_dir)
-    if not architectures:
-        return
-
-    # vLLM has a native LightOnOCR runner in recent releases. Older builds still
-    # fail during registry/engine initialization, which is handled as fallback.
-    if any(architecture in VLLM_LIGHTONOCR_ARCHITECTURES for architecture in architectures):
-        return
-
-    # Surface this exact class of failure in status instead of pretending that
-    # an arbitrary multimodal processor can run through vLLM.
-    raise RuntimeError(
-        "vLLM unavailable/unsupported for this architecture: "
-        f"{', '.join(architectures)}"
-    )
-
-
-def vllm_load_kwargs(model_dir: str):
-    kwargs = {
-        "model": model_dir,
-        "trust_remote_code": True,
-        "gpu_memory_utilization": env_float(
-            "PONEGLYPH_VLLM_GPU_MEMORY_UTILIZATION",
-            0.85,
-            minimum=0.01,
-            maximum=1.0,
-        ),
-        "limit_mm_per_prompt": {"image": 1},
-    }
-
-    max_model_len = env_optional_int("PONEGLYPH_VLLM_MAX_MODEL_LEN", minimum=1)
-    if max_model_len is not None:
-        kwargs["max_model_len"] = max_model_len
-
-    if env_bool("PONEGLYPH_VLLM_ENFORCE_EAGER", False):
-        kwargs["enforce_eager"] = True
-
-    return kwargs
-
-
-def load_vllm_backend(
-    model_key: str,
-    loaded_processor,
-    selected_device: str,
-    requested_backend: str,
-) -> None:
-    available, reason = inspect_vllm_availability(selected_device)
-    if not available:
-        raise RuntimeError(reason)
-
-    model_dir = get_model_dir(model_key)
-    ensure_vllm_model_supported(model_dir)
-
-    from vllm import LLM
-
-    loaded_model = LLM(**vllm_load_kwargs(model_dir))
-    state = get_model_state(model_key)
-    state["processor"] = loaded_processor
-    state["model"] = loaded_model
-    state["device"] = selected_device
-    state["dtype"] = "auto"
-    state["requested_backend"] = requested_backend
-    state["active_backend"] = BACKEND_VLLM
-    state["backend_fallback_reason"] = None
-    state["backend_error"] = None
-    state["attention_implementation"] = None
-    state["compiled"] = False
-    state["compile_error"] = None
     state["last_error"] = None
 
 
@@ -753,13 +579,12 @@ def maybe_warmup_model(model_key: str) -> None:
 def load_model(model_key: str = DEFAULT_MODEL_KEY) -> None:
     model_key = normalize_model_key(model_key)
     state = get_model_state(model_key)
-    requested_backend = get_requested_backend()
 
-    if model_is_loaded_for_request(model_key, requested_backend):
+    if model_is_loaded(model_key):
         return
 
     with state["model_lock"]:
-        if model_is_loaded_for_request(model_key, requested_backend):
+        if model_is_loaded(model_key):
             return
 
         if not model_is_installed(model_key):
@@ -769,54 +594,28 @@ def load_model(model_key: str = DEFAULT_MODEL_KEY) -> None:
 
         state["loading"] = True
         clear_loaded_model_state(state)
+        torch = None
         try:
             torch = get_torch()
             selected_device = pick_device(torch)
             selected_dtype = pick_dtype(torch, selected_device)
             loaded_processor = load_processor(model_key)
-            fallback_reason = None
-
-            for backend_name in backend_attempt_order(requested_backend, selected_device):
-                try:
-                    if backend_name == BACKEND_VLLM:
-                        load_vllm_backend(
-                            model_key,
-                            loaded_processor,
-                            selected_device,
-                            requested_backend,
-                        )
-                    else:
-                        load_transformers_backend(
-                            model_key,
-                            loaded_processor,
-                            selected_device,
-                            selected_dtype,
-                            requested_backend,
-                            fallback_reason=fallback_reason,
-                        )
-                    maybe_warmup_model(model_key)
-                    return
-                except Exception as exc:
-                    if backend_name == BACKEND_VLLM:
-                        fallback_reason = format_backend_fallback_reason(exc)
-                        state["backend_fallback_reason"] = fallback_reason
-                        state["backend_error"] = fallback_reason
-                        continue
-
-                    if fallback_reason:
-                        raise RuntimeError(
-                            f"{fallback_reason}; transformers fallback failed: {exc}"
-                        ) from exc
-                    raise
-
-            raise RuntimeError("Aucun backend d'inference local disponible.")
+            load_transformers_backend(
+                model_key,
+                loaded_processor,
+                selected_device,
+                selected_dtype,
+            )
+            maybe_warmup_model(model_key)
+            return
         except Exception as exc:
             clear_loaded_model_state(state)
             state["last_error"] = str(exc)
-            try:
-                clear_torch_cache(torch)
-            except Exception:
-                pass
+            if torch is not None:
+                try:
+                    clear_torch_cache(torch)
+                except Exception:
+                    pass
             raise
         finally:
             state["loading"] = False
@@ -949,45 +748,6 @@ def transformers_generate(model_key: str, image, messages, max_new_tokens_overri
     return loaded_processor.decode(gen_ids, skip_special_tokens=True).strip()
 
 
-def vllm_generate(model_key: str, image, messages, max_new_tokens_override: Optional[int]):
-    model_key = normalize_model_key(model_key)
-    state = get_model_state(model_key)
-    loaded_processor = state["processor"]
-    loaded_model = state["model"]
-    text_prompt = render_prompt(loaded_processor, messages)
-
-    from vllm import SamplingParams
-
-    sampling_params = SamplingParams(
-        temperature=0,
-        max_tokens=max_new_tokens_override or get_max_new_tokens(model_key),
-    )
-    outputs = loaded_model.generate(
-        {
-            "prompt": text_prompt,
-            "multi_modal_data": {"image": image},
-        },
-        sampling_params=sampling_params,
-    )
-    return outputs[0].outputs[0].text.strip()
-
-
-def fallback_vllm_generation_to_transformers(model_key: str, reason: str) -> None:
-    state = get_model_state(model_key)
-    torch = get_torch()
-    selected_device = pick_device(torch)
-    selected_dtype = pick_dtype(torch, selected_device)
-    loaded_processor = state["processor"] or load_processor(model_key)
-    load_transformers_backend(
-        model_key,
-        loaded_processor,
-        selected_device,
-        selected_dtype,
-        get_requested_backend(),
-        fallback_reason=reason,
-    )
-
-
 def generate_with_model(
     model_key: str,
     image,
@@ -997,14 +757,6 @@ def generate_with_model(
     model_key = normalize_model_key(model_key)
     state = get_model_state(model_key)
     active_backend = state["active_backend"]
-
-    if active_backend == BACKEND_VLLM:
-        try:
-            return vllm_generate(model_key, image, messages, max_new_tokens_override)
-        except Exception as exc:
-            reason = format_backend_fallback_reason(exc)
-            fallback_vllm_generation_to_transformers(model_key, reason)
-            return transformers_generate(model_key, image, messages, max_new_tokens_override)
 
     if active_backend == BACKEND_TRANSFORMERS:
         return transformers_generate(model_key, image, messages, max_new_tokens_override)
