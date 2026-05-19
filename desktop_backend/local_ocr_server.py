@@ -276,9 +276,9 @@ def inspect_vllm_availability(selected_device: str):
         return False, f"vLLM backend requires CUDA; selected device is {selected_device}"
 
     try:
-        import vllm  # noqa: F401
+        from vllm import LLM, SamplingParams  # noqa: F401
     except Exception as exc:
-        return False, f"vLLM import failed: {exc}"
+        return False, f"vLLM runtime import failed: {exc}"
 
     return True, None
 

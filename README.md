@@ -85,6 +85,11 @@ selon la version et l'environnement CUDA. Si vLLM echoue, le backend documente
 la raison dans `/health` et `/model/status`, puis utilise `transformers` quand
 c'est possible.
 
+Note Windows: vLLM officiel ne supporte pas Windows nativement. Le build NSIS
+Windows reste donc vLLM-capable via `PONEGLYPH_INFERENCE_BACKEND=auto`, mais il
+utilise le fallback `transformers` si aucun runtime vLLM fonctionnel n'est
+disponible.
+
 Options de performance:
 
 - `PONEGLYPH_TORCH_COMPILE=1/0` (defaut: `0`)

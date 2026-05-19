@@ -66,6 +66,9 @@ struct PythonModelStatus {
     model_dir: String,
     device: Option<String>,
     dtype: Option<String>,
+    requested_backend: Option<String>,
+    active_backend: Option<String>,
+    backend_fallback_reason: Option<String>,
     error: Option<String>,
     download: Option<DownloadStatus>,
 }
@@ -80,6 +83,9 @@ struct LocalModelStatus {
     error: Option<String>,
     device: Option<String>,
     dtype: Option<String>,
+    requested_backend: Option<String>,
+    active_backend: Option<String>,
+    backend_fallback_reason: Option<String>,
     download: Option<DownloadStatus>,
 }
 
@@ -106,6 +112,10 @@ struct HealthcheckResponse {
     gpu_memory_total_mb: Option<u64>,
     gpu_memory_allocated_mb: Option<u64>,
     gpu_memory_reserved_mb: Option<u64>,
+    requested_backend: Option<String>,
+    active_backend: Option<String>,
+    backend_fallback_reason: Option<String>,
+    perf_options: Option<serde_json::Value>,
     model_loaded: Option<bool>,
     error: Option<String>,
 }
@@ -121,6 +131,14 @@ struct PythonOcrResponse {
     bubbles: Vec<Bubble>,
     raw_text: Option<String>,
     elapsed_ms: Option<u64>,
+    preprocess_ms: Option<u64>,
+    generate_ms: Option<u64>,
+    postprocess_ms: Option<u64>,
+    device: Option<String>,
+    dtype: Option<String>,
+    requested_backend: Option<String>,
+    active_backend: Option<String>,
+    backend_fallback_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -128,6 +146,14 @@ struct PythonTextOcrResponse {
     text: String,
     raw_text: Option<String>,
     elapsed_ms: Option<u64>,
+    preprocess_ms: Option<u64>,
+    generate_ms: Option<u64>,
+    postprocess_ms: Option<u64>,
+    device: Option<String>,
+    dtype: Option<String>,
+    requested_backend: Option<String>,
+    active_backend: Option<String>,
+    backend_fallback_reason: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -135,6 +161,14 @@ struct LocalOcrResponse {
     bubbles: Vec<Bubble>,
     raw_text: Option<String>,
     elapsed_ms: Option<u64>,
+    preprocess_ms: Option<u64>,
+    generate_ms: Option<u64>,
+    postprocess_ms: Option<u64>,
+    device: Option<String>,
+    dtype: Option<String>,
+    requested_backend: Option<String>,
+    active_backend: Option<String>,
+    backend_fallback_reason: Option<String>,
     backend: &'static str,
 }
 
@@ -143,6 +177,14 @@ struct LocalTextOcrResponse {
     text: String,
     raw_text: Option<String>,
     elapsed_ms: Option<u64>,
+    preprocess_ms: Option<u64>,
+    generate_ms: Option<u64>,
+    postprocess_ms: Option<u64>,
+    device: Option<String>,
+    dtype: Option<String>,
+    requested_backend: Option<String>,
+    active_backend: Option<String>,
+    backend_fallback_reason: Option<String>,
     backend: &'static str,
 }
 
@@ -339,6 +381,9 @@ fn to_local_model_status(
         error: status.error.or(startup_error),
         device: status.device,
         dtype: status.dtype,
+        requested_backend: status.requested_backend,
+        active_backend: status.active_backend,
+        backend_fallback_reason: status.backend_fallback_reason,
         download: status.download,
     }
 }
@@ -406,12 +451,60 @@ fn default_text_model_dir() -> Result<PathBuf, String> {
     Ok(default_models_base_dir()?.join(TEXT_MODEL_DIR_NAME))
 }
 
+fn env_or_default(name: &str, default_value: &str) -> String {
+    env::var(name).unwrap_or_else(|_| default_value.to_string())
+}
+
 fn spawn_backend(
     backend_dir: &Path,
     port: u16,
     bbox_model_dir: &Path,
     text_model_dir: &Path,
 ) -> Result<Child, String> {
+    let pyinstaller_bundle_exe = backend_dir
+        .join("local_ocr_server_bundle")
+        .join("local_ocr_server.exe");
+    if pyinstaller_bundle_exe.exists() {
+        let bundle_dir = pyinstaller_bundle_exe
+            .parent()
+            .ok_or_else(|| "Dossier backend PyInstaller invalide.".to_string())?;
+        eprintln!(
+            "[Poneglyph] Utilisation du backend PyInstaller onedir: {}",
+            pyinstaller_bundle_exe.display()
+        );
+        let mut command = Command::new(&pyinstaller_bundle_exe);
+        command
+            .arg("--host")
+            .arg("127.0.0.1")
+            .arg("--port")
+            .arg(port.to_string())
+            .current_dir(bundle_dir)
+            .env("PONEGLYPH_MODEL_DIR", bbox_model_dir.as_os_str())
+            .env("PONEGLYPH_BBOX_MODEL_DIR", bbox_model_dir.as_os_str())
+            .env("PONEGLYPH_BASE_MODEL_DIR", text_model_dir.as_os_str())
+            .env(
+                "PONEGLYPH_INFERENCE_BACKEND",
+                env_or_default("PONEGLYPH_INFERENCE_BACKEND", "auto"),
+            )
+            .env("PONEGLYPH_FLASH_ATTN", env_or_default("PONEGLYPH_FLASH_ATTN", "1"))
+            .env("PONEGLYPH_TF32", env_or_default("PONEGLYPH_TF32", "1"))
+            .env("PONEGLYPH_WARMUP", env_or_default("PONEGLYPH_WARMUP", "1"))
+            .env("PYTHONUNBUFFERED", "1")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x08000000);
+        }
+
+        return command
+            .spawn()
+            .map_err(|err| format!("Impossible de demarrer le backend PyInstaller onedir: {err}"));
+    }
+
     let pyinstaller_exe = backend_dir.join("local_ocr_server.exe");
     if pyinstaller_exe.exists() {
         eprintln!(
@@ -428,6 +521,13 @@ fn spawn_backend(
             .env("PONEGLYPH_MODEL_DIR", bbox_model_dir.as_os_str())
             .env("PONEGLYPH_BBOX_MODEL_DIR", bbox_model_dir.as_os_str())
             .env("PONEGLYPH_BASE_MODEL_DIR", text_model_dir.as_os_str())
+            .env(
+                "PONEGLYPH_INFERENCE_BACKEND",
+                env_or_default("PONEGLYPH_INFERENCE_BACKEND", "auto"),
+            )
+            .env("PONEGLYPH_FLASH_ATTN", env_or_default("PONEGLYPH_FLASH_ATTN", "1"))
+            .env("PONEGLYPH_TF32", env_or_default("PONEGLYPH_TF32", "1"))
+            .env("PONEGLYPH_WARMUP", env_or_default("PONEGLYPH_WARMUP", "1"))
             .env("PYTHONUNBUFFERED", "1")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -476,6 +576,13 @@ fn spawn_backend(
             .env("PONEGLYPH_MODEL_DIR", bbox_model_dir.as_os_str())
             .env("PONEGLYPH_BBOX_MODEL_DIR", bbox_model_dir.as_os_str())
             .env("PONEGLYPH_BASE_MODEL_DIR", text_model_dir.as_os_str())
+            .env(
+                "PONEGLYPH_INFERENCE_BACKEND",
+                env_or_default("PONEGLYPH_INFERENCE_BACKEND", "auto"),
+            )
+            .env("PONEGLYPH_FLASH_ATTN", env_or_default("PONEGLYPH_FLASH_ATTN", "1"))
+            .env("PONEGLYPH_TF32", env_or_default("PONEGLYPH_TF32", "1"))
+            .env("PONEGLYPH_WARMUP", env_or_default("PONEGLYPH_WARMUP", "1"))
             .env("PYTHONUNBUFFERED", "1")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -521,6 +628,9 @@ async fn get_local_model_status(
                 error: Some(err),
                 device: None,
                 dtype: None,
+                requested_backend: None,
+                active_backend: None,
+                backend_fallback_reason: None,
                 download: None,
             });
         }
@@ -549,6 +659,9 @@ async fn get_local_text_model_status(
                 error: Some(err),
                 device: None,
                 dtype: None,
+                requested_backend: None,
+                active_backend: None,
+                backend_fallback_reason: None,
                 download: None,
             });
         }
@@ -580,6 +693,9 @@ async fn load_local_model(
             error: Some(error),
             device: None,
             dtype: None,
+            requested_backend: None,
+            active_backend: None,
+            backend_fallback_reason: None,
             download: None,
         }),
     }
@@ -605,6 +721,9 @@ async fn load_local_text_model(
             error: Some(error),
             device: None,
             dtype: None,
+            requested_backend: None,
+            active_backend: None,
+            backend_fallback_reason: None,
             download: None,
         }),
     }
@@ -678,6 +797,14 @@ async fn run_local_ocr(
         bubbles: response.bubbles,
         raw_text: response.raw_text,
         elapsed_ms: response.elapsed_ms,
+        preprocess_ms: response.preprocess_ms,
+        generate_ms: response.generate_ms,
+        postprocess_ms: response.postprocess_ms,
+        device: response.device,
+        dtype: response.dtype,
+        requested_backend: response.requested_backend,
+        active_backend: response.active_backend,
+        backend_fallback_reason: response.backend_fallback_reason,
         backend: "local-python",
     })
 }
@@ -708,6 +835,14 @@ async fn run_local_text_ocr(
         text: response.text,
         raw_text: response.raw_text,
         elapsed_ms: response.elapsed_ms,
+        preprocess_ms: response.preprocess_ms,
+        generate_ms: response.generate_ms,
+        postprocess_ms: response.postprocess_ms,
+        device: response.device,
+        dtype: response.dtype,
+        requested_backend: response.requested_backend,
+        active_backend: response.active_backend,
+        backend_fallback_reason: response.backend_fallback_reason,
         backend: "local-python",
     })
 }
@@ -733,6 +868,10 @@ async fn healthcheck_local_backend(
                 gpu_memory_total_mb: None,
                 gpu_memory_allocated_mb: None,
                 gpu_memory_reserved_mb: None,
+                requested_backend: None,
+                active_backend: None,
+                backend_fallback_reason: None,
+                perf_options: None,
                 model_loaded: None,
                 error: Some(err),
             });
