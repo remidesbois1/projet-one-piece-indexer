@@ -85,10 +85,18 @@ selon la version et l'environnement CUDA. Si vLLM echoue, le backend documente
 la raison dans `/health` et `/model/status`, puis utilise `transformers` quand
 c'est possible.
 
-Note Windows: vLLM officiel ne supporte pas Windows nativement. Le build NSIS
-Windows reste donc vLLM-capable via `PONEGLYPH_INFERENCE_BACKEND=auto`, mais il
-utilise le fallback `transformers` si aucun runtime vLLM fonctionnel n'est
-disponible.
+Note Windows: vLLM officiel ne supporte pas Windows nativement. Pour Windows
+natif sans WSL, le projet peut utiliser le fork non officiel
+[`SystemPanic/vllm-windows`](https://github.com/SystemPanic/vllm-windows). Le
+build NSIS detecte automatiquement le runtime suivant avant le `python` global:
+`%LOCALAPPDATA%\poneglyph\vllm-windows\Scripts\python.exe`.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\desktop_backend\setup_vllm_windows.ps1
+```
+
+La trace exacte de l'installation testee est dans
+`desktop_backend/VLLM_WINDOWS_NOTES.md`.
 
 Options de performance:
 

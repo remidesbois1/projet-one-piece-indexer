@@ -50,6 +50,28 @@ VLLM_LIGHTONOCR_ARCHITECTURES = {
 }
 
 
+def configure_windows_runtime_cache_env() -> None:
+    if platform.system().lower() != "windows":
+        return
+
+    base_dir = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")
+    if not base_dir:
+        return
+
+    cache_dir = os.path.join(base_dir, "poneglyph", "cache")
+    os.environ.setdefault("XDG_CACHE_HOME", cache_dir)
+    os.environ.setdefault("VLLM_CACHE_ROOT", os.path.join(cache_dir, "vllm"))
+    os.environ.setdefault("FLASHINFER_WORKSPACE_BASE", cache_dir)
+
+    try:
+        os.makedirs(cache_dir, exist_ok=True)
+    except OSError:
+        pass
+
+
+configure_windows_runtime_cache_env()
+
+
 def env_bool(name: str, default: bool) -> bool:
     raw_value = os.environ.get(name)
     if raw_value is None:
