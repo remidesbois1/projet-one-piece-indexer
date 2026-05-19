@@ -455,43 +455,6 @@ fn env_or_default(name: &str, default_value: &str) -> String {
     env::var(name).unwrap_or_else(|_| default_value.to_string())
 }
 
-fn windows_vllm_python_candidates(backend_dir: &Path) -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
-
-    if cfg!(target_os = "windows") {
-        if let Some(local_app_data) = env::var_os("LOCALAPPDATA") {
-            candidates.push(
-                PathBuf::from(local_app_data)
-                    .join("poneglyph")
-                    .join("vllm-windows")
-                    .join("Scripts")
-                    .join("python.exe"),
-            );
-        }
-
-        if let Some(app_data) = env::var_os("APPDATA") {
-            candidates.push(
-                PathBuf::from(app_data)
-                    .join("poneglyph")
-                    .join("vllm-windows")
-                    .join("Scripts")
-                    .join("python.exe"),
-            );
-        }
-
-        if let Some(repo_root) = backend_dir.parent() {
-            candidates.push(
-                repo_root
-                    .join(".venv-vllm-windows")
-                    .join("Scripts")
-                    .join("python.exe"),
-            );
-        }
-    }
-
-    candidates
-}
-
 fn spawn_backend(
     backend_dir: &Path,
     port: u16,
@@ -519,10 +482,6 @@ fn spawn_backend(
             .env("PONEGLYPH_MODEL_DIR", bbox_model_dir.as_os_str())
             .env("PONEGLYPH_BBOX_MODEL_DIR", bbox_model_dir.as_os_str())
             .env("PONEGLYPH_BASE_MODEL_DIR", text_model_dir.as_os_str())
-            .env(
-                "PONEGLYPH_INFERENCE_BACKEND",
-                env_or_default("PONEGLYPH_INFERENCE_BACKEND", "auto"),
-            )
             .env(
                 "PONEGLYPH_FLASH_ATTN",
                 env_or_default("PONEGLYPH_FLASH_ATTN", "1"),
@@ -562,10 +521,6 @@ fn spawn_backend(
             .env("PONEGLYPH_BBOX_MODEL_DIR", bbox_model_dir.as_os_str())
             .env("PONEGLYPH_BASE_MODEL_DIR", text_model_dir.as_os_str())
             .env(
-                "PONEGLYPH_INFERENCE_BACKEND",
-                env_or_default("PONEGLYPH_INFERENCE_BACKEND", "auto"),
-            )
-            .env(
                 "PONEGLYPH_FLASH_ATTN",
                 env_or_default("PONEGLYPH_FLASH_ATTN", "1"),
             )
@@ -598,11 +553,6 @@ fn spawn_backend(
     if let Some(python) = env_python {
         candidates.push((python, Vec::<String>::new()));
     }
-    for python_path in windows_vllm_python_candidates(backend_dir) {
-        if python_path.exists() {
-            candidates.push((python_path.to_string_lossy().to_string(), Vec::new()));
-        }
-    }
     candidates.push(("python".to_string(), Vec::new()));
     candidates.push(("python3".to_string(), Vec::new()));
     candidates.push(("py".to_string(), vec!["-3".to_string()]));
@@ -624,10 +574,6 @@ fn spawn_backend(
             .env("PONEGLYPH_MODEL_DIR", bbox_model_dir.as_os_str())
             .env("PONEGLYPH_BBOX_MODEL_DIR", bbox_model_dir.as_os_str())
             .env("PONEGLYPH_BASE_MODEL_DIR", text_model_dir.as_os_str())
-            .env(
-                "PONEGLYPH_INFERENCE_BACKEND",
-                env_or_default("PONEGLYPH_INFERENCE_BACKEND", "auto"),
-            )
             .env(
                 "PONEGLYPH_FLASH_ATTN",
                 env_or_default("PONEGLYPH_FLASH_ATTN", "1"),
