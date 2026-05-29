@@ -234,10 +234,10 @@ const features = [
     },
     {
         icon: Workflow,
-        title: "Tri des Bulles - ReaderNet V5",
+        title: "Tri One-Shot - ONNX",
         badge: "ML",
-        description: "Architecture Global-Local (MobileNetV3 + MLP) pour ordonner les bulles selon le sens de lecture japonais, optimisée pour le navigateur.",
-        details: ["ReaderNet V5", "98.0% Accuracy", "2.47 MB ONNX", "Web Worker"],
+        description: "Deux rankers pairwise ordonnent les cases puis les bulles dans le worker, sans serveur et avec les artefacts publiés dans un seul dépôt Hugging Face.",
+        details: ["panel_order.onnx", "bubble_order.onnx", "93.75% page exact", "Web Worker"],
     },
     {
         icon: Search,

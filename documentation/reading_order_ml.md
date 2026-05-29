@@ -1,42 +1,58 @@
-# Système d'ordre de lecture via Machine Learning (ReaderNet V5)
+# Système d'ordre de lecture one-shot
 
-Ce document détaille le fonctionnement du modèle d'IA dédié au tri des bulles de texte dans les planches de manga. La version **V5** marque le passage à une architecture ultra-légère.
+Ce document décrit le remplacement de ReaderNet par un bundle ONNX unique publié sur Hugging Face :
 
-## Architecture du Modèle (ReaderNet V5)
+[`Remidesbois/YoloPiece_OneShot_Models`](https://huggingface.co/Remidesbois/YoloPiece_OneShot_Models)
 
-Contrairement aux versions précédentes qui analysaient des images de paires de bulles, la V5 sépare la vision de la page et la géométrie des bulles pour une efficacité maximale.
+Le worker navigateur charge les détecteurs et les rankers depuis ce dépôt. Le chemin one-shot Gemini/Poneglyph garde l'ordre renvoyé par le modèle OCR ; les détections servent uniquement à aligner ou corriger les boîtes.
 
-- **Entrée Visuelle (Global)** : Tenseur de `(1, 1, 256, 384)`
-  - 1 canal Grayscale (image de la page entière).
-  - Redimensionnement : Letterbox de hauteur 256px, centrée horizontalement sur 384px (adapté aux doubles pages).
-- **Entrée Géométrique (Local)** : Vecteur de `(1, 12)` par paire (A, B)
-  - Coordonnées normalisées [0-1] de la Bulle A et de la Bulle B (X, Y, W, H).
-  - Vecteurs relatifs : ΔX, ΔY, Distance Euclidienne, Angle (en π).
-- **Backbone** : Architecture de type **MobileNetV3 / Inverted Residuals** (légère et rapide).
-- **Head** : MLP (Multi-Layer Perceptron) combinant les features visuelles (128D) et géométriques (12D).
-- **Sortie** : Valeur scalaire (Logit) transformée en probabilité via Sigmoid (Probabilité que A soit lu avant B).
+## Architecture
 
-## Processus d'Entraînement
+Le bundle contient quatre artefacts ONNX :
 
-### Dataset (V5)
-- **Pages** : ~388 planches annotées.
-- **Paires** : ~33 200 combinaisons de paires (+1.3% vs V4).
-- **Augmentation** : Grayscale, ColorJitter, Random Noise.
+| Fichier | Rôle |
+|---|---|
+| `bubble_detector.onnx` | Détecte les bulles sur la page. |
+| `panel_detector.onnx` | Détecte les cases pour assigner les bulles à un contexte de lecture. |
+| `panel_order.onnx` | Classe les cases par paires. |
+| `bubble_order.onnx` | Classe les bulles à l'intérieur de chaque case par paires. |
 
-### Métriques de Performance
-- **Validation Accuracy (V5)** : **98.0%**
-- **Poids ONNX** : **2.47 MB** (vs 170 MB en V4, soit **70x plus léger**)
-- **Parameters** : ~618 209 (vs 44 millions en V4)
+Les deux rankers remplacent ReaderNet. Ils prennent des features géométriques normalisées, évaluent chaque paire `(A, B)`, puis produisent une probabilité que `A` soit lu avant `B`. Le worker agrège ces scores pour obtenir l'ordre final.
 
-## Avantages de la V5
+## Entraînement
 
-1. **Vitesse Web** : Le Backbone CNN (le plus lourd) est exécuté une seule fois par page. L'inférence sur les paires n'est plus qu'un calcul matriciel (MLP) quasi instantané.
-2. **Légèreté** : Le modèle est téléchargé instantanément sur mobile/navigateur.
-3. **Optimisation** : Prétraitement en niveaux de gris pour économiser 3x la RAM GPU du client.
+Le pipeline est dans `docker_scripts/train_reading_order/`.
 
-## Fonctionnement du Tri
+- `train_reading_order.py` entraîne deux rankers `sklearn-logistic`.
+- `models/panel_order.onnx` et `models/bubble_order.onnx` sont exportés avec `onnx`.
+- L'export est validé avec `onnx.checker` et une comparaison ONNX Runtime contre Python.
+- Les rapports sont écrits dans `metrics/reading_order_metrics.json`.
 
-1. **Inference Globale** : Le modèle extrait les "Features" de la page (les cases et gouttières) une seule fois.
-2. **Calcul de Paires** : Pour chaque paire (A, B), le modèle combine les Features de la page avec les vecteurs géométriques de A et B.
-3. **Scoring** : Calcul de la probabilité de lecture A -> B.
-4. **Tri** : Classement final des bulles par score de priorité.
+## Métriques test
+
+Dernier run validé :
+
+| Mesure | Valeur |
+|---|---:|
+| Pages train / test | 63 / 16 |
+| Panel pair accuracy | 1.0000 |
+| Bubble pair accuracy | 0.9928 |
+| Panel exact order | 1.0000 |
+| Bubble exact order inside panels | 0.9818 |
+| Page full accuracy | 0.9375 (15/16) |
+
+## Packaging Hugging Face
+
+Le package est préparé avec :
+
+```bash
+python docker_scripts/package_one_shot_models/prepare_and_upload.py
+```
+
+L'upload se fait avec :
+
+```bash
+python docker_scripts/package_one_shot_models/prepare_and_upload.py --upload
+```
+
+Le script copie les artefacts ONNX, ajoute les métriques, génère `model_manifest.json`, puis publie le dossier sur Hugging Face.

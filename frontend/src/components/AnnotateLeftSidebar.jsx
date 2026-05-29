@@ -61,6 +61,8 @@ export default function AnnotateLeftSidebar({
     isSandbox = false,
     handleOneShot,
     isOneShotLoading,
+    handleOneShotMimo,
+    isMimoLoading,
     handleOneShotPoneglyph,
     isPoneglyphLoading,
     poneglyphRunMode = null,
@@ -259,6 +261,26 @@ export default function AnnotateLeftSidebar({
                                             <span className="flex items-center gap-2">
                                                 <Sparkles size={14} />
                                                 One-Shot Gemini
+                                            </span>
+                                        )}
+                                    </Button>
+                                )}
+
+                                {handleOneShotMimo && (
+                                    <Button
+                                        onClick={handleOneShotMimo}
+                                        disabled={isMimoLoading || isSubmitting || isAutoDetecting}
+                                        className="w-full h-10 bg-orange-600 hover:bg-orange-700 text-white text-[11px] uppercase tracking-wider font-bold shadow-md"
+                                    >
+                                        {isMimoLoading ? (
+                                            <span className="flex items-center gap-2">
+                                                <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                                                Analyse MiMo...
+                                            </span>
+                                        ) : (
+                                            <span className="flex items-center gap-2">
+                                                <Sparkles size={14} />
+                                                One-Shot MiMo v2.5
                                             </span>
                                         )}
                                     </Button>

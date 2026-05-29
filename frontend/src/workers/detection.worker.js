@@ -5,22 +5,19 @@ ort.env.wasm.wasmPaths = new URL('/onnx/', self.location.origin).href;
 // ---------------------------------------------------------------------------
 // Model URLs
 // ---------------------------------------------------------------------------
-const BUBBLE_MODEL_PATH = 'https://huggingface.co/Remidesbois/YoloPiece_BubbleDetector_Nano/resolve/main/onepiece_detector_nano.onnx';
-const PANEL_MODEL_PATH = 'https://huggingface.co/Remidesbois/YoloPiece_PanelDetector/resolve/main/panel_detector.onnx';
-const PANEL_ORDER_PATH = 'https://huggingface.co/Remidesbois/YoloPiece_PanelDetector/resolve/main/reading_order.onnx';
-const READERNET_PATH = 'https://huggingface.co/Remidesbois/ReaderNet-Poneglyph/resolve/main/readernet_poneglyph.onnx';
+const ONE_SHOT_MODEL_BASE = 'https://huggingface.co/Remidesbois/YoloPiece_OneShot_Models/resolve/main';
+const BUBBLE_MODEL_PATH = `${ONE_SHOT_MODEL_BASE}/bubble_detector.onnx`;
+const PANEL_MODEL_PATH = `${ONE_SHOT_MODEL_BASE}/panel_detector.onnx`;
+const PANEL_ORDER_PATH = `${ONE_SHOT_MODEL_BASE}/panel_order.onnx`;
+const BUBBLE_ORDER_PATH = `${ONE_SHOT_MODEL_BASE}/bubble_order.onnx`;
 
-const PAGE_H = 256;
-const PAGE_W = 384;
-const BUBBLE_CROP_SIZE = 96;
-const PANEL_CROP_SIZE = 224;
 const BUBBLE_SCORE_THRESHOLD = 0.25;
 const BUBBLE_DUPLICATE_IOU_THRESHOLD = 0.9;
 
 let bubbleSession = null;
 let panelSession = null;
 let panelOrderSession = null;
-let readernetSession = null;
+let bubbleOrderSession = null;
 
 // ---------------------------------------------------------------------------
 // Progress helper
@@ -55,7 +52,7 @@ self.addEventListener('message', async (event) => {
 
     if (type === 'init') {
         try {
-            if (bubbleSession && panelSession && panelOrderSession && readernetSession) {
+            if (bubbleSession && panelSession && panelOrderSession && bubbleOrderSession) {
                 self.postMessage({ status: 'ready' });
                 return;
             }
@@ -66,7 +63,7 @@ self.addEventListener('message', async (event) => {
                 { path: BUBBLE_MODEL_PATH, name: 'Bubble Detector' },
                 { path: PANEL_MODEL_PATH, name: 'Panel Detector' },
                 { path: PANEL_ORDER_PATH, name: 'Panel Order' },
-                { path: READERNET_PATH, name: 'ReaderNet' }
+                { path: BUBBLE_ORDER_PATH, name: 'Bubble Order' }
             ];
 
             const sizes = await Promise.all(models.map(async (m) => {
@@ -105,20 +102,16 @@ self.addEventListener('message', async (event) => {
             console.log("[Worker] Panel detector loaded");
 
             // 3. Panel Order
-            try {
-                const buf3 = await fetchModel(PANEL_ORDER_PATH, updateGlobalProgress);
-                panelOrderSession = await ort.InferenceSession.create(buf3, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' });
-                totalLoaded += buf3.byteLength;
-                console.log("[Worker] Panel order model loaded");
-            } catch (e) { console.warn("[Worker] Failed to load panel order:", e.message); }
+            const buf3 = await fetchModel(PANEL_ORDER_PATH, updateGlobalProgress);
+            panelOrderSession = await ort.InferenceSession.create(buf3, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' });
+            totalLoaded += buf3.byteLength;
+            console.log("[Worker] Panel order model loaded");
 
-            // 4. ReaderNet
-            try {
-                const buf4 = await fetchModel(READERNET_PATH, updateGlobalProgress);
-                readernetSession = await ort.InferenceSession.create(buf4, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' });
-                totalLoaded += buf4.byteLength;
-                console.log("[Worker] ReaderNet loaded");
-            } catch (e) { console.warn("[Worker] Failed to load ReaderNet:", e.message); }
+            // 4. Bubble Order
+            const buf4 = await fetchModel(BUBBLE_ORDER_PATH, updateGlobalProgress);
+            bubbleOrderSession = await ort.InferenceSession.create(buf4, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' });
+            totalLoaded += buf4.byteLength;
+            console.log("[Worker] Bubble order model loaded");
 
             self.postMessage({ status: 'download_progress', progress: 100 });
             self.postMessage({ status: 'ready' });
@@ -169,17 +162,17 @@ self.addEventListener('message', async (event) => {
             // 2. Detect panels
             const panels = await detectPanels(bitmap);
 
-            if (panels.length > 0 && panelOrderSession && readernetSession) {
+            if (panels.length > 0 && panelOrderSession && bubbleOrderSession) {
                 // 3. Sort panels by reading order
                 const sortedPanels = await rankPanels(panels, bitmap);
 
                 // 4. Assign bubbles to panels
                 const assignments = assignBubblesToPanels(boxes, sortedPanels);
 
-                // 5. Sort bubbles within each panel using ReaderNet
-                sortedBoxes = await sortBubblesWithReaderNet(boxes, sortedPanels, assignments, bitmap);
+                // 5. Sort bubbles within each panel using the new reading-order ranker
+                sortedBoxes = await sortBubblesWithReadingOrder(boxes, sortedPanels, assignments, bitmap);
             } else {
-                // Fallback: old heuristic sort
+                // Fallback when no panel could be detected on the page.
                 sortedBoxes = mangaOrderSort(boxes);
             }
 
@@ -437,92 +430,159 @@ async function rankPanels(panels, bitmap) {
     if (panels.length <= 1 || !panelOrderSession) return panels;
 
     const { width, height } = bitmap;
-    const crops = [];
-    const validPanels = [];
-
-    for (const p of panels) {
-        const x1 = Math.max(0, Math.round(p.x));
-        const y1 = Math.max(0, Math.round(p.y));
-        const x2 = Math.min(width, Math.round(p.x + p.w));
-        const y2 = Math.min(height, Math.round(p.y + p.h));
-        if (x2 <= x1 || y2 <= y1) continue;
-
-        const cropCanvas = new OffscreenCanvas(PANEL_CROP_SIZE, PANEL_CROP_SIZE);
-        const cropCtx = cropCanvas.getContext('2d');
-        cropCtx.drawImage(bitmap, x1, y1, x2 - x1, y2 - y1, 0, 0, PANEL_CROP_SIZE, PANEL_CROP_SIZE);
-
-        const cropData = cropCtx.getImageData(0, 0, PANEL_CROP_SIZE, PANEL_CROP_SIZE);
-        const { data } = cropData;
-        const norm = new Float32Array(3 * PANEL_CROP_SIZE * PANEL_CROP_SIZE);
-        const mean = [0.485, 0.456, 0.406], std = [0.229, 0.224, 0.225];
-        for (let i = 0; i < PANEL_CROP_SIZE * PANEL_CROP_SIZE; i++) {
-            norm[0 * PANEL_CROP_SIZE * PANEL_CROP_SIZE + i] = (data[i * 4] / 255.0 - mean[0]) / std[0];
-            norm[1 * PANEL_CROP_SIZE * PANEL_CROP_SIZE + i] = (data[i * 4 + 1] / 255.0 - mean[1]) / std[1];
-            norm[2 * PANEL_CROP_SIZE * PANEL_CROP_SIZE + i] = (data[i * 4 + 2] / 255.0 - mean[2]) / std[2];
-        }
-        crops.push(norm);
-        validPanels.push(p);
-    }
-
-    if (validPanels.length <= 1) return validPanels;
-
-    const validN = validPanels.length;
-    const imgAList = [], imgBList = [], posList = [];
-
-    for (let i = 0; i < validN; i++) {
-        for (let j = 0; j < validN; j++) {
-            if (i === j) continue;
-            imgAList.push(crops[i]);
-            imgBList.push(crops[j]);
-            posList.push(computePosFeatures(validPanels[i], validPanels[j], width, height));
-        }
-    }
-
-    const batchSize = 32;
-    const allLogits = [];
-    for (let start = 0; start < imgAList.length; start += batchSize) {
-        const end = Math.min(start + batchSize, imgAList.length);
-        const count = end - start;
-        const imgA = new Float32Array(count * 3 * PANEL_CROP_SIZE * PANEL_CROP_SIZE);
-        const imgB = new Float32Array(count * 3 * PANEL_CROP_SIZE * PANEL_CROP_SIZE);
-        const pos = new Float32Array(count * 12);
-
-        for (let b = 0; b < count; b++) {
-            imgA.set(imgAList[start + b], b * 3 * PANEL_CROP_SIZE * PANEL_CROP_SIZE);
-            imgB.set(imgBList[start + b], b * 3 * PANEL_CROP_SIZE * PANEL_CROP_SIZE);
-            pos.set(posList[start + b], b * 12);
-        }
-
-        const feed = {
-            [panelOrderSession.inputNames[0]]: new ort.Tensor('float32', imgA, [count, 3, PANEL_CROP_SIZE, PANEL_CROP_SIZE]),
-            [panelOrderSession.inputNames[1]]: new ort.Tensor('float32', imgB, [count, 3, PANEL_CROP_SIZE, PANEL_CROP_SIZE]),
-            [panelOrderSession.inputNames[2]]: new ort.Tensor('float32', pos, [count, 12]),
-        };
-
-        const res = await panelOrderSession.run(feed);
-        const logits = res[panelOrderSession.outputNames[0]].data;
-        for (let b = 0; b < count; b++) allLogits.push(logits[b]);
-    }
-
-    const scores = new Float32Array(validN).fill(0);
-    let idx = 0;
-    for (let i = 0; i < validN; i++) {
-        for (let j = 0; j < validN; j++) {
-            if (i === j) continue;
-            scores[i] += allLogits[idx++];
-        }
-    }
-
-    const order = Array.from({ length: validN }, (_, i) => i);
-    order.sort((a, b) => scores[b] - scores[a]);
-    return order.map(i => validPanels[i]);
+    return rankItemsByPairwiseModel(
+        panels,
+        panelOrderSession,
+        (a, b) => pairFeatures(a, b, width, height)
+    );
 }
 
-function computePosFeatures(a, b, w, h) {
-    const ax = a.x / w, ay = a.y / h, aw = a.w / w, ah = a.h / h;
-    const bx = b.x / w, by = b.y / h, bw = b.w / w, bh = b.h / h;
-    const cxa = ax + aw / 2, cya = ay + ah / 2, cxb = bx + bw / 2, cyb = by + bh / 2;
-    return [cxa, cya, aw, ah, cxb, cyb, bw, bh, cxa - cxb, cya - cyb, aw - bw, ah - bh];
+function safeDiv(a, b) {
+    return b === 0 ? 0 : a / b;
+}
+
+function boxRight(box) {
+    return box.x + box.w;
+}
+
+function boxBottom(box) {
+    return box.y + box.h;
+}
+
+function boxCenterX(box) {
+    return box.x + box.w / 2;
+}
+
+function boxCenterY(box) {
+    return box.y + box.h / 2;
+}
+
+function intervalOverlap(a1, a2, b1, b2) {
+    return Math.max(0, Math.min(a2, b2) - Math.max(a1, b1));
+}
+
+function boxFeatures(box, width, height) {
+    const area = Math.max(1, width * height);
+    return [
+        safeDiv(box.x, width),
+        safeDiv(box.y, height),
+        safeDiv(boxRight(box), width),
+        safeDiv(boxBottom(box), height),
+        safeDiv(boxCenterX(box), width),
+        safeDiv(boxCenterY(box), height),
+        safeDiv(box.w, width),
+        safeDiv(box.h, height),
+        safeDiv(box.w * box.h, area),
+        safeDiv(box.w, box.h),
+    ];
+}
+
+function pairFeatures(a, b, width, height) {
+    const aCx = boxCenterX(a);
+    const aCy = boxCenterY(a);
+    const bCx = boxCenterX(b);
+    const bCy = boxCenterY(b);
+    const dx = safeDiv(aCx - bCx, width);
+    const dy = safeDiv(aCy - bCy, height);
+    const xOverlap = safeDiv(
+        intervalOverlap(a.x, boxRight(a), b.x, boxRight(b)),
+        Math.min(a.w, b.w)
+    );
+    const yOverlap = safeDiv(
+        intervalOverlap(a.y, boxBottom(a), b.y, boxBottom(b)),
+        Math.min(a.h, b.h)
+    );
+    const sameReadingBand = yOverlap > 0.35 || Math.abs(aCy - bCy) <= Math.max(a.h, b.h) * 0.35;
+    const rtlBefore = sameReadingBand ? aCx > bCx : aCy < bCy;
+    const ltrBefore = sameReadingBand ? aCx < bCx : aCy < bCy;
+
+    return [
+        ...boxFeatures(a, width, height),
+        ...boxFeatures(b, width, height),
+        dx,
+        dy,
+        Math.abs(dx),
+        Math.abs(dy),
+        safeDiv(a.x - b.x, width),
+        safeDiv(a.y - b.y, height),
+        safeDiv(boxRight(a) - boxRight(b), width),
+        safeDiv(boxBottom(a) - boxBottom(b), height),
+        safeDiv(a.w - b.w, width),
+        safeDiv(a.h - b.h, height),
+        Math.hypot(dx, dy),
+        safeDiv(Math.atan2(dy, dx), Math.PI),
+        xOverlap,
+        yOverlap,
+        aCx > bCx ? 1 : 0,
+        aCy < bCy ? 1 : 0,
+        yOverlap > 0.35 ? 1 : 0,
+        xOverlap > 0.35 ? 1 : 0,
+        sameReadingBand ? 1 : 0,
+        rtlBefore ? 1 : 0,
+        ltrBefore ? 1 : 0,
+        (rtlBefore ? 1 : -1) * (sameReadingBand ? 1 : 0.5),
+    ];
+}
+
+function bubblePairFeatures(a, b, pageWidth, pageHeight, panelBox) {
+    const panelWidth = Math.max(1, panelBox.w);
+    const panelHeight = Math.max(1, panelBox.h);
+    const relativeA = {
+        x: a.x - panelBox.x,
+        y: a.y - panelBox.y,
+        w: a.w,
+        h: a.h,
+    };
+    const relativeB = {
+        x: b.x - panelBox.x,
+        y: b.y - panelBox.y,
+        w: b.w,
+        h: b.h,
+    };
+    return [
+        ...pairFeatures(a, b, pageWidth, pageHeight),
+        ...pairFeatures(relativeA, relativeB, panelWidth, panelHeight),
+        ...boxFeatures(panelBox, pageWidth, pageHeight),
+    ];
+}
+
+async function runPairwiseModel(session, featureRows) {
+    if (!featureRows.length) return [];
+    const featureCount = featureRows[0].length;
+    const input = new Float32Array(featureRows.length * featureCount);
+    for (let row = 0; row < featureRows.length; row++) {
+        input.set(featureRows[row], row * featureCount);
+    }
+    const feed = {
+        [session.inputNames[0]]: new ort.Tensor('float32', input, [featureRows.length, featureCount]),
+    };
+    const result = await session.run(feed);
+    return Array.from(result[session.outputNames[0]].data);
+}
+
+async function rankItemsByPairwiseModel(items, session, featureBuilder) {
+    if (items.length <= 1 || !session) return [...items];
+
+    const pairs = [];
+    const featureRows = [];
+    for (let i = 0; i < items.length; i++) {
+        for (let j = 0; j < items.length; j++) {
+            if (i === j) continue;
+            pairs.push([i, j]);
+            featureRows.push(featureBuilder(items[i], items[j]));
+        }
+    }
+
+    const probabilities = await runPairwiseModel(session, featureRows);
+    const scores = new Float32Array(items.length).fill(0);
+    for (let index = 0; index < pairs.length; index++) {
+        const [i] = pairs[index];
+        scores[i] += probabilities[index];
+    }
+
+    return Array.from({ length: items.length }, (_, index) => index)
+        .sort((a, b) => scores[b] - scores[a] || a - b)
+        .map(index => items[index]);
 }
 
 // ---------------------------------------------------------------------------
@@ -567,57 +627,33 @@ function assignBubblesToPanels(bubbles, panels) {
 }
 
 // ---------------------------------------------------------------------------
-// ReaderNet
+// Reading-order rankers
 // ---------------------------------------------------------------------------
-async function sortBubblesWithReaderNet(bubbles, panels, assignments, bitmap) {
-    if (!readernetSession || bubbles.length < 2) return mangaOrderSort(bubbles);
+async function sortBubblesWithReadingOrder(bubbles, panels, assignments, bitmap) {
+    if (!bubbleOrderSession || bubbles.length < 2) return mangaOrderSort(bubbles);
+
     const { width, height } = bitmap;
-    const normBubbles = bubbles.map(b => ({ x: b.x / width, y: b.y / height, w: b.w / width, h: b.h / height, original: b }));
-    const normPanels = panels.map(p => ({ x: p.x / width, y: p.y / height, w: p.w / width, h: p.h / height }));
-
-    const ratio = PAGE_H / height, newW = Math.min(Math.round(width * ratio), PAGE_W), padLeft = Math.floor((PAGE_W - newW) / 2);
-    const pageCanvas = new OffscreenCanvas(PAGE_W, PAGE_H), pageCtx = pageCanvas.getContext('2d');
-    pageCtx.fillStyle = '#000000'; pageCtx.fillRect(0, 0, PAGE_W, PAGE_H);
-    pageCtx.drawImage(bitmap, padLeft, 0, newW, PAGE_H);
-    const pageData = pageCtx.getImageData(0, 0, PAGE_W, PAGE_H), pageGray = new Float32Array(PAGE_W * PAGE_H);
-    for (let i = 0; i < PAGE_W * PAGE_H; i++) pageGray[i] = (pageData.data[i * 4] * 0.299 + pageData.data[i * 4 + 1] * 0.587 + pageData.data[i * 4 + 2] * 0.114) / 255.0;
-
-    const bubbleCrops = [];
-    for (const b of normBubbles) {
-        const x1 = Math.max(0, Math.round(b.x * width)), y1 = Math.max(0, Math.round(b.y * height)), x2 = Math.min(width, Math.round((b.x + b.w) * width)), y2 = Math.min(height, Math.round((b.y + b.h) * height));
-        if (x2 <= x1 || y2 <= y1) { bubbleCrops.push(new Float32Array(BUBBLE_CROP_SIZE * BUBBLE_CROP_SIZE).fill(0)); continue; }
-        const cropCanvas = new OffscreenCanvas(BUBBLE_CROP_SIZE, BUBBLE_CROP_SIZE), cropCtx = cropCanvas.getContext('2d');
-        cropCtx.drawImage(bitmap, x1, y1, x2 - x1, y2 - y1, 0, 0, BUBBLE_CROP_SIZE, BUBBLE_CROP_SIZE);
-        const cropData = cropCtx.getImageData(0, 0, BUBBLE_CROP_SIZE, BUBBLE_CROP_SIZE), cropGray = new Float32Array(BUBBLE_CROP_SIZE * BUBBLE_CROP_SIZE);
-        for (let i = 0; i < BUBBLE_CROP_SIZE * BUBBLE_CROP_SIZE; i++) cropGray[i] = (cropData.data[i * 4] * 0.299 + cropData.data[i * 4 + 1] * 0.587 + cropData.data[i * 4 + 2] * 0.114) / 255.0;
-        bubbleCrops.push(cropGray);
+    const panelGroups = new Map();
+    for (let i = 0; i < bubbles.length; i++) {
+        const panelIndex = assignments[i] < 0 ? 0 : assignments[i];
+        if (!panelGroups.has(panelIndex)) panelGroups.set(panelIndex, []);
+        panelGroups.get(panelIndex).push(bubbles[i]);
     }
 
-    const numBubbles = bubbles.length, numPanels = panels.length || 1;
-    const finalPanels = numPanels > 0 ? normPanels : [{ x: 0, y: 0, w: 1, h: 1 }];
-    const finalAssignments = assignments.map(a => a < 0 ? 0 : a);
-    const maxBubbles = Math.max(numBubbles, 1), maxPanels = Math.max(numPanels, 1);
-
-    const geoms = new Float32Array(maxBubbles * 4), bubblePanels = new BigInt64Array(maxBubbles), cropsArr = new Float32Array(maxBubbles * BUBBLE_CROP_SIZE * BUBBLE_CROP_SIZE), panelsArr = new Float32Array(maxPanels * 4), panelMask = new Uint8Array(maxPanels), bubbleMask = new Uint8Array(maxBubbles);
-
-    for (let i = 0; i < numBubbles; i++) {
-        geoms[i * 4 + 0] = normBubbles[i].x; geoms[i * 4 + 1] = normBubbles[i].y; geoms[i * 4 + 2] = normBubbles[i].w; geoms[i * 4 + 3] = normBubbles[i].h;
-        bubblePanels[i] = BigInt(finalAssignments[i]); bubbleMask[i] = 0;
-        for (let j = 0; j < BUBBLE_CROP_SIZE * BUBBLE_CROP_SIZE; j++) cropsArr[i * BUBBLE_CROP_SIZE * BUBBLE_CROP_SIZE + j] = bubbleCrops[i][j];
+    const sorted = [];
+    for (let panelIndex = 0; panelIndex < panels.length; panelIndex++) {
+        const group = panelGroups.get(panelIndex) || [];
+        if (!group.length) continue;
+        const panel = panels[panelIndex];
+        const orderedGroup = await rankItemsByPairwiseModel(
+            group,
+            bubbleOrderSession,
+            (a, b) => bubblePairFeatures(a, b, width, height, panel)
+        );
+        sorted.push(...orderedGroup);
     }
-    for (let i = numBubbles; i < maxBubbles; i++) { bubbleMask[i] = 1; bubblePanels[i] = BigInt(0); }
-    for (let i = 0; i < finalPanels.length; i++) { panelsArr[i * 4 + 0] = finalPanels[i].x; panelsArr[i * 4 + 1] = finalPanels[i].y; panelsArr[i * 4 + 2] = finalPanels[i].w; panelsArr[i * 4 + 3] = finalPanels[i].h; panelMask[i] = 0; }
-    for (let i = finalPanels.length; i < maxPanels; i++) panelMask[i] = 1;
 
-    const feed = { images: new ort.Tensor('float32', pageGray, [1, 1, PAGE_H, PAGE_W]), panels: new ort.Tensor('float32', panelsArr, [1, maxPanels, 4]), bubbles: new ort.Tensor('float32', geoms, [1, maxBubbles, 4]), bubble_panels: new ort.Tensor('int64', bubblePanels, [1, maxBubbles]), bubble_crops: new ort.Tensor('float32', cropsArr, [1, maxBubbles, 1, BUBBLE_CROP_SIZE, BUBBLE_CROP_SIZE]), panel_mask: new ort.Tensor('bool', panelMask, [1, maxPanels]), bubble_mask: new ort.Tensor('bool', bubbleMask, [1, maxBubbles]) };
-    const results = await readernetSession.run(feed);
-    const scores = results[readernetSession.outputNames[0]].data;
-
-    const panelGroups = {};
-    for (let i = 0; i < numBubbles; i++) { const p = finalAssignments[i]; if (!panelGroups[p]) panelGroups[p] = []; panelGroups[p].push(i); }
-    const sortedIndices = [];
-    for (let pi = 0; pi < finalPanels.length; pi++) { const group = panelGroups[pi] || []; if (group.length === 0) continue; group.sort((a, b) => scores[a] - scores[b]); sortedIndices.push(...group); }
-    return sortedIndices.map(i => bubbles[i]);
+    return sorted.length === bubbles.length ? sorted : mangaOrderSort(bubbles);
 }
 
 function mangaOrderSort(boxes) {

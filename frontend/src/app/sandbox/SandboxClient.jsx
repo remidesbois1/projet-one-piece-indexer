@@ -465,8 +465,7 @@ export default function SandboxClient() {
                         </h1>
                         <p className="text-slate-500 text-sm leading-relaxed max-w-[380px] mx-auto text-balance">
                             Expérimentez l&apos;annotation du projet directement dans votre navigateur.
-                            Cette interface utilise une version fine-tuné de <a href="https://huggingface.co/Remidesbois/YoloPiece_BubbleDetector_Nano" target="_blank" rel="noopener noreferrer" className="font-bold text-slate-700 hover:text-[#2F7AAF] underline decoration-slate-200">YOLO26</a> pour la détection,
-                            <a href="https://huggingface.co/Remidesbois/ReaderNet-V5" target="_blank" rel="noopener noreferrer" className="font-bold text-slate-700 hover:text-[#2F7AAF] underline decoration-slate-200"> ReaderNet</a> pour l&apos;ordre des cases, et
+                            Cette interface utilise <a href="https://huggingface.co/Remidesbois/YoloPiece_OneShot_Models" target="_blank" rel="noopener noreferrer" className="font-bold text-slate-700 hover:text-[#2F7AAF] underline decoration-slate-200">YoloPiece One-Shot</a> pour la détection et l&apos;ordre local,
                             <a href="https://huggingface.co/Remidesbois/trocr-onepiece-fr-large" target="_blank" rel="noopener noreferrer" className="font-bold text-slate-700 hover:text-[#2F7AAF] underline decoration-slate-200"> TrOCR</a> pour la reconnaissance.
                             Dans l&apos;app desktop, elle peut aussi lancer LightOnOCR en local via Tauri.
                         </p>

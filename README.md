@@ -189,18 +189,19 @@ Détection instantanée des bulles sur la planche.
 - **Performance :** mAP50 **0.994** / mAP50-95 **0.868**
 - **Architecture :** YOLO26n (2.4M paramètres, 5.2 GFLOPs)
 - **Exécution :** ONNX Runtime Web (WASM) côté client
-- **Modèle :** [`YoloPiece_BubbleDetector_Nano`](https://huggingface.co/Remidesbois/YoloPiece_BubbleDetector_Nano)
+- **Modèles :** [`YoloPiece_OneShot_Models`](https://huggingface.co/Remidesbois/YoloPiece_OneShot_Models) (`bubble_detector.onnx`, `panel_detector.onnx`)
 
-### Modèle de Tri des Bulles (ReaderNet V5)
+### One-Shot Reading Order (ONNX)
 
 > Détails : [reading_order_ml.md](https://github.com/remidesbois1/projet-poneglyph/blob/master/documentation/reading_order_ml.md)
 
-| | **ReaderNet V5** |
+| | **YoloPiece_OneShot_Models** |
 |---|---|
-| **Architecture** | Global-Local (MobileNetV3 + MLP) |
-| **Précision (Val)** | **98.0%** |
-| **Taille ONNX** | **2.47 MB** |
-| **Exécution** | Local (Web worker) |
+| **Architecture** | Détecteurs YOLO + rankers pairwise ONNX |
+| **Rankers** | `panel_order.onnx` + `bubble_order.onnx` |
+| **Exact page accuracy** | **93.75%** (15/16 pages test) |
+| **Exact panel / bulles** | **100.00%** / **98.18%** |
+| **Exécution** | Local (Web worker, ONNX Runtime Web) |
 
 ### Google Gemini 3.1 Flash-Lite (Cloud Fallback)
 
