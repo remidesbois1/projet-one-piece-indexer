@@ -5,6 +5,7 @@ import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, updatePageStatus, reorderBubbles, savePageDescription, getMetadataSuggestions, getPages } from '@/lib/api';
 import { analyzeBubble, generatePageDescription, generateGeminiEmbedding, generateOneShotBubbles } from '@/lib/geminiClient';
+import { generateMimoOneShotBubbles } from '@/lib/mimoClient';
 import ApiKeyForm from '@/components/ApiKeyForm';
 import { useAuth } from '@/context/AuthContext';
 import { OCR_MODELS } from '@/context/WorkerContext';
@@ -72,6 +73,7 @@ export default function AnnotatePage() {
     const [loadingText, setLoadingText] = useState("Analyse en cours...");
     const [pendingAnnotation, setPendingAnnotation] = useState(null);
     const [isOneShotLoading, setIsOneShotLoading] = useState(false);
+    const [isMimoLoading, setIsMimoLoading] = useState(false);
     const [isPoneglyphLoading, setIsPoneglyphLoading] = useState(false);
     const [poneglyphRunMode, setPoneglyphRunMode] = useState(null);
     const [rectangle, setRectangle] = useState(null);
@@ -518,6 +520,129 @@ export default function AnnotatePage() {
         }
     };
 
+    const handleOneShotMimo = async () => {
+        if (!imageRef.current) return;
+        const key = localStorage.getItem('mimo_api_key');
+        if (!key) {
+            toast.error("Clé API MiMo requise pour l'extraction One-Shot.");
+            setShowApiKeyModal(true);
+            return;
+        }
+
+        setIsMimoLoading(true);
+        try {
+            let yoloPromise = Promise.resolve(null);
+            if (detectionStatus === 'ready') {
+                yoloPromise = fetch(imageRef.current.src)
+                    .then(r => r.blob())
+                    .then(b => detectBubbles(b))
+                    .catch(e => {
+                        console.error('YOLO Failed', e);
+                        return null;
+                    });
+            }
+
+            const [result, yoloBoxes] = await Promise.all([
+                generateMimoOneShotBubbles(imageRef.current, key),
+                yoloPromise
+            ]);
+
+            if (!result || !result.data || !Array.isArray(result.data)) {
+                throw new Error("Format de réponse invalide.");
+            }
+
+            const h = imageRef.current.naturalHeight;
+            const w = imageRef.current.naturalWidth;
+
+            const newBubblesConfig = result.data.reduce((acc, idx) => {
+                const [ymin, xmin, ymax, xmax] = idx.pos;
+                let mimoBox = {
+                    id_page: parseInt(pageId, 10),
+                    x: Math.round((xmin / 1000) * w),
+                    y: Math.round((ymin / 1000) * h),
+                    w: Math.round(((xmax - xmin) / 1000) * w),
+                    h: Math.round(((ymax - ymin) / 1000) * h),
+                    texte_propose: idx.content
+                };
+
+                if (detectionStatus === 'ready') {
+                    const boxes = yoloBoxes || [];
+                    let bestYoloBox = null;
+                    let bestIou = 0;
+                    for (const yBox of boxes) {
+                        const x1 = Math.max(mimoBox.x, yBox.x);
+                        const y1 = Math.max(mimoBox.y, yBox.y);
+                        const x2 = Math.min(mimoBox.x + mimoBox.w, yBox.x + yBox.w);
+                        const y2 = Math.min(mimoBox.y + mimoBox.h, yBox.y + yBox.h);
+
+                        if (x2 < x1 || y2 < y1) continue;
+                        const intersection = (x2 - x1) * (y2 - y1);
+                        const areaMimo = mimoBox.w * mimoBox.h;
+                        const areaYolo = yBox.w * yBox.h;
+                        const iou = intersection / (areaMimo + areaYolo - intersection);
+
+                        if (iou > 0.1 && iou > bestIou) {
+                            bestIou = iou;
+                            bestYoloBox = yBox;
+                        }
+                    }
+
+                    if (bestYoloBox) {
+                        mimoBox.x = Math.round(bestYoloBox.x);
+                        mimoBox.y = Math.round(bestYoloBox.y);
+                        mimoBox.w = Math.round(bestYoloBox.w);
+                        mimoBox.h = Math.round(bestYoloBox.h);
+                        acc.push(mimoBox);
+                    }
+                } else {
+                    acc.push(mimoBox);
+                }
+
+                return acc;
+            }, []);
+
+            if (newBubblesConfig.length === 0) {
+                toast.error("Aucune bulle détectée.");
+                setIsMimoLoading(false);
+                return;
+            }
+
+            toast.info(`Création de ${newBubblesConfig.length} bulles en cours...`);
+
+            const createdBubbles = [];
+            const { createBubble } = await import('@/lib/api');
+            for (const bubbleConfig of newBubblesConfig) {
+                try {
+                    const res = await createBubble(bubbleConfig);
+                    createdBubbles.push(res.data);
+                } catch (e) {
+                    console.error("Erreur création bulle MiMo", e);
+                }
+            }
+
+            if (createdBubbles.length > 0) {
+                setExistingBubbles(prev => {
+                    const combined = [...prev, ...createdBubbles];
+                    return combined.sort((a, b) => a.order - b.order);
+                });
+                toast.success(`${createdBubbles.length} bulles créées avec succès.`);
+            } else {
+                toast.error("Échec de la création des bulles.");
+            }
+        } catch (error) {
+            console.error(error);
+            if (error.message === "QUOTA_EXCEEDED") {
+                toast.error("Quota API MiMo dépassé !", {
+                    description: "Réessayez dans une minute ou vérifiez votre clé."
+                });
+            } else {
+                toast.error("Service MiMo indisponible ou erreur d'API.");
+            }
+        } finally {
+            setIsMimoLoading(false);
+        }
+    };
+
     const handleOneShotPoneglyph = async ({ preferLocal = false } = {}) => {
         if (!imageRef.current) return;
 
@@ -706,6 +831,8 @@ export default function AnnotatePage() {
                 isUpdatingPageStatus={isUpdatingPageStatus}
                 handleOneShot={handleOneShot}
                 isOneShotLoading={isOneShotLoading}
+                handleOneShotMimo={handleOneShotMimo}
+                isMimoLoading={isMimoLoading}
                 handleOneShotPoneglyph={handleOneShotPoneglyph}
                 isPoneglyphLoading={isPoneglyphLoading}
                 poneglyphRunMode={poneglyphRunMode}
@@ -863,8 +990,8 @@ export default function AnnotatePage() {
             <Dialog open={showApiKeyModal} onOpenChange={setShowApiKeyModal}>
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
-                        <DialogTitle>Configuration API Google Vision</DialogTitle>
-                        <DialogDescription>Requis pour le Cloud et l&apos;Embedding.</DialogDescription>
+                        <DialogTitle>Configuration API</DialogTitle>
+                        <DialogDescription>Gérez vos clés API.</DialogDescription>
                     </DialogHeader>
                     <ApiKeyForm onSave={handleSaveApiKey} />
                 </DialogContent>
