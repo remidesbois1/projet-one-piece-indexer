@@ -1,0 +1,23 @@
+--extra-index-url https://download.pytorch.org/whl/cu128
+torch==2.7.0+cu128
+torchvision==0.22.0+cu128
+git+https://github.com/huggingface/transformers
+accelerate
+datasets
+huggingface_hub
+jiwer
+numpy
+onnx
+onnxruntime
+peft
+pillow
+pillow-avif-plugin
+python-dotenv
+python-Levenshtein
+requests
+scikit-learn
+sentencepiece
+supabase
+tiktoken
+tqdm
+tokenizers
