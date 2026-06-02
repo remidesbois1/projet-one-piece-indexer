@@ -73,6 +73,10 @@ Options de performance:
 - `PONEGLYPH_TF32=1/0` (defaut: `1`)
 - `PONEGLYPH_TEXT_MAX_NEW_TOKENS` (defaut: `128`)
 - `PONEGLYPH_BBOX_MAX_NEW_TOKENS` (defaut: `2048`)
+- `PONEGLYPH_SURYA_MODEL_ID` (defaut: `Remidesbois/surya-bubble-ocr-poneglyph`)
+- `PONEGLYPH_SURYA_MODEL_DIR` (defaut: `%APPDATA%\poneglyph\models\surya-bubble-ocr-poneglyph`)
+- `PONEGLYPH_SURYA_MAX_NEW_TOKENS` (defaut: `96`)
+- `PONEGLYPH_SURYA_USER_PROMPT` (prompt OCR Surya optionnel)
 - `PONEGLYPH_WARMUP=1/0` (defaut: `1`)
 
 Verification rapide sans telechargement des modeles:

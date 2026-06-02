@@ -20,6 +20,32 @@
     h1 { font-size: 1.8rem; color: #3b82f6; margin-bottom: 1rem; }
     p { color: #94a3b8; margin-bottom: 0.75rem; line-height: 1.5; }
     a { color: #60a5fa; }
+    .actions {
+      display: flex;
+      justify-content: center;
+      gap: 0.75rem;
+      margin-top: 1.25rem;
+      flex-wrap: wrap;
+    }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 2.25rem;
+      border-radius: 0.45rem;
+      border: 1px solid #334155;
+      padding: 0 0.85rem;
+      background: #1e293b;
+      color: #e2e8f0;
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-weight: 700;
+    }
+    .button.primary {
+      border-color: #2563eb;
+      background: #2563eb;
+      color: white;
+    }
     .spinner {
       width: 24px; height: 24px;
       border: 3px solid #334155;
@@ -41,6 +67,10 @@
       Impossible de se connecter à poneglyph.fr.<br>
       Vérifiez votre connexion internet et <a href="https://poneglyph.fr">réessayez</a>.
     </p>
+    <div class="actions">
+      <a class="button primary" href="https://poneglyph.fr">poneglyph.fr</a>
+      <a class="button" href="http://localhost:3000">Localhost</a>
+    </div>
   </div>
   <script>
     window.location.href = 'https://poneglyph.fr';

@@ -70,18 +70,26 @@ export default function AnnotateLeftSidebar({
     isTauri = false,
     localModelStatus = null,
     localTextModelStatus = null,
+    localSuryaModelStatus = null,
     isDownloadingLocalModel = false,
     isDownloadingLocalTextModel = false,
+    isDownloadingLocalSuryaModel = false,
     localDownloadState = null,
     localTextDownloadState = null,
+    localSuryaDownloadState = null,
     localTextDownloadProgress = null,
+    localSuryaDownloadProgress = null,
     localConnectionState = null,
     isLoadingLocalTextModel = false,
+    isLoadingLocalSuryaModel = false,
     isLocalInferencing = false,
     canRunLocalOcr = false,
     canRunLocalTextOcr = false,
+    canRunLocalSuryaOcr = false,
     downloadLocalTextModel,
-    loadLocalTextModel
+    downloadLocalSuryaModel,
+    loadLocalTextModel,
+    loadLocalSuryaModel
 }) {
     const isStaff = role === 'Admin' || role === 'Modo';
     const isAdmin = role === 'Admin';
@@ -176,13 +184,21 @@ export default function AnnotateLeftSidebar({
                             isSandbox={isSandbox}
                             isTauri={isTauri}
                             localTextModelStatus={localTextModelStatus}
+                            localSuryaModelStatus={localSuryaModelStatus}
                             isDownloadingLocalTextModel={isDownloadingLocalTextModel}
+                            isDownloadingLocalSuryaModel={isDownloadingLocalSuryaModel}
                             localTextDownloadState={localTextDownloadState}
+                            localSuryaDownloadState={localSuryaDownloadState}
                             localTextDownloadProgress={localTextDownloadProgress}
+                            localSuryaDownloadProgress={localSuryaDownloadProgress}
                             isLoadingLocalTextModel={isLoadingLocalTextModel}
+                            isLoadingLocalSuryaModel={isLoadingLocalSuryaModel}
                             canRunLocalTextOcr={canRunLocalTextOcr}
+                            canRunLocalSuryaOcr={canRunLocalSuryaOcr}
                             downloadLocalTextModel={downloadLocalTextModel}
+                            downloadLocalSuryaModel={downloadLocalSuryaModel}
                             loadLocalTextModel={loadLocalTextModel}
+                            loadLocalSuryaModel={loadLocalSuryaModel}
                         />
 
                         <AnnotateBubbleScanner

@@ -132,6 +132,12 @@ async function runLightOnClassic(img, rect, provider, tauriLocalOcr) {
     return data.text || '';
 }
 
+async function runSuryaClassic(img, rect, tauriLocalOcr) {
+    const blob = await cropImage(img, rect);
+    const data = await tauriLocalOcr.runLocalSuryaOcrBlob(blob);
+    return data?.text || '';
+}
+
 async function runPoneglyphBBox(jpegBlob, provider, tauriLocalOcr) {
     if (provider === 'local') {
         return tauriLocalOcr.runLocalOcrBlob(jpegBlob);
@@ -163,7 +169,25 @@ function getReviewItemKey(item) {
 }
 
 function getSuggestedReviewText(item) {
-    return item.poneglyphText || item.lightonText || '';
+    return item.poneglyphText || item.lightonText || item.suryaText || '';
+}
+
+function normalizeOcrText(value) {
+    return String(value || '').trim().replace(/\s+/g, ' ');
+}
+
+function getConsensusText(texts) {
+    const normalized = texts.map(normalizeOcrText);
+    if (normalized.some(text => !text)) return null;
+    const first = normalized[0];
+    return normalized.every(text => text === first) ? String(texts[0] || '').trim() : null;
+}
+
+function getReviewTextBySource(item, source) {
+    if (source === 'poneglyph') return item.poneglyphText || '';
+    if (source === 'lighton') return item.lightonText || '';
+    if (source === 'surya') return item.suryaText || '';
+    return '';
 }
 
 export default function BatchOcrManager() {
@@ -242,6 +266,7 @@ export default function BatchOcrManager() {
     };
 
     const canUseLocalBatch = Boolean(tauriLocalOcr.canRunLocalOcr && tauriLocalOcr.canRunLocalTextOcr);
+    const canUseSuryaBatch = Boolean(ocrProvider === 'local' && tauriLocalOcr.localSuryaModelStatus?.ready);
 
     const getLocalBatchDisabledReason = () => {
         if (!tauriLocalOcr.isTauri) return "App desktop non detectee.";
@@ -362,6 +387,7 @@ export default function BatchOcrManager() {
         ]);
 
         const poneglyphBubbles = poneglyphResponse.bubbles || [];
+        const useSuryaBatch = Boolean(ocrProvider === 'local' && tauriLocalOcr.localSuryaModelStatus?.ready);
 
         console.log(`[Batch] Page ${page.numero_page}: YOLO=${yoloBoxes.length} bubbles, Poneglyph=${poneglyphBubbles.length} bubbles`);
         console.log(`[Batch] Page ${page.numero_page}: img=${img.naturalWidth}x${img.naturalHeight}`);
@@ -410,6 +436,22 @@ export default function BatchOcrManager() {
             lightonTexts = await Promise.all(lightonPromises);
         }
 
+        let suryaTexts = [];
+        if (useSuryaBatch) {
+            for (const box of yoloBoxes) {
+                if (box.w <= 0 || box.h <= 0) {
+                    suryaTexts.push('');
+                    continue;
+                }
+                try {
+                    suryaTexts.push(await runSuryaClassic(img, box, tauriLocalOcr));
+                } catch (e) {
+                    console.error('Surya failed:', e);
+                    suryaTexts.push('');
+                }
+            }
+        }
+
         const reviewItems = [];
         let autoValidatedCount = 0;
         const pendingReviewBoxes = [];
@@ -423,9 +465,15 @@ export default function BatchOcrManager() {
         for (const match of matches) {
             const lightonText = lightonTexts[match.yoloBoxIndex] || '';
             const poneglyphText = match.poneglyphText || '';
+            const suryaText = useSuryaBatch ? (suryaTexts[match.yoloBoxIndex] || '') : '';
             const bubbleOrder = match.poneglyphIndex + 1;
+            const consensusText = getConsensusText(
+                useSuryaBatch
+                    ? [poneglyphText, lightonText, suryaText]
+                    : [poneglyphText, lightonText]
+            );
 
-            if (poneglyphText && poneglyphText === lightonText) {
+            if (consensusText) {
                 if (hasKnownPageBox(page.id, match.yoloBox)) continue;
                 try {
                     const { data: bubble } = await createBubble({
@@ -434,7 +482,7 @@ export default function BatchOcrManager() {
                         y: match.yoloBox.y,
                         w: match.yoloBox.w,
                         h: match.yoloBox.h,
-                        texte_propose: poneglyphText,
+                        texte_propose: consensusText,
                         order: bubbleOrder
                     });
                     rememberPageBox(page.id, match.yoloBox);
@@ -454,6 +502,8 @@ export default function BatchOcrManager() {
                         yoloBox: match.yoloBox,
                         poneglyphText,
                         lightonText,
+                        suryaText,
+                        suryaEnabled: useSuryaBatch,
                         rallied: true,
                         cropUrl: URL.createObjectURL(cropBlob),
                         order: bubbleOrder,
@@ -468,6 +518,8 @@ export default function BatchOcrManager() {
                     yoloBox: match.yoloBox,
                     poneglyphText,
                     lightonText,
+                    suryaText,
+                    suryaEnabled: useSuryaBatch,
                     rallied: true,
                     cropUrl: URL.createObjectURL(cropBlob),
                     order: bubbleOrder,
@@ -480,7 +532,8 @@ export default function BatchOcrManager() {
             const yoloBox = yoloBoxes[yoloIdx];
             if (!claimReviewBox(yoloBox)) continue;
             const lightonText = lightonTexts[yoloIdx] || '';
-            if (!lightonText) continue;
+            const suryaText = useSuryaBatch ? (suryaTexts[yoloIdx] || '') : '';
+            if (!lightonText && !suryaText) continue;
 
             const cropBlob = await cropImage(img, yoloBox);
             reviewItems.push({
@@ -489,6 +542,8 @@ export default function BatchOcrManager() {
                 yoloBox,
                 poneglyphText: null,
                 lightonText,
+                suryaText,
+                suryaEnabled: useSuryaBatch,
                 rallied: false,
                 cropUrl: URL.createObjectURL(cropBlob),
                 order: poneglyphBubbles.length + ui + 1,
@@ -568,7 +623,7 @@ export default function BatchOcrManager() {
             const items = [...reviewQueue].sort((a, b) => a.order - b.order);
             let count = 0;
             for (const item of items) {
-                const text = source === 'poneglyph' ? item.poneglyphText : item.lightonText;
+                const text = getReviewTextBySource(item, source);
                 if (!text) continue;
                 if (hasKnownPageBox(item.pageId, item.yoloBox)) {
                     URL.revokeObjectURL(item.cropUrl);
@@ -622,6 +677,8 @@ export default function BatchOcrManager() {
 
     const chapters = getAllChapters();
     const providerLabel = ocrProvider === 'local' ? 'Local Tauri' : 'Modal GPU';
+    const voterLabel = canUseSuryaBatch ? `${providerLabel} + Surya` : providerLabel;
+    const hasSuryaReview = reviewQueue.some(item => item.suryaEnabled && item.suryaText);
 
     return (
         <div className="container max-w-6xl mx-auto py-10 px-4 space-y-6">
@@ -652,7 +709,7 @@ export default function BatchOcrManager() {
                             Configuration
                         </CardTitle>
                         <CardDescription>
-                            Sélectionnez un chapitre. YOLO détecte les bulles, Poneglyph BBox + LightOn Classique font l&apos;OCR. Les résultats concordants sont auto-validés.
+                            Sélectionnez un chapitre. YOLO détecte les bulles, Poneglyph BBox + Poneglyph Classique font l&apos;OCR, avec Surya en troisième voteur quand il est chargé. Les résultats concordants sont auto-validés.
                         </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
@@ -695,7 +752,8 @@ export default function BatchOcrManager() {
                         </div>
                         <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 text-xs font-semibold text-slate-600">
                             <div className="flex flex-wrap items-center gap-2">
-                                <Badge variant="outline" className="bg-white">Provider: {providerLabel}</Badge>
+                                <Badge variant="outline" className="bg-white">Provider: {voterLabel}</Badge>
+                                {tauriLocalOcr.isTauri && <Badge variant="outline" className={tauriLocalOcr.localSuryaModelStatus?.ready ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-white"}>Surya {tauriLocalOcr.localSuryaModelStatus?.ready ? "charge" : "non charge"}</Badge>}
                                 {tauriLocalOcr.isTauri && <Badge variant="outline" className={tauriLocalOcr.localModelStatus?.ready ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-white"}>BBox {tauriLocalOcr.localModelStatus?.ready ? "chargé" : "non chargé"}</Badge>}
                                 {tauriLocalOcr.isTauri && <Badge variant="outline" className={tauriLocalOcr.localTextModelStatus?.ready ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-white"}>Poneglyph {tauriLocalOcr.localTextModelStatus?.ready ? "chargé" : "non chargé"}</Badge>}
                             </div>
@@ -731,7 +789,7 @@ export default function BatchOcrManager() {
                             <Loader2 className="h-5 w-5 animate-spin text-indigo-600" />
                             Traitement en cours...
                         </CardTitle>
-                        <CardDescription>Page {progress.current} / {progress.total} - {providerLabel}</CardDescription>
+                        <CardDescription>Page {progress.current} / {progress.total} - {voterLabel}</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
                         <Progress value={(progress.current / progress.total) * 100} />
@@ -780,11 +838,16 @@ export default function BatchOcrManager() {
                                 </div>
                                 <div className="flex flex-wrap gap-2">
                                     <Button size="sm" variant="outline" onClick={() => handleAcceptAll('lighton')} disabled={processingReview}>
-                                        Tout LightOn
+                                        Tout Poneglyph classique
                                     </Button>
                                     <Button size="sm" variant="outline" onClick={() => handleAcceptAll('poneglyph')} disabled={processingReview}>
                                         Tout Poneglyph
                                     </Button>
+                                    {hasSuryaReview && (
+                                        <Button size="sm" variant="outline" onClick={() => handleAcceptAll('surya')} disabled={processingReview}>
+                                            Tout Surya
+                                        </Button>
+                                    )}
                                     <Button size="sm" variant="ghost" onClick={handleSkipAll} className="text-red-600">
                                         Tout ignorer
                                     </Button>
@@ -821,7 +884,7 @@ export default function BatchOcrManager() {
                                             <span className="text-xs text-slate-400">#{idx + 1} / {reviewQueue.length}</span>
                                         </div>
 
-                                        <div className={`grid gap-2 ${item.rallied ? 'lg:grid-cols-2' : 'grid-cols-1'}`}>
+                                        <div className={`grid gap-2 ${item.rallied && item.suryaEnabled ? 'lg:grid-cols-3' : item.rallied || item.suryaEnabled ? 'lg:grid-cols-2' : 'grid-cols-1'}`}>
                                             {item.rallied && (
                                                 <div className="p-3 rounded-lg border border-slate-200 bg-white">
                                                     <p className="text-xs font-semibold text-slate-500 mb-1">Poneglyph BBox ({providerLabel})</p>
@@ -839,7 +902,7 @@ export default function BatchOcrManager() {
                                             )}
 
                                             <div className="p-3 rounded-lg border border-slate-200 bg-white">
-                                                <p className="text-xs font-semibold text-slate-500 mb-1">LightOn Classique ({providerLabel})</p>
+                                                <p className="text-xs font-semibold text-slate-500 mb-1">Poneglyph Classique ({providerLabel})</p>
                                                 <p className="min-h-10 text-sm text-slate-900 whitespace-pre-wrap">{item.lightonText || <em className="text-slate-400">vide</em>}</p>
                                                 <Button
                                                     size="sm"
@@ -851,6 +914,22 @@ export default function BatchOcrManager() {
                                                     Utiliser
                                                 </Button>
                                             </div>
+
+                                            {item.suryaEnabled && (
+                                                <div className="p-3 rounded-lg border border-slate-200 bg-white">
+                                                    <p className="text-xs font-semibold text-slate-500 mb-1">Surya Local</p>
+                                                    <p className="min-h-10 text-sm text-slate-900 whitespace-pre-wrap">{item.suryaText || <em className="text-slate-400">vide</em>}</p>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        className="mt-2 w-full"
+                                                        onClick={() => handleChoose(item, item.suryaText)}
+                                                        disabled={!item.suryaText || processingReview}
+                                                    >
+                                                        Utiliser
+                                                    </Button>
+                                                </div>
+                                            )}
                                         </div>
 
                                         <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">

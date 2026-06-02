@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 BBOX_MODEL_KEY = "bbox"
 TEXT_MODEL_KEY = "base"
+SURYA_MODEL_KEY = "surya"
 DEFAULT_MODEL_KEY = BBOX_MODEL_KEY
 MODEL_CONFIGS = {
     BBOX_MODEL_KEY: {
@@ -26,17 +27,43 @@ MODEL_CONFIGS = {
         "dir_name": "lighton-ocr-poneglyph-bbox",
         "label": "Poneglyph BBox",
         "max_new_tokens": 2048,
+        "family": "lighton_bbox",
+        "model_dir_envs": ("PONEGLYPH_BBOX_MODEL_DIR", "PONEGLYPH_MODEL_DIR"),
+        "max_new_tokens_envs": ("PONEGLYPH_BBOX_MAX_NEW_TOKENS",),
     },
     TEXT_MODEL_KEY: {
         "id": "Remidesbois/LightonOCR-2-1b-poneglyph",
         "dir_name": "lighton-ocr-poneglyph",
         "label": "Poneglyph OCR",
         "max_new_tokens": 128,
+        "family": "lighton_text",
+        "model_dir_envs": ("PONEGLYPH_BASE_MODEL_DIR",),
+        "max_new_tokens_envs": ("PONEGLYPH_TEXT_MAX_NEW_TOKENS",),
+    },
+    SURYA_MODEL_KEY: {
+        "id": os.getenv(
+            "PONEGLYPH_SURYA_MODEL_ID",
+            os.getenv("SURYA_HF_REPO", "Remidesbois/surya-bubble-ocr-poneglyph"),
+        ),
+        "dir_name": "surya-bubble-ocr-poneglyph",
+        "label": "Surya OCR",
+        "max_new_tokens": 96,
+        "family": "surya_text",
+        "model_dir_envs": ("PONEGLYPH_SURYA_MODEL_DIR", "SURYA_MODEL_DIR"),
+        "max_new_tokens_envs": ("PONEGLYPH_SURYA_MAX_NEW_TOKENS", "SURYA_MAX_NEW_TOKENS"),
     },
 }
+TEXT_OCR_MODEL_KEYS = {TEXT_MODEL_KEY, SURYA_MODEL_KEY}
 TEXT_USER_PROMPT = os.getenv(
     "LIGHTON_USER_PROMPT",
     "\nTranscription OCR (uniquement le texte de la bulle, pas de suite) :",
+)
+SURYA_USER_PROMPT = os.getenv(
+    "PONEGLYPH_SURYA_USER_PROMPT",
+    os.getenv(
+        "SURYA_USER_PROMPT",
+        "Transcris exactement le texte visible dans cette bulle. Ne rajoute rien.",
+    ),
 )
 MAX_IMAGE_SIZE = (1540, 1540)
 BACKEND_TRANSFORMERS = "transformers"
@@ -69,12 +96,11 @@ def get_requested_backend() -> str:
 
 def get_max_new_tokens(model_key: str) -> int:
     model_key = normalize_model_key(model_key)
-    env_name = (
-        "PONEGLYPH_BBOX_MAX_NEW_TOKENS"
-        if model_key == BBOX_MODEL_KEY
-        else "PONEGLYPH_TEXT_MAX_NEW_TOKENS"
-    )
-    return env_int(env_name, MODEL_CONFIGS[model_key]["max_new_tokens"], minimum=1)
+    default = MODEL_CONFIGS[model_key]["max_new_tokens"]
+    for env_name in MODEL_CONFIGS[model_key].get("max_new_tokens_envs", ()):
+        if os.environ.get(env_name) not in {None, ""}:
+            return env_int(env_name, default, minimum=1)
+    return default
 
 
 def perf_options_payload():
@@ -85,6 +111,7 @@ def perf_options_payload():
         "warmup": env_bool("PONEGLYPH_WARMUP", True),
         "text_max_new_tokens": get_max_new_tokens(TEXT_MODEL_KEY),
         "bbox_max_new_tokens": get_max_new_tokens(BBOX_MODEL_KEY),
+        "surya_max_new_tokens": get_max_new_tokens(SURYA_MODEL_KEY),
     }
 
 
@@ -138,6 +165,17 @@ def normalize_model_key(model_key: str) -> str:
     return model_key
 
 
+def normalize_text_ocr_model_key(model_key: str) -> str:
+    model_key = normalize_model_key(model_key)
+    if model_key not in TEXT_OCR_MODEL_KEYS:
+        raise ValueError(f"Le modele {model_key} ne fournit pas d'OCR texte classique.")
+    return model_key
+
+
+def model_family(model_key: str) -> str:
+    return MODEL_CONFIGS[normalize_model_key(model_key)]["family"]
+
+
 def get_model_state(model_key: str):
     return model_states[normalize_model_key(model_key)]
 
@@ -159,14 +197,11 @@ def default_app_model_dir(model_key: str = DEFAULT_MODEL_KEY) -> str:
 
 def get_model_dir(model_key: str = DEFAULT_MODEL_KEY) -> str:
     model_key = normalize_model_key(model_key)
-    if model_key == BBOX_MODEL_KEY:
-        return (
-            os.environ.get("PONEGLYPH_BBOX_MODEL_DIR")
-            or os.environ.get("PONEGLYPH_MODEL_DIR")
-            or default_app_model_dir(model_key)
-        )
-
-    return os.environ.get("PONEGLYPH_BASE_MODEL_DIR") or default_app_model_dir(model_key)
+    for env_name in MODEL_CONFIGS[model_key].get("model_dir_envs", ()):
+        env_value = os.environ.get(env_name)
+        if env_value:
+            return env_value
+    return default_app_model_dir(model_key)
 
 
 def model_is_installed(model_key: str = DEFAULT_MODEL_KEY) -> bool:
@@ -437,15 +472,73 @@ def clear_loaded_model_state(state) -> None:
     state["warmup_error"] = None
 
 
-def load_processor(model_key: str):
-    from transformers import LightOnOcrProcessor
+def configure_processor(model_key: str, loaded_processor):
+    image_processor = getattr(loaded_processor, "image_processor", None)
+    if image_processor is not None and hasattr(image_processor, "default_to_square"):
+        image_processor.default_to_square = False
 
-    model_dir = get_model_dir(model_key)
-    loaded_processor = LightOnOcrProcessor.from_pretrained(model_dir)
-    loaded_processor.image_processor.default_to_square = False
-    if model_key == TEXT_MODEL_KEY:
-        loaded_processor.tokenizer.padding_side = "left"
+    tokenizer = getattr(loaded_processor, "tokenizer", None)
+    if model_key in TEXT_OCR_MODEL_KEYS and tokenizer is not None:
+        tokenizer.padding_side = "left"
+        if getattr(tokenizer, "pad_token_id", None) is None and getattr(tokenizer, "eos_token", None):
+            tokenizer.pad_token = tokenizer.eos_token
+
     return loaded_processor
+
+
+def load_processor(model_key: str):
+    model_dir = get_model_dir(model_key)
+    if model_family(model_key) == "surya_text":
+        from transformers import AutoProcessor
+
+        loaded_processor = AutoProcessor.from_pretrained(model_dir, trust_remote_code=True)
+    else:
+        from transformers import LightOnOcrProcessor
+
+        loaded_processor = LightOnOcrProcessor.from_pretrained(model_dir)
+    return configure_processor(model_key, loaded_processor)
+
+
+def valid_token_id(token_id, tokenizer) -> bool:
+    if token_id is None or tokenizer is None:
+        return False
+    try:
+        token_count = len(tokenizer)
+    except Exception:
+        return isinstance(token_id, int)
+    if isinstance(token_id, int):
+        return 0 <= token_id < token_count
+    if isinstance(token_id, (list, tuple)):
+        return all(isinstance(item, int) and 0 <= item < token_count for item in token_id)
+    return False
+
+
+def configure_model_generation(model_key: str, model, loaded_processor) -> None:
+    if hasattr(model.config, "use_cache"):
+        model.config.use_cache = True
+
+    generation_config = getattr(model, "generation_config", None)
+    if generation_config is None:
+        return
+
+    generation_config.do_sample = False
+    generation_config.max_new_tokens = get_max_new_tokens(model_key)
+    if model_family(model_key) == "surya_text":
+        generation_config.temperature = None
+        generation_config.top_p = None
+        generation_config.top_k = None
+
+    tokenizer = getattr(loaded_processor, "tokenizer", None)
+    eos_token_id = getattr(tokenizer, "eos_token_id", None) if tokenizer is not None else None
+    pad_token_id = getattr(tokenizer, "pad_token_id", None) if tokenizer is not None else None
+    if valid_token_id(eos_token_id, tokenizer):
+        generation_config.eos_token_id = eos_token_id
+        if hasattr(model.config, "eos_token_id"):
+            model.config.eos_token_id = eos_token_id
+    if valid_token_id(pad_token_id, tokenizer):
+        generation_config.pad_token_id = pad_token_id
+        if hasattr(model.config, "pad_token_id"):
+            model.config.pad_token_id = pad_token_id
 
 
 def transformer_attention_attempts(selected_device: str):
@@ -457,20 +550,37 @@ def transformer_attention_attempts(selected_device: str):
     return attempts
 
 
-def load_transformers_model(model_key: str, selected_device: str, selected_dtype):
-    from transformers import LightOnOcrForConditionalGeneration
-
+def load_transformers_model(
+    model_key: str,
+    loaded_processor,
+    selected_device: str,
+    selected_dtype,
+):
     model_dir = get_model_dir(model_key)
     errors = []
     for attention_name, attention_kwargs in transformer_attention_attempts(selected_device):
         try:
-            model = LightOnOcrForConditionalGeneration.from_pretrained(
-                model_dir,
-                torch_dtype=selected_dtype,
-                low_cpu_mem_usage=True,
-                use_safetensors=True,
-                **attention_kwargs,
-            ).eval()
+            if model_family(model_key) == "surya_text":
+                from transformers import AutoModelForImageTextToText
+
+                model = AutoModelForImageTextToText.from_pretrained(
+                    model_dir,
+                    torch_dtype=selected_dtype,
+                    trust_remote_code=True,
+                    low_cpu_mem_usage=True,
+                    **attention_kwargs,
+                ).eval()
+            else:
+                from transformers import LightOnOcrForConditionalGeneration
+
+                model = LightOnOcrForConditionalGeneration.from_pretrained(
+                    model_dir,
+                    torch_dtype=selected_dtype,
+                    low_cpu_mem_usage=True,
+                    use_safetensors=True,
+                    **attention_kwargs,
+                ).eval()
+            configure_model_generation(model_key, model, loaded_processor)
             return model, attention_name
         except Exception as exc:
             errors.append(f"{attention_name}: {exc}")
@@ -510,6 +620,7 @@ def load_transformers_backend(
 
     loaded_model, attention_implementation = load_transformers_model(
         model_key,
+        loaded_processor,
         selected_device,
         selected_dtype,
     )
@@ -535,13 +646,14 @@ def load_transformers_backend(
 
 
 def messages_for_model(model_key: str):
-    if model_key == TEXT_MODEL_KEY:
+    if model_key in TEXT_OCR_MODEL_KEYS:
+        prompt = SURYA_USER_PROMPT if model_key == SURYA_MODEL_KEY else TEXT_USER_PROMPT
         return [
             {
                 "role": "user",
                 "content": [
                     {"type": "image"},
-                    {"type": "text", "text": TEXT_USER_PROMPT},
+                    {"type": "text", "text": prompt},
                 ],
             }
         ]
@@ -696,6 +808,15 @@ def render_prompt(loaded_processor, messages):
     )
 
 
+def decode_generated_tokens(loaded_processor, token_ids):
+    if hasattr(loaded_processor, "decode"):
+        return loaded_processor.decode(token_ids, skip_special_tokens=True)
+    tokenizer = getattr(loaded_processor, "tokenizer", None)
+    if tokenizer is not None:
+        return tokenizer.decode(token_ids, skip_special_tokens=True)
+    raise RuntimeError("Le processor OCR ne fournit pas de decodeur de tokens.")
+
+
 def move_inputs_to_device(inputs, selected_device: str, selected_dtype):
     moved_inputs = {}
     for key, value in inputs.items():
@@ -743,9 +864,7 @@ def transformers_generate(model_key: str, image, messages, max_new_tokens_overri
         )
 
     gen_ids = output_ids[0, inputs["input_ids"].shape[1] :]
-    if model_key == TEXT_MODEL_KEY:
-        return loaded_processor.tokenizer.decode(gen_ids, skip_special_tokens=True).strip()
-    return loaded_processor.decode(gen_ids, skip_special_tokens=True).strip()
+    return decode_generated_tokens(loaded_processor, gen_ids).strip()
 
 
 def generate_with_model(
@@ -937,10 +1056,10 @@ def ocr(request: OcrRequest):
 
 
 @app.post("/ocr/text")
-def text_ocr(request: OcrRequest):
+def text_ocr(request: OcrRequest, model_key: str = TEXT_MODEL_KEY):
     start = time.perf_counter()
-    model_key = TEXT_MODEL_KEY
     try:
+        model_key = normalize_text_ocr_model_key(model_key)
         image_bytes = decode_image_request(request)
         if isinstance(image_bytes, JSONResponse):
             return image_bytes
@@ -976,6 +1095,8 @@ def text_ocr(request: OcrRequest):
     except RuntimeError as exc:
         message = record_runtime_error(model_key, exc)
         return JSONResponse(status_code=500, content={"error": message})
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"error": str(exc)})
     except Exception as exc:
         get_model_state(model_key)["last_error"] = str(exc)
         return JSONResponse(status_code=500, content={"error": str(exc)})

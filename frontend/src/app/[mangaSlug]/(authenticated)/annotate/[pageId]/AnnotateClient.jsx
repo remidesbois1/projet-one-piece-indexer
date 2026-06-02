@@ -841,24 +841,32 @@ export default function AnnotatePage() {
                 isCheckingLocalConnection={tauriLocalOcr.isCheckingLocalConnection}
                 localModelStatus={tauriLocalOcr.localModelStatus}
                 localTextModelStatus={tauriLocalOcr.localTextModelStatus}
+                localSuryaModelStatus={tauriLocalOcr.localSuryaModelStatus}
                 localHealth={tauriLocalOcr.localHealth}
                 localConnectionState={tauriLocalOcr.localConnectionState}
                 isDownloadingLocalModel={tauriLocalOcr.isDownloadingLocalModel}
                 isDownloadingLocalTextModel={tauriLocalOcr.isDownloadingLocalTextModel}
+                isDownloadingLocalSuryaModel={tauriLocalOcr.isDownloadingLocalSuryaModel}
                 localDownloadState={tauriLocalOcr.localDownloadState}
                 localTextDownloadState={tauriLocalOcr.localTextDownloadState}
+                localSuryaDownloadState={tauriLocalOcr.localSuryaDownloadState}
                 localDownloadProgress={tauriLocalOcr.localDownloadProgress}
                 localTextDownloadProgress={tauriLocalOcr.localTextDownloadProgress}
+                localSuryaDownloadProgress={tauriLocalOcr.localSuryaDownloadProgress}
                 isLoadingLocalModel={tauriLocalOcr.isLoadingLocalModel}
                 isLoadingLocalTextModel={tauriLocalOcr.isLoadingLocalTextModel}
+                isLoadingLocalSuryaModel={tauriLocalOcr.isLoadingLocalSuryaModel}
                 isLocalInferencing={tauriLocalOcr.isLocalInferencing}
                 localError={tauriLocalOcr.localError}
                 canRunLocalOcr={tauriLocalOcr.canRunLocalOcr}
                 canRunLocalTextOcr={tauriLocalOcr.canRunLocalTextOcr}
+                canRunLocalSuryaOcr={tauriLocalOcr.canRunLocalSuryaOcr}
                 downloadLocalModel={tauriLocalOcr.downloadLocalModel}
                 downloadLocalTextModel={tauriLocalOcr.downloadLocalTextModel}
+                downloadLocalSuryaModel={tauriLocalOcr.downloadLocalSuryaModel}
                 loadLocalModel={tauriLocalOcr.loadLocalModel}
                 loadLocalTextModel={tauriLocalOcr.loadLocalTextModel}
+                loadLocalSuryaModel={tauriLocalOcr.loadLocalSuryaModel}
                 refreshLocalDiagnostics={tauriLocalOcr.refreshLocalDiagnostics}
             />
 

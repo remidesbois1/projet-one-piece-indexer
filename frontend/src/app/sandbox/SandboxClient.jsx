@@ -545,18 +545,26 @@ export default function SandboxClient() {
                 isTauri={tauriLocalOcr.isTauri}
                 localModelStatus={tauriLocalOcr.localModelStatus}
                 localTextModelStatus={tauriLocalOcr.localTextModelStatus}
+                localSuryaModelStatus={tauriLocalOcr.localSuryaModelStatus}
                 isDownloadingLocalModel={tauriLocalOcr.isDownloadingLocalModel}
                 isDownloadingLocalTextModel={tauriLocalOcr.isDownloadingLocalTextModel}
+                isDownloadingLocalSuryaModel={tauriLocalOcr.isDownloadingLocalSuryaModel}
                 localDownloadState={tauriLocalOcr.localDownloadState}
                 localTextDownloadState={tauriLocalOcr.localTextDownloadState}
+                localSuryaDownloadState={tauriLocalOcr.localSuryaDownloadState}
                 localTextDownloadProgress={tauriLocalOcr.localTextDownloadProgress}
+                localSuryaDownloadProgress={tauriLocalOcr.localSuryaDownloadProgress}
                 localConnectionState={tauriLocalOcr.localConnectionState}
                 isLoadingLocalTextModel={tauriLocalOcr.isLoadingLocalTextModel}
+                isLoadingLocalSuryaModel={tauriLocalOcr.isLoadingLocalSuryaModel}
                 isLocalInferencing={tauriLocalOcr.isLocalInferencing}
                 canRunLocalOcr={tauriLocalOcr.canRunLocalOcr}
                 canRunLocalTextOcr={tauriLocalOcr.canRunLocalTextOcr}
+                canRunLocalSuryaOcr={tauriLocalOcr.canRunLocalSuryaOcr}
                 downloadLocalTextModel={tauriLocalOcr.downloadLocalTextModel}
+                downloadLocalSuryaModel={tauriLocalOcr.downloadLocalSuryaModel}
                 loadLocalTextModel={tauriLocalOcr.loadLocalTextModel}
+                loadLocalSuryaModel={tauriLocalOcr.loadLocalSuryaModel}
             />
 
             <div className="flex flex-col flex-1 overflow-hidden min-w-0 bg-slate-50 relative">

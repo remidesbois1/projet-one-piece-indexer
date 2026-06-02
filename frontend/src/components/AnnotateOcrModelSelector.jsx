@@ -16,19 +16,35 @@ export default function AnnotateOcrModelSelector({
     isSandbox = false,
     isTauri = false,
     localTextModelStatus = null,
+    localSuryaModelStatus = null,
     isDownloadingLocalTextModel = false,
+    isDownloadingLocalSuryaModel = false,
     localTextDownloadState = null,
+    localSuryaDownloadState = null,
     localTextDownloadProgress = null,
+    localSuryaDownloadProgress = null,
     isLoadingLocalTextModel = false,
+    isLoadingLocalSuryaModel = false,
     downloadLocalTextModel,
-    loadLocalTextModel
+    downloadLocalSuryaModel,
+    loadLocalTextModel,
+    loadLocalSuryaModel
 }) {
     const activeModel = OCR_MODELS[activeModelKey];
     const activeIsTauriModel = activeModel?.runtime === 'tauri';
-    const textDownloadActive = Boolean(isDownloadingLocalTextModel || localTextDownloadState?.active);
-    const textDownloadPercent = Number.isFinite(localTextDownloadProgress) ? Math.round(localTextDownloadProgress) : null;
-    const canDownloadTextModel = isTauri && activeIsTauriModel && !localTextModelStatus?.installed && !textDownloadActive;
-    const canLoadTextModel = isTauri && activeIsTauriModel && localTextModelStatus?.installed && !localTextModelStatus?.ready && !isLoadingLocalTextModel && !textDownloadActive;
+    const activeTauriModelKey = activeModel?.localModelKey || 'base';
+    const activeLocalStatus = activeTauriModelKey === 'surya' ? localSuryaModelStatus : localTextModelStatus;
+    const activeDownloadState = activeTauriModelKey === 'surya' ? localSuryaDownloadState : localTextDownloadState;
+    const activeDownloadProgress = activeTauriModelKey === 'surya' ? localSuryaDownloadProgress : localTextDownloadProgress;
+    const activeDownloadModel = activeTauriModelKey === 'surya' ? downloadLocalSuryaModel : downloadLocalTextModel;
+    const activeLoadModel = activeTauriModelKey === 'surya' ? loadLocalSuryaModel : loadLocalTextModel;
+    const activeDownloading = activeTauriModelKey === 'surya' ? isDownloadingLocalSuryaModel : isDownloadingLocalTextModel;
+    const activeLoading = activeTauriModelKey === 'surya' ? isLoadingLocalSuryaModel : isLoadingLocalTextModel;
+    const activeDownloadActive = Boolean(activeDownloading || activeDownloadState?.active);
+    const activeDownloadPercent = Number.isFinite(activeDownloadProgress) ? Math.round(activeDownloadProgress) : null;
+    const activeLocalLabel = activeModel?.label || "Modele local";
+    const canDownloadTextModel = isTauri && activeIsTauriModel && !activeLocalStatus?.installed && !activeDownloadActive;
+    const canLoadTextModel = isTauri && activeIsTauriModel && activeLocalStatus?.installed && !activeLocalStatus?.ready && !activeLoading && !activeDownloadActive;
 
     return (
         <div className="flex-none p-3 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-3">
@@ -110,34 +126,34 @@ export default function AnnotateOcrModelSelector({
                                 </div>
                             )}
                             {isTauri && canDownloadTextModel && (
-                                <Button variant="outline" size="sm" onClick={downloadLocalTextModel} className="w-full h-8 text-[11px] font-bold bg-white border border-slate-200 hover:bg-slate-50 text-slate-600">
-                                    <Download size={12} className="mr-1.5" /> Télécharger Poneglyph Local
+                                <Button variant="outline" size="sm" onClick={activeDownloadModel} className="w-full h-8 text-[11px] font-bold bg-white border border-slate-200 hover:bg-slate-50 text-slate-600">
+                                    <Download size={12} className="mr-1.5" /> Telecharger {activeLocalLabel}
                                 </Button>
                             )}
                             {isTauri && canLoadTextModel && (
-                                <Button variant="outline" size="sm" onClick={loadLocalTextModel} className="w-full h-8 text-[11px] font-bold bg-white border border-slate-200 hover:bg-slate-50 text-slate-600">
-                                    <Download size={12} className="mr-1.5" /> Charger Poneglyph Local
+                                <Button variant="outline" size="sm" onClick={activeLoadModel} className="w-full h-8 text-[11px] font-bold bg-white border border-slate-200 hover:bg-slate-50 text-slate-600">
+                                    <Download size={12} className="mr-1.5" /> Charger {activeLocalLabel}
                                 </Button>
                             )}
-                            {isTauri && (textDownloadActive || isLoadingLocalTextModel || localTextModelStatus?.loading) && (
+                            {isTauri && (activeDownloadActive || activeLoading || activeLocalStatus?.loading) && (
                                 <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
                                     <div className="flex justify-between text-[9px] font-bold text-slate-500 mb-1.5">
-                                        <span>{textDownloadActive ? "Téléchargement" : "Chargement"} Poneglyph Local...</span>
-                                        {textDownloadPercent !== null && <span>{textDownloadPercent}%</span>}
+                                        <span>{activeDownloadActive ? "Telechargement" : "Chargement"} {activeLocalLabel}...</span>
+                                        {activeDownloadPercent !== null && <span>{activeDownloadPercent}%</span>}
                                     </div>
                                     <div className="h-1 w-full bg-slate-200 rounded-full overflow-hidden">
-                                        <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${textDownloadPercent ?? 40}%` }} />
+                                        <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${activeDownloadPercent ?? 40}%` }} />
                                     </div>
                                 </div>
                             )}
-                            {isTauri && localTextModelStatus?.ready && (
+                            {isTauri && activeLocalStatus?.ready && (
                                 <div className="flex items-center justify-center gap-1.5 text-[10px] font-bold text-emerald-700 bg-emerald-50 py-1.5 rounded-md border border-emerald-100/50">
-                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-sm" /> Poneglyph Local opérationnel
+                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-sm" /> {activeLocalLabel} operationnel
                                 </div>
                             )}
-                            {isTauri && localTextModelStatus?.error && !localTextModelStatus?.ready && (
+                            {isTauri && activeLocalStatus?.error && !activeLocalStatus?.ready && (
                                 <div className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-[9px] font-semibold text-amber-700">
-                                    {localTextModelStatus.error}
+                                    {activeLocalStatus.error}
                                 </div>
                             )}
                         </>

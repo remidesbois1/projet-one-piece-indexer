@@ -9,6 +9,11 @@ description = "Allows checking the local text OCR model status."
 commands.allow = ["get_local_text_model_status"]
 
 [[permission]]
+identifier = "allow-get-local-surya-model-status"
+description = "Allows checking the local Surya OCR model status."
+commands.allow = ["get_local_surya_model_status"]
+
+[[permission]]
 identifier = "allow-load-local-model"
 description = "Allows loading the local OCR model in the sidecar."
 commands.allow = ["load_local_model"]
@@ -17,6 +22,11 @@ commands.allow = ["load_local_model"]
 identifier = "allow-load-local-text-model"
 description = "Allows loading the local text OCR model in the sidecar."
 commands.allow = ["load_local_text_model"]
+
+[[permission]]
+identifier = "allow-load-local-surya-model"
+description = "Allows loading the local Surya OCR model in the sidecar."
+commands.allow = ["load_local_surya_model"]
 
 [[permission]]
 identifier = "allow-download-local-model"
@@ -29,6 +39,11 @@ description = "Allows downloading the local text OCR model."
 commands.allow = ["download_local_text_model"]
 
 [[permission]]
+identifier = "allow-download-local-surya-model"
+description = "Allows downloading the local Surya OCR model."
+commands.allow = ["download_local_surya_model"]
+
+[[permission]]
 identifier = "allow-run-local-ocr"
 description = "Allows running local OCR on a selected page."
 commands.allow = ["run_local_ocr"]
@@ -39,9 +54,19 @@ description = "Allows running local OCR on a selected bubble."
 commands.allow = ["run_local_text_ocr"]
 
 [[permission]]
+identifier = "allow-run-local-surya-ocr"
+description = "Allows running local Surya OCR on a selected bubble."
+commands.allow = ["run_local_surya_ocr"]
+
+[[permission]]
 identifier = "allow-healthcheck-local-backend"
 description = "Allows checking whether the local OCR backend is reachable."
 commands.allow = ["healthcheck_local_backend"]
+
+[[permission]]
+identifier = "allow-switch-frontend-origin"
+description = "Allows switching the desktop webview between poneglyph.fr and localhost."
+commands.allow = ["switch_frontend_origin"]
 
 [[permission]]
 identifier = "allow-get-app-version"

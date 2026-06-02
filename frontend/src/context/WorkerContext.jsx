@@ -29,7 +29,18 @@ export const OCR_MODELS = {
         cer: '< 0.1%',
         size: '~4 Go',
         type: 'local',
-        runtime: 'tauri'
+        runtime: 'tauri',
+        localModelKey: 'base'
+    },
+    suryaLocal: {
+        key: 'suryaLocal',
+        label: 'Surya Local',
+        description: 'Surya OCR 2 local via Tauri',
+        cer: '< 0.1%',
+        size: '~4 Go',
+        type: 'local',
+        runtime: 'tauri',
+        localModelKey: 'surya'
     },
     gemini: {
         key: 'gemini',

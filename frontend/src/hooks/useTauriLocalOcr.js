@@ -70,13 +70,17 @@ export function useTauriLocalOcr() {
     const [isCheckingLocalConnection, setIsCheckingLocalConnection] = useState(true);
     const [localModelStatus, setLocalModelStatus] = useState(INITIAL_MODEL_STATUS);
     const [localTextModelStatus, setLocalTextModelStatus] = useState(INITIAL_MODEL_STATUS);
+    const [localSuryaModelStatus, setLocalSuryaModelStatus] = useState(INITIAL_MODEL_STATUS);
     const [localHealth, setLocalHealth] = useState(null);
     const [isDownloadingLocalModel, setIsDownloadingLocalModel] = useState(false);
     const [isDownloadingLocalTextModel, setIsDownloadingLocalTextModel] = useState(false);
+    const [isDownloadingLocalSuryaModel, setIsDownloadingLocalSuryaModel] = useState(false);
     const [isLoadingLocalModel, setIsLoadingLocalModel] = useState(false);
     const [isLoadingLocalTextModel, setIsLoadingLocalTextModel] = useState(false);
+    const [isLoadingLocalSuryaModel, setIsLoadingLocalSuryaModel] = useState(false);
     const [isLocalInferencing, setIsLocalInferencing] = useState(false);
     const [isLocalTextInferencing, setIsLocalTextInferencing] = useState(false);
+    const [isLocalSuryaInferencing, setIsLocalSuryaInferencing] = useState(false);
     const [localError, setLocalError] = useState(null);
     const [localConnectionState, setLocalConnectionState] = useState(INITIAL_CONNECTION_STATE);
     const diagnosticFailureCountRef = useRef(0);
@@ -185,6 +189,10 @@ export function useTauriLocalOcr() {
             ? { ...prev, error: message }
             : { ...INITIAL_MODEL_STATUS, error: message }
         );
+        setLocalSuryaModelStatus(prev => isTransient
+            ? { ...prev, error: message }
+            : { ...INITIAL_MODEL_STATUS, error: message }
+        );
 
         return isTransient;
     }, []);
@@ -221,6 +229,22 @@ export function useTauriLocalOcr() {
         }
     }, [getInvoke, markDiagnosticsOnline]);
 
+    const refreshLocalSuryaModelStatus = useCallback(async () => {
+        const invoke = await getInvoke();
+        if (!invoke) return INITIAL_MODEL_STATUS;
+
+        try {
+            const status = await invoke('get_local_surya_model_status');
+            setLocalSuryaModelStatus(status);
+            markDiagnosticsOnline(null, status);
+            return status;
+        } catch (error) {
+            const message = getErrorMessage(error);
+            setLocalSuryaModelStatus(prev => ({ ...prev, error: message }));
+            return { ...INITIAL_MODEL_STATUS, error: message };
+        }
+    }, [getInvoke, markDiagnosticsOnline]);
+
     const healthcheckLocalBackend = useCallback(async () => {
         const invoke = await getInvoke();
         if (!invoke) return null;
@@ -253,6 +277,7 @@ export function useTauriLocalOcr() {
             setLocalHealth(health);
             setLocalModelStatus(status);
             setLocalTextModelStatus(status);
+            setLocalSuryaModelStatus(status);
             setLocalError(message);
             setLocalConnectionState({
                 status: 'unavailable',
@@ -263,31 +288,35 @@ export function useTauriLocalOcr() {
             return { health, status };
         }
 
-        const [healthResult, statusResult, textStatusResult] = await Promise.allSettled([
+        const [healthResult, statusResult, textStatusResult, suryaStatusResult] = await Promise.allSettled([
             invoke('healthcheck_local_backend'),
             invoke('get_local_model_status'),
-            invoke('get_local_text_model_status')
+            invoke('get_local_text_model_status'),
+            invoke('get_local_surya_model_status')
         ]);
 
         const health = healthResult.status === 'fulfilled' ? healthResult.value : null;
         const status = statusResult.status === 'fulfilled' ? statusResult.value : null;
         const textStatus = textStatusResult.status === 'fulfilled' ? textStatusResult.value : null;
+        const suryaStatus = suryaStatusResult.status === 'fulfilled' ? suryaStatusResult.value : null;
 
-        if (health || status || textStatus) {
+        if (health || status || textStatus || suryaStatus) {
             if (health) setLocalHealth(health);
             if (status) setLocalModelStatus(status);
             if (textStatus) setLocalTextModelStatus(textStatus);
-            const partialError = getRejectedMessage(healthResult, statusResult, textStatusResult);
-            markDiagnosticsOnline(health, status);
+            if (suryaStatus) setLocalSuryaModelStatus(suryaStatus);
+            const partialError = getRejectedMessage(healthResult, statusResult, textStatusResult, suryaStatusResult);
+            markDiagnosticsOnline(health, status || textStatus || suryaStatus);
             if (partialError) {
                 setLocalConnectionState(prev => ({ ...prev, lastError: partialError }));
                 if (!textStatus) setLocalTextModelStatus(prev => ({ ...prev, error: partialError }));
+                if (!suryaStatus) setLocalSuryaModelStatus(prev => ({ ...prev, error: partialError }));
             }
-            return { health, status, textStatus };
+            return { health, status, textStatus, suryaStatus };
         }
 
         try {
-            const message = getRejectedMessage(healthResult, statusResult) || "Diagnostic OCR local indisponible.";
+            const message = getRejectedMessage(healthResult, statusResult, textStatusResult, suryaStatusResult) || "Diagnostic OCR local indisponible.";
             throw new Error(message);
         } catch (error) {
             const message = getErrorMessage(error);
@@ -295,7 +324,8 @@ export function useTauriLocalOcr() {
             const health = { ok: false, python_available: false, torch_available: false, cuda_available: null, device: null, error: message };
             const status = { ...INITIAL_MODEL_STATUS, error: message };
             const textStatus = { ...INITIAL_MODEL_STATUS, error: message };
-            return { health, status, textStatus };
+            const suryaStatus = { ...INITIAL_MODEL_STATUS, error: message };
+            return { health, status, textStatus, suryaStatus };
         }
     }, [getInvoke, markDiagnosticsFailure, markDiagnosticsOnline]);
 
@@ -357,6 +387,35 @@ export function useTauriLocalOcr() {
         }
     }, [getInvoke, refreshLocalDiagnostics]);
 
+    const downloadLocalSuryaModel = useCallback(async () => {
+        const invoke = await getInvoke();
+        if (!invoke) {
+            const message = "Tauri indisponible.";
+            setLocalError(message);
+            return { ok: false, error: message };
+        }
+
+        setIsDownloadingLocalSuryaModel(true);
+        setLocalError(null);
+        try {
+            const result = await invoke('download_local_surya_model');
+            if (!result?.ok) {
+                setLocalError(result?.error || "Telechargement du modele Surya local impossible.");
+            }
+            if (result?.download) {
+                setLocalSuryaModelStatus(prev => ({ ...prev, download: result.download }));
+            }
+            await refreshLocalDiagnostics();
+            return result;
+        } catch (error) {
+            const message = getErrorMessage(error);
+            setLocalError(message);
+            return { ok: false, error: message };
+        } finally {
+            setIsDownloadingLocalSuryaModel(false);
+        }
+    }, [getInvoke, refreshLocalDiagnostics]);
+
     const loadLocalModel = useCallback(async () => {
         const invoke = await getInvoke();
         if (!invoke) {
@@ -411,6 +470,33 @@ export function useTauriLocalOcr() {
         }
     }, [getInvoke, markDiagnosticsOnline, refreshLocalDiagnostics]);
 
+    const loadLocalSuryaModel = useCallback(async () => {
+        const invoke = await getInvoke();
+        if (!invoke) {
+            const message = "Tauri indisponible.";
+            setLocalError(message);
+            return { ...INITIAL_MODEL_STATUS, error: message };
+        }
+
+        setIsLoadingLocalSuryaModel(true);
+        setLocalError(null);
+        setLocalSuryaModelStatus(prev => ({ ...prev, loading: true, error: null }));
+        try {
+            const status = await invoke('load_local_surya_model');
+            setLocalSuryaModelStatus(status);
+            markDiagnosticsOnline(null, status);
+            await refreshLocalDiagnostics();
+            return status;
+        } catch (error) {
+            const message = getErrorMessage(error);
+            setLocalError(message);
+            setLocalSuryaModelStatus(prev => ({ ...prev, loaded: false, loading: false, ready: false, error: message }));
+            return { ...INITIAL_MODEL_STATUS, error: message };
+        } finally {
+            setIsLoadingLocalSuryaModel(false);
+        }
+    }, [getInvoke, markDiagnosticsOnline, refreshLocalDiagnostics]);
+
     const runLocalOcrBlob = useCallback(async (blob) => {
         const invoke = await getInvoke();
         if (!invoke) throw new Error("Tauri indisponible.");
@@ -451,6 +537,26 @@ export function useTauriLocalOcr() {
         }
     }, [getInvoke, refreshLocalDiagnostics]);
 
+    const runLocalSuryaOcrBlob = useCallback(async (blob) => {
+        const invoke = await getInvoke();
+        if (!invoke) throw new Error("Tauri indisponible.");
+
+        setIsLocalSuryaInferencing(true);
+        setLocalError(null);
+        try {
+            const image_bytes_base64 = await blobToBase64(blob);
+            const result = await invoke('run_local_surya_ocr', { image_bytes_base64 });
+            await refreshLocalDiagnostics();
+            return result;
+        } catch (error) {
+            const message = getErrorMessage(error);
+            setLocalError(message);
+            throw new Error(message);
+        } finally {
+            setIsLocalSuryaInferencing(false);
+        }
+    }, [getInvoke, refreshLocalDiagnostics]);
+
     useEffect(() => {
         let cancelled = false;
 
@@ -471,10 +577,10 @@ export function useTauriLocalOcr() {
 
         const intervalId = window.setInterval(() => {
             refreshLocalDiagnostics();
-        }, localModelStatus?.download?.active || localTextModelStatus?.download?.active || isLoadingLocalModel || isLoadingLocalTextModel || isLocalInferencing || isLocalTextInferencing ? 2000 : 5000);
+        }, localModelStatus?.download?.active || localTextModelStatus?.download?.active || localSuryaModelStatus?.download?.active || isLoadingLocalModel || isLoadingLocalTextModel || isLoadingLocalSuryaModel || isLocalInferencing || isLocalTextInferencing || isLocalSuryaInferencing ? 2000 : 5000);
 
         return () => window.clearInterval(intervalId);
-    }, [isTauri, isLoadingLocalModel, isLoadingLocalTextModel, isLocalInferencing, isLocalTextInferencing, localModelStatus?.download?.active, localTextModelStatus?.download?.active, refreshLocalDiagnostics]);
+    }, [isTauri, isLoadingLocalModel, isLoadingLocalTextModel, isLoadingLocalSuryaModel, isLocalInferencing, isLocalTextInferencing, isLocalSuryaInferencing, localModelStatus?.download?.active, localTextModelStatus?.download?.active, localSuryaModelStatus?.download?.active, refreshLocalDiagnostics]);
 
     const localDownloadState = localModelStatus?.download || null;
     const localDownloadProgress = localDownloadState?.total_bytes
@@ -486,6 +592,11 @@ export function useTauriLocalOcr() {
         ? Math.min(100, (Number(localTextDownloadState.downloaded_bytes || 0) / Number(localTextDownloadState.total_bytes)) * 100)
         : null;
     const isLocalTextDownloadActive = Boolean(isDownloadingLocalTextModel || localTextDownloadState?.active);
+    const localSuryaDownloadState = localSuryaModelStatus?.download || null;
+    const localSuryaDownloadProgress = localSuryaDownloadState?.total_bytes
+        ? Math.min(100, (Number(localSuryaDownloadState.downloaded_bytes || 0) / Number(localSuryaDownloadState.total_bytes)) * 100)
+        : null;
+    const isLocalSuryaDownloadActive = Boolean(isDownloadingLocalSuryaModel || localSuryaDownloadState?.active);
 
     const canRunLocalOcr = Boolean(
         isTauri &&
@@ -496,7 +607,8 @@ export function useTauriLocalOcr() {
         !isLoadingLocalModel &&
         !isLocalDownloadActive &&
         !isLocalInferencing &&
-        !isLocalTextInferencing
+        !isLocalTextInferencing &&
+        !isLocalSuryaInferencing
     );
 
     const canRunLocalTextOcr = Boolean(
@@ -508,7 +620,21 @@ export function useTauriLocalOcr() {
         !isLoadingLocalTextModel &&
         !isLocalTextDownloadActive &&
         !isLocalTextInferencing &&
-        !isLocalInferencing
+        !isLocalInferencing &&
+        !isLocalSuryaInferencing
+    );
+
+    const canRunLocalSuryaOcr = Boolean(
+        isTauri &&
+        localConnectionState.status !== 'offline' &&
+        localSuryaModelStatus?.ready &&
+        localSuryaModelStatus?.loaded &&
+        !localSuryaModelStatus?.loading &&
+        !isLoadingLocalSuryaModel &&
+        !isLocalSuryaDownloadActive &&
+        !isLocalSuryaInferencing &&
+        !isLocalInferencing &&
+        !isLocalTextInferencing
     );
 
     return {
@@ -516,30 +642,41 @@ export function useTauriLocalOcr() {
         isCheckingLocalConnection,
         localModelStatus,
         localTextModelStatus,
+        localSuryaModelStatus,
         localHealth,
         localConnectionState,
         isDownloadingLocalModel: isLocalDownloadActive,
         isDownloadingLocalTextModel: isLocalTextDownloadActive,
+        isDownloadingLocalSuryaModel: isLocalSuryaDownloadActive,
         localDownloadState,
         localTextDownloadState,
+        localSuryaDownloadState,
         localDownloadProgress,
         localTextDownloadProgress,
+        localSuryaDownloadProgress,
         isLoadingLocalModel,
         isLoadingLocalTextModel,
+        isLoadingLocalSuryaModel,
         isLocalInferencing,
         isLocalTextInferencing,
+        isLocalSuryaInferencing,
         localError,
         canRunLocalOcr,
         canRunLocalTextOcr,
+        canRunLocalSuryaOcr,
         refreshLocalModelStatus,
         refreshLocalTextModelStatus,
+        refreshLocalSuryaModelStatus,
         healthcheckLocalBackend,
         refreshLocalDiagnostics,
         downloadLocalModel,
         downloadLocalTextModel,
+        downloadLocalSuryaModel,
         loadLocalModel,
         loadLocalTextModel,
+        loadLocalSuryaModel,
         runLocalOcrBlob,
-        runLocalTextOcrBlob
+        runLocalTextOcrBlob,
+        runLocalSuryaOcrBlob
     };
 }

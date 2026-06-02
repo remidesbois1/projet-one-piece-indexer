@@ -3,6 +3,7 @@
 import { AuthProvider } from '@/context/AuthContext';
 import { WorkerProvider } from '@/context/WorkerContext';
 import { DetectionProvider } from '@/context/DetectionContext';
+import DesktopOriginSwitcher from '@/components/DesktopOriginSwitcher';
 
 export function Providers({ children }) {
     return (
@@ -10,6 +11,7 @@ export function Providers({ children }) {
             <WorkerProvider>
                 <DetectionProvider>
                     {children}
+                    <DesktopOriginSwitcher />
                 </DetectionProvider>
             </WorkerProvider>
         </AuthProvider>

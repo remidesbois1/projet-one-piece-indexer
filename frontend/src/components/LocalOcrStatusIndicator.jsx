@@ -55,21 +55,28 @@ export default function LocalOcrStatusIndicator() {
         isCheckingLocalConnection,
         localModelStatus,
         localTextModelStatus,
+        localSuryaModelStatus,
         localHealth,
         localConnectionState,
         isDownloadingLocalModel,
         isDownloadingLocalTextModel,
+        isDownloadingLocalSuryaModel,
         localDownloadState,
         localTextDownloadState,
+        localSuryaDownloadState,
         localDownloadProgress,
         localTextDownloadProgress,
+        localSuryaDownloadProgress,
         isLoadingLocalModel,
         isLoadingLocalTextModel,
+        isLoadingLocalSuryaModel,
         localError,
         downloadLocalModel,
         downloadLocalTextModel,
+        downloadLocalSuryaModel,
         loadLocalModel,
         loadLocalTextModel,
+        loadLocalSuryaModel,
         refreshLocalDiagnostics
     } = useTauriLocalOcrContext();
 
@@ -78,14 +85,17 @@ export default function LocalOcrStatusIndicator() {
     const connectionStatus = localConnectionState?.status || (isCheckingLocalConnection ? 'checking' : 'unknown');
     const localLoaded = Boolean(localModelStatus?.loaded || localHealth?.model_loaded);
     const textLoaded = Boolean(localTextModelStatus?.loaded || localHealth?.models?.base?.loaded);
+    const suryaLoaded = Boolean(localSuryaModelStatus?.loaded || localHealth?.models?.surya?.loaded);
     const bboxDownloadActive = Boolean(isDownloadingLocalModel || localDownloadState?.active || localModelStatus?.download?.active);
     const textDownloadActive = Boolean(isDownloadingLocalTextModel || localTextDownloadState?.active || localTextModelStatus?.download?.active);
-    const downloadActive = Boolean(bboxDownloadActive || textDownloadActive);
+    const suryaDownloadActive = Boolean(isDownloadingLocalSuryaModel || localSuryaDownloadState?.active || localSuryaModelStatus?.download?.active);
+    const downloadActive = Boolean(bboxDownloadActive || textDownloadActive || suryaDownloadActive);
     const downloadPercent = Number.isFinite(localDownloadProgress) ? Math.round(localDownloadProgress) : null;
     const textDownloadPercent = Number.isFinite(localTextDownloadProgress) ? Math.round(localTextDownloadProgress) : null;
+    const suryaDownloadPercent = Number.isFinite(localSuryaDownloadProgress) ? Math.round(localSuryaDownloadProgress) : null;
     const localDevice = localHealth?.device || localModelStatus?.device;
-    const requestedBackend = localHealth?.requested_backend || localModelStatus?.requested_backend || localTextModelStatus?.requested_backend || "-";
-    const activeBackend = localHealth?.active_backend || localModelStatus?.active_backend || localTextModelStatus?.active_backend || "-";
+    const requestedBackend = localHealth?.requested_backend || localModelStatus?.requested_backend || localTextModelStatus?.requested_backend || localSuryaModelStatus?.requested_backend || "-";
+    const activeBackend = localHealth?.active_backend || localModelStatus?.active_backend || localTextModelStatus?.active_backend || localSuryaModelStatus?.active_backend || "-";
     const memoryLabel = localHealth?.gpu_memory_total_mb
         ? `${localHealth.gpu_memory_allocated_mb ?? 0}/${localHealth.gpu_memory_total_mb} MB`
         : "-";
@@ -95,36 +105,45 @@ export default function LocalOcrStatusIndicator() {
     const textDownloadBytesLabel = localTextDownloadState?.total_bytes
         ? `${formatBytes(localTextDownloadState.downloaded_bytes)} / ${formatBytes(localTextDownloadState.total_bytes)}`
         : formatBytes(localTextDownloadState?.downloaded_bytes);
+    const suryaDownloadBytesLabel = localSuryaDownloadState?.total_bytes
+        ? `${formatBytes(localSuryaDownloadState.downloaded_bytes)} / ${formatBytes(localSuryaDownloadState.total_bytes)}`
+        : formatBytes(localSuryaDownloadState?.downloaded_bytes);
 
-    const summaryLabel = isCheckingLocalConnection
-        ? "Connexion"
-        : connectionStatus === 'reconnecting'
-            ? "Reconnexion"
-            : connectionStatus === 'offline'
-                ? "Hors ligne"
-                : downloadActive
-                    ? `Telechargement${downloadPercent !== null || textDownloadPercent !== null ? ` ${downloadPercent ?? textDownloadPercent}%` : ""}`
-                    : localModelStatus?.loading || localTextModelStatus?.loading || isLoadingLocalModel || isLoadingLocalTextModel
-                        ? "Chargement"
-                        : localModelStatus?.ready && localTextModelStatus?.ready
-                            ? "Batch pret"
-                            : localModelStatus?.ready
-                                ? "BBox pret"
-                                : localTextModelStatus?.ready
-                                    ? "Poneglyph pret"
-                                    : localLoaded || textLoaded
-                                        ? "Charge"
-                                        : localModelStatus?.installed || localTextModelStatus?.installed
-                                            ? "Installe"
-                                            : "Modeles absents";
+    const firstDownloadPercent = downloadPercent ?? textDownloadPercent ?? suryaDownloadPercent;
+    let summaryLabel = "Modeles absents";
+    if (isCheckingLocalConnection) {
+        summaryLabel = "Connexion";
+    } else if (connectionStatus === 'reconnecting') {
+        summaryLabel = "Reconnexion";
+    } else if (connectionStatus === 'offline') {
+        summaryLabel = "Hors ligne";
+    } else if (downloadActive) {
+        summaryLabel = `Telechargement${firstDownloadPercent !== null ? ` ${firstDownloadPercent}%` : ""}`;
+    } else if (localModelStatus?.loading || localTextModelStatus?.loading || localSuryaModelStatus?.loading || isLoadingLocalModel || isLoadingLocalTextModel || isLoadingLocalSuryaModel) {
+        summaryLabel = "Chargement";
+    } else if (localModelStatus?.ready && localTextModelStatus?.ready && localSuryaModelStatus?.ready) {
+        summaryLabel = "Surya batch pret";
+    } else if (localModelStatus?.ready && localTextModelStatus?.ready) {
+        summaryLabel = "Batch pret";
+    } else if (localModelStatus?.ready) {
+        summaryLabel = "BBox pret";
+    } else if (localSuryaModelStatus?.ready) {
+        summaryLabel = "Surya pret";
+    } else if (localTextModelStatus?.ready) {
+        summaryLabel = "Poneglyph pret";
+    } else if (localLoaded || textLoaded || suryaLoaded) {
+        summaryLabel = "Charge";
+    } else if (localModelStatus?.installed || localTextModelStatus?.installed || localSuryaModelStatus?.installed) {
+        summaryLabel = "Installe";
+    }
 
     const tone = connectionStatus === 'offline'
         ? 'red'
         : connectionStatus === 'reconnecting' || connectionStatus === 'degraded'
             ? 'amber'
-            : downloadActive || isLoadingLocalModel || isLoadingLocalTextModel || localModelStatus?.loading || localTextModelStatus?.loading
+            : downloadActive || isLoadingLocalModel || isLoadingLocalTextModel || isLoadingLocalSuryaModel || localModelStatus?.loading || localTextModelStatus?.loading || localSuryaModelStatus?.loading
                 ? 'blue'
-                : localModelStatus?.ready || localTextModelStatus?.ready
+                : localModelStatus?.ready || localTextModelStatus?.ready || localSuryaModelStatus?.ready
                     ? 'emerald'
                     : 'slate';
 
@@ -148,6 +167,8 @@ export default function LocalOcrStatusIndicator() {
     const canLoad = localModelStatus?.installed && !localModelStatus?.ready && !isLoadingLocalModel && !bboxDownloadActive;
     const canDownloadText = !localTextModelStatus?.installed && !textDownloadActive;
     const canLoadText = localTextModelStatus?.installed && !localTextModelStatus?.ready && !isLoadingLocalTextModel && !textDownloadActive;
+    const canDownloadSurya = !localSuryaModelStatus?.installed && !suryaDownloadActive;
+    const canLoadSurya = localSuryaModelStatus?.installed && !localSuryaModelStatus?.ready && !isLoadingLocalSuryaModel && !suryaDownloadActive;
 
     return (
         <div className="group relative hidden sm:block">
@@ -159,7 +180,7 @@ export default function LocalOcrStatusIndicator() {
                 )}
                 aria-label="Etat OCR local"
             >
-                {downloadActive || isLoadingLocalModel || isLoadingLocalTextModel || localModelStatus?.loading || localTextModelStatus?.loading ? (
+                {downloadActive || isLoadingLocalModel || isLoadingLocalTextModel || isLoadingLocalSuryaModel || localModelStatus?.loading || localTextModelStatus?.loading || localSuryaModelStatus?.loading ? (
                     <Loader2 size={15} className="animate-spin" />
                 ) : (
                     <Cpu size={15} />
@@ -187,12 +208,13 @@ export default function LocalOcrStatusIndicator() {
                     <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                         <DetailRow label="BBox" value={modelStateLabel(localModelStatus, localLoaded)} valueClassName={localModelStatus?.ready ? "text-emerald-700" : ""} />
                         <DetailRow label="Poneglyph" value={modelStateLabel(localTextModelStatus, textLoaded)} valueClassName={localTextModelStatus?.ready ? "text-emerald-700" : ""} />
+                        <DetailRow label="Surya" value={modelStateLabel(localSuryaModelStatus, suryaLoaded)} valueClassName={localSuryaModelStatus?.ready ? "text-emerald-700" : ""} />
                         <DetailRow label="CUDA" value={boolLabel(localHealth?.cuda_available)} valueClassName={localHealth?.cuda_available ? "text-emerald-700" : ""} />
                         <DetailRow label="Torch" value={boolLabel(localHealth?.torch_available)} />
                         <DetailRow label="Backend" value={activeBackend} />
                         <DetailRow label="Mode" value={requestedBackend} />
                         <DetailRow label="VRAM" value={memoryLabel} />
-                        <DetailRow label="Dtype" value={localModelStatus?.dtype || localTextModelStatus?.dtype || "-"} />
+                        <DetailRow label="Dtype" value={localModelStatus?.dtype || localTextModelStatus?.dtype || localSuryaModelStatus?.dtype || "-"} />
                         <DetailRow label="Dernier OK" value={timeLabel(localConnectionState?.lastOkAt)} />
                         <DetailRow label="Port local" value={localHealth?.port || "-"} />
                     </div>
@@ -237,6 +259,24 @@ export default function LocalOcrStatusIndicator() {
                             </div>
                             {textDownloadPercent !== null && (
                                 <div className="mt-1 text-[10px] font-semibold text-slate-400">{textDownloadBytesLabel}</div>
+                            )}
+                        </div>
+                    )}
+
+                    {(suryaDownloadActive || localSuryaDownloadState?.downloaded_bytes || localSuryaDownloadState?.error) && (
+                        <div className="mt-3 border-t border-slate-100 pt-2">
+                            <div className="mb-1 flex items-center justify-between text-[11px] font-bold text-slate-600">
+                                <span>Telechargement Surya</span>
+                                <span>{suryaDownloadPercent !== null ? `${suryaDownloadPercent}%` : suryaDownloadBytesLabel}</span>
+                            </div>
+                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+                                <div
+                                    className={cn("h-full rounded-full transition-all", localSuryaDownloadState?.error ? "bg-amber-500" : "bg-emerald-500", suryaDownloadPercent === null && suryaDownloadActive && "animate-pulse")}
+                                    style={{ width: `${suryaDownloadPercent ?? (suryaDownloadActive ? 35 : 100)}%` }}
+                                />
+                            </div>
+                            {suryaDownloadPercent !== null && (
+                                <div className="mt-1 text-[10px] font-semibold text-slate-400">{suryaDownloadBytesLabel}</div>
                             )}
                         </div>
                     )}
@@ -296,6 +336,26 @@ export default function LocalOcrStatusIndicator() {
                             >
                                 <CheckCircle2 size={12} />
                                 Charger Poneglyph
+                            </button>
+                        )}
+                        {canDownloadSurya && (
+                            <button
+                                type="button"
+                                onClick={downloadLocalSuryaModel}
+                                className="inline-flex h-8 items-center gap-1.5 rounded-md bg-slate-900 px-2 text-[11px] font-bold text-white hover:bg-slate-800"
+                            >
+                                <Download size={12} />
+                                Surya
+                            </button>
+                        )}
+                        {canLoadSurya && (
+                            <button
+                                type="button"
+                                onClick={loadLocalSuryaModel}
+                                className="inline-flex h-8 items-center gap-1.5 rounded-md bg-emerald-600 px-2 text-[11px] font-bold text-white hover:bg-emerald-700"
+                            >
+                                <CheckCircle2 size={12} />
+                                Charger Surya
                             </button>
                         )}
                     </div>
