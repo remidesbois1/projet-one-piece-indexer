@@ -48,7 +48,7 @@ MODEL_CONFIGS = {
         ),
         "dir_name": "surya-bubble-ocr-poneglyph",
         "label": "Surya OCR",
-        "max_new_tokens": 96,
+        "max_new_tokens": 256,
         "family": "surya_text",
         "model_dir_envs": ("PONEGLYPH_SURYA_MODEL_DIR", "SURYA_MODEL_DIR"),
         "max_new_tokens_envs": ("PONEGLYPH_SURYA_MAX_NEW_TOKENS", "SURYA_MAX_NEW_TOKENS"),
@@ -1132,7 +1132,7 @@ def text_ocr(request: OcrRequest, model_key: str = TEXT_MODEL_KEY):
             generate_ms = int((time.perf_counter() - generate_start) * 1000)
 
         postprocess_start = time.perf_counter()
-        text = output_text.split("\n")[0].strip() if "\n" in output_text else output_text.strip()
+        text = output_text.strip()
         postprocess_ms = int((time.perf_counter() - postprocess_start) * 1000)
         elapsed_ms = int((time.perf_counter() - start) * 1000)
         get_model_state(model_key)["last_error"] = None
