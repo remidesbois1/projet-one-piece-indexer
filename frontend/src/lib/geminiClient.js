@@ -5,6 +5,8 @@ const ANALYSIS_PROMPT = "Tu es un expert en numérisation de manga. Ta tâche es
 
 const DESCRIPTION_PROMPT = "Analyse cette page de One Piece. Ton but est de générer un objet JSON optimisé pour la similarité cosinus. La description doit être dense, directe et centrée sur l'action principale pour maximiser les scores de correspondance. Schéma de sortie attendu : JSON { \"content\": \"Action principale. Détails de l'événement et contexte immédiat. Éléments de lore.\", \"metadata\": { \"arc\": \"Nom de l'arc\", \"characters\": [\"Liste des personnages\"] } } Règles de rédaction pour 'content' (Priorité Recherche) : Accroche Directe : Commence la première phrase par l'action ou l'événement exact (ex: \"Exécution de Gol D. Roger\" ou \"Combat entre Luffy et Kaido\"). C'est ce qui \"ancre\" le vecteur. Sujet-Verbe-Complément : Utilise des phrases simples et factuelles. Évite les métaphores ou les envolées lyriques. Mots-Clés de Haute Densité : Utilise les termes que les fans taperaient (ex: 'Haki des Rois', 'Fruit du Démon', 'Gear 5', 'Échafaud'). Suppression du Bruit : Ne décris PAS les conséquences à long terme (ex: \"cela change le monde\"), décris uniquement ce qui est visible sur la page. Zéro Technique : Aucun mot sur le dessin (hachures, angles, traits). Réponds uniquement en JSON.";
 
+const STRICT_JSON_SUFFIX = "La reponse doit etre un objet JSON brut et valide. Elle doit commencer par { et finir par }. N'ajoute aucun markdown, aucune puce, aucun commentaire, aucun libelle Input/Output.";
+
 const COOKIE_NAME = 'ai_models';
 const COOKIE_TTL = 5 * 60 * 1000;
 
@@ -71,6 +73,44 @@ function handleGeminiError(error) {
         throw new Error("QUOTA_EXCEEDED");
     }
     throw error;
+}
+
+function parseModelJson(text, context = "Gemini") {
+    if (typeof text !== 'string' || !text.trim()) {
+        throw new Error(`${context}: reponse vide.`);
+    }
+
+    const trimmed = text.trim();
+    const fencedJson = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    const candidate = fencedJson ? fencedJson[1].trim() : trimmed;
+
+    try {
+        return JSON.parse(candidate);
+    } catch (directError) {
+        const firstObject = candidate.indexOf('{');
+        const lastObject = candidate.lastIndexOf('}');
+        const firstArray = candidate.indexOf('[');
+        const lastArray = candidate.lastIndexOf(']');
+
+        const objectSlice = firstObject !== -1 && lastObject > firstObject
+            ? candidate.slice(firstObject, lastObject + 1)
+            : null;
+        const arraySlice = firstArray !== -1 && lastArray > firstArray
+            ? candidate.slice(firstArray, lastArray + 1)
+            : null;
+
+        for (const jsonSlice of [objectSlice, arraySlice]) {
+            if (!jsonSlice) continue;
+            try {
+                return JSON.parse(jsonSlice);
+            } catch {
+                // Try the next likely JSON block before surfacing the original failure.
+            }
+        }
+
+        const preview = trimmed.replace(/\s+/g, ' ').slice(0, 140);
+        throw new Error(`${context}: reponse non JSON (${directError.message}). Apercu: ${preview}`);
+    }
 }
 
 export async function analyzeBubble(imageSource, coordinates, apiKey) {
@@ -142,13 +182,14 @@ export async function generatePageDescription(imageSource, apiKey) {
     };
 
     try {
-        const result = await model.generateContent([DESCRIPTION_PROMPT, imagePart]);
+        const result = await model.generateContent([`${DESCRIPTION_PROMPT}\n\n${STRICT_JSON_SUFFIX}`, imagePart]);
         const response = await result.response;
         const text = response.text();
-        return { data: JSON.parse(text) };
+        return { data: parseModelJson(text, "Description Gemini") };
     } catch (error) {
         handleGeminiError(error);
         console.error("Gemini API Description Error:", error);
+        throw error;
     }
 }
 
@@ -259,10 +300,10 @@ Position normalisé à 1000 que tu va re-normaliser derrière selon la page.`;
         if (candidates?.[0]?.content?.parts) {
             const answerPart = candidates[0].content.parts.find(p => !p.thought && p.text);
             if (answerPart) {
-                return { data: JSON.parse(answerPart.text) };
+                return { data: parseModelJson(answerPart.text, "One-shot Gemini") };
             }
         }
-        return { data: JSON.parse(response.text()) };
+        return { data: parseModelJson(response.text(), "One-shot Gemini") };
     } catch (error) {
         handleGeminiError(error);
         console.error("Gemini API One-Shot Error:", error);

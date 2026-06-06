@@ -190,6 +190,162 @@ function getReviewTextBySource(item, source) {
     return '';
 }
 
+function getReviewSources(item, providerLabel) {
+    const sources = [];
+
+    if (item.rallied) {
+        sources.push({
+            key: 'poneglyph',
+            label: `Poneglyph-BBox (${providerLabel})`,
+            text: item.poneglyphText || '',
+        });
+    }
+
+    sources.push({
+        key: 'lighton',
+        label: `Poneglyph (${providerLabel})`,
+        text: item.lightonText || '',
+    });
+
+    if (item.suryaEnabled) {
+        sources.push({
+            key: 'surya',
+            label: 'Surya Local',
+            text: item.suryaText || '',
+        });
+    }
+
+    return sources;
+}
+
+function normalizeDiffToken(value) {
+    return String(value || '').trim();
+}
+
+function tokenizeDiffText(value) {
+    const text = String(value || '');
+    if (!text) return [];
+    return text.split(/(\s+)/).filter(part => part.length > 0).map(part => ({
+        text: part,
+        isSpace: /^\s+$/.test(part),
+        normalized: normalizeDiffToken(part),
+    }));
+}
+
+function buildDiffModel(sources) {
+    const wordRows = sources.map(source =>
+        tokenizeDiffText(source.text)
+            .filter(token => !token.isSpace)
+            .map(token => token.normalized)
+    );
+    const maxWords = Math.max(0, ...wordRows.map(row => row.length));
+    const flags = wordRows.map(row => row.map(() => false));
+
+    for (let index = 0; index < maxWords; index++) {
+        const values = wordRows.map(row => row[index] || '');
+        const filledValues = values.filter(Boolean);
+        const allFilled = filledValues.length === values.length;
+        const allSame = allFilled && new Set(filledValues).size === 1;
+
+        if (allSame) continue;
+
+        values.forEach((value, rowIndex) => {
+            if (value) flags[rowIndex][index] = true;
+        });
+    }
+
+    const nonEmptyTexts = sources.map(source => normalizeOcrText(source.text)).filter(Boolean);
+    const uniqueTextCount = new Set(nonEmptyTexts).size;
+    const emptyCount = sources.length - nonEmptyTexts.length;
+    const changedTokenCount = flags.flat().filter(Boolean).length;
+    const allIdentical = emptyCount === 0 && uniqueTextCount === 1;
+
+    return {
+        flags,
+        allIdentical,
+        changedTokenCount,
+        emptyCount,
+        label: allIdentical
+            ? 'Textes identiques'
+            : emptyCount > 0
+                ? `${emptyCount} sortie${emptyCount > 1 ? 's' : ''} vide${emptyCount > 1 ? 's' : ''}`
+                : `${uniqueTextCount} variantes`,
+    };
+}
+
+function getSourceGridClass(sourceCount) {
+    if (sourceCount >= 3) return 'lg:grid-cols-3';
+    if (sourceCount === 2) return 'lg:grid-cols-2';
+    return 'grid-cols-1';
+}
+
+function DiffText({ text, flags }) {
+    const tokens = tokenizeDiffText(text);
+
+    if (!String(text || '').trim()) {
+        return <em className="text-slate-400">vide</em>;
+    }
+
+    const indexedTokens = tokens.reduce(
+        (acc, token) => {
+            if (token.isSpace) {
+                return {
+                    ...acc,
+                    items: [...acc.items, { ...token, wordIndex: null }],
+                };
+            }
+
+            const nextWordIndex = acc.wordIndex + 1;
+            return {
+                wordIndex: nextWordIndex,
+                items: [...acc.items, { ...token, wordIndex: nextWordIndex }],
+            };
+        },
+        { items: [], wordIndex: -1 }
+    ).items;
+
+    return indexedTokens.map((token, index) => {
+        if (token.isSpace) return token.text;
+
+        const isDifferent = Boolean(flags?.[token.wordIndex]);
+
+        return (
+            <span
+                key={`${token.text}-${index}`}
+                className={isDifferent ? "rounded bg-amber-100 px-0.5 text-amber-950 ring-1 ring-amber-200" : undefined}
+            >
+                {token.text}
+            </span>
+        );
+    });
+}
+
+function OcrSourceCard({ source, diffFlags, onChoose, processingReview }) {
+    const hasText = Boolean(String(source.text || '').trim());
+    const hasDiff = Boolean(diffFlags?.some(Boolean));
+
+    return (
+        <div className={`p-3 rounded-lg border bg-white ${hasDiff ? 'border-amber-200 shadow-sm shadow-amber-100/70' : 'border-slate-200'}`}>
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold text-slate-500">{source.label}</p>
+                {hasDiff && <Badge className="bg-amber-50 text-amber-700 border-amber-200">Diff</Badge>}
+            </div>
+            <p className="min-h-10 text-sm leading-6 text-slate-900 whitespace-pre-wrap">
+                <DiffText text={source.text} flags={diffFlags} />
+            </p>
+            <Button
+                size="sm"
+                variant="outline"
+                className="mt-2 w-full"
+                onClick={() => onChoose(source.text)}
+                disabled={!hasText || processingReview}
+            >
+                Utiliser
+            </Button>
+        </div>
+    );
+}
+
 export default function BatchOcrManager() {
     const { detectionStatus, loadDetectionModel, downloadProgress, detectBubblesPositionsOnly } = useDetection();
     const tauriLocalOcr = useTauriLocalOcrContext();
@@ -555,11 +711,25 @@ export default function BatchOcrManager() {
 
     const handleChoose = async (item, chosenText) => {
         if (!chosenText || processingReviewRef.current) return;
+        const itemKey = getReviewItemKey(item);
+        const hadCustomText = Object.prototype.hasOwnProperty.call(customReviewTexts, itemKey);
+        const previousCustomText = customReviewTexts[itemKey];
+
         processingReviewRef.current = true;
         setProcessingReview(true);
+        setCustomReviewTexts(prev => {
+            const next = { ...prev };
+            delete next[itemKey];
+            return next;
+        });
+        setReviewQueue(prev => prev.filter(r => r !== item));
+        let shouldRollback = true;
+
         try {
             if (hasKnownPageBox(item.pageId, item.yoloBox)) {
+                shouldRollback = false;
                 toast.info("Bulle déjà présente, ignorée.");
+                URL.revokeObjectURL(item.cropUrl);
                 return;
             }
 
@@ -573,18 +743,28 @@ export default function BatchOcrManager() {
                 order: item.order
             });
             rememberPageBox(item.pageId, item.yoloBox);
+            shouldRollback = false;
             await validateBubble(bubble.id);
+            URL.revokeObjectURL(item.cropUrl);
             toast.success("Bulle créée et validée !");
         } catch (e) {
             toast.error("Erreur: " + e.message);
+            if (shouldRollback) {
+                setPhase('review');
+                setReviewQueue(prev => {
+                    if (prev.some(r => getReviewItemKey(r) === itemKey)) return prev;
+                    return [...prev, item].sort((a, b) => {
+                        if (a.pageNumber !== b.pageNumber) return a.pageNumber - b.pageNumber;
+                        return a.order - b.order;
+                    });
+                });
+                if (hadCustomText) {
+                    setCustomReviewTexts(prev => ({ ...prev, [itemKey]: previousCustomText }));
+                }
+            } else {
+                URL.revokeObjectURL(item.cropUrl);
+            }
         } finally {
-            URL.revokeObjectURL(item.cropUrl);
-            setCustomReviewTexts(prev => {
-                const next = { ...prev };
-                delete next[getReviewItemKey(item)];
-                return next;
-            });
-            setReviewQueue(prev => prev.filter(r => r !== item));
             processingReviewRef.current = false;
             setProcessingReview(false);
         }
@@ -841,7 +1021,7 @@ export default function BatchOcrManager() {
                                         Tout Poneglyph
                                     </Button>
                                     <Button size="sm" variant="outline" onClick={() => handleAcceptAll('poneglyph')} disabled={processingReview}>
-                                        Tout Poneglyph
+                                        Tout Poneglyph-BBox
                                     </Button>
                                     {hasSuryaReview && (
                                         <Button size="sm" variant="outline" onClick={() => handleAcceptAll('surya')} disabled={processingReview}>
@@ -860,6 +1040,8 @@ export default function BatchOcrManager() {
                         {reviewQueue.map((item, idx) => {
                             const itemKey = getReviewItemKey(item);
                             const customText = customReviewTexts[itemKey] ?? getSuggestedReviewText(item);
+                            const reviewSources = getReviewSources(item, providerLabel);
+                            const diffModel = buildDiffModel(reviewSources);
 
                             return (
                             <Card key={itemKey} className="overflow-hidden border-slate-200 shadow-sm">
@@ -882,54 +1064,24 @@ export default function BatchOcrManager() {
                                                 <Badge className="bg-amber-50 text-amber-700 border-amber-200">YOLO seul</Badge>
                                             )}
                                             <span className="text-xs text-slate-400">#{idx + 1} / {reviewQueue.length}</span>
+                                            <Badge className={diffModel.allIdentical ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-700 border-amber-200"}>
+                                                {diffModel.label}
+                                            </Badge>
+                                            {!diffModel.allIdentical && diffModel.changedTokenCount > 0 && (
+                                                <span className="text-xs font-medium text-amber-700">{diffModel.changedTokenCount} token{diffModel.changedTokenCount > 1 ? 's' : ''}</span>
+                                            )}
                                         </div>
 
-                                        <div className={`grid gap-2 ${item.rallied && item.suryaEnabled ? 'lg:grid-cols-3' : item.rallied || item.suryaEnabled ? 'lg:grid-cols-2' : 'grid-cols-1'}`}>
-                                            {item.rallied && (
-                                                <div className="p-3 rounded-lg border border-slate-200 bg-white">
-                                                    <p className="text-xs font-semibold text-slate-500 mb-1">Poneglyph-BBox ({providerLabel})</p>
-                                                    <p className="min-h-10 text-sm text-slate-900 whitespace-pre-wrap">{item.poneglyphText || <em className="text-slate-400">vide</em>}</p>
-                                                    <Button
-                                                        size="sm"
-                                                        variant="outline"
-                                                        className="mt-2 w-full"
-                                                        onClick={() => handleChoose(item, item.poneglyphText)}
-                                                        disabled={!item.poneglyphText || processingReview}
-                                                    >
-                                                        Utiliser
-                                                    </Button>
-                                                </div>
-                                            )}
-
-                                            <div className="p-3 rounded-lg border border-slate-200 bg-white">
-                                                <p className="text-xs font-semibold text-slate-500 mb-1">Poneglyph ({providerLabel})</p>
-                                                <p className="min-h-10 text-sm text-slate-900 whitespace-pre-wrap">{item.lightonText || <em className="text-slate-400">vide</em>}</p>
-                                                <Button
-                                                    size="sm"
-                                                    variant="outline"
-                                                    className="mt-2 w-full"
-                                                    onClick={() => handleChoose(item, item.lightonText)}
-                                                    disabled={!item.lightonText || processingReview}
-                                                >
-                                                    Utiliser
-                                                </Button>
-                                            </div>
-
-                                            {item.suryaEnabled && (
-                                                <div className="p-3 rounded-lg border border-slate-200 bg-white">
-                                                    <p className="text-xs font-semibold text-slate-500 mb-1">Surya Local</p>
-                                                    <p className="min-h-10 text-sm text-slate-900 whitespace-pre-wrap">{item.suryaText || <em className="text-slate-400">vide</em>}</p>
-                                                    <Button
-                                                        size="sm"
-                                                        variant="outline"
-                                                        className="mt-2 w-full"
-                                                        onClick={() => handleChoose(item, item.suryaText)}
-                                                        disabled={!item.suryaText || processingReview}
-                                                    >
-                                                        Utiliser
-                                                    </Button>
-                                                </div>
-                                            )}
+                                        <div className={`grid gap-2 ${getSourceGridClass(reviewSources.length)}`}>
+                                            {reviewSources.map((source, sourceIndex) => (
+                                                <OcrSourceCard
+                                                    key={source.key}
+                                                    source={source}
+                                                    diffFlags={diffModel.flags[sourceIndex]}
+                                                    onChoose={(text) => handleChoose(item, text)}
+                                                    processingReview={processingReview}
+                                                />
+                                            ))}
                                         </div>
 
                                         <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
