@@ -25,6 +25,9 @@ const INITIAL_CONNECTION_STATE = {
 };
 
 const TRANSIENT_DIAGNOSTIC_GRACE_MS = 15000;
+const SURYA_BBOX_MODEL_DIR_HINT = 'surya-ocr-2-poneglyph-bbox';
+const SURYA_BBOX_STALE_DESKTOP_MESSAGE = "App desktop a redemarrer/rebuilder pour activer Surya-BBox.";
+const SURYA_BBOX_MODEL_ARGS = { model_key: 'surya_bbox', modelKey: 'surya_bbox' };
 
 function getErrorMessage(error) {
     return error?.message || String(error);
@@ -33,6 +36,19 @@ function getErrorMessage(error) {
 function getRejectedMessage(...results) {
     const rejected = results.find(result => result.status === 'rejected');
     return rejected ? getErrorMessage(rejected.reason) : null;
+}
+
+function normalizeSuryaBBoxStatus(status) {
+    if (!status || status.error) return status;
+
+    const modelDir = String(status.model_dir || '').replaceAll('\\', '/').toLowerCase();
+    if (modelDir.includes(SURYA_BBOX_MODEL_DIR_HINT)) return status;
+
+    return {
+        ...INITIAL_MODEL_STATUS,
+        model_dir: status.model_dir || '',
+        error: SURYA_BBOX_STALE_DESKTOP_MESSAGE
+    };
 }
 
 async function resolveTauriInvoke() {
@@ -71,16 +87,20 @@ export function useTauriLocalOcr() {
     const [localModelStatus, setLocalModelStatus] = useState(INITIAL_MODEL_STATUS);
     const [localTextModelStatus, setLocalTextModelStatus] = useState(INITIAL_MODEL_STATUS);
     const [localSuryaModelStatus, setLocalSuryaModelStatus] = useState(INITIAL_MODEL_STATUS);
+    const [localSuryaBBoxModelStatus, setLocalSuryaBBoxModelStatus] = useState(INITIAL_MODEL_STATUS);
     const [localHealth, setLocalHealth] = useState(null);
     const [isDownloadingLocalModel, setIsDownloadingLocalModel] = useState(false);
     const [isDownloadingLocalTextModel, setIsDownloadingLocalTextModel] = useState(false);
     const [isDownloadingLocalSuryaModel, setIsDownloadingLocalSuryaModel] = useState(false);
+    const [isDownloadingLocalSuryaBBoxModel, setIsDownloadingLocalSuryaBBoxModel] = useState(false);
     const [isLoadingLocalModel, setIsLoadingLocalModel] = useState(false);
     const [isLoadingLocalTextModel, setIsLoadingLocalTextModel] = useState(false);
     const [isLoadingLocalSuryaModel, setIsLoadingLocalSuryaModel] = useState(false);
+    const [isLoadingLocalSuryaBBoxModel, setIsLoadingLocalSuryaBBoxModel] = useState(false);
     const [isLocalInferencing, setIsLocalInferencing] = useState(false);
     const [isLocalTextInferencing, setIsLocalTextInferencing] = useState(false);
     const [isLocalSuryaInferencing, setIsLocalSuryaInferencing] = useState(false);
+    const [isLocalSuryaBBoxInferencing, setIsLocalSuryaBBoxInferencing] = useState(false);
     const [localError, setLocalError] = useState(null);
     const [localConnectionState, setLocalConnectionState] = useState(INITIAL_CONNECTION_STATE);
     const diagnosticFailureCountRef = useRef(0);
@@ -193,6 +213,10 @@ export function useTauriLocalOcr() {
             ? { ...prev, error: message }
             : { ...INITIAL_MODEL_STATUS, error: message }
         );
+        setLocalSuryaBBoxModelStatus(prev => isTransient
+            ? { ...prev, error: message }
+            : { ...INITIAL_MODEL_STATUS, error: message }
+        );
 
         return isTransient;
     }, []);
@@ -245,6 +269,22 @@ export function useTauriLocalOcr() {
         }
     }, [getInvoke, markDiagnosticsOnline]);
 
+    const refreshLocalSuryaBBoxModelStatus = useCallback(async () => {
+        const invoke = await getInvoke();
+        if (!invoke) return INITIAL_MODEL_STATUS;
+
+        try {
+            const status = normalizeSuryaBBoxStatus(await invoke('get_local_model_status', SURYA_BBOX_MODEL_ARGS));
+            setLocalSuryaBBoxModelStatus(status);
+            markDiagnosticsOnline(null, status);
+            return status;
+        } catch (error) {
+            const message = getErrorMessage(error);
+            setLocalSuryaBBoxModelStatus(prev => ({ ...prev, error: message }));
+            return { ...INITIAL_MODEL_STATUS, error: message };
+        }
+    }, [getInvoke, markDiagnosticsOnline]);
+
     const healthcheckLocalBackend = useCallback(async () => {
         const invoke = await getInvoke();
         if (!invoke) return null;
@@ -278,6 +318,7 @@ export function useTauriLocalOcr() {
             setLocalModelStatus(status);
             setLocalTextModelStatus(status);
             setLocalSuryaModelStatus(status);
+            setLocalSuryaBBoxModelStatus(status);
             setLocalError(message);
             setLocalConnectionState({
                 status: 'unavailable',
@@ -288,35 +329,39 @@ export function useTauriLocalOcr() {
             return { health, status };
         }
 
-        const [healthResult, statusResult, textStatusResult, suryaStatusResult] = await Promise.allSettled([
+        const [healthResult, statusResult, textStatusResult, suryaStatusResult, suryaBBoxStatusResult] = await Promise.allSettled([
             invoke('healthcheck_local_backend'),
             invoke('get_local_model_status'),
             invoke('get_local_text_model_status'),
-            invoke('get_local_surya_model_status')
+            invoke('get_local_surya_model_status'),
+            invoke('get_local_model_status', SURYA_BBOX_MODEL_ARGS)
         ]);
 
         const health = healthResult.status === 'fulfilled' ? healthResult.value : null;
         const status = statusResult.status === 'fulfilled' ? statusResult.value : null;
         const textStatus = textStatusResult.status === 'fulfilled' ? textStatusResult.value : null;
         const suryaStatus = suryaStatusResult.status === 'fulfilled' ? suryaStatusResult.value : null;
+        const suryaBBoxStatus = suryaBBoxStatusResult.status === 'fulfilled' ? normalizeSuryaBBoxStatus(suryaBBoxStatusResult.value) : null;
 
-        if (health || status || textStatus || suryaStatus) {
+        if (health || status || textStatus || suryaStatus || suryaBBoxStatus) {
             if (health) setLocalHealth(health);
             if (status) setLocalModelStatus(status);
             if (textStatus) setLocalTextModelStatus(textStatus);
             if (suryaStatus) setLocalSuryaModelStatus(suryaStatus);
-            const partialError = getRejectedMessage(healthResult, statusResult, textStatusResult, suryaStatusResult);
-            markDiagnosticsOnline(health, status || textStatus || suryaStatus);
+            if (suryaBBoxStatus) setLocalSuryaBBoxModelStatus(suryaBBoxStatus);
+            const partialError = getRejectedMessage(healthResult, statusResult, textStatusResult, suryaStatusResult, suryaBBoxStatusResult);
+            markDiagnosticsOnline(health, status || textStatus || suryaStatus || suryaBBoxStatus);
             if (partialError) {
                 setLocalConnectionState(prev => ({ ...prev, lastError: partialError }));
                 if (!textStatus) setLocalTextModelStatus(prev => ({ ...prev, error: partialError }));
                 if (!suryaStatus) setLocalSuryaModelStatus(prev => ({ ...prev, error: partialError }));
+                if (!suryaBBoxStatus) setLocalSuryaBBoxModelStatus(prev => ({ ...prev, error: partialError }));
             }
-            return { health, status, textStatus, suryaStatus };
+            return { health, status, textStatus, suryaStatus, suryaBBoxStatus };
         }
 
         try {
-            const message = getRejectedMessage(healthResult, statusResult, textStatusResult, suryaStatusResult) || "Diagnostic OCR local indisponible.";
+            const message = getRejectedMessage(healthResult, statusResult, textStatusResult, suryaStatusResult, suryaBBoxStatusResult) || "Diagnostic d'inference locale indisponible.";
             throw new Error(message);
         } catch (error) {
             const message = getErrorMessage(error);
@@ -325,7 +370,8 @@ export function useTauriLocalOcr() {
             const status = { ...INITIAL_MODEL_STATUS, error: message };
             const textStatus = { ...INITIAL_MODEL_STATUS, error: message };
             const suryaStatus = { ...INITIAL_MODEL_STATUS, error: message };
-            return { health, status, textStatus, suryaStatus };
+            const suryaBBoxStatus = { ...INITIAL_MODEL_STATUS, error: message };
+            return { health, status, textStatus, suryaStatus, suryaBBoxStatus };
         }
     }, [getInvoke, markDiagnosticsFailure, markDiagnosticsOnline]);
 
@@ -342,7 +388,7 @@ export function useTauriLocalOcr() {
         try {
             const result = await invoke('download_local_model');
             if (!result?.ok) {
-                setLocalError(result?.error || "Telechargement du modele local impossible.");
+                setLocalError(result?.error || "Telechargement du modele Poneglyph-BBox impossible.");
             }
             if (result?.download) {
                 setLocalModelStatus(prev => ({ ...prev, download: result.download }));
@@ -371,7 +417,7 @@ export function useTauriLocalOcr() {
         try {
             const result = await invoke('download_local_text_model');
             if (!result?.ok) {
-                setLocalError(result?.error || "Telechargement du modele Poneglyph local impossible.");
+                setLocalError(result?.error || "Telechargement du modele Poneglyph impossible.");
             }
             if (result?.download) {
                 setLocalTextModelStatus(prev => ({ ...prev, download: result.download }));
@@ -413,6 +459,40 @@ export function useTauriLocalOcr() {
             return { ok: false, error: message };
         } finally {
             setIsDownloadingLocalSuryaModel(false);
+        }
+    }, [getInvoke, refreshLocalDiagnostics]);
+
+    const downloadLocalSuryaBBoxModel = useCallback(async () => {
+        const invoke = await getInvoke();
+        if (!invoke) {
+            const message = "Tauri indisponible.";
+            setLocalError(message);
+            return { ok: false, error: message };
+        }
+
+        setIsDownloadingLocalSuryaBBoxModel(true);
+        setLocalError(null);
+        try {
+            const result = await invoke('download_local_model', SURYA_BBOX_MODEL_ARGS);
+            if (!result?.ok) {
+                setLocalError(result?.error || "Telechargement du modele Surya-BBox impossible.");
+            }
+            if (result?.model_dir && !String(result.model_dir).replaceAll('\\', '/').toLowerCase().includes(SURYA_BBOX_MODEL_DIR_HINT)) {
+                setLocalError(SURYA_BBOX_STALE_DESKTOP_MESSAGE);
+                setLocalSuryaBBoxModelStatus(prev => ({ ...prev, error: SURYA_BBOX_STALE_DESKTOP_MESSAGE }));
+                return { ok: false, error: SURYA_BBOX_STALE_DESKTOP_MESSAGE };
+            }
+            if (result?.download) {
+                setLocalSuryaBBoxModelStatus(prev => ({ ...prev, download: result.download }));
+            }
+            await refreshLocalDiagnostics();
+            return result;
+        } catch (error) {
+            const message = getErrorMessage(error);
+            setLocalError(message);
+            return { ok: false, error: message };
+        } finally {
+            setIsDownloadingLocalSuryaBBoxModel(false);
         }
     }, [getInvoke, refreshLocalDiagnostics]);
 
@@ -497,6 +577,33 @@ export function useTauriLocalOcr() {
         }
     }, [getInvoke, markDiagnosticsOnline, refreshLocalDiagnostics]);
 
+    const loadLocalSuryaBBoxModel = useCallback(async () => {
+        const invoke = await getInvoke();
+        if (!invoke) {
+            const message = "Tauri indisponible.";
+            setLocalError(message);
+            return { ...INITIAL_MODEL_STATUS, error: message };
+        }
+
+        setIsLoadingLocalSuryaBBoxModel(true);
+        setLocalError(null);
+        setLocalSuryaBBoxModelStatus(prev => ({ ...prev, loading: true, error: null }));
+        try {
+            const status = normalizeSuryaBBoxStatus(await invoke('load_local_model', SURYA_BBOX_MODEL_ARGS));
+            setLocalSuryaBBoxModelStatus(status);
+            markDiagnosticsOnline(null, status);
+            await refreshLocalDiagnostics();
+            return status;
+        } catch (error) {
+            const message = getErrorMessage(error);
+            setLocalError(message);
+            setLocalSuryaBBoxModelStatus(prev => ({ ...prev, loaded: false, loading: false, ready: false, error: message }));
+            return { ...INITIAL_MODEL_STATUS, error: message };
+        } finally {
+            setIsLoadingLocalSuryaBBoxModel(false);
+        }
+    }, [getInvoke, markDiagnosticsOnline, refreshLocalDiagnostics]);
+
     const runLocalOcrBlob = useCallback(async (blob) => {
         const invoke = await getInvoke();
         if (!invoke) throw new Error("Tauri indisponible.");
@@ -557,6 +664,26 @@ export function useTauriLocalOcr() {
         }
     }, [getInvoke, refreshLocalDiagnostics]);
 
+    const runLocalSuryaBBoxOcrBlob = useCallback(async (blob) => {
+        const invoke = await getInvoke();
+        if (!invoke) throw new Error("Tauri indisponible.");
+
+        setIsLocalSuryaBBoxInferencing(true);
+        setLocalError(null);
+        try {
+            const image_bytes_base64 = await blobToBase64(blob);
+            const result = await invoke('run_local_ocr', { image_bytes_base64, ...SURYA_BBOX_MODEL_ARGS });
+            await refreshLocalDiagnostics();
+            return result;
+        } catch (error) {
+            const message = getErrorMessage(error);
+            setLocalError(message);
+            throw new Error(message);
+        } finally {
+            setIsLocalSuryaBBoxInferencing(false);
+        }
+    }, [getInvoke, refreshLocalDiagnostics]);
+
     useEffect(() => {
         let cancelled = false;
 
@@ -577,10 +704,10 @@ export function useTauriLocalOcr() {
 
         const intervalId = window.setInterval(() => {
             refreshLocalDiagnostics();
-        }, localModelStatus?.download?.active || localTextModelStatus?.download?.active || localSuryaModelStatus?.download?.active || isLoadingLocalModel || isLoadingLocalTextModel || isLoadingLocalSuryaModel || isLocalInferencing || isLocalTextInferencing || isLocalSuryaInferencing ? 2000 : 5000);
+        }, localModelStatus?.download?.active || localTextModelStatus?.download?.active || localSuryaModelStatus?.download?.active || localSuryaBBoxModelStatus?.download?.active || isLoadingLocalModel || isLoadingLocalTextModel || isLoadingLocalSuryaModel || isLoadingLocalSuryaBBoxModel || isLocalInferencing || isLocalTextInferencing || isLocalSuryaInferencing || isLocalSuryaBBoxInferencing ? 2000 : 5000);
 
         return () => window.clearInterval(intervalId);
-    }, [isTauri, isLoadingLocalModel, isLoadingLocalTextModel, isLoadingLocalSuryaModel, isLocalInferencing, isLocalTextInferencing, isLocalSuryaInferencing, localModelStatus?.download?.active, localTextModelStatus?.download?.active, localSuryaModelStatus?.download?.active, refreshLocalDiagnostics]);
+    }, [isTauri, isLoadingLocalModel, isLoadingLocalTextModel, isLoadingLocalSuryaModel, isLoadingLocalSuryaBBoxModel, isLocalInferencing, isLocalTextInferencing, isLocalSuryaInferencing, isLocalSuryaBBoxInferencing, localModelStatus?.download?.active, localTextModelStatus?.download?.active, localSuryaModelStatus?.download?.active, localSuryaBBoxModelStatus?.download?.active, refreshLocalDiagnostics]);
 
     const localDownloadState = localModelStatus?.download || null;
     const localDownloadProgress = localDownloadState?.total_bytes
@@ -597,6 +724,11 @@ export function useTauriLocalOcr() {
         ? Math.min(100, (Number(localSuryaDownloadState.downloaded_bytes || 0) / Number(localSuryaDownloadState.total_bytes)) * 100)
         : null;
     const isLocalSuryaDownloadActive = Boolean(isDownloadingLocalSuryaModel || localSuryaDownloadState?.active);
+    const localSuryaBBoxDownloadState = localSuryaBBoxModelStatus?.download || null;
+    const localSuryaBBoxDownloadProgress = localSuryaBBoxDownloadState?.total_bytes
+        ? Math.min(100, (Number(localSuryaBBoxDownloadState.downloaded_bytes || 0) / Number(localSuryaBBoxDownloadState.total_bytes)) * 100)
+        : null;
+    const isLocalSuryaBBoxDownloadActive = Boolean(isDownloadingLocalSuryaBBoxModel || localSuryaBBoxDownloadState?.active);
 
     const canRunLocalOcr = Boolean(
         isTauri &&
@@ -608,7 +740,8 @@ export function useTauriLocalOcr() {
         !isLocalDownloadActive &&
         !isLocalInferencing &&
         !isLocalTextInferencing &&
-        !isLocalSuryaInferencing
+        !isLocalSuryaInferencing &&
+        !isLocalSuryaBBoxInferencing
     );
 
     const canRunLocalTextOcr = Boolean(
@@ -621,7 +754,8 @@ export function useTauriLocalOcr() {
         !isLocalTextDownloadActive &&
         !isLocalTextInferencing &&
         !isLocalInferencing &&
-        !isLocalSuryaInferencing
+        !isLocalSuryaInferencing &&
+        !isLocalSuryaBBoxInferencing
     );
 
     const canRunLocalSuryaOcr = Boolean(
@@ -634,7 +768,22 @@ export function useTauriLocalOcr() {
         !isLocalSuryaDownloadActive &&
         !isLocalSuryaInferencing &&
         !isLocalInferencing &&
-        !isLocalTextInferencing
+        !isLocalTextInferencing &&
+        !isLocalSuryaBBoxInferencing
+    );
+
+    const canRunLocalSuryaBBoxOcr = Boolean(
+        isTauri &&
+        localConnectionState.status !== 'offline' &&
+        localSuryaBBoxModelStatus?.ready &&
+        localSuryaBBoxModelStatus?.loaded &&
+        !localSuryaBBoxModelStatus?.loading &&
+        !isLoadingLocalSuryaBBoxModel &&
+        !isLocalSuryaBBoxDownloadActive &&
+        !isLocalSuryaBBoxInferencing &&
+        !isLocalInferencing &&
+        !isLocalTextInferencing &&
+        !isLocalSuryaInferencing
     );
 
     return {
@@ -643,40 +792,51 @@ export function useTauriLocalOcr() {
         localModelStatus,
         localTextModelStatus,
         localSuryaModelStatus,
+        localSuryaBBoxModelStatus,
         localHealth,
         localConnectionState,
         isDownloadingLocalModel: isLocalDownloadActive,
         isDownloadingLocalTextModel: isLocalTextDownloadActive,
         isDownloadingLocalSuryaModel: isLocalSuryaDownloadActive,
+        isDownloadingLocalSuryaBBoxModel: isLocalSuryaBBoxDownloadActive,
         localDownloadState,
         localTextDownloadState,
         localSuryaDownloadState,
+        localSuryaBBoxDownloadState,
         localDownloadProgress,
         localTextDownloadProgress,
         localSuryaDownloadProgress,
+        localSuryaBBoxDownloadProgress,
         isLoadingLocalModel,
         isLoadingLocalTextModel,
         isLoadingLocalSuryaModel,
+        isLoadingLocalSuryaBBoxModel,
         isLocalInferencing,
         isLocalTextInferencing,
         isLocalSuryaInferencing,
+        isLocalSuryaBBoxInferencing,
         localError,
         canRunLocalOcr,
         canRunLocalTextOcr,
         canRunLocalSuryaOcr,
+        canRunLocalSuryaBBoxOcr,
         refreshLocalModelStatus,
         refreshLocalTextModelStatus,
         refreshLocalSuryaModelStatus,
+        refreshLocalSuryaBBoxModelStatus,
         healthcheckLocalBackend,
         refreshLocalDiagnostics,
         downloadLocalModel,
         downloadLocalTextModel,
         downloadLocalSuryaModel,
+        downloadLocalSuryaBBoxModel,
         loadLocalModel,
         loadLocalTextModel,
         loadLocalSuryaModel,
+        loadLocalSuryaBBoxModel,
         runLocalOcrBlob,
         runLocalTextOcrBlob,
-        runLocalSuryaOcrBlob
+        runLocalSuryaOcrBlob,
+        runLocalSuryaBBoxOcrBlob
     };
 }

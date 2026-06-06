@@ -52,9 +52,9 @@ Poneglyph est disponible en tant qu'application desktop Windows via **Tauri v2**
 
 1. Ouvrez l'application
 2. Allez sur une page d'annotation
-3. Dans le panneau OCR, cliquez sur **Télécharger le modèle local** (~2 Go)
-4. Le modèle est téléchargé dans `%APPDATA%\poneglyph\models\`
-5. Cliquez sur **OCR local** pour lancer l'inférence sur votre GPU
+3. Dans le panneau OCR, choisissez un modèle local (**Poneglyph-BBox**, **Poneglyph**, **Surya-BBox** ou **Surya**) et cliquez sur **Télécharger** (~2-4 Go par modèle)
+4. Les modèles sont téléchargés dans `%APPDATA%\poneglyph\models\`
+5. Cliquez sur **Charger** puis lancez l'inférence sur votre GPU
 
 ### Backend OCR local: performance transformers
 
@@ -77,6 +77,10 @@ Options de performance:
 - `PONEGLYPH_SURYA_MODEL_DIR` (defaut: `%APPDATA%\poneglyph\models\surya-bubble-ocr-poneglyph`)
 - `PONEGLYPH_SURYA_MAX_NEW_TOKENS` (defaut: `96`)
 - `PONEGLYPH_SURYA_USER_PROMPT` (prompt OCR Surya optionnel)
+- `PONEGLYPH_SURYA_BBOX_MODEL_ID` (defaut: `Remidesbois/surya-ocr-2-poneglyph-bbox`)
+- `PONEGLYPH_SURYA_BBOX_MODEL_DIR` (defaut: `%APPDATA%\poneglyph\models\surya-ocr-2-poneglyph-bbox`)
+- `PONEGLYPH_SURYA_BBOX_MAX_NEW_TOKENS` (defaut: `2048`)
+- `PONEGLYPH_SURYA_BBOX_USER_PROMPT` (prompt OCR Surya-BBox optionnel)
 - `PONEGLYPH_WARMUP=1/0` (defaut: `1`)
 
 Verification rapide sans telechargement des modeles:
@@ -106,7 +110,7 @@ python desktop_backend/benchmark_local_ocr.py --image sample.png --endpoint /ocr
 
 - **Framework :** React 19 / Next.js
 - **UI :** [ShadCn UI](https://ui.shadcn.com/)
-- **OCR Hybride :** TrOCR Fine-tuned (WebGPU) + LightOnOCR (Cloud/Local)
+- **OCR Hybride :** TrOCR Fine-tuned (WebGPU) + Poneglyph & Surya (Cloud/Local)
 - **Détection de Bulles :** YOLO26 Nano via ONNX Runtime Web (WASM)
 - **Desktop :** Tauri v2 (Rust shell + Python backend)
 
@@ -133,7 +137,11 @@ python desktop_backend/benchmark_local_ocr.py --image sample.png --endpoint /ocr
 │                 │ HTTP (127.0.0.1:random)        │
 │  ┌──────────────▼─────────────────────────────┐  │
 │  │  local_ocr_server.py (FastAPI)             │  │
-│  │  - Charge LightOnOCR-2-1b-poneglyph-bbox   │  │
+│  │  - 4 modèles locaux téléchargeables :      │  │
+│  │    • Poneglyph-BBox (full-page + bbox)     │  │
+│  │    • Poneglyph (bulle unique)              │  │
+│  │    • Surya-BBox (full-page + bbox)         │  │
+│  │    • Surya (bulle unique)                  │  │
 │  │  - CUDA / MPS / CPU auto-detect            │  │
 │  │  - Endpoints: /health, /model/*, /ocr      │  │
 │  └────────────────────────────────────────────┘  │
@@ -178,13 +186,25 @@ Architecture hybride, multicouche et parallélisée :
 
 ### LightOn-OCR Poneglyph (Cloud Modal / Local GPU)
 
-Modèle de pointe pour une précision extrême, déployé en serverless sur **Modal** et disponible en local via le desktop.
+Modèle de pointe pour une précision extrême, déployé en serverless sur **Modal** et disponible en local via le desktop. Deux variantes sont supportées par le backend local :
 
-- **Modèle :** [`LightonOCR-2-1b-poneglyph-bbox`](https://huggingface.co/Remidesbois/LightonOCR-2-1b-poneglyph-bbox) (Architecture LightOnOCR-2-1B)
+- **Poneglyph-BBox** (full-page) : [`LightonOCR-2-1b-poneglyph-bbox`](https://huggingface.co/Remidesbois/LightonOCR-2-1b-poneglyph-bbox) — détecte toutes les bulles d'une page et renvoie texte + bbox.
+- **Poneglyph** (bulle unique) : [`LightonOCR-2-1b-poneglyph`](https://huggingface.co/Remidesbois/LightonOCR-2-1b-poneglyph) — transcription d'une bulle isolée.
+
 - **Précision :** CER < 0.1% - WER < 0.1%
 - **Cloud :** GPU NVIDIA L4 via Modal (~0.000222 $/seconde)
 - **Local :** 0$/OCR, 5-15s/page selon GPU
 - **Optimisation :** Post-processing de troncature pour 0% d'hallucination
+
+### Surya OCR 2 Poneglyph (Local GPU)
+
+Fine-tune du VLM [`datalab-to/surya-ocr-2`](https://huggingface.co/datalab-to/surya-ocr-2) (Qwen3.5 image-text-to-text), exécuté en local via le desktop. Mêmes deux modes que Poneglyph :
+
+- **Surya-BBox** (full-page) : [`surya-ocr-2-poneglyph-bbox`](https://huggingface.co/Remidesbois/surya-ocr-2-poneglyph-bbox) — contrat `Texte [x1,y1,x2,y2]`, coordonnées normalisées à `[0, 1000]`.
+- **Surya** (bulle unique) : [`surya-bubble-ocr-poneglyph`](https://huggingface.co/Remidesbois/surya-bubble-ocr-poneglyph).
+
+- **Local :** 0$/OCR via transformers (`AutoModelForImageTextToText`)
+- **Pipeline MLOps :** [`docker_scripts/finetune_surya_ocr_bbox`](docker_scripts/finetune_surya_ocr_bbox) (export Supabase → dataset → LoRA/DoRA → benchmark vs LightOn)
 
 ### YOLO26 Fine-tuned (Détection des Bulles)
 
@@ -247,7 +267,7 @@ poneglyph.fr (Cloudflare CDN)
     │
     └── Desktop App (Tauri v2)
         └── Python Backend (FastAPI + PyTorch)
-            └── LightOnOCR Local GPU Inference
+            └── Poneglyph & Surya Local GPU Inference
 ```
 
 ---
@@ -335,10 +355,10 @@ L'installer NSIS est généré dans `frontend\src-tauri\target\release\bundle\ns
 
 ## Pipeline MLOps
 
-Les scripts `/script_docker` automatisent le cycle de vie des modèles IA :
+Les scripts `/docker_scripts` automatisent le cycle de vie des modèles IA :
 
 1. **Extraction :** Récupération des bulles/pages validées (Supabase)
-2. **Fine-Tuning :** Entraînement de TrOCR, LightOnOCR et modèles de détection/tri
+2. **Fine-Tuning :** Entraînement de TrOCR, LightOnOCR, Surya (bulle + bbox) et modèles de détection/tri
 3. **Déploiement :** Push automatique vers Hugging Face si les métriques sont validées
 
 ---

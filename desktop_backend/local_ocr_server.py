@@ -20,12 +20,13 @@ from pydantic import BaseModel
 BBOX_MODEL_KEY = "bbox"
 TEXT_MODEL_KEY = "base"
 SURYA_MODEL_KEY = "surya"
+SURYA_BBOX_MODEL_KEY = "surya_bbox"
 DEFAULT_MODEL_KEY = BBOX_MODEL_KEY
 MODEL_CONFIGS = {
     BBOX_MODEL_KEY: {
         "id": "Remidesbois/LightonOCR-2-1b-poneglyph-bbox",
         "dir_name": "lighton-ocr-poneglyph-bbox",
-        "label": "Poneglyph BBox",
+        "label": "Poneglyph-BBox",
         "max_new_tokens": 2048,
         "family": "lighton_bbox",
         "model_dir_envs": ("PONEGLYPH_BBOX_MODEL_DIR", "PONEGLYPH_MODEL_DIR"),
@@ -34,7 +35,7 @@ MODEL_CONFIGS = {
     TEXT_MODEL_KEY: {
         "id": "Remidesbois/LightonOCR-2-1b-poneglyph",
         "dir_name": "lighton-ocr-poneglyph",
-        "label": "Poneglyph OCR",
+        "label": "Poneglyph",
         "max_new_tokens": 128,
         "family": "lighton_text",
         "model_dir_envs": ("PONEGLYPH_BASE_MODEL_DIR",),
@@ -52,8 +53,22 @@ MODEL_CONFIGS = {
         "model_dir_envs": ("PONEGLYPH_SURYA_MODEL_DIR", "SURYA_MODEL_DIR"),
         "max_new_tokens_envs": ("PONEGLYPH_SURYA_MAX_NEW_TOKENS", "SURYA_MAX_NEW_TOKENS"),
     },
+    SURYA_BBOX_MODEL_KEY: {
+        "id": os.getenv(
+            "PONEGLYPH_SURYA_BBOX_MODEL_ID",
+            os.getenv("SURYA_BBOX_HF_REPO", "Remidesbois/surya-ocr-2-poneglyph-bbox"),
+        ),
+        "dir_name": "surya-ocr-2-poneglyph-bbox",
+        "label": "Surya-BBox",
+        "max_new_tokens": 2048,
+        "family": "surya_bbox",
+        "model_dir_envs": ("PONEGLYPH_SURYA_BBOX_MODEL_DIR", "SURYA_BBOX_MODEL_DIR"),
+        "max_new_tokens_envs": ("PONEGLYPH_SURYA_BBOX_MAX_NEW_TOKENS", "SURYA_BBOX_MAX_NEW_TOKENS"),
+    },
 }
 TEXT_OCR_MODEL_KEYS = {TEXT_MODEL_KEY, SURYA_MODEL_KEY}
+BBOX_OCR_MODEL_KEYS = {BBOX_MODEL_KEY, SURYA_BBOX_MODEL_KEY}
+SURYA_MODEL_KEYS = {SURYA_MODEL_KEY, SURYA_BBOX_MODEL_KEY}
 TEXT_USER_PROMPT = os.getenv(
     "LIGHTON_USER_PROMPT",
     "\nTranscription OCR (uniquement le texte de la bulle, pas de suite) :",
@@ -63,6 +78,14 @@ SURYA_USER_PROMPT = os.getenv(
     os.getenv(
         "SURYA_USER_PROMPT",
         "Transcris exactement le texte visible dans cette bulle. Ne rajoute rien.",
+    ),
+)
+SURYA_BBOX_USER_PROMPT = os.getenv(
+    "PONEGLYPH_SURYA_BBOX_USER_PROMPT",
+    os.getenv(
+        "SURYA_BBOX_USER_PROMPT",
+        "Extrais le texte des bulles de cette page de manga dans l'ordre de lecture japonais, "
+        "avec leurs bbox normalisees entre 0 et 1000. Format strict: Texte [x1,y1,x2,y2].",
     ),
 )
 MAX_IMAGE_SIZE = (1540, 1540)
@@ -112,6 +135,7 @@ def perf_options_payload():
         "text_max_new_tokens": get_max_new_tokens(TEXT_MODEL_KEY),
         "bbox_max_new_tokens": get_max_new_tokens(BBOX_MODEL_KEY),
         "surya_max_new_tokens": get_max_new_tokens(SURYA_MODEL_KEY),
+        "surya_bbox_max_new_tokens": get_max_new_tokens(SURYA_BBOX_MODEL_KEY),
     }
 
 
@@ -169,6 +193,13 @@ def normalize_text_ocr_model_key(model_key: str) -> str:
     model_key = normalize_model_key(model_key)
     if model_key not in TEXT_OCR_MODEL_KEYS:
         raise ValueError(f"Le modele {model_key} ne fournit pas d'OCR texte classique.")
+    return model_key
+
+
+def normalize_bbox_ocr_model_key(model_key: str) -> str:
+    model_key = normalize_model_key(model_key)
+    if model_key not in BBOX_OCR_MODEL_KEYS:
+        raise ValueError(f"Le modele {model_key} ne fournit pas d'OCR bbox full-page.")
     return model_key
 
 
@@ -478,7 +509,7 @@ def configure_processor(model_key: str, loaded_processor):
         image_processor.default_to_square = False
 
     tokenizer = getattr(loaded_processor, "tokenizer", None)
-    if model_key in TEXT_OCR_MODEL_KEYS and tokenizer is not None:
+    if (model_key in TEXT_OCR_MODEL_KEYS or model_key in SURYA_MODEL_KEYS) and tokenizer is not None:
         tokenizer.padding_side = "left"
         if getattr(tokenizer, "pad_token_id", None) is None and getattr(tokenizer, "eos_token", None):
             tokenizer.pad_token = tokenizer.eos_token
@@ -488,7 +519,7 @@ def configure_processor(model_key: str, loaded_processor):
 
 def load_processor(model_key: str):
     model_dir = get_model_dir(model_key)
-    if model_family(model_key) == "surya_text":
+    if model_key in SURYA_MODEL_KEYS:
         from transformers import AutoProcessor
 
         loaded_processor = AutoProcessor.from_pretrained(model_dir, trust_remote_code=True)
@@ -523,7 +554,7 @@ def configure_model_generation(model_key: str, model, loaded_processor) -> None:
 
     generation_config.do_sample = False
     generation_config.max_new_tokens = get_max_new_tokens(model_key)
-    if model_family(model_key) == "surya_text":
+    if model_key in SURYA_MODEL_KEYS:
         generation_config.temperature = None
         generation_config.top_p = None
         generation_config.top_k = None
@@ -560,7 +591,7 @@ def load_transformers_model(
     errors = []
     for attention_name, attention_kwargs in transformer_attention_attempts(selected_device):
         try:
-            if model_family(model_key) == "surya_text":
+            if model_key in SURYA_MODEL_KEYS:
                 from transformers import AutoModelForImageTextToText
 
                 model = AutoModelForImageTextToText.from_pretrained(
@@ -658,6 +689,17 @@ def messages_for_model(model_key: str):
             }
         ]
 
+    if model_key == SURYA_BBOX_MODEL_KEY:
+        return [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image"},
+                    {"type": "text", "text": SURYA_BBOX_USER_PROMPT},
+                ],
+            }
+        ]
+
     return [
         {
             "role": "user",
@@ -700,8 +742,9 @@ def load_model(model_key: str = DEFAULT_MODEL_KEY) -> None:
             return
 
         if not model_is_installed(model_key):
+            model_label = MODEL_CONFIGS[model_key]["label"]
             raise RuntimeError(
-                "Le modele local n'est pas installe. Lancez d'abord le telechargement."
+                f"Le modele {model_label} n'est pas installe. Lancez d'abord le telechargement."
             )
 
         state["loading"] = True
@@ -777,6 +820,14 @@ def model_status_payload(model_key: str = DEFAULT_MODEL_KEY):
 
 def loaded_models_payload():
     return {model_key: model_status_payload(model_key) for model_key in MODEL_CONFIGS}
+
+
+def global_active_backend() -> str:
+    for model_key in MODEL_CONFIGS:
+        backend = get_model_state(model_key).get("active_backend")
+        if backend:
+            return backend
+    return BACKEND_NOT_LOADED
 
 
 def decode_image_request(request: OcrRequest):
@@ -936,7 +987,7 @@ def health():
             "gpu_memory_allocated_mb": gpu_memory_allocated_mb,
             "gpu_memory_reserved_mb": gpu_memory_reserved_mb,
             "requested_backend": get_requested_backend(),
-            "active_backend": default_state["active_backend"] or BACKEND_NOT_LOADED,
+            "active_backend": global_active_backend(),
             "backend_fallback_reason": default_state["backend_fallback_reason"],
             "perf_options": perf_options_payload(),
             "model_loaded": get_model_state(BBOX_MODEL_KEY)["processor"] is not None
@@ -951,7 +1002,7 @@ def health():
             "cuda_available": False,
             "mps_available": False,
             "requested_backend": get_requested_backend(),
-            "active_backend": default_state["active_backend"] or BACKEND_NOT_LOADED,
+            "active_backend": global_active_backend(),
             "backend_fallback_reason": default_state["backend_fallback_reason"],
             "perf_options": perf_options_payload(),
             "error": str(exc),
@@ -1010,10 +1061,10 @@ def model_download(model_key: str = DEFAULT_MODEL_KEY):
 
 
 @app.post("/ocr")
-def ocr(request: OcrRequest):
+def ocr(request: OcrRequest, model_key: str = BBOX_MODEL_KEY):
     start = time.perf_counter()
-    model_key = BBOX_MODEL_KEY
     try:
+        model_key = normalize_bbox_ocr_model_key(model_key)
         image_bytes = decode_image_request(request)
         if isinstance(image_bytes, JSONResponse):
             return image_bytes
@@ -1050,6 +1101,8 @@ def ocr(request: OcrRequest):
     except RuntimeError as exc:
         message = record_runtime_error(model_key, exc)
         return JSONResponse(status_code=500, content={"error": message})
+    except ValueError as exc:
+        return JSONResponse(status_code=400, content={"error": str(exc)})
     except Exception as exc:
         get_model_state(model_key)["last_error"] = str(exc)
         return JSONResponse(status_code=500, content={"error": str(exc)})

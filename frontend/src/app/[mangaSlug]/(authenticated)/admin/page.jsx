@@ -213,7 +213,7 @@ export default function AdminDashboard() {
                                     Batch OCR
                                 </h3>
                                 <p className="text-sm text-slate-500 mt-1">
-                                    Traitez un chapitre complet automatiquement : détection YOLO, OCR Poneglyph + LightOn, auto-validation des concordances.
+                                    Traitez un chapitre complet automatiquement : détection YOLO, OCR Poneglyph-BBox + Poneglyph, auto-validation des concordances.
                                 </p>
                             </div>
                             <Link href={`/${params.mangaSlug}/admin/batch-ocr`}>

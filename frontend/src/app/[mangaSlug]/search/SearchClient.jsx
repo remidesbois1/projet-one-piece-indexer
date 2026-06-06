@@ -332,7 +332,7 @@ export default function SearchPage() {
                         <p className="text-slate-500 font-medium text-sm sm:text-base max-w-xl mx-auto">
                             {useSemantic
                                 ? "Rio Poneglyph : Déchiffrer l'histoire à travers les concepts et les souvenirs."
-                                : "Poneglyph Classique : Retrouver les traces écrites et les paroles exactes."
+                                : "Poneglyph : Retrouver les traces écrites et les paroles exactes."
                             }
                         </p>
                     </div>
@@ -594,7 +594,7 @@ export default function SearchPage() {
                                                 "text-sm font-medium text-slate-700 leading-relaxed italic border-l-2 pl-3 py-1",
                                                 useSemantic ? "border-red-200" : "border-[#2F7AAF]/30"
                                             )}>
-                                                "{highlightText(item.content, query)}"
+                                                &quot;{highlightText(item.content, query)}&quot;
                                             </div>
                                         )}
 
@@ -653,7 +653,7 @@ export default function SearchPage() {
                         </div>
                         <h3 className="text-xl font-black text-slate-900 mb-2 uppercase tracking-tight">Zone Inconnue</h3>
                         <p className="text-slate-500 font-medium text-sm mb-8 leading-relaxed">
-                            Aucune occurrence de "{query}" dans nos archives.
+                            Aucune occurrence de &quot;{query}&quot; dans nos archives.
                             {!useSemantic && " L'IA pourrait vous aider par analogie."}
                         </p>
                         {!useSemantic && (

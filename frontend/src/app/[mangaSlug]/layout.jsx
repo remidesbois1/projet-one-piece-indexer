@@ -37,7 +37,7 @@ export default function MangaLayout({ children }) {
                     <DialogHeader>
                         <DialogTitle>Configuration API</DialogTitle>
                         <DialogDescription>
-                            Gérez vos clés API pour l&apos;ensemble de l&apos;application.
+                            Gérez votre clé API pour l&apos;ensemble de l&apos;application.
                         </DialogDescription>
                     </DialogHeader>
                     <ApiKeyForm onSave={handleSaveApiKey} />

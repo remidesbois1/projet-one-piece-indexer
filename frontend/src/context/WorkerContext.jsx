@@ -24,8 +24,8 @@ export const OCR_MODELS = {
     },
     poneglyphLocal: {
         key: 'poneglyphLocal',
-        label: 'Poneglyph Local',
-        description: 'LightOnOCR local via Tauri',
+        label: 'Poneglyph',
+        description: 'Inference locale via Tauri',
         cer: '< 0.1%',
         size: '~4 Go',
         type: 'local',
@@ -34,8 +34,8 @@ export const OCR_MODELS = {
     },
     suryaLocal: {
         key: 'suryaLocal',
-        label: 'Surya Local',
-        description: 'Surya OCR 2 local via Tauri',
+        label: 'Surya',
+        description: 'Inference locale via Tauri',
         cer: '< 0.1%',
         size: '~4 Go',
         type: 'local',
@@ -52,8 +52,8 @@ export const OCR_MODELS = {
     },
     lighton: {
         key: 'lighton',
-        label: 'Poneglyph Modal',
-        description: 'Serveur Cloud (Modal GPU)',
+        label: 'Poneglyph',
+        description: 'Inference Modal GPU',
         cer: '< 0.1%',
         size: 'API Cloud',
         type: 'api'

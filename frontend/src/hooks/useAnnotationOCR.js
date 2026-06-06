@@ -54,7 +54,7 @@ export function useAnnotationOCR({
             status: isSurya ? tauriLocalOcr.localSuryaModelStatus : tauriLocalOcr.localTextModelStatus,
             isDownloading: isSurya ? tauriLocalOcr.isDownloadingLocalSuryaModel : tauriLocalOcr.isDownloadingLocalTextModel,
             runBlob: isSurya ? tauriLocalOcr.runLocalSuryaOcrBlob : tauriLocalOcr.runLocalTextOcrBlob,
-            label: modelData?.label || (isSurya ? "Surya local" : "Poneglyph local"),
+            label: modelData?.label || (isSurya ? "Surya" : "Poneglyph"),
         };
     }, [tauriLocalOcr]);
 
@@ -94,7 +94,7 @@ export function useAnnotationOCR({
                 const result = await response.json();
                 handleOcrCompletion(requestId, result.text, modelKey);
             } else {
-                throw new Error("Erreur API Modal LightOn");
+                throw new Error("Erreur API Modal Poneglyph");
             }
         } catch (err) {
             console.error("API Task Error:", err);
@@ -208,7 +208,7 @@ export function useAnnotationOCR({
 
             if (activeRequests.current.has(requestId)) {
                 setIsSubmitting(true);
-                setLoadingText((modelData?.key === 'lighton') ? `Analyse ${modelData.label}...` : "Analyse Locale...");
+                setLoadingText((modelData?.key === 'lighton') ? `Analyse ${modelData.label} - Modal...` : "Analyse en local...");
                 if (modelData?.key === 'lighton') processNextApiTask();
                 return;
             }
@@ -236,7 +236,7 @@ export function useAnnotationOCR({
                 activeRequests.current.add(requestId);
                 apiTaskQueue.current.push({ areaToCrop, requestId, modelKey: modelData.key });
                 setIsSubmitting(true);
-                setLoadingText(`Analyse ${modelData.label}...`);
+                setLoadingText(`Analyse ${modelData.label} - Modal...`);
                 processNextApiTask();
                 return;
             }
@@ -258,7 +258,7 @@ export function useAnnotationOCR({
                     return;
                 }
 
-                setLoadingText(`Analyse ${modelData.label}...`);
+                setLoadingText(`Analyse ${modelData.label} - Local...`);
                 setIsSubmitting(true);
                 activeRequests.current.add(requestId);
                 const blob = await cropImage(imageRef.current, areaToCrop);
@@ -267,7 +267,7 @@ export function useAnnotationOCR({
                 return;
             }
 
-            setLoadingText("Analyse Locale...");
+            setLoadingText("Analyse en local...");
             setIsSubmitting(true);
             activeRequests.current.add(requestId);
 

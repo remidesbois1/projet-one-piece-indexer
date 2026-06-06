@@ -21,14 +21,14 @@ export async function POST(req) {
 
         if (!response.ok) {
             const errorText = await response.text();
-            return NextResponse.json({ error: "Erreur Modal Poneglyph: " + errorText }, { status: response.status });
+            return NextResponse.json({ error: "Erreur Modal Poneglyph-BBox: " + errorText }, { status: response.status });
         }
 
         const data = await response.json();
         return NextResponse.json(data);
 
     } catch (error) {
-        console.error("Poneglyph BBox Proxy Error:", error);
-        return NextResponse.json({ error: "Erreur interne du proxy Modal Poneglyph." }, { status: 500 });
+        console.error("Poneglyph-BBox Proxy Error:", error);
+        return NextResponse.json({ error: "Erreur interne du proxy Modal Poneglyph-BBox." }, { status: 500 });
     }
 }

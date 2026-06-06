@@ -12,7 +12,6 @@ import { KeyRound, ExternalLink, ShieldCheck, CheckCircle2, Trash2, ArrowRight }
 
 const STORAGE_KEYS = {
     google: 'google_api_key',
-    mimo: 'mimo_api_key',
 };
 
 function SingleKeySection({ label, storageKey, linkHref, linkLabel, placeholder, onSave, existingKey, setExistingKey, isEditing, setIsEditing }) {
@@ -138,24 +137,14 @@ const ApiKeyForm = ({ onSave }) => {
         if (typeof window === 'undefined') return null;
         return localStorage.getItem(STORAGE_KEYS.google) || null;
     });
-    const [mimoKey, setMimoKey] = useState(() => {
-        if (typeof window === 'undefined') return null;
-        return localStorage.getItem(STORAGE_KEYS.mimo) || null;
-    });
     const [isEditingGoogle, setIsEditingGoogle] = useState(() => {
         if (typeof window === 'undefined') return true;
         return !localStorage.getItem(STORAGE_KEYS.google);
-    });
-    const [isEditingMimo, setIsEditingMimo] = useState(() => {
-        if (typeof window === 'undefined') return true;
-        return !localStorage.getItem(STORAGE_KEYS.mimo);
     });
 
     const handleGoogleSave = (key) => {
         onSave(key);
     };
-
-    const handleMimoSave = () => {};
 
     return (
         <div className="space-y-6 pt-2">
@@ -166,7 +155,7 @@ const ApiKeyForm = ({ onSave }) => {
                 <div className="text-sm text-amber-900/90 pt-0.5">
                     <p className="font-bold text-amber-900 mb-1">Confidentialité Maximale</p>
                     <p className="text-amber-800/80 leading-relaxed text-xs">
-                        Ces clés permettent d&apos;utiliser l&apos;IA sur le projet. Elles sont stockées <strong>localement dans votre navigateur</strong> et ne sont jamais transmises ou conservées sur nos serveurs.
+                        Cette clé permet d&apos;utiliser l&apos;IA sur le projet. Elle est stockée <strong>localement dans votre navigateur</strong> et n&apos;est jamais transmise ou conservée sur nos serveurs.
                     </p>
                 </div>
             </div>
@@ -182,21 +171,6 @@ const ApiKeyForm = ({ onSave }) => {
                 setExistingKey={setGoogleKey}
                 isEditing={isEditingGoogle}
                 setIsEditing={setIsEditingGoogle}
-            />
-
-            <div className="border-t border-slate-100" />
-
-            <SingleKeySection
-                label="Clé API MiMo (Xiaomi)"
-                storageKey={STORAGE_KEYS.mimo}
-                linkHref="https://platform.xiaomimimo.com/#/console/api-keys"
-                linkLabel="Obtenir une clé"
-                placeholder="Collez votre clé ici (ex: sk-...)"
-                onSave={handleMimoSave}
-                existingKey={mimoKey}
-                setExistingKey={setMimoKey}
-                isEditing={isEditingMimo}
-                setIsEditing={setIsEditingMimo}
             />
         </div>
     );

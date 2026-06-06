@@ -15,10 +15,12 @@ import {
     Settings2,
     Sparkles,
     Cpu,
-    CloudLightning
+    CloudLightning,
+    Download
 } from "lucide-react";
 import AnnotateOcrModelSelector from './AnnotateOcrModelSelector';
 import AnnotateBubbleScanner from './AnnotateBubbleScanner';
+import { cn } from '@/lib/utils';
 
 const PAGE_STATUSES = [
     { value: 'not_started', label: 'Non commencée' },
@@ -26,6 +28,9 @@ const PAGE_STATUSES = [
     { value: 'pending_review', label: 'En revue' },
     { value: 'completed', label: 'Validée' },
 ];
+
+const PONEGLYPH_BBOX_LABEL = "Poneglyph-BBox";
+const SURYA_BBOX_LABEL = "Surya-BBox";
 
 export default function AnnotateLeftSidebar({
     fromSearch,
@@ -61,54 +66,99 @@ export default function AnnotateLeftSidebar({
     isSandbox = false,
     handleOneShot,
     isOneShotLoading,
-    handleOneShotMimo,
-    isMimoLoading,
     handleOneShotPoneglyph,
     isPoneglyphLoading,
     poneglyphRunMode = null,
     handleOneShotLocalPoneglyph,
+    handleOneShotLocalSuryaBbox,
     isTauri = false,
     localModelStatus = null,
     localTextModelStatus = null,
     localSuryaModelStatus = null,
+    localSuryaBBoxModelStatus = null,
     isDownloadingLocalModel = false,
     isDownloadingLocalTextModel = false,
     isDownloadingLocalSuryaModel = false,
+    isDownloadingLocalSuryaBBoxModel = false,
     localDownloadState = null,
     localTextDownloadState = null,
     localSuryaDownloadState = null,
+    localSuryaBBoxDownloadState = null,
+    localDownloadProgress = null,
     localTextDownloadProgress = null,
     localSuryaDownloadProgress = null,
+    localSuryaBBoxDownloadProgress = null,
     localConnectionState = null,
+    isLoadingLocalModel = false,
     isLoadingLocalTextModel = false,
     isLoadingLocalSuryaModel = false,
+    isLoadingLocalSuryaBBoxModel = false,
     isLocalInferencing = false,
+    isLocalSuryaBBoxInferencing = false,
     canRunLocalOcr = false,
     canRunLocalTextOcr = false,
     canRunLocalSuryaOcr = false,
+    canRunLocalSuryaBBoxOcr = false,
+    downloadLocalModel,
     downloadLocalTextModel,
     downloadLocalSuryaModel,
+    downloadLocalSuryaBBoxModel,
+    loadLocalModel,
     loadLocalTextModel,
-    loadLocalSuryaModel
+    loadLocalSuryaModel,
+    loadLocalSuryaBBoxModel
 }) {
     const isStaff = role === 'Admin' || role === 'Modo';
     const isAdmin = role === 'Admin';
     const canInlineEditStatus = isAdmin && handlePageStatusChange && !isSandbox;
+    const isExtractionRunning = isOneShotLoading || isPoneglyphLoading || isLocalInferencing || isLocalSuryaBBoxInferencing;
+    const localConnectionUnavailable = ['offline', 'reconnecting', 'unavailable'].includes(localConnectionState?.status);
+    const localConnectionLabel = localConnectionState?.status === 'reconnecting'
+        ? "Serveur local en reconnexion"
+        : localConnectionState?.status === 'unavailable'
+            ? "Serveur local indisponible"
+            : "Serveur local hors ligne";
     const localDisabledReason = !isTauri
         ? "App desktop non detectee"
-        : localConnectionState?.status === 'offline'
-            ? "Serveur local hors ligne"
+        : localConnectionUnavailable
+            ? localConnectionLabel
         : isDownloadingLocalModel || localDownloadState?.active
-            ? "Telechargement du modele local"
+            ? `Telechargement du modele ${PONEGLYPH_BBOX_LABEL}`
             : !localModelStatus?.installed
-                ? "Modele local non telecharge"
+                ? `Modele ${PONEGLYPH_BBOX_LABEL} non telecharge`
                 : !localModelStatus?.ready
-                    ? "Modele local non charge"
+                    ? `Modele ${PONEGLYPH_BBOX_LABEL} non charge`
                     : null;
+    const suryaBBoxDownloadActive = Boolean(isDownloadingLocalSuryaBBoxModel || localSuryaBBoxDownloadState?.active);
+    const suryaBBoxDownloadPercent = Number.isFinite(localSuryaBBoxDownloadProgress) ? Math.round(localSuryaBBoxDownloadProgress) : null;
+    const suryaBBoxDisabledReason = !isTauri
+        ? "App desktop non detectee"
+        : localConnectionUnavailable
+            ? localConnectionLabel
+            : suryaBBoxDownloadActive
+                ? `Telechargement du modele ${SURYA_BBOX_LABEL}`
+                : localSuryaBBoxModelStatus?.error
+                    ? localSuryaBBoxModelStatus.error
+                : !localSuryaBBoxModelStatus?.installed
+                    ? `Modele ${SURYA_BBOX_LABEL} non telecharge`
+                    : !localSuryaBBoxModelStatus?.ready
+                        ? `Modele ${SURYA_BBOX_LABEL} non charge`
+                        : null;
+    const poneglyphDownloadActive = Boolean(isDownloadingLocalModel || localDownloadState?.active);
+    const poneglyphDownloadPercent = Number.isFinite(localDownloadProgress) ? Math.round(localDownloadProgress) : null;
+    const poneglyphIsLoading = Boolean(isLoadingLocalModel || localModelStatus?.loading);
+    const canDownloadPoneglyph = isTauri && handleOneShotLocalPoneglyph && !localModelStatus?.installed && !poneglyphDownloadActive && !localModelStatus?.error;
+    const canLoadPoneglyph = isTauri && handleOneShotLocalPoneglyph && localModelStatus?.installed && !localModelStatus?.ready && !poneglyphIsLoading && !poneglyphDownloadActive && !localModelStatus?.error;
+    const poneglyphAction = canRunLocalOcr ? 'run' : canLoadPoneglyph ? 'load' : canDownloadPoneglyph ? 'download' : null;
+
+    const suryaBBoxIsLoading = Boolean(isLoadingLocalSuryaBBoxModel || localSuryaBBoxModelStatus?.loading);
+    const canDownloadSuryaBBox = isTauri && handleOneShotLocalSuryaBbox && !localSuryaBBoxModelStatus?.error && !localSuryaBBoxModelStatus?.installed && !suryaBBoxDownloadActive;
+    const canLoadSuryaBBox = isTauri && handleOneShotLocalSuryaBbox && !localSuryaBBoxModelStatus?.error && localSuryaBBoxModelStatus?.installed && !localSuryaBBoxModelStatus?.ready && !suryaBBoxIsLoading && !suryaBBoxDownloadActive;
+    const suryaBBoxAction = canRunLocalSuryaBBoxOcr ? 'run' : canLoadSuryaBBox ? 'load' : canDownloadSuryaBBox ? 'download' : null;
 
     return (
         <div className="hidden lg:flex w-[280px] shrink-0 h-full flex-col border-r border-slate-200 bg-white z-40 relative shadow-sm">
-            <div className="p-4 border-b border-slate-100 flex-none space-y-4 z-10">
+            <div className="p-4 border-b border-slate-100 flex-none space-y-3 z-10">
                 <Link
                     href={!mangaSlug ? "/" : (fromSearch ? `/${mangaSlug}/search` : `/${mangaSlug}/dashboard`)}
                     className="inline-flex items-center text-[11px] font-bold text-slate-400 hover:text-slate-700 uppercase tracking-wider transition-colors"
@@ -153,23 +203,35 @@ export default function AnnotateLeftSidebar({
                         </Badge>
                     )}
                 </div>
+
+                {!isGuest && !isSandbox && (
+                    <div className="flex items-center gap-2">
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={!navContext.prev}
+                            onClick={goToPrev}
+                            className="h-8 flex-1 rounded-md border-slate-200 bg-white text-[11px] font-bold text-slate-600 shadow-none hover:bg-slate-50"
+                        >
+                            <ChevronLeft size={14} className="mr-1" /> Préc
+                        </Button>
+                        <div className="min-w-0 flex-1 text-center text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                            {chapterPages.length > 0 ? `Page ${page.numero_page}/${chapterPages.length}` : "Page test"}
+                        </div>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={!navContext.next}
+                            onClick={goToNext}
+                            className="h-8 flex-1 rounded-md border-slate-200 bg-white text-[11px] font-bold text-slate-600 shadow-none hover:bg-slate-50"
+                        >
+                            Suiv <ChevronRight size={14} className="ml-1" />
+                        </Button>
+                    </div>
+                )}
             </div>
 
             <div className="flex-1 flex flex-col p-4 gap-3 overflow-y-auto bg-slate-50/50">
-                {!isGuest && !isSandbox && (
-                    <div className="flex-none p-3 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-2">
-                        <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-0.5">Navigation</h3>
-                        <div className="flex gap-2">
-                            <Button variant="outline" size="sm" disabled={!navContext.prev} onClick={goToPrev} className="flex-1 h-8 text-[11px] font-bold bg-white border-slate-200 hover:bg-slate-50 text-slate-600">
-                                <ChevronLeft size={14} className="mr-1" /> Préc
-                            </Button>
-                            <Button variant="outline" size="sm" disabled={!navContext.next} onClick={goToNext} className="flex-1 h-8 text-[11px] font-bold bg-white border-slate-200 hover:bg-slate-50 text-slate-600">
-                                Suiv <ChevronRight size={14} className="ml-1" />
-                            </Button>
-                        </div>
-                    </div>
-                )}
-
                 {!isGuest && isStaff && (
                     <>
                         <AnnotateOcrModelSelector
@@ -212,95 +274,163 @@ export default function AnnotateLeftSidebar({
                             queueLength={queueLength}
                         />
 
-                        {role === 'Admin' && (handleOneShot || handleOneShotPoneglyph || handleOneShotLocalPoneglyph) && (
-                            <div className="flex-none p-4 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-3">
-                                <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-0.5">Extraction Intégrale</h3>
-                                
-                                {handleOneShotLocalPoneglyph && (
-                                    <Button
-                                        onClick={handleOneShotLocalPoneglyph}
-                                        disabled={!canRunLocalOcr || isPoneglyphLoading || isLocalInferencing || isSubmitting || isAutoDetecting}
-                                        title={localDisabledReason || "Lancer Poneglyph BBox local"}
-                                        className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-[11px] uppercase tracking-wider font-bold shadow-md disabled:opacity-50"
-                                    >
-                                        {(isLocalInferencing || poneglyphRunMode === 'local') ? (
-                                            <span className="flex items-center gap-2">
-                                                <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                                                OCR local...
-                                            </span>
-                                        ) : (
-                                            <span className="flex items-center gap-2">
-                                                <Cpu size={14} />
-                                                Local Poneglyph BBox One-Shot
-                                            </span>
-                                        )}
-                                    </Button>
-                                )}
-                                {localDisabledReason && (
-                                    <div className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[9px] font-semibold text-slate-500">
-                                        Local indisponible: {localDisabledReason}
+                        {role === 'Admin' && (handleOneShot || handleOneShotPoneglyph || handleOneShotLocalPoneglyph || handleOneShotLocalSuryaBbox) && (
+                            <div className="flex-none rounded-lg border border-slate-200/70 bg-white p-3 shadow-sm">
+                                <div className="mb-3 flex items-center justify-between gap-2">
+                                    <h3 className="truncate text-[10px] font-black uppercase tracking-widest text-slate-500">
+                                        Extraction intégrale
+                                    </h3>
+                                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-500">
+                                        {isExtractionRunning ? "En cours" : "Prêt"}
+                                    </span>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <div className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wide text-slate-400">
+                                        <Cpu size={10} /> Local
                                     </div>
-                                )}
+                                    {handleOneShotLocalPoneglyph && (
+                                        <Button
+                                            onClick={
+                                                poneglyphAction === 'run' ? handleOneShotLocalPoneglyph
+                                                : poneglyphAction === 'load' ? loadLocalModel
+                                                : poneglyphAction === 'download' ? downloadLocalModel
+                                                : undefined
+                                            }
+                                            disabled={!poneglyphAction || isPoneglyphLoading || isLocalInferencing || isSubmitting || isAutoDetecting}
+                                            title={
+                                                poneglyphAction === 'load' ? `Charger ${PONEGLYPH_BBOX_LABEL} en VRAM`
+                                                : poneglyphAction === 'download' ? `Telecharger ${PONEGLYPH_BBOX_LABEL}`
+                                                : localDisabledReason || `Lancer ${PONEGLYPH_BBOX_LABEL} en local`
+                                            }
+                                            className={cn(
+                                                "h-9 w-full justify-start gap-2 rounded-md px-3 text-[11px] font-bold uppercase tracking-wide shadow-none",
+                                                poneglyphAction === 'run'
+                                                    ? "bg-slate-900 text-white hover:bg-slate-800"
+                                                    : poneglyphAction
+                                                        ? "border border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200"
+                                                        : "border border-slate-200 bg-slate-100 text-slate-400"
+                                            )}
+                                        >
+                                            {poneglyphAction === 'download' ? <Download size={14} /> : <Cpu size={14} />}
+                                            <span className="min-w-0 flex-1 truncate text-left">
+                                                {poneglyphRunMode === 'local' || isLocalInferencing
+                                                    ? `${PONEGLYPH_BBOX_LABEL} - Local...`
+                                                    : poneglyphAction === 'load'
+                                                        ? poneglyphIsLoading ? `Chargement ${PONEGLYPH_BBOX_LABEL}...` : `Charger ${PONEGLYPH_BBOX_LABEL}`
+                                                        : poneglyphAction === 'download'
+                                                            ? poneglyphDownloadActive ? `Telechargement ${PONEGLYPH_BBOX_LABEL}...` : `Telecharger ${PONEGLYPH_BBOX_LABEL}`
+                                                            : `${PONEGLYPH_BBOX_LABEL} - Local`}
+                                            </span>
+                                            {(poneglyphRunMode === 'local' || isLocalInferencing || poneglyphIsLoading) && (
+                                                <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                                            )}
+                                        </Button>
+                                    )}
 
-                                {handleOneShotPoneglyph && (
-                                    <Button
-                                        onClick={handleOneShotPoneglyph}
-                                        disabled={isPoneglyphLoading || isSubmitting || isAutoDetecting}
-                                        className="w-full h-10 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] uppercase tracking-wider font-bold shadow-md"
-                                    >
-                                        {poneglyphRunMode === 'modal' ? (
-                                            <span className="flex items-center gap-2">
-                                                <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                                                Analyse Modal...
-                                            </span>
-                                        ) : (
-                                            <span className="flex items-center gap-2">
-                                                <CloudLightning size={14} />
-                                                Modal Poneglyph One-Shot
-                                            </span>
-                                        )}
-                                    </Button>
-                                )}
+                                    {handleOneShotLocalPoneglyph && (poneglyphDownloadActive || poneglyphIsLoading) && (
+                                        <div className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5">
+                                            <div className="mb-1 flex justify-between text-[9px] font-bold text-slate-600">
+                                                <span>{poneglyphDownloadActive ? "Telechargement" : "Chargement"} {PONEGLYPH_BBOX_LABEL}...</span>
+                                                {poneglyphDownloadPercent !== null && <span>{poneglyphDownloadPercent}%</span>}
+                                            </div>
+                                            <div className="h-1 w-full overflow-hidden rounded-full bg-slate-200">
+                                                <div className="h-full bg-slate-500 transition-all duration-300" style={{ width: `${poneglyphDownloadPercent ?? 40}%` }} />
+                                            </div>
+                                        </div>
+                                    )}
 
-                                {handleOneShot && (
-                                    <Button
-                                        onClick={handleOneShot}
-                                        disabled={isOneShotLoading || isSubmitting || isAutoDetecting}
-                                        className="w-full h-10 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] uppercase tracking-wider font-bold shadow-md"
-                                    >
-                                        {isOneShotLoading ? (
-                                            <span className="flex items-center gap-2">
-                                                <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                                                Analyse Gemini...
+                                    {handleOneShotLocalSuryaBbox && (
+                                        <Button
+                                            onClick={
+                                                suryaBBoxAction === 'run' ? handleOneShotLocalSuryaBbox
+                                                : suryaBBoxAction === 'load' ? loadLocalSuryaBBoxModel
+                                                : suryaBBoxAction === 'download' ? downloadLocalSuryaBBoxModel
+                                                : undefined
+                                            }
+                                            disabled={!suryaBBoxAction || isPoneglyphLoading || isLocalSuryaBBoxInferencing || isSubmitting || isAutoDetecting}
+                                            title={
+                                                suryaBBoxAction === 'load' ? `Charger ${SURYA_BBOX_LABEL} en VRAM`
+                                                : suryaBBoxAction === 'download' ? `Telecharger ${SURYA_BBOX_LABEL}`
+                                                : suryaBBoxDisabledReason || `Lancer ${SURYA_BBOX_LABEL} en local`
+                                            }
+                                            className={cn(
+                                                "h-9 w-full justify-start gap-2 rounded-md px-3 text-[11px] font-bold uppercase tracking-wide shadow-none",
+                                                suryaBBoxAction === 'run'
+                                                    ? "bg-emerald-700 text-white hover:bg-emerald-800"
+                                                    : suryaBBoxAction
+                                                        ? "border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                                                        : "border border-slate-200 bg-slate-100 text-slate-400"
+                                            )}
+                                        >
+                                            {suryaBBoxAction === 'download' ? <Download size={14} /> : <Cpu size={14} />}
+                                            <span className="min-w-0 flex-1 truncate text-left">
+                                                {poneglyphRunMode === 'surya-bbox-local' || isLocalSuryaBBoxInferencing
+                                                    ? `${SURYA_BBOX_LABEL} - Local...`
+                                                    : suryaBBoxAction === 'load'
+                                                        ? suryaBBoxIsLoading ? `Chargement ${SURYA_BBOX_LABEL}...` : `Charger ${SURYA_BBOX_LABEL}`
+                                                        : suryaBBoxAction === 'download'
+                                                            ? suryaBBoxDownloadActive ? `Telechargement ${SURYA_BBOX_LABEL}...` : `Telecharger ${SURYA_BBOX_LABEL}`
+                                                            : `${SURYA_BBOX_LABEL} - Local`}
                                             </span>
-                                        ) : (
-                                            <span className="flex items-center gap-2">
-                                                <Sparkles size={14} />
-                                                One-Shot Gemini
-                                            </span>
-                                        )}
-                                    </Button>
-                                )}
+                                            {(poneglyphRunMode === 'surya-bbox-local' || isLocalSuryaBBoxInferencing || suryaBBoxIsLoading) && (
+                                                <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                                            )}
+                                        </Button>
+                                    )}
 
-                                {handleOneShotMimo && (
-                                    <Button
-                                        onClick={handleOneShotMimo}
-                                        disabled={isMimoLoading || isSubmitting || isAutoDetecting}
-                                        className="w-full h-10 bg-orange-600 hover:bg-orange-700 text-white text-[11px] uppercase tracking-wider font-bold shadow-md"
-                                    >
-                                        {isMimoLoading ? (
-                                            <span className="flex items-center gap-2">
-                                                <div className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                                                Analyse MiMo...
+                                    {handleOneShotLocalSuryaBbox && (suryaBBoxDownloadActive || suryaBBoxIsLoading) && (
+                                        <div className="rounded-md border border-emerald-100 bg-emerald-50 px-2 py-1.5">
+                                            <div className="mb-1 flex justify-between text-[9px] font-bold text-emerald-800">
+                                                <span>{suryaBBoxDownloadActive ? "Telechargement" : "Chargement"} {SURYA_BBOX_LABEL}...</span>
+                                                {suryaBBoxDownloadPercent !== null && <span>{suryaBBoxDownloadPercent}%</span>}
+                                            </div>
+                                            <div className="h-1 w-full overflow-hidden rounded-full bg-emerald-100">
+                                                <div className="h-full bg-emerald-600 transition-all duration-300" style={{ width: `${suryaBBoxDownloadPercent ?? 40}%` }} />
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="space-y-2 border-t border-slate-100 pt-2">
+                                    <div className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wide text-slate-400">
+                                        <CloudLightning size={10} /> En ligne
+                                    </div>
+
+                                    {handleOneShotPoneglyph && (
+                                        <Button
+                                            variant="outline"
+                                            onClick={handleOneShotPoneglyph}
+                                            disabled={isPoneglyphLoading || isSubmitting || isAutoDetecting}
+                                            className="h-9 w-full justify-start gap-2 rounded-md border-slate-200 bg-white px-3 text-[11px] font-bold uppercase tracking-wide text-slate-700 shadow-none hover:bg-slate-50"
+                                        >
+                                            <CloudLightning size={14} className="text-slate-500" />
+                                            <span className="min-w-0 flex-1 truncate text-left">
+                                                {poneglyphRunMode === 'modal' ? `${PONEGLYPH_BBOX_LABEL} - Modal...` : `${PONEGLYPH_BBOX_LABEL} - Modal`}
                                             </span>
-                                        ) : (
-                                            <span className="flex items-center gap-2">
-                                                <Sparkles size={14} />
-                                                One-Shot MiMo v2.5
+                                            {poneglyphRunMode === 'modal' && (
+                                                <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                                            )}
+                                        </Button>
+                                    )}
+
+                                    {handleOneShot && (
+                                        <Button
+                                            variant="outline"
+                                            onClick={handleOneShot}
+                                            disabled={isOneShotLoading || isSubmitting || isAutoDetecting}
+                                            className="h-9 w-full justify-start gap-2 rounded-md border-slate-200 bg-white px-3 text-[11px] font-bold uppercase tracking-wide text-slate-700 shadow-none hover:bg-slate-50"
+                                        >
+                                            <Sparkles size={14} className="text-slate-500" />
+                                            <span className="min-w-0 flex-1 truncate text-left">
+                                                {isOneShotLoading ? "Gemini..." : "Gemini"}
                                             </span>
-                                        )}
-                                    </Button>
-                                )}
+                                            {isOneShotLoading && (
+                                                <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                                            )}
+                                        </Button>
+                                    )}
+                                </div>
                             </div>
                         )}
                     </>
@@ -366,7 +496,7 @@ export default function AnnotateLeftSidebar({
                             <FileText size={12} className="mr-1.5" /> Meta
                         </Button>
                         <Button variant="outline" size="sm" className="h-8 text-[11px] font-bold text-slate-600 bg-slate-50 border-slate-200/60 hover:bg-slate-100 hover:text-slate-900 w-full" onClick={() => setShowApiKeyModal(true)}>
-                            <Settings2 size={12} className="mr-1.5" /> Clés API
+                            <Settings2 size={12} className="mr-1.5" /> Clé API
                         </Button>
                     </div>
 

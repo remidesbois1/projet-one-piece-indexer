@@ -115,7 +115,7 @@ async function runModalPoneglyph(imageBlob) {
         body: imageBlob
     });
 
-    if (!response.ok) throw new Error("Erreur API Poneglyph");
+    if (!response.ok) throw new Error("Erreur API Poneglyph-BBox");
     return response.json();
 }
 
@@ -311,16 +311,23 @@ export default function SandboxClient() {
         }
     };
 
-    const handleOneShotPoneglyph = async ({ preferLocal = false } = {}) => {
+    const handleOneShotPoneglyph = async ({ preferLocal = false, localEngine = 'lighton' } = {}) => {
         if (!imageRef.current) return;
 
-        const runMode = preferLocal ? 'local' : 'modal';
+        const isSuryaBBoxLocal = preferLocal && localEngine === 'surya_bbox';
+        const runMode = preferLocal ? (isSuryaBBoxLocal ? 'surya-bbox-local' : 'local') : 'modal';
+        const modelLabel = isSuryaBBoxLocal ? 'Surya-BBox' : 'Poneglyph-BBox';
+        const inferenceModeLabel = preferLocal ? 'Local' : 'Modal';
+        const serviceLabel = `${modelLabel} - ${inferenceModeLabel}`;
         setIsPoneglyphLoading(true);
         setPoneglyphRunMode(runMode);
 
         try {
-            if (preferLocal && !tauriLocalOcr.canRunLocalOcr) {
-                throw new Error("Le modele BBox local doit etre charge avant de lancer le one-shot local.");
+            if (preferLocal && isSuryaBBoxLocal && !tauriLocalOcr.canRunLocalSuryaBBoxOcr) {
+                throw new Error("Le modele Surya-BBox doit etre charge avant de lancer l'inference locale.");
+            }
+            if (preferLocal && !isSuryaBBoxLocal && !tauriLocalOcr.canRunLocalOcr) {
+                throw new Error("Le modele Poneglyph-BBox doit etre charge avant de lancer l'inference locale.");
             }
 
             let yoloPromise = Promise.resolve(null);
@@ -338,7 +345,9 @@ export default function SandboxClient() {
             if (!imageBlob) throw new Error("Impossible de convertir l'image.");
 
             const extractionPromise = preferLocal
-                ? tauriLocalOcr.runLocalOcrBlob(imageBlob)
+                ? (isSuryaBBoxLocal
+                    ? tauriLocalOcr.runLocalSuryaBBoxOcrBlob(imageBlob)
+                    : tauriLocalOcr.runLocalOcrBlob(imageBlob))
                 : runModalPoneglyph(imageBlob);
 
             const [apiResponse, yoloBoxes] = await Promise.all([
@@ -347,7 +356,7 @@ export default function SandboxClient() {
             ]);
 
             if (preferLocal && apiResponse?.elapsed_ms) {
-                toast.success(`OCR local termine en ${apiResponse.elapsed_ms} ms.`);
+                toast.success(`${modelLabel} - Local termine en ${apiResponse.elapsed_ms} ms.`);
             }
 
             if (apiResponse?.error) {
@@ -415,10 +424,10 @@ export default function SandboxClient() {
             }
 
             setExistingBubbles(prev => [...prev, ...newBubbles].sort((a, b) => (a.order || 0) - (b.order || 0)));
-            toast.success(`${newBubbles.length} bulles Poneglyph creees dans la sandbox.`);
+            toast.success(`${newBubbles.length} bulles ${modelLabel} creees dans la sandbox.`);
         } catch (error) {
             console.error(error);
-            toast.error(`${runMode === 'local' ? 'OCR local Poneglyph' : 'Service Modal Poneglyph'} indisponible : ${error.message}`);
+            toast.error(`${serviceLabel} indisponible : ${error.message}`);
         } finally {
             setIsPoneglyphLoading(false);
             setPoneglyphRunMode(null);
@@ -430,17 +439,42 @@ export default function SandboxClient() {
             const reason = !tauriLocalOcr.isTauri
                 ? "App desktop non detectee."
                 : tauriLocalOcr.isDownloadingLocalModel
-                    ? "Telechargement du modele BBox local en cours."
+                    ? "Telechargement du modele Poneglyph-BBox en cours."
                     : !tauriLocalOcr.localModelStatus?.installed
-                        ? "Telechargez le modele BBox local d'abord."
+                        ? "Telechargez le modele Poneglyph-BBox d'abord."
                         : !tauriLocalOcr.localModelStatus?.ready
-                            ? "Chargez le modele BBox local en VRAM d'abord."
-                            : "OCR local indisponible.";
+                            ? "Chargez le modele Poneglyph-BBox en VRAM d'abord."
+                            : "Poneglyph-BBox indisponible.";
             toast.error(reason);
             return;
         }
 
         return handleOneShotPoneglyph({ preferLocal: true });
+    };
+
+    const handleOneShotLocalSuryaBbox = () => {
+        if (!tauriLocalOcr.canRunLocalSuryaBBoxOcr) {
+            const connectionState = tauriLocalOcr.localConnectionState?.status;
+            const reason = !tauriLocalOcr.isTauri
+                ? "App desktop non detectee."
+                : connectionState === 'reconnecting'
+                    ? "Serveur OCR local en reconnexion."
+                    : ['offline', 'unavailable'].includes(connectionState)
+                        ? "Serveur OCR local hors ligne."
+                        : tauriLocalOcr.isDownloadingLocalSuryaBBoxModel
+                            ? "Telechargement du modele Surya-BBox en cours."
+                            : tauriLocalOcr.localSuryaBBoxModelStatus?.error
+                                ? tauriLocalOcr.localSuryaBBoxModelStatus.error
+                                : !tauriLocalOcr.localSuryaBBoxModelStatus?.installed
+                                    ? "Telechargez le modele Surya-BBox d'abord."
+                                    : !tauriLocalOcr.localSuryaBBoxModelStatus?.ready
+                                        ? "Chargez le modele Surya-BBox en VRAM d'abord."
+                                        : "Surya-BBox indisponible.";
+            toast.error(reason);
+            return;
+        }
+
+        return handleOneShotPoneglyph({ preferLocal: true, localEngine: 'surya_bbox' });
     };
 
     if (!page) {
@@ -467,7 +501,7 @@ export default function SandboxClient() {
                             Expérimentez l&apos;annotation du projet directement dans votre navigateur.
                             Cette interface utilise <a href="https://huggingface.co/Remidesbois/YoloPiece_OneShot_Models" target="_blank" rel="noopener noreferrer" className="font-bold text-slate-700 hover:text-[#2F7AAF] underline decoration-slate-200">YoloPiece One-Shot</a> pour la détection et l&apos;ordre local,
                             <a href="https://huggingface.co/Remidesbois/trocr-onepiece-fr-large" target="_blank" rel="noopener noreferrer" className="font-bold text-slate-700 hover:text-[#2F7AAF] underline decoration-slate-200"> TrOCR</a> pour la reconnaissance.
-                            Dans l&apos;app desktop, elle peut aussi lancer LightOnOCR en local via Tauri.
+                            Dans l&apos;app desktop, elle peut aussi lancer Poneglyph en mode local via Tauri.
                         </p>
                     </div>
 
@@ -542,29 +576,39 @@ export default function SandboxClient() {
                 isPoneglyphLoading={isPoneglyphLoading}
                 poneglyphRunMode={poneglyphRunMode}
                 handleOneShotLocalPoneglyph={handleOneShotLocalPoneglyph}
+                handleOneShotLocalSuryaBbox={handleOneShotLocalSuryaBbox}
                 isTauri={tauriLocalOcr.isTauri}
                 localModelStatus={tauriLocalOcr.localModelStatus}
                 localTextModelStatus={tauriLocalOcr.localTextModelStatus}
                 localSuryaModelStatus={tauriLocalOcr.localSuryaModelStatus}
+                localSuryaBBoxModelStatus={tauriLocalOcr.localSuryaBBoxModelStatus}
                 isDownloadingLocalModel={tauriLocalOcr.isDownloadingLocalModel}
                 isDownloadingLocalTextModel={tauriLocalOcr.isDownloadingLocalTextModel}
                 isDownloadingLocalSuryaModel={tauriLocalOcr.isDownloadingLocalSuryaModel}
+                isDownloadingLocalSuryaBBoxModel={tauriLocalOcr.isDownloadingLocalSuryaBBoxModel}
                 localDownloadState={tauriLocalOcr.localDownloadState}
                 localTextDownloadState={tauriLocalOcr.localTextDownloadState}
                 localSuryaDownloadState={tauriLocalOcr.localSuryaDownloadState}
+                localSuryaBBoxDownloadState={tauriLocalOcr.localSuryaBBoxDownloadState}
                 localTextDownloadProgress={tauriLocalOcr.localTextDownloadProgress}
                 localSuryaDownloadProgress={tauriLocalOcr.localSuryaDownloadProgress}
+                localSuryaBBoxDownloadProgress={tauriLocalOcr.localSuryaBBoxDownloadProgress}
                 localConnectionState={tauriLocalOcr.localConnectionState}
                 isLoadingLocalTextModel={tauriLocalOcr.isLoadingLocalTextModel}
                 isLoadingLocalSuryaModel={tauriLocalOcr.isLoadingLocalSuryaModel}
+                isLoadingLocalSuryaBBoxModel={tauriLocalOcr.isLoadingLocalSuryaBBoxModel}
                 isLocalInferencing={tauriLocalOcr.isLocalInferencing}
+                isLocalSuryaBBoxInferencing={tauriLocalOcr.isLocalSuryaBBoxInferencing}
                 canRunLocalOcr={tauriLocalOcr.canRunLocalOcr}
                 canRunLocalTextOcr={tauriLocalOcr.canRunLocalTextOcr}
                 canRunLocalSuryaOcr={tauriLocalOcr.canRunLocalSuryaOcr}
+                canRunLocalSuryaBBoxOcr={tauriLocalOcr.canRunLocalSuryaBBoxOcr}
                 downloadLocalTextModel={tauriLocalOcr.downloadLocalTextModel}
                 downloadLocalSuryaModel={tauriLocalOcr.downloadLocalSuryaModel}
+                downloadLocalSuryaBBoxModel={tauriLocalOcr.downloadLocalSuryaBBoxModel}
                 loadLocalTextModel={tauriLocalOcr.loadLocalTextModel}
                 loadLocalSuryaModel={tauriLocalOcr.loadLocalSuryaModel}
+                loadLocalSuryaBBoxModel={tauriLocalOcr.loadLocalSuryaBBoxModel}
             />
 
             <div className="flex flex-col flex-1 overflow-hidden min-w-0 bg-slate-50 relative">

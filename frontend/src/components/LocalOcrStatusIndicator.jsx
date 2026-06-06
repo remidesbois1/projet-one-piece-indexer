@@ -1,7 +1,22 @@
 "use client";
 
 import React from 'react';
-import { AlertTriangle, CheckCircle2, Cpu, Download, Loader2, RefreshCw, Server } from 'lucide-react';
+import {
+    Activity,
+    AlertTriangle,
+    Bot,
+    CheckCircle2,
+    Cpu,
+    Database,
+    Download,
+    Gauge,
+    HardDrive,
+    Loader2,
+    RefreshCw,
+    Server,
+    Wifi,
+    Zap
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTauriLocalOcrContext } from '@/context/TauriLocalOcrContext';
 
@@ -35,17 +50,103 @@ function modelStateLabel(status, loaded) {
     if (status?.loading) return "Chargement";
     if (loaded || status?.loaded) return "Charge";
     if (status?.installed) return "Installe";
+    if (status?.error) return "Erreur";
     return "Absent";
 }
 
-function DetailRow({ label, value, valueClassName }) {
+function modelTone(status, loaded) {
+    if (status?.ready) return "ready";
+    if (status?.loading) return "busy";
+    if (status?.error) return "error";
+    if (loaded || status?.loaded || status?.installed) return "idle";
+    return "missing";
+}
+
+function toneClasses(tone) {
+    return {
+        ready: "border-emerald-300 bg-emerald-50 text-emerald-700",
+        busy: "border-sky-300 bg-sky-50 text-sky-700",
+        error: "border-amber-300 bg-amber-50 text-amber-700",
+        idle: "border-slate-200 bg-slate-50 text-slate-600",
+        missing: "border-slate-200 bg-slate-100/70 text-slate-400"
+    }[tone];
+}
+
+function ModelRow({ label, status, loaded, icon: Icon }) {
+    const tone = modelTone(status, loaded);
+    const stateLabel = modelStateLabel(status, loaded);
     return (
-        <div className="flex items-center justify-between gap-3 text-[11px] font-semibold leading-tight">
-            <span className="text-slate-500">{label}</span>
-            <span className={cn("min-w-0 truncate text-right font-bold text-slate-800", valueClassName)} title={String(value ?? "-")}>
-                {value ?? "-"}
-            </span>
+        <div className={cn("flex min-w-0 items-center gap-2 rounded-md border px-2.5 py-2", toneClasses(tone))}>
+            <Icon size={14} className="shrink-0" />
+            <div className="min-w-0 flex-1">
+                <div className="truncate text-[11px] font-black uppercase tracking-wide">{label}</div>
+                <div className="truncate text-[10px] font-semibold opacity-75">
+                    {status?.device ? String(status.device).toUpperCase() : status?.dtype || status?.error || "Local"}
+                </div>
+            </div>
+            <span className="shrink-0 text-[10px] font-black uppercase tracking-wide">{stateLabel}</span>
         </div>
+    );
+}
+
+function StatTile({ icon: Icon, label, value, tone = "zinc" }) {
+    const color = {
+        emerald: "text-emerald-700 border-emerald-300 bg-emerald-50",
+        sky: "text-sky-700 border-sky-300 bg-sky-50",
+        amber: "text-amber-700 border-amber-300 bg-amber-50",
+        zinc: "text-slate-700 border-slate-200 bg-slate-50"
+    }[tone];
+    return (
+        <div className={cn("min-w-0 rounded-md border px-2.5 py-2", color)}>
+            <div className="mb-1 flex items-center gap-1.5 text-[9px] font-black uppercase tracking-wide opacity-70">
+                <Icon size={11} />
+                {label}
+            </div>
+            <div className="truncate text-[11px] font-black" title={String(value ?? "-")}>{value ?? "-"}</div>
+        </div>
+    );
+}
+
+function ProgressLine({ label, active, state, percent }) {
+    if (!active && !state?.downloaded_bytes && !state?.error) return null;
+
+    const safePercent = Number.isFinite(percent) ? Math.round(percent) : null;
+    const bytesLabel = state?.total_bytes
+        ? `${formatBytes(state.downloaded_bytes)} / ${formatBytes(state.total_bytes)}`
+        : formatBytes(state?.downloaded_bytes);
+
+    return (
+        <div className="space-y-1">
+            <div className="flex items-center justify-between gap-3 text-[10px] font-bold text-slate-600">
+                <span className="truncate">{label}</span>
+                <span className="shrink-0 text-slate-400">{safePercent !== null ? `${safePercent}%` : bytesLabel}</span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-slate-200">
+                <div
+                    className={cn("h-full rounded-full transition-all", state?.error ? "bg-amber-400" : "bg-emerald-500", safePercent === null && active && "animate-pulse")}
+                    style={{ width: `${safePercent ?? (active ? 35 : 100)}%` }}
+                />
+            </div>
+            {safePercent !== null && <div className="truncate text-[9px] font-semibold text-slate-400">{bytesLabel}</div>}
+        </div>
+    );
+}
+
+function ActionButton({ children, onClick, variant = "dark", disabled = false }) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            disabled={disabled}
+            className={cn(
+                "inline-flex h-8 items-center gap-1.5 rounded-md border px-2 text-[11px] font-black transition-colors disabled:pointer-events-none disabled:opacity-50",
+                variant === "green"
+                    ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+            )}
+        >
+            {children}
+        </button>
     );
 }
 
@@ -56,60 +157,82 @@ export default function LocalOcrStatusIndicator() {
         localModelStatus,
         localTextModelStatus,
         localSuryaModelStatus,
+        localSuryaBBoxModelStatus,
         localHealth,
         localConnectionState,
         isDownloadingLocalModel,
         isDownloadingLocalTextModel,
         isDownloadingLocalSuryaModel,
+        isDownloadingLocalSuryaBBoxModel,
         localDownloadState,
         localTextDownloadState,
         localSuryaDownloadState,
+        localSuryaBBoxDownloadState,
         localDownloadProgress,
         localTextDownloadProgress,
         localSuryaDownloadProgress,
+        localSuryaBBoxDownloadProgress,
         isLoadingLocalModel,
         isLoadingLocalTextModel,
         isLoadingLocalSuryaModel,
+        isLoadingLocalSuryaBBoxModel,
         localError,
         downloadLocalModel,
         downloadLocalTextModel,
         downloadLocalSuryaModel,
+        downloadLocalSuryaBBoxModel,
         loadLocalModel,
         loadLocalTextModel,
         loadLocalSuryaModel,
+        loadLocalSuryaBBoxModel,
         refreshLocalDiagnostics
     } = useTauriLocalOcrContext();
 
     if (!isTauri) return null;
 
     const connectionStatus = localConnectionState?.status || (isCheckingLocalConnection ? 'checking' : 'unknown');
-    const localLoaded = Boolean(localModelStatus?.loaded || localHealth?.model_loaded);
+    const bboxLoaded = Boolean(localModelStatus?.loaded || localHealth?.models?.bbox?.loaded || localHealth?.model_loaded);
     const textLoaded = Boolean(localTextModelStatus?.loaded || localHealth?.models?.base?.loaded);
     const suryaLoaded = Boolean(localSuryaModelStatus?.loaded || localHealth?.models?.surya?.loaded);
+    const suryaBBoxLoaded = Boolean(localSuryaBBoxModelStatus?.loaded || localHealth?.models?.surya_bbox?.loaded);
+
     const bboxDownloadActive = Boolean(isDownloadingLocalModel || localDownloadState?.active || localModelStatus?.download?.active);
     const textDownloadActive = Boolean(isDownloadingLocalTextModel || localTextDownloadState?.active || localTextModelStatus?.download?.active);
     const suryaDownloadActive = Boolean(isDownloadingLocalSuryaModel || localSuryaDownloadState?.active || localSuryaModelStatus?.download?.active);
-    const downloadActive = Boolean(bboxDownloadActive || textDownloadActive || suryaDownloadActive);
+    const suryaBBoxDownloadActive = Boolean(isDownloadingLocalSuryaBBoxModel || localSuryaBBoxDownloadState?.active || localSuryaBBoxModelStatus?.download?.active);
+    const downloadActive = Boolean(bboxDownloadActive || textDownloadActive || suryaDownloadActive || suryaBBoxDownloadActive);
+    const loadingActive = Boolean(
+        isLoadingLocalModel ||
+        isLoadingLocalTextModel ||
+        isLoadingLocalSuryaModel ||
+        isLoadingLocalSuryaBBoxModel ||
+        localModelStatus?.loading ||
+        localTextModelStatus?.loading ||
+        localSuryaModelStatus?.loading ||
+        localSuryaBBoxModelStatus?.loading
+    );
+
     const downloadPercent = Number.isFinite(localDownloadProgress) ? Math.round(localDownloadProgress) : null;
     const textDownloadPercent = Number.isFinite(localTextDownloadProgress) ? Math.round(localTextDownloadProgress) : null;
     const suryaDownloadPercent = Number.isFinite(localSuryaDownloadProgress) ? Math.round(localSuryaDownloadProgress) : null;
-    const localDevice = localHealth?.device || localModelStatus?.device;
-    const requestedBackend = localHealth?.requested_backend || localModelStatus?.requested_backend || localTextModelStatus?.requested_backend || localSuryaModelStatus?.requested_backend || "-";
-    const activeBackend = localHealth?.active_backend || localModelStatus?.active_backend || localTextModelStatus?.active_backend || localSuryaModelStatus?.active_backend || "-";
+    const suryaBBoxDownloadPercent = Number.isFinite(localSuryaBBoxDownloadProgress) ? Math.round(localSuryaBBoxDownloadProgress) : null;
+
+    const localDevice = localHealth?.device || localModelStatus?.device || localTextModelStatus?.device || localSuryaModelStatus?.device || localSuryaBBoxModelStatus?.device;
+    const deviceLabel = localDevice
+        ? String(localDevice).toUpperCase()
+        : localHealth?.cuda_available
+            ? "CUDA"
+            : localHealth?.mps_available
+                ? "MPS"
+                : "CPU";
+    const requestedBackend = localHealth?.requested_backend || localModelStatus?.requested_backend || localTextModelStatus?.requested_backend || localSuryaModelStatus?.requested_backend || localSuryaBBoxModelStatus?.requested_backend || "-";
+    const activeBackend = localHealth?.active_backend || localModelStatus?.active_backend || localTextModelStatus?.active_backend || localSuryaModelStatus?.active_backend || localSuryaBBoxModelStatus?.active_backend || "-";
+    const dtypeLabel = localSuryaModelStatus?.dtype || localSuryaBBoxModelStatus?.dtype || localModelStatus?.dtype || localTextModelStatus?.dtype || "-";
     const memoryLabel = localHealth?.gpu_memory_total_mb
         ? `${localHealth.gpu_memory_allocated_mb ?? 0}/${localHealth.gpu_memory_total_mb} MB`
         : "-";
-    const downloadBytesLabel = localDownloadState?.total_bytes
-        ? `${formatBytes(localDownloadState.downloaded_bytes)} / ${formatBytes(localDownloadState.total_bytes)}`
-        : formatBytes(localDownloadState?.downloaded_bytes);
-    const textDownloadBytesLabel = localTextDownloadState?.total_bytes
-        ? `${formatBytes(localTextDownloadState.downloaded_bytes)} / ${formatBytes(localTextDownloadState.total_bytes)}`
-        : formatBytes(localTextDownloadState?.downloaded_bytes);
-    const suryaDownloadBytesLabel = localSuryaDownloadState?.total_bytes
-        ? `${formatBytes(localSuryaDownloadState.downloaded_bytes)} / ${formatBytes(localSuryaDownloadState.total_bytes)}`
-        : formatBytes(localSuryaDownloadState?.downloaded_bytes);
 
-    const firstDownloadPercent = downloadPercent ?? textDownloadPercent ?? suryaDownloadPercent;
+    const firstDownloadPercent = downloadPercent ?? textDownloadPercent ?? suryaDownloadPercent ?? suryaBBoxDownloadPercent;
     let summaryLabel = "Modeles absents";
     if (isCheckingLocalConnection) {
         summaryLabel = "Connexion";
@@ -119,49 +242,46 @@ export default function LocalOcrStatusIndicator() {
         summaryLabel = "Hors ligne";
     } else if (downloadActive) {
         summaryLabel = `Telechargement${firstDownloadPercent !== null ? ` ${firstDownloadPercent}%` : ""}`;
-    } else if (localModelStatus?.loading || localTextModelStatus?.loading || localSuryaModelStatus?.loading || isLoadingLocalModel || isLoadingLocalTextModel || isLoadingLocalSuryaModel) {
+    } else if (loadingActive) {
         summaryLabel = "Chargement";
-    } else if (localModelStatus?.ready && localTextModelStatus?.ready && localSuryaModelStatus?.ready) {
-        summaryLabel = "Surya batch pret";
+    } else if (localSuryaModelStatus?.ready) {
+        summaryLabel = "Surya pret";
+    } else if (localSuryaBBoxModelStatus?.ready) {
+        summaryLabel = "Surya-BBox pret";
     } else if (localModelStatus?.ready && localTextModelStatus?.ready) {
         summaryLabel = "Batch pret";
     } else if (localModelStatus?.ready) {
-        summaryLabel = "BBox pret";
-    } else if (localSuryaModelStatus?.ready) {
-        summaryLabel = "Surya pret";
+        summaryLabel = "Poneglyph-BBox pret";
     } else if (localTextModelStatus?.ready) {
         summaryLabel = "Poneglyph pret";
-    } else if (localLoaded || textLoaded || suryaLoaded) {
+    } else if (bboxLoaded || textLoaded || suryaLoaded || suryaBBoxLoaded) {
         summaryLabel = "Charge";
-    } else if (localModelStatus?.installed || localTextModelStatus?.installed || localSuryaModelStatus?.installed) {
+    } else if (localModelStatus?.installed || localTextModelStatus?.installed || localSuryaModelStatus?.installed || localSuryaBBoxModelStatus?.installed) {
         summaryLabel = "Installe";
     }
 
-    const tone = connectionStatus === 'offline'
-        ? 'red'
+    const isOnline = ['online', 'degraded'].includes(connectionStatus);
+    const isBusy = downloadActive || loadingActive || connectionStatus === 'checking' || connectionStatus === 'reconnecting';
+    const statusTone = connectionStatus === 'offline'
+        ? 'error'
         : connectionStatus === 'reconnecting' || connectionStatus === 'degraded'
-            ? 'amber'
-            : downloadActive || isLoadingLocalModel || isLoadingLocalTextModel || isLoadingLocalSuryaModel || localModelStatus?.loading || localTextModelStatus?.loading || localSuryaModelStatus?.loading
-                ? 'blue'
-                : localModelStatus?.ready || localTextModelStatus?.ready || localSuryaModelStatus?.ready
-                    ? 'emerald'
-                    : 'slate';
-
-    const toneClass = {
-        emerald: "border-emerald-200 bg-emerald-50 text-emerald-700",
-        blue: "border-blue-200 bg-blue-50 text-blue-700",
-        amber: "border-amber-200 bg-amber-50 text-amber-700",
-        red: "border-red-200 bg-red-50 text-red-700",
-        slate: "border-slate-200 bg-slate-50 text-slate-600"
-    }[tone];
-
-    const dotClass = {
-        emerald: "bg-emerald-500",
-        blue: "bg-blue-500",
-        amber: "bg-amber-500",
-        red: "bg-red-500",
-        slate: "bg-slate-400"
-    }[tone];
+            ? 'busy'
+            : localModelStatus?.ready || localTextModelStatus?.ready || localSuryaModelStatus?.ready || localSuryaBBoxModelStatus?.ready
+                ? 'ready'
+                : 'idle';
+    const statusDot = {
+        ready: "bg-emerald-400 shadow-[0_0_14px_rgba(52,211,153,0.85)]",
+        busy: "bg-sky-400 shadow-[0_0_14px_rgba(56,189,248,0.75)]",
+        error: "bg-amber-400 shadow-[0_0_14px_rgba(251,191,36,0.75)]",
+        idle: "bg-zinc-500"
+    }[statusTone];
+    const connectionBadge = connectionStatus === 'reconnecting'
+        ? "Reconnexion"
+        : connectionStatus === 'offline'
+            ? "Hors ligne"
+            : localHealth?.ok || isOnline
+                ? "Serveur OK"
+                : "Diagnostic";
 
     const canDownload = !localModelStatus?.installed && !bboxDownloadActive;
     const canLoad = localModelStatus?.installed && !localModelStatus?.ready && !isLoadingLocalModel && !bboxDownloadActive;
@@ -169,195 +289,110 @@ export default function LocalOcrStatusIndicator() {
     const canLoadText = localTextModelStatus?.installed && !localTextModelStatus?.ready && !isLoadingLocalTextModel && !textDownloadActive;
     const canDownloadSurya = !localSuryaModelStatus?.installed && !suryaDownloadActive;
     const canLoadSurya = localSuryaModelStatus?.installed && !localSuryaModelStatus?.ready && !isLoadingLocalSuryaModel && !suryaDownloadActive;
+    const canDownloadSuryaBBox = !localSuryaBBoxModelStatus?.error && !localSuryaBBoxModelStatus?.installed && !suryaBBoxDownloadActive;
+    const canLoadSuryaBBox = !localSuryaBBoxModelStatus?.error && localSuryaBBoxModelStatus?.installed && !localSuryaBBoxModelStatus?.ready && !isLoadingLocalSuryaBBoxModel && !suryaBBoxDownloadActive;
 
     return (
         <div className="group relative hidden sm:block">
             <button
                 type="button"
                 className={cn(
-                    "relative inline-flex h-8 w-8 items-center justify-center rounded-lg border transition-colors",
-                    toneClass
+                    "relative inline-flex h-8 max-w-[220px] items-center gap-2 rounded-full border px-2.5 text-left transition-colors",
+                    statusTone === 'ready'
+                        ? "border-emerald-300/60 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                        : statusTone === 'busy'
+                            ? "border-sky-300/60 bg-sky-50 text-sky-800 hover:bg-sky-100"
+                            : statusTone === 'error'
+                                ? "border-amber-300/70 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                                : "border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100"
                 )}
                 aria-label="Etat OCR local"
+                title={`OCR local - ${summaryLabel} - ${deviceLabel}`}
             >
-                {downloadActive || isLoadingLocalModel || isLoadingLocalTextModel || isLoadingLocalSuryaModel || localModelStatus?.loading || localTextModelStatus?.loading || localSuryaModelStatus?.loading ? (
-                    <Loader2 size={15} className="animate-spin" />
-                ) : (
-                    <Cpu size={15} />
-                )}
-                <span className={cn("absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-white", dotClass)} />
+                <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", statusDot)} />
+                {isBusy ? <Loader2 size={14} className="shrink-0 animate-spin" /> : <Cpu size={14} className="shrink-0" />}
+                <span className="hidden min-w-0 flex-col leading-none xl:flex">
+                    <span className="truncate text-[10px] font-black uppercase tracking-wide">OCR local</span>
+                    <span className="truncate text-[9px] font-bold opacity-80">{summaryLabel}</span>
+                </span>
             </button>
 
-            <div className="pointer-events-none absolute left-0 top-full hidden w-[360px] pt-2 group-hover:block group-focus-within:block group-hover:pointer-events-auto group-focus-within:pointer-events-auto">
-                <div className="rounded-lg border border-slate-200 bg-white p-3 text-slate-900 shadow-xl">
-                    <div className="mb-3 flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-slate-900">
-                                <Server size={14} />
-                                OCR local
+            <div className="pointer-events-none absolute left-0 top-full hidden w-[420px] pt-2 group-hover:block group-focus-within:block group-hover:pointer-events-auto group-focus-within:pointer-events-auto">
+                <div className="overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-900 shadow-2xl shadow-slate-900/10 ring-1 ring-black/5">
+                    <div className="border-b border-slate-100 px-4 py-3">
+                        <div className="flex items-start justify-between gap-4">
+                            <div className="min-w-0">
+                                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+                                    <Server size={13} />
+                                    OCR local
+                                </div>
+                                <div className="mt-1 truncate text-lg font-black tracking-tight text-slate-900">
+                                    {summaryLabel} - {deviceLabel}
+                                </div>
                             </div>
-                            <div className="mt-1 truncate text-[11px] font-semibold text-slate-500">
-                                {localDevice ? `${summaryLabel} - ${String(localDevice).toUpperCase()}` : summaryLabel}
-                            </div>
+                            <span className={cn("shrink-0 rounded-full border px-2 py-1 text-[10px] font-black uppercase tracking-wide", toneClasses(statusTone))}>
+                                {connectionBadge}
+                            </span>
                         </div>
-                        <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase", toneClass)}>
-                            {connectionStatus === 'reconnecting' ? "Reconnexion" : connectionStatus === 'offline' ? "Hors ligne" : localHealth?.ok ? "Serveur OK" : "Diagnostic"}
-                        </span>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                        <DetailRow label="BBox" value={modelStateLabel(localModelStatus, localLoaded)} valueClassName={localModelStatus?.ready ? "text-emerald-700" : ""} />
-                        <DetailRow label="Poneglyph" value={modelStateLabel(localTextModelStatus, textLoaded)} valueClassName={localTextModelStatus?.ready ? "text-emerald-700" : ""} />
-                        <DetailRow label="Surya" value={modelStateLabel(localSuryaModelStatus, suryaLoaded)} valueClassName={localSuryaModelStatus?.ready ? "text-emerald-700" : ""} />
-                        <DetailRow label="CUDA" value={boolLabel(localHealth?.cuda_available)} valueClassName={localHealth?.cuda_available ? "text-emerald-700" : ""} />
-                        <DetailRow label="Torch" value={boolLabel(localHealth?.torch_available)} />
-                        <DetailRow label="Backend" value={activeBackend} />
-                        <DetailRow label="Mode" value={requestedBackend} />
-                        <DetailRow label="VRAM" value={memoryLabel} />
-                        <DetailRow label="Dtype" value={localModelStatus?.dtype || localTextModelStatus?.dtype || localSuryaModelStatus?.dtype || "-"} />
-                        <DetailRow label="Dernier OK" value={timeLabel(localConnectionState?.lastOkAt)} />
-                        <DetailRow label="Port local" value={localHealth?.port || "-"} />
-                    </div>
-
-                    {(localHealth?.gpu_name || localHealth?.torch_version || localHealth?.cuda_version) && (
-                        <div className="mt-3 space-y-1 border-t border-slate-100 pt-2 text-[11px] font-semibold text-slate-500">
-                            {localHealth?.gpu_name && <div className="truncate" title={localHealth.gpu_name}>GPU: <span className="font-bold text-slate-800">{localHealth.gpu_name}</span></div>}
-                            {localHealth?.torch_version && <div>Torch build: <span className="font-bold text-slate-800">{localHealth.torch_version}</span></div>}
-                            {localHealth?.cuda_version && <div>CUDA build: <span className="font-bold text-slate-800">{localHealth.cuda_version}</span></div>}
+                    <div className="space-y-3 p-4">
+                        <div className="grid grid-cols-2 gap-2">
+                            <ModelRow label="Poneglyph-BBox" status={localModelStatus} loaded={bboxLoaded} icon={Database} />
+                            <ModelRow label="Poneglyph" status={localTextModelStatus} loaded={textLoaded} icon={Bot} />
+                            <ModelRow label="Surya" status={localSuryaModelStatus} loaded={suryaLoaded} icon={Zap} />
+                            <ModelRow label="Surya-BBox" status={localSuryaBBoxModelStatus} loaded={suryaBBoxLoaded} icon={Cpu} />
                         </div>
-                    )}
 
-                    {(bboxDownloadActive || localDownloadState?.downloaded_bytes || localDownloadState?.error) && (
-                        <div className="mt-3 border-t border-slate-100 pt-2">
-                            <div className="mb-1 flex items-center justify-between text-[11px] font-bold text-slate-600">
-                                <span>Telechargement BBox</span>
-                                <span>{downloadPercent !== null ? `${downloadPercent}%` : downloadBytesLabel}</span>
-                            </div>
-                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
-                                <div
-                                    className={cn("h-full rounded-full transition-all", localDownloadState?.error ? "bg-amber-500" : "bg-emerald-500", downloadPercent === null && bboxDownloadActive && "animate-pulse")}
-                                    style={{ width: `${downloadPercent ?? (bboxDownloadActive ? 35 : 100)}%` }}
-                                />
-                            </div>
-                            {downloadPercent !== null && (
-                                <div className="mt-1 text-[10px] font-semibold text-slate-400">{downloadBytesLabel}</div>
-                            )}
+                        <div className="grid grid-cols-4 gap-2">
+                            <StatTile icon={Wifi} label="CUDA" value={boolLabel(localHealth?.cuda_available)} tone={localHealth?.cuda_available ? "emerald" : "zinc"} />
+                            <StatTile icon={Activity} label="Backend" value={activeBackend} tone={activeBackend !== '-' && activeBackend !== 'not_loaded' ? "sky" : "zinc"} />
+                            <StatTile icon={Gauge} label="Dtype" value={dtypeLabel} />
+                            <StatTile icon={HardDrive} label="VRAM" value={memoryLabel} />
                         </div>
-                    )}
 
-                    {(textDownloadActive || localTextDownloadState?.downloaded_bytes || localTextDownloadState?.error) && (
-                        <div className="mt-3 border-t border-slate-100 pt-2">
-                            <div className="mb-1 flex items-center justify-between text-[11px] font-bold text-slate-600">
-                                <span>Telechargement Poneglyph</span>
-                                <span>{textDownloadPercent !== null ? `${textDownloadPercent}%` : textDownloadBytesLabel}</span>
-                            </div>
-                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
-                                <div
-                                    className={cn("h-full rounded-full transition-all", localTextDownloadState?.error ? "bg-amber-500" : "bg-emerald-500", textDownloadPercent === null && textDownloadActive && "animate-pulse")}
-                                    style={{ width: `${textDownloadPercent ?? (textDownloadActive ? 35 : 100)}%` }}
-                                />
-                            </div>
-                            {textDownloadPercent !== null && (
-                                <div className="mt-1 text-[10px] font-semibold text-slate-400">{textDownloadBytesLabel}</div>
-                            )}
+                        <div className="grid grid-cols-3 gap-2 text-[10px] font-semibold text-slate-400">
+                            <div className="truncate">Mode: <span className="font-bold text-slate-600">{requestedBackend}</span></div>
+                            <div className="truncate">Port: <span className="font-bold text-slate-600">{localHealth?.port || "-"}</span></div>
+                            <div className="truncate">Dernier OK: <span className="font-bold text-slate-600">{timeLabel(localConnectionState?.lastOkAt)}</span></div>
                         </div>
-                    )}
 
-                    {(suryaDownloadActive || localSuryaDownloadState?.downloaded_bytes || localSuryaDownloadState?.error) && (
-                        <div className="mt-3 border-t border-slate-100 pt-2">
-                            <div className="mb-1 flex items-center justify-between text-[11px] font-bold text-slate-600">
-                                <span>Telechargement Surya</span>
-                                <span>{suryaDownloadPercent !== null ? `${suryaDownloadPercent}%` : suryaDownloadBytesLabel}</span>
+                        {(localHealth?.gpu_name || localHealth?.torch_version || localHealth?.cuda_version) && (
+                            <div className="space-y-1 border-t border-slate-100 pt-3 text-[11px] font-semibold text-slate-400">
+                                {localHealth?.gpu_name && <div className="truncate" title={localHealth.gpu_name}>GPU: <span className="font-bold text-slate-700">{localHealth.gpu_name}</span></div>}
+                                {localHealth?.torch_version && <div>Torch build: <span className="font-bold text-slate-700">{localHealth.torch_version}</span></div>}
+                                {localHealth?.cuda_version && <div>CUDA build: <span className="font-bold text-slate-700">{localHealth.cuda_version}</span></div>}
                             </div>
-                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
-                                <div
-                                    className={cn("h-full rounded-full transition-all", localSuryaDownloadState?.error ? "bg-amber-500" : "bg-emerald-500", suryaDownloadPercent === null && suryaDownloadActive && "animate-pulse")}
-                                    style={{ width: `${suryaDownloadPercent ?? (suryaDownloadActive ? 35 : 100)}%` }}
-                                />
+                        )}
+
+                        <div className="space-y-2 border-t border-slate-100 pt-3">
+                            <ProgressLine label="Telechargement Poneglyph-BBox" active={bboxDownloadActive} state={localDownloadState} percent={downloadPercent} />
+                            <ProgressLine label="Telechargement Poneglyph" active={textDownloadActive} state={localTextDownloadState} percent={textDownloadPercent} />
+                            <ProgressLine label="Telechargement Surya" active={suryaDownloadActive} state={localSuryaDownloadState} percent={suryaDownloadPercent} />
+                            <ProgressLine label="Telechargement Surya-BBox" active={suryaBBoxDownloadActive} state={localSuryaBBoxDownloadState} percent={suryaBBoxDownloadPercent} />
+                        </div>
+
+                        {localError && (
+                            <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-2 text-[11px] font-semibold leading-snug text-amber-700">
+                                <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                                <span className="break-words">{localError}</span>
                             </div>
-                            {suryaDownloadPercent !== null && (
-                                <div className="mt-1 text-[10px] font-semibold text-slate-400">{suryaDownloadBytesLabel}</div>
-                            )}
-                        </div>
-                    )}
+                        )}
 
-                    {localError && (
-                        <div className="mt-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] font-semibold leading-snug text-amber-800">
-                            <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-                            <span className="break-words">{localError}</span>
+                        <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+                            <ActionButton onClick={refreshLocalDiagnostics} disabled={isCheckingLocalConnection}>
+                                <RefreshCw size={12} className={cn(isCheckingLocalConnection && "animate-spin")} />
+                                Actualiser
+                            </ActionButton>
+                            {canDownload && <ActionButton onClick={downloadLocalModel}><Download size={12} /> Poneglyph-BBox</ActionButton>}
+                            {canLoad && <ActionButton onClick={loadLocalModel} variant="green"><CheckCircle2 size={12} /> Poneglyph-BBox</ActionButton>}
+                            {canDownloadText && <ActionButton onClick={downloadLocalTextModel}><Download size={12} /> Poneglyph</ActionButton>}
+                            {canLoadText && <ActionButton onClick={loadLocalTextModel} variant="green"><CheckCircle2 size={12} /> Poneglyph</ActionButton>}
+                            {canDownloadSurya && <ActionButton onClick={downloadLocalSuryaModel}><Download size={12} /> Surya</ActionButton>}
+                            {canLoadSurya && <ActionButton onClick={loadLocalSuryaModel} variant="green"><CheckCircle2 size={12} /> Surya</ActionButton>}
+                            {canDownloadSuryaBBox && <ActionButton onClick={downloadLocalSuryaBBoxModel}><Download size={12} /> Surya-BBox</ActionButton>}
+                            {canLoadSuryaBBox && <ActionButton onClick={loadLocalSuryaBBoxModel} variant="green"><CheckCircle2 size={12} /> Surya-BBox</ActionButton>}
                         </div>
-                    )}
-
-                    <div className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-3">
-                        <button
-                            type="button"
-                            onClick={refreshLocalDiagnostics}
-                            disabled={isCheckingLocalConnection}
-                            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 text-[11px] font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                        >
-                            <RefreshCw size={12} className={cn(isCheckingLocalConnection && "animate-spin")} />
-                            Actualiser
-                        </button>
-                        {canDownload && (
-                            <button
-                                type="button"
-                                onClick={downloadLocalModel}
-                                className="inline-flex h-8 items-center gap-1.5 rounded-md bg-slate-900 px-2 text-[11px] font-bold text-white hover:bg-slate-800"
-                            >
-                                <Download size={12} />
-                                BBox
-                            </button>
-                        )}
-                        {canLoad && (
-                            <button
-                                type="button"
-                                onClick={loadLocalModel}
-                                className="inline-flex h-8 items-center gap-1.5 rounded-md bg-emerald-600 px-2 text-[11px] font-bold text-white hover:bg-emerald-700"
-                            >
-                                <CheckCircle2 size={12} />
-                                Charger BBox
-                            </button>
-                        )}
-                        {canDownloadText && (
-                            <button
-                                type="button"
-                                onClick={downloadLocalTextModel}
-                                className="inline-flex h-8 items-center gap-1.5 rounded-md bg-slate-900 px-2 text-[11px] font-bold text-white hover:bg-slate-800"
-                            >
-                                <Download size={12} />
-                                Poneglyph
-                            </button>
-                        )}
-                        {canLoadText && (
-                            <button
-                                type="button"
-                                onClick={loadLocalTextModel}
-                                className="inline-flex h-8 items-center gap-1.5 rounded-md bg-emerald-600 px-2 text-[11px] font-bold text-white hover:bg-emerald-700"
-                            >
-                                <CheckCircle2 size={12} />
-                                Charger Poneglyph
-                            </button>
-                        )}
-                        {canDownloadSurya && (
-                            <button
-                                type="button"
-                                onClick={downloadLocalSuryaModel}
-                                className="inline-flex h-8 items-center gap-1.5 rounded-md bg-slate-900 px-2 text-[11px] font-bold text-white hover:bg-slate-800"
-                            >
-                                <Download size={12} />
-                                Surya
-                            </button>
-                        )}
-                        {canLoadSurya && (
-                            <button
-                                type="button"
-                                onClick={loadLocalSuryaModel}
-                                className="inline-flex h-8 items-center gap-1.5 rounded-md bg-emerald-600 px-2 text-[11px] font-bold text-white hover:bg-emerald-700"
-                            >
-                                <CheckCircle2 size={12} />
-                                Charger Surya
-                            </button>
-                        )}
                     </div>
                 </div>
             </div>

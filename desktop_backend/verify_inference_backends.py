@@ -125,9 +125,9 @@ class FakeTorch:
             return False
 
 
-def verify_fake_surya_backend(server, surya_dir: Path):
-    surya_dir.mkdir(parents=True, exist_ok=True)
-    surya_dir.joinpath("config.json").write_text("{}", encoding="utf-8")
+def verify_fake_surya_backend(server, model_key: str, model_dir: Path):
+    model_dir.mkdir(parents=True, exist_ok=True)
+    model_dir.joinpath("config.json").write_text("{}", encoding="utf-8")
 
     fake_transformers = types.SimpleNamespace(
         AutoProcessor=FakeProcessor,
@@ -138,19 +138,19 @@ def verify_fake_surya_backend(server, surya_dir: Path):
     try:
         sys.modules["transformers"] = fake_transformers
         server.get_torch = lambda: FakeTorch()
-        server.load_model(server.SURYA_MODEL_KEY)
-        status = server.model_status_payload(server.SURYA_MODEL_KEY)
+        server.load_model(model_key)
+        status = server.model_status_payload(model_key)
         require(status["ready"] is True, "fake surya model should be ready")
         require(status["active_backend"] == server.BACKEND_TRANSFORMERS, "fake surya backend")
         output = server.generate_with_model(
-            server.SURYA_MODEL_KEY,
+            model_key,
             object(),
-            server.messages_for_model(server.SURYA_MODEL_KEY),
+            server.messages_for_model(model_key),
         )
         require(output == "SURYA_OK", "fake surya generation output")
-        print("fake Surya load/generate ok")
+        print(f"fake {model_key} load/generate ok")
     finally:
-        server.clear_loaded_model_state(server.get_model_state(server.SURYA_MODEL_KEY))
+        server.clear_loaded_model_state(server.get_model_state(model_key))
         server.get_torch = original_get_torch
         if original_transformers is None:
             sys.modules.pop("transformers", None)
@@ -166,6 +166,7 @@ def main():
             os.environ["PONEGLYPH_BBOX_MODEL_DIR"] = str(tmp_path / "bbox")
             os.environ["PONEGLYPH_BASE_MODEL_DIR"] = str(tmp_path / "base")
             os.environ["PONEGLYPH_SURYA_MODEL_DIR"] = str(tmp_path / "surya")
+            os.environ["PONEGLYPH_SURYA_BBOX_MODEL_DIR"] = str(tmp_path / "surya_bbox")
 
             import local_ocr_server as server
 
@@ -179,6 +180,9 @@ def main():
             surya_status = server.model_status_payload(server.SURYA_MODEL_KEY)
             require(surya_status["installed"] is False, "surya status should not require a model")
             require(surya_status["model_dir"].endswith("surya"), "surya model dir env")
+            surya_bbox_status = server.model_status_payload(server.SURYA_BBOX_MODEL_KEY)
+            require(surya_bbox_status["installed"] is False, "surya bbox status should not require a model")
+            require(surya_bbox_status["model_dir"].endswith("surya_bbox"), "surya bbox model dir env")
             print("import/status without model ok")
 
             require(
@@ -190,13 +194,16 @@ def main():
             os.environ["PONEGLYPH_TEXT_MAX_NEW_TOKENS"] = "77"
             os.environ["PONEGLYPH_BBOX_MAX_NEW_TOKENS"] = "333"
             os.environ["PONEGLYPH_SURYA_MAX_NEW_TOKENS"] = "55"
+            os.environ["PONEGLYPH_SURYA_BBOX_MAX_NEW_TOKENS"] = "444"
             require(server.get_max_new_tokens(server.TEXT_MODEL_KEY) == 77, "text max tokens env")
             require(server.get_max_new_tokens(server.BBOX_MODEL_KEY) == 333, "bbox max tokens env")
             require(server.get_max_new_tokens(server.SURYA_MODEL_KEY) == 55, "surya max tokens env")
+            require(server.get_max_new_tokens(server.SURYA_BBOX_MODEL_KEY) == 444, "surya bbox max tokens env")
             perf_options = server.perf_options_payload()
             require(perf_options["text_max_new_tokens"] == 77, "perf text max tokens")
             require(perf_options["bbox_max_new_tokens"] == 333, "perf bbox max tokens")
             require(perf_options["surya_max_new_tokens"] == 55, "perf surya max tokens")
+            require(perf_options["surya_bbox_max_new_tokens"] == 444, "perf surya bbox max tokens")
             print("env vars ok")
 
             route_paths = {route.path for route in server.app.routes}
@@ -209,7 +216,8 @@ def main():
             require("active_backend" in health, "health should expose active_backend")
             require("perf_options" in health, "health should expose perf_options")
 
-            verify_fake_surya_backend(server, tmp_path / "surya")
+            verify_fake_surya_backend(server, server.SURYA_MODEL_KEY, tmp_path / "surya")
+            verify_fake_surya_backend(server, server.SURYA_BBOX_MODEL_KEY, tmp_path / "surya_bbox")
 
         print("verify_inference_backends.py: all checks passed")
         return 0

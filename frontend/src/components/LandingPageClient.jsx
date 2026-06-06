@@ -213,17 +213,17 @@ const features = [
     },
     {
         icon: Zap,
-        title: "OCR LightOn - Cloud & Local",
+        title: "OCR Poneglyph & Surya - Modal & Local",
         badge: "Modal + Desktop",
-        description: "LightOnOCR-2-1b-poneglyph-bbox tourne sur Modal GPU L4 ou en local via l'application desktop.",
-        details: ["CER < 0.1%", "WER < 0.1%", "GPU L4", "0$/OCR local", "5-15s/page"],
+        description: "Deux familles de modèles bbox full-page (Poneglyph-BBox et Surya-BBox) tournent sur Modal GPU L4 ou en local via l'application desktop.",
+        details: ["CER < 0.1%", "GPU L4", "0$/OCR local", "5-15s/page"],
     },
     {
         icon: Cpu,
         title: "Application Desktop - Tauri v2",
         badge: "Windows",
-        description: "Shell Rust qui charge poneglyph.fr et lance un backend Python local pour l'OCR GPU sur 127.0.0.1.",
-        details: ["Rust/Tauri v2", "FastAPI local", "LightOn local", "CUDA/MPS/CPU"],
+        description: "Shell Rust qui charge poneglyph.fr et lance un backend Python local pour l'OCR GPU sur 127.0.0.1, avec 4 modèles téléchargeables (Poneglyph, Poneglyph-BBox, Surya, Surya-BBox).",
+        details: ["Rust/Tauri v2", "FastAPI local", "4 modèles locaux", "CUDA/MPS/CPU"],
     },
     {
         icon: Eye,

@@ -45,6 +45,9 @@ export default function AnnotateOcrModelSelector({
     const activeLocalLabel = activeModel?.label || "Modele local";
     const canDownloadTextModel = isTauri && activeIsTauriModel && !activeLocalStatus?.installed && !activeDownloadActive;
     const canLoadTextModel = isTauri && activeIsTauriModel && activeLocalStatus?.installed && !activeLocalStatus?.ready && !activeLoading && !activeDownloadActive;
+    const isLocalMode = preferLocalOCR || isSandbox;
+    const modeLabel = isLocalMode ? "Local" : "Modal";
+    const modeDescription = isLocalMode ? "Inference locale" : "Inference distante";
 
     return (
         <div className="flex-none p-3 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-3">
@@ -67,12 +70,12 @@ export default function AnnotateOcrModelSelector({
             </div>
 
             <div className="flex items-center gap-2.5 bg-slate-50 p-2 rounded-lg border border-slate-100/80">
-                <div className={cn("p-1.5 rounded-md", (preferLocalOCR || isSandbox) ? "bg-emerald-100/50 text-emerald-600" : "bg-blue-100/50 text-blue-600")}>
-                    {(preferLocalOCR || isSandbox) ? <Cpu size={14} /> : <CloudLightning size={14} />}
+                <div className={cn("p-1.5 rounded-md", isLocalMode ? "bg-emerald-100/50 text-emerald-600" : "bg-blue-100/50 text-blue-600")}>
+                    {isLocalMode ? <Cpu size={14} /> : <CloudLightning size={14} />}
                 </div>
                 <div className="flex flex-col">
-                    <span className="text-[11px] font-bold text-slate-800 leading-tight">{(preferLocalOCR || isSandbox) ? "Mode Local" : "Cloud API"}</span>
-                    <span className="text-[9px] font-bold text-slate-400 mt-0.5">{(preferLocalOCR || isSandbox) ? "Inférence locale" : "API Distante"}</span>
+                    <span className="text-[11px] font-bold text-slate-800 leading-tight">Mode {modeLabel}</span>
+                    <span className="text-[9px] font-bold text-slate-400 mt-0.5">{modeDescription}</span>
                 </div>
             </div>
 
@@ -109,7 +112,9 @@ export default function AnnotateOcrModelSelector({
                                 )}
                             </div>
                             <div className="text-[8px] font-semibold text-slate-400 leading-tight">
-                                {m.key === 'gemini' ? "Vision AI · Google" : `CER ${m.cer} · ${m.size}`}
+                                {m.key === 'gemini'
+                                    ? "Vision AI · Google"
+                                    : `${m.runtime === 'tauri' ? "Local" : m.type === 'api' ? "Modal" : "Navigateur"} · CER ${m.cer} · ${m.size}`}
                             </div>
                         </button>
                         );
@@ -122,7 +127,7 @@ export default function AnnotateOcrModelSelector({
                         <>
                             {!isTauri && (
                                 <div className="text-[10px] font-bold text-slate-400 text-center py-2 bg-slate-50 rounded-lg border border-dashed border-slate-200">
-                                    Poneglyph local nécessite l&apos;app desktop.
+                                    {activeLocalLabel} en local necessite l&apos;app desktop.
                                 </div>
                             )}
                             {isTauri && canDownloadTextModel && (

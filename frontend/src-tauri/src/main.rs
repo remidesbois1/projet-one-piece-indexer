@@ -16,8 +16,14 @@ use tokio::time::sleep;
 const BBOX_MODEL_DIR_NAME: &str = "lighton-ocr-poneglyph-bbox";
 const TEXT_MODEL_DIR_NAME: &str = "lighton-ocr-poneglyph";
 const SURYA_MODEL_DIR_NAME: &str = "surya-bubble-ocr-poneglyph";
+const SURYA_BBOX_MODEL_DIR_NAME: &str = "surya-ocr-2-poneglyph-bbox";
+const BBOX_MODEL_KEY: &str = "bbox";
+const TEXT_MODEL_KEY: &str = "base";
+const SURYA_MODEL_KEY: &str = "surya";
+const SURYA_BBOX_MODEL_KEY: &str = "surya_bbox";
 const FRONTEND_PRODUCTION_ORIGIN: &str = "https://poneglyph.fr";
 const FRONTEND_LOCAL_ORIGIN: &str = "http://localhost:3000";
+const FRONTEND_LOCAL_API_HEALTH_URL: &str = "http://localhost:3001/";
 
 #[derive(Clone)]
 struct LocalBackendState {
@@ -121,6 +127,7 @@ struct HealthcheckResponse {
     perf_options: Option<serde_json::Value>,
     model_loaded: Option<bool>,
     models: Option<serde_json::Value>,
+    port: Option<u16>,
     error: Option<String>,
 }
 
@@ -194,11 +201,13 @@ struct LocalTextOcrResponse {
 
 impl LocalBackendState {
     async fn ensure_started(&self, app_handle: AppHandle) -> Result<u16, String> {
+        self.prune_dead_child()?;
         if let Some(port) = self.port()? {
             return Ok(port);
         }
 
         let _guard = self.inner.start_lock.lock().await;
+        self.prune_dead_child()?;
         if let Some(port) = self.port()? {
             return Ok(port);
         }
@@ -209,12 +218,15 @@ impl LocalBackendState {
         let bbox_model_dir = default_bbox_model_dir()?;
         let text_model_dir = default_text_model_dir()?;
         let surya_model_dir = default_surya_model_dir()?;
+        let surya_bbox_model_dir = default_surya_bbox_model_dir()?;
         fs::create_dir_all(&bbox_model_dir)
             .map_err(|err| format!("Impossible de creer le dossier modele: {err}"))?;
         fs::create_dir_all(&text_model_dir)
             .map_err(|err| format!("Impossible de creer le dossier modele OCR texte: {err}"))?;
         fs::create_dir_all(&surya_model_dir)
             .map_err(|err| format!("Impossible de creer le dossier modele Surya: {err}"))?;
+        fs::create_dir_all(&surya_bbox_model_dir)
+            .map_err(|err| format!("Impossible de creer le dossier modele Surya-BBox: {err}"))?;
 
         let child = spawn_backend(
             &backend_dir,
@@ -222,6 +234,7 @@ impl LocalBackendState {
             &bbox_model_dir,
             &text_model_dir,
             &surya_model_dir,
+            &surya_bbox_model_dir,
         )?;
         {
             let mut child_guard = self
@@ -276,8 +289,53 @@ impl LocalBackendState {
             .map_err(|_| "Etat port verrouille".to_string())
     }
 
+    fn clear_backend_state(&self) {
+        if let Ok(mut child_guard) = self.inner.child.lock() {
+            *child_guard = None;
+        }
+        if let Ok(mut port_guard) = self.inner.port.lock() {
+            *port_guard = None;
+        }
+    }
+
+    fn prune_dead_child(&self) -> Result<(), String> {
+        let should_clear = {
+            let mut child_guard = self
+                .inner
+                .child
+                .lock()
+                .map_err(|_| "Etat backend verrouille".to_string())?;
+
+            match child_guard.as_mut() {
+                Some(child) => match child.try_wait() {
+                    Ok(Some(status)) => {
+                        eprintln!("[Poneglyph] Backend local termine: {status}");
+                        true
+                    }
+                    Ok(None) => false,
+                    Err(err) => {
+                        eprintln!("[Poneglyph] Impossible de verifier le backend local: {err}");
+                        true
+                    }
+                },
+                None => self.port()?.is_some(),
+            }
+        };
+
+        if should_clear {
+            self.clear_backend_state();
+        }
+
+        Ok(())
+    }
+
     fn base_url(&self, port: u16) -> String {
         format!("http://127.0.0.1:{port}")
+    }
+
+    fn request_error(&self, err: reqwest::Error) -> String {
+        self.shutdown();
+        format!("Backend OCR local perdu, redemarrage au prochain diagnostic: {err}")
     }
 
     async fn wait_until_reachable(&self, port: u16) -> Result<(), String> {
@@ -304,7 +362,7 @@ impl LocalBackendState {
             .get(format!("{}{}", self.base_url(port), path))
             .send()
             .await
-            .map_err(|err| err.to_string())?;
+            .map_err(|err| self.request_error(err))?;
 
         read_response_json(response).await
     }
@@ -320,7 +378,7 @@ impl LocalBackendState {
             .post(format!("{}{}", self.base_url(port), path))
             .send()
             .await
-            .map_err(|err| err.to_string())?;
+            .map_err(|err| self.request_error(err))?;
 
         read_response_json(response).await
     }
@@ -338,7 +396,7 @@ impl LocalBackendState {
             .json(body)
             .send()
             .await
-            .map_err(|err| err.to_string())?;
+            .map_err(|err| self.request_error(err))?;
 
         read_response_json(response).await
     }
@@ -468,6 +526,49 @@ fn default_surya_model_dir() -> Result<PathBuf, String> {
     Ok(default_models_base_dir()?.join(SURYA_MODEL_DIR_NAME))
 }
 
+fn default_surya_bbox_model_dir() -> Result<PathBuf, String> {
+    Ok(default_models_base_dir()?.join(SURYA_BBOX_MODEL_DIR_NAME))
+}
+
+fn normalize_local_model_key(model_key: Option<String>) -> Result<&'static str, String> {
+    let raw = model_key.as_deref().unwrap_or(BBOX_MODEL_KEY);
+    match raw {
+        BBOX_MODEL_KEY => Ok(BBOX_MODEL_KEY),
+        TEXT_MODEL_KEY => Ok(TEXT_MODEL_KEY),
+        SURYA_MODEL_KEY => Ok(SURYA_MODEL_KEY),
+        SURYA_BBOX_MODEL_KEY => Ok(SURYA_BBOX_MODEL_KEY),
+        _ => Err(format!("Modele local inconnu: {raw}")),
+    }
+}
+
+fn normalize_bbox_local_model_key(model_key: Option<String>) -> Result<&'static str, String> {
+    let model_key = normalize_local_model_key(model_key)?;
+    match model_key {
+        BBOX_MODEL_KEY | SURYA_BBOX_MODEL_KEY => Ok(model_key),
+        _ => Err(format!(
+            "Le modele {model_key} ne fournit pas d'OCR bbox full-page."
+        )),
+    }
+}
+
+fn default_model_dir_for_key(model_key: &str) -> Result<PathBuf, String> {
+    match model_key {
+        BBOX_MODEL_KEY => default_bbox_model_dir(),
+        TEXT_MODEL_KEY => default_text_model_dir(),
+        SURYA_MODEL_KEY => default_surya_model_dir(),
+        SURYA_BBOX_MODEL_KEY => default_surya_bbox_model_dir(),
+        _ => Err(format!("Modele local inconnu: {model_key}")),
+    }
+}
+
+fn model_endpoint(base_path: &str, model_key: &str, default_model_key: &str) -> String {
+    if model_key == default_model_key {
+        base_path.to_string()
+    } else {
+        format!("{base_path}?model_key={model_key}")
+    }
+}
+
 fn env_or_default(name: &str, default_value: &str) -> String {
     env::var(name).unwrap_or_else(|_| default_value.to_string())
 }
@@ -478,6 +579,7 @@ fn spawn_backend(
     bbox_model_dir: &Path,
     text_model_dir: &Path,
     surya_model_dir: &Path,
+    surya_bbox_model_dir: &Path,
 ) -> Result<Child, String> {
     let pyinstaller_bundle_exe = backend_dir
         .join("local_ocr_server_bundle")
@@ -501,6 +603,10 @@ fn spawn_backend(
             .env("PONEGLYPH_BBOX_MODEL_DIR", bbox_model_dir.as_os_str())
             .env("PONEGLYPH_BASE_MODEL_DIR", text_model_dir.as_os_str())
             .env("PONEGLYPH_SURYA_MODEL_DIR", surya_model_dir.as_os_str())
+            .env(
+                "PONEGLYPH_SURYA_BBOX_MODEL_DIR",
+                surya_bbox_model_dir.as_os_str(),
+            )
             .env(
                 "PONEGLYPH_FLASH_ATTN",
                 env_or_default("PONEGLYPH_FLASH_ATTN", "1"),
@@ -540,6 +646,10 @@ fn spawn_backend(
             .env("PONEGLYPH_BBOX_MODEL_DIR", bbox_model_dir.as_os_str())
             .env("PONEGLYPH_BASE_MODEL_DIR", text_model_dir.as_os_str())
             .env("PONEGLYPH_SURYA_MODEL_DIR", surya_model_dir.as_os_str())
+            .env(
+                "PONEGLYPH_SURYA_BBOX_MODEL_DIR",
+                surya_bbox_model_dir.as_os_str(),
+            )
             .env(
                 "PONEGLYPH_FLASH_ATTN",
                 env_or_default("PONEGLYPH_FLASH_ATTN", "1"),
@@ -596,6 +706,10 @@ fn spawn_backend(
             .env("PONEGLYPH_BASE_MODEL_DIR", text_model_dir.as_os_str())
             .env("PONEGLYPH_SURYA_MODEL_DIR", surya_model_dir.as_os_str())
             .env(
+                "PONEGLYPH_SURYA_BBOX_MODEL_DIR",
+                surya_bbox_model_dir.as_os_str(),
+            )
+            .env(
                 "PONEGLYPH_FLASH_ATTN",
                 env_or_default("PONEGLYPH_FLASH_ATTN", "1"),
             )
@@ -627,12 +741,16 @@ fn spawn_backend(
     ))
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "snake_case")]
 async fn get_local_model_status(
+    model_key: Option<String>,
     state: State<'_, LocalBackendState>,
     app_handle: AppHandle,
 ) -> Result<LocalModelStatus, String> {
-    let model_dir = default_bbox_model_dir()?.to_string_lossy().to_string();
+    let model_key = normalize_local_model_key(model_key)?;
+    let model_dir = default_model_dir_for_key(model_key)?
+        .to_string_lossy()
+        .to_string();
 
     let port = match state.ensure_started(app_handle).await {
         Ok(port) => port,
@@ -654,7 +772,8 @@ async fn get_local_model_status(
         }
     };
 
-    let status: PythonModelStatus = state.get_json(port, "/model/status").await?;
+    let endpoint = model_endpoint("/model/status", model_key, BBOX_MODEL_KEY);
+    let status: PythonModelStatus = state.get_json(port, &endpoint).await?;
     Ok(to_local_model_status(status, state.startup_error()))
 }
 
@@ -723,22 +842,61 @@ async fn get_local_surya_model_status(
 }
 
 #[tauri::command]
-async fn load_local_model(
+async fn get_local_surya_bbox_model_status(
     state: State<'_, LocalBackendState>,
     app_handle: AppHandle,
 ) -> Result<LocalModelStatus, String> {
+    let model_dir = default_surya_bbox_model_dir()?
+        .to_string_lossy()
+        .to_string();
+
+    let port = match state.ensure_started(app_handle).await {
+        Ok(port) => port,
+        Err(err) => {
+            return Ok(LocalModelStatus {
+                installed: Path::new(&model_dir).join("config.json").exists(),
+                loaded: false,
+                loading: false,
+                ready: false,
+                model_dir,
+                error: Some(err),
+                device: None,
+                dtype: None,
+                requested_backend: None,
+                active_backend: None,
+                backend_fallback_reason: None,
+                download: None,
+            });
+        }
+    };
+
+    let status: PythonModelStatus = state
+        .get_json(port, "/model/status?model_key=surya_bbox")
+        .await?;
+    Ok(to_local_model_status(status, state.startup_error()))
+}
+
+#[tauri::command(rename_all = "snake_case")]
+async fn load_local_model(
+    model_key: Option<String>,
+    state: State<'_, LocalBackendState>,
+    app_handle: AppHandle,
+) -> Result<LocalModelStatus, String> {
+    let model_key = normalize_local_model_key(model_key)?;
+    let model_dir = default_model_dir_for_key(model_key)?;
+    let endpoint = model_endpoint("/model/load", model_key, BBOX_MODEL_KEY);
     let port = state.ensure_started(app_handle).await?;
     match state
-        .post_empty_json::<PythonModelStatus>(port, "/model/load")
+        .post_empty_json::<PythonModelStatus>(port, &endpoint)
         .await
     {
         Ok(status) => Ok(to_local_model_status(status, state.startup_error())),
         Err(error) => Ok(LocalModelStatus {
-            installed: default_bbox_model_dir()?.join("config.json").exists(),
+            installed: model_dir.join("config.json").exists(),
             loaded: false,
             loading: false,
             ready: false,
-            model_dir: default_bbox_model_dir()?.to_string_lossy().to_string(),
+            model_dir: model_dir.to_string_lossy().to_string(),
             error: Some(error),
             device: None,
             dtype: None,
@@ -807,19 +965,53 @@ async fn load_local_surya_model(
 }
 
 #[tauri::command]
+async fn load_local_surya_bbox_model(
+    state: State<'_, LocalBackendState>,
+    app_handle: AppHandle,
+) -> Result<LocalModelStatus, String> {
+    let port = state.ensure_started(app_handle).await?;
+    match state
+        .post_empty_json::<PythonModelStatus>(port, "/model/load?model_key=surya_bbox")
+        .await
+    {
+        Ok(status) => Ok(to_local_model_status(status, state.startup_error())),
+        Err(error) => Ok(LocalModelStatus {
+            installed: default_surya_bbox_model_dir()?.join("config.json").exists(),
+            loaded: false,
+            loading: false,
+            ready: false,
+            model_dir: default_surya_bbox_model_dir()?
+                .to_string_lossy()
+                .to_string(),
+            error: Some(error),
+            device: None,
+            dtype: None,
+            requested_backend: None,
+            active_backend: None,
+            backend_fallback_reason: None,
+            download: None,
+        }),
+    }
+}
+
+#[tauri::command(rename_all = "snake_case")]
 async fn download_local_model(
+    model_key: Option<String>,
     state: State<'_, LocalBackendState>,
     app_handle: AppHandle,
 ) -> Result<DownloadResponse, String> {
+    let model_key = normalize_local_model_key(model_key)?;
+    let model_dir = default_model_dir_for_key(model_key)?;
+    let endpoint = model_endpoint("/model/download", model_key, BBOX_MODEL_KEY);
     let port = state.ensure_started(app_handle).await?;
     match state
-        .post_empty_json::<DownloadResponse>(port, "/model/download")
+        .post_empty_json::<DownloadResponse>(port, &endpoint)
         .await
     {
         Ok(response) => Ok(response),
         Err(error) => Ok(DownloadResponse {
             ok: false,
-            model_dir: default_bbox_model_dir()?.to_string_lossy().to_string(),
+            model_dir: model_dir.to_string_lossy().to_string(),
             started: None,
             download: None,
             error: Some(error),
@@ -869,9 +1061,33 @@ async fn download_local_surya_model(
     }
 }
 
+#[tauri::command]
+async fn download_local_surya_bbox_model(
+    state: State<'_, LocalBackendState>,
+    app_handle: AppHandle,
+) -> Result<DownloadResponse, String> {
+    let port = state.ensure_started(app_handle).await?;
+    match state
+        .post_empty_json::<DownloadResponse>(port, "/model/download?model_key=surya_bbox")
+        .await
+    {
+        Ok(response) => Ok(response),
+        Err(error) => Ok(DownloadResponse {
+            ok: false,
+            model_dir: default_surya_bbox_model_dir()?
+                .to_string_lossy()
+                .to_string(),
+            started: None,
+            download: None,
+            error: Some(error),
+        }),
+    }
+}
+
 #[tauri::command(rename_all = "snake_case")]
 async fn run_local_ocr(
     image_bytes_base64: String,
+    model_key: Option<String>,
     state: State<'_, LocalBackendState>,
     app_handle: AppHandle,
 ) -> Result<LocalOcrResponse, String> {
@@ -880,11 +1096,13 @@ async fn run_local_ocr(
         image_bytes_base64: &'a str,
     }
 
+    let model_key = normalize_bbox_local_model_key(model_key)?;
+    let endpoint = model_endpoint("/ocr", model_key, BBOX_MODEL_KEY);
     let port = state.ensure_started(app_handle).await?;
     let response: PythonOcrResponse = state
         .post_json(
             port,
-            "/ocr",
+            &endpoint,
             &RequestBody {
                 image_bytes_base64: &image_bytes_base64,
             },
@@ -983,6 +1201,44 @@ async fn run_local_surya_ocr(
     })
 }
 
+#[tauri::command(rename_all = "snake_case")]
+async fn run_local_surya_bbox_ocr(
+    image_bytes_base64: String,
+    state: State<'_, LocalBackendState>,
+    app_handle: AppHandle,
+) -> Result<LocalOcrResponse, String> {
+    #[derive(Serialize)]
+    struct RequestBody<'a> {
+        image_bytes_base64: &'a str,
+    }
+
+    let port = state.ensure_started(app_handle).await?;
+    let response: PythonOcrResponse = state
+        .post_json(
+            port,
+            "/ocr?model_key=surya_bbox",
+            &RequestBody {
+                image_bytes_base64: &image_bytes_base64,
+            },
+        )
+        .await?;
+
+    Ok(LocalOcrResponse {
+        bubbles: response.bubbles,
+        raw_text: response.raw_text,
+        elapsed_ms: response.elapsed_ms,
+        preprocess_ms: response.preprocess_ms,
+        generate_ms: response.generate_ms,
+        postprocess_ms: response.postprocess_ms,
+        device: response.device,
+        dtype: response.dtype,
+        requested_backend: response.requested_backend,
+        active_backend: response.active_backend,
+        backend_fallback_reason: response.backend_fallback_reason,
+        backend: "local-python",
+    })
+}
+
 #[tauri::command]
 async fn healthcheck_local_backend(
     state: State<'_, LocalBackendState>,
@@ -1010,12 +1266,15 @@ async fn healthcheck_local_backend(
                 perf_options: None,
                 model_loaded: None,
                 models: None,
+                port: None,
                 error: Some(err),
             });
         }
     };
 
-    state.get_json(port, "/health").await
+    let mut health: HealthcheckResponse = state.get_json(port, "/health").await?;
+    health.port = Some(port);
+    Ok(health)
 }
 
 fn normalize_frontend_path(path: Option<String>) -> Result<String, String> {
@@ -1050,22 +1309,55 @@ async fn ensure_frontend_origin_reachable(origin: &str) -> Result<(), String> {
         .redirect(reqwest::redirect::Policy::limited(4))
         .build()
         .map_err(|err| err.to_string())?;
-    let response = client
-        .get(origin)
-        .send()
-        .await
-        .map_err(|err| {
-            if origin == FRONTEND_LOCAL_ORIGIN {
-                format!("localhost:3000 ne repond pas. Lancez d'abord npm run dev.")
-            } else {
-                format!("Impossible de joindre poneglyph.fr: {err}")
-            }
-        })?;
+    let response = client.get(origin).send().await.map_err(|err| {
+        if origin == FRONTEND_LOCAL_ORIGIN {
+            format!("localhost:3000 ne repond pas. Lancez d'abord npm run dev.")
+        } else {
+            format!("Impossible de joindre poneglyph.fr: {err}")
+        }
+    })?;
 
     if response.status().is_success() {
         Ok(())
     } else {
         Err(format!("Frontend HTTP {}", response.status()))
+    }
+}
+
+async fn ensure_local_frontend_stack_reachable() -> Result<(), String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(4))
+        .redirect(reqwest::redirect::Policy::limited(4))
+        .build()
+        .map_err(|err| err.to_string())?;
+
+    let response = client
+        .get(FRONTEND_LOCAL_API_HEALTH_URL)
+        .header("Origin", FRONTEND_LOCAL_ORIGIN)
+        .send()
+        .await
+        .map_err(|_| {
+            "localhost:3001/api ne repond pas. Lancez aussi le backend: cd backend && npm run dev."
+                .to_string()
+        })?;
+
+    if !response.status().is_success() {
+        return Err(format!("API locale HTTP {}", response.status()));
+    }
+
+    let cors_origin = response
+        .headers()
+        .get("access-control-allow-origin")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+
+    if cors_origin == FRONTEND_LOCAL_ORIGIN || cors_origin == "*" {
+        Ok(())
+    } else {
+        Err(
+            "L'API locale ne permet pas localhost:3000. Lancez-la en dev ou ajoutez http://localhost:3000 a ALLOWED_ORIGINS."
+                .to_string(),
+        )
     }
 }
 
@@ -1077,6 +1369,9 @@ async fn switch_frontend_origin(
 ) -> Result<(), String> {
     let origin = frontend_origin_for_target(&target)?;
     ensure_frontend_origin_reachable(origin).await?;
+    if target == "local" {
+        ensure_local_frontend_stack_reachable().await?;
+    }
 
     let target_path = normalize_frontend_path(path)?;
     let target_url = Url::parse(&format!("{origin}{target_path}"))
@@ -1112,15 +1407,19 @@ fn main() {
             get_local_model_status,
             get_local_text_model_status,
             get_local_surya_model_status,
+            get_local_surya_bbox_model_status,
             load_local_model,
             load_local_text_model,
             load_local_surya_model,
+            load_local_surya_bbox_model,
             download_local_model,
             download_local_text_model,
             download_local_surya_model,
+            download_local_surya_bbox_model,
             run_local_ocr,
             run_local_text_ocr,
             run_local_surya_ocr,
+            run_local_surya_bbox_ocr,
             healthcheck_local_backend,
             switch_frontend_origin,
             get_app_version

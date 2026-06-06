@@ -48,6 +48,20 @@ const EMPTY_LOCAL_OCR = {
         backend_fallback_reason: null,
         download: null
     },
+    localSuryaBBoxModelStatus: {
+        installed: false,
+        loaded: false,
+        loading: false,
+        ready: false,
+        model_dir: '',
+        error: null,
+        device: null,
+        dtype: null,
+        requested_backend: null,
+        active_backend: null,
+        backend_fallback_reason: null,
+        download: null
+    },
     localHealth: null,
     localConnectionState: {
         status: 'unavailable',
@@ -58,41 +72,53 @@ const EMPTY_LOCAL_OCR = {
     isDownloadingLocalModel: false,
     isDownloadingLocalTextModel: false,
     isDownloadingLocalSuryaModel: false,
+    isDownloadingLocalSuryaBBoxModel: false,
     localDownloadState: null,
     localTextDownloadState: null,
     localSuryaDownloadState: null,
+    localSuryaBBoxDownloadState: null,
     localDownloadProgress: null,
     localTextDownloadProgress: null,
     localSuryaDownloadProgress: null,
+    localSuryaBBoxDownloadProgress: null,
     isLoadingLocalModel: false,
     isLoadingLocalTextModel: false,
     isLoadingLocalSuryaModel: false,
+    isLoadingLocalSuryaBBoxModel: false,
     isLocalInferencing: false,
     isLocalTextInferencing: false,
     isLocalSuryaInferencing: false,
+    isLocalSuryaBBoxInferencing: false,
     localError: null,
     canRunLocalOcr: false,
     canRunLocalTextOcr: false,
     canRunLocalSuryaOcr: false,
+    canRunLocalSuryaBBoxOcr: false,
     refreshLocalModelStatus: async () => null,
     refreshLocalTextModelStatus: async () => null,
     refreshLocalSuryaModelStatus: async () => null,
+    refreshLocalSuryaBBoxModelStatus: async () => null,
     healthcheckLocalBackend: async () => null,
     refreshLocalDiagnostics: async () => null,
-    downloadLocalModel: async () => ({ ok: false, error: "OCR local indisponible." }),
-    downloadLocalTextModel: async () => ({ ok: false, error: "OCR local indisponible." }),
-    downloadLocalSuryaModel: async () => ({ ok: false, error: "OCR local indisponible." }),
-    loadLocalModel: async () => ({ error: "OCR local indisponible." }),
-    loadLocalTextModel: async () => ({ error: "OCR local indisponible." }),
-    loadLocalSuryaModel: async () => ({ error: "OCR local indisponible." }),
+    downloadLocalModel: async () => ({ ok: false, error: "Inference locale indisponible." }),
+    downloadLocalTextModel: async () => ({ ok: false, error: "Inference locale indisponible." }),
+    downloadLocalSuryaModel: async () => ({ ok: false, error: "Inference locale indisponible." }),
+    downloadLocalSuryaBBoxModel: async () => ({ ok: false, error: "Inference locale indisponible." }),
+    loadLocalModel: async () => ({ error: "Inference locale indisponible." }),
+    loadLocalTextModel: async () => ({ error: "Inference locale indisponible." }),
+    loadLocalSuryaModel: async () => ({ error: "Inference locale indisponible." }),
+    loadLocalSuryaBBoxModel: async () => ({ error: "Inference locale indisponible." }),
     runLocalOcrBlob: async () => {
-        throw new Error("OCR local indisponible.");
+        throw new Error("Inference locale indisponible.");
     },
     runLocalTextOcrBlob: async () => {
-        throw new Error("OCR local indisponible.");
+        throw new Error("Inference locale indisponible.");
     },
     runLocalSuryaOcrBlob: async () => {
-        throw new Error("OCR local indisponible.");
+        throw new Error("Inference locale indisponible.");
+    },
+    runLocalSuryaBBoxOcrBlob: async () => {
+        throw new Error("Inference locale indisponible.");
     }
 };
 

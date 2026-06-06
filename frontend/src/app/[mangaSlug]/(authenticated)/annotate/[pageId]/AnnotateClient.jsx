@@ -5,7 +5,6 @@ import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, updatePageStatus, reorderBubbles, savePageDescription, getMetadataSuggestions, getPages } from '@/lib/api';
 import { analyzeBubble, generatePageDescription, generateGeminiEmbedding, generateOneShotBubbles } from '@/lib/geminiClient';
-import { generateMimoOneShotBubbles } from '@/lib/mimoClient';
 import ApiKeyForm from '@/components/ApiKeyForm';
 import { useAuth } from '@/context/AuthContext';
 import { OCR_MODELS } from '@/context/WorkerContext';
@@ -52,7 +51,7 @@ async function runModalPoneglyph(imageBlob) {
         body: imageBlob
     });
 
-    if (!response.ok) throw new Error("Erreur API Poneglyph");
+    if (!response.ok) throw new Error("Erreur API Poneglyph-BBox");
     return response.json();
 }
 
@@ -73,7 +72,6 @@ export default function AnnotatePage() {
     const [loadingText, setLoadingText] = useState("Analyse en cours...");
     const [pendingAnnotation, setPendingAnnotation] = useState(null);
     const [isOneShotLoading, setIsOneShotLoading] = useState(false);
-    const [isMimoLoading, setIsMimoLoading] = useState(false);
     const [isPoneglyphLoading, setIsPoneglyphLoading] = useState(false);
     const [poneglyphRunMode, setPoneglyphRunMode] = useState(null);
     const [rectangle, setRectangle] = useState(null);
@@ -520,138 +518,22 @@ export default function AnnotatePage() {
         }
     };
 
-    const handleOneShotMimo = async () => {
-        if (!imageRef.current) return;
-        const key = localStorage.getItem('mimo_api_key');
-        if (!key) {
-            toast.error("Clé API MiMo requise pour l'extraction One-Shot.");
-            setShowApiKeyModal(true);
-            return;
-        }
-
-        setIsMimoLoading(true);
-        try {
-            let yoloPromise = Promise.resolve(null);
-            if (detectionStatus === 'ready') {
-                yoloPromise = fetch(imageRef.current.src)
-                    .then(r => r.blob())
-                    .then(b => detectBubbles(b))
-                    .catch(e => {
-                        console.error('YOLO Failed', e);
-                        return null;
-                    });
-            }
-
-            const [result, yoloBoxes] = await Promise.all([
-                generateMimoOneShotBubbles(imageRef.current, key),
-                yoloPromise
-            ]);
-
-            if (!result || !result.data || !Array.isArray(result.data)) {
-                throw new Error("Format de réponse invalide.");
-            }
-
-            const h = imageRef.current.naturalHeight;
-            const w = imageRef.current.naturalWidth;
-
-            const newBubblesConfig = result.data.reduce((acc, idx) => {
-                const [ymin, xmin, ymax, xmax] = idx.pos;
-                let mimoBox = {
-                    id_page: parseInt(pageId, 10),
-                    x: Math.round((xmin / 1000) * w),
-                    y: Math.round((ymin / 1000) * h),
-                    w: Math.round(((xmax - xmin) / 1000) * w),
-                    h: Math.round(((ymax - ymin) / 1000) * h),
-                    texte_propose: idx.content
-                };
-
-                if (detectionStatus === 'ready') {
-                    const boxes = yoloBoxes || [];
-                    let bestYoloBox = null;
-                    let bestIou = 0;
-                    for (const yBox of boxes) {
-                        const x1 = Math.max(mimoBox.x, yBox.x);
-                        const y1 = Math.max(mimoBox.y, yBox.y);
-                        const x2 = Math.min(mimoBox.x + mimoBox.w, yBox.x + yBox.w);
-                        const y2 = Math.min(mimoBox.y + mimoBox.h, yBox.y + yBox.h);
-
-                        if (x2 < x1 || y2 < y1) continue;
-                        const intersection = (x2 - x1) * (y2 - y1);
-                        const areaMimo = mimoBox.w * mimoBox.h;
-                        const areaYolo = yBox.w * yBox.h;
-                        const iou = intersection / (areaMimo + areaYolo - intersection);
-
-                        if (iou > 0.1 && iou > bestIou) {
-                            bestIou = iou;
-                            bestYoloBox = yBox;
-                        }
-                    }
-
-                    if (bestYoloBox) {
-                        mimoBox.x = Math.round(bestYoloBox.x);
-                        mimoBox.y = Math.round(bestYoloBox.y);
-                        mimoBox.w = Math.round(bestYoloBox.w);
-                        mimoBox.h = Math.round(bestYoloBox.h);
-                        acc.push(mimoBox);
-                    }
-                } else {
-                    acc.push(mimoBox);
-                }
-
-                return acc;
-            }, []);
-
-            if (newBubblesConfig.length === 0) {
-                toast.error("Aucune bulle détectée.");
-                setIsMimoLoading(false);
-                return;
-            }
-
-            toast.info(`Création de ${newBubblesConfig.length} bulles en cours...`);
-
-            const createdBubbles = [];
-            const { createBubble } = await import('@/lib/api');
-            for (const bubbleConfig of newBubblesConfig) {
-                try {
-                    const res = await createBubble(bubbleConfig);
-                    createdBubbles.push(res.data);
-                } catch (e) {
-                    console.error("Erreur création bulle MiMo", e);
-                }
-            }
-
-            if (createdBubbles.length > 0) {
-                setExistingBubbles(prev => {
-                    const combined = [...prev, ...createdBubbles];
-                    return combined.sort((a, b) => a.order - b.order);
-                });
-                toast.success(`${createdBubbles.length} bulles créées avec succès.`);
-            } else {
-                toast.error("Échec de la création des bulles.");
-            }
-        } catch (error) {
-            console.error(error);
-            if (error.message === "QUOTA_EXCEEDED") {
-                toast.error("Quota API MiMo dépassé !", {
-                    description: "Réessayez dans une minute ou vérifiez votre clé."
-                });
-            } else {
-                toast.error("Service MiMo indisponible ou erreur d'API.");
-            }
-        } finally {
-            setIsMimoLoading(false);
-        }
-    };
-
-    const handleOneShotPoneglyph = async ({ preferLocal = false } = {}) => {
+    const handleOneShotPoneglyph = async ({ preferLocal = false, localEngine = 'lighton' } = {}) => {
         if (!imageRef.current) return;
 
-        const runMode = preferLocal ? 'local' : 'modal';
+        const isSuryaBBoxLocal = preferLocal && localEngine === 'surya_bbox';
+        const runMode = preferLocal ? (isSuryaBBoxLocal ? 'surya-bbox-local' : 'local') : 'modal';
+        const modelLabel = isSuryaBBoxLocal ? 'Surya-BBox' : 'Poneglyph-BBox';
+        const inferenceModeLabel = preferLocal ? 'Local' : 'Modal';
+        const serviceLabel = `${modelLabel} - ${inferenceModeLabel}`;
         setIsPoneglyphLoading(true);
         setPoneglyphRunMode(runMode);
         try {
-            if (preferLocal && !tauriLocalOcr.canRunLocalOcr) {
-                throw new Error("Le modele BBox local doit etre charge avant de lancer le one-shot local.");
+            if (preferLocal && isSuryaBBoxLocal && !tauriLocalOcr.canRunLocalSuryaBBoxOcr) {
+                throw new Error("Le modele Surya-BBox doit etre charge avant de lancer l'inference locale.");
+            }
+            if (preferLocal && !isSuryaBBoxLocal && !tauriLocalOcr.canRunLocalOcr) {
+                throw new Error("Le modele Poneglyph-BBox doit etre charge avant de lancer l'inference locale.");
             }
 
             let yoloPromise = Promise.resolve(null);
@@ -670,9 +552,11 @@ export default function AnnotatePage() {
 
             const extractionPromise = (async () => {
                 if (preferLocal) {
-                    const localResult = await tauriLocalOcr.runLocalOcrBlob(imageBlob);
+                    const localResult = isSuryaBBoxLocal
+                        ? await tauriLocalOcr.runLocalSuryaBBoxOcrBlob(imageBlob)
+                        : await tauriLocalOcr.runLocalOcrBlob(imageBlob);
                     if (localResult?.elapsed_ms) {
-                        toast.success(`OCR local termine en ${localResult.elapsed_ms} ms.`);
+                        toast.success(`${modelLabel} - Local termine en ${localResult.elapsed_ms} ms.`);
                     }
                     return localResult;
                 }
@@ -745,7 +629,7 @@ export default function AnnotatePage() {
                 return;
             }
 
-            toast.info(`Création de ${newBubblesConfig.length} bulles Poneglyph...`);
+            toast.info(`Creation de ${newBubblesConfig.length} bulles ${modelLabel}...`);
 
             const createdBubbles = [];
             const { createBubble } = await import('@/lib/api');
@@ -754,7 +638,7 @@ export default function AnnotatePage() {
                     const res = await createBubble(bubbleConfig);
                     createdBubbles.push(res.data);
                 } catch (e) {
-                    console.error("Erreur création bulle Poneglyph", e);
+                    console.error(`Erreur creation bulle ${modelLabel}`, e);
                 }
             }
 
@@ -763,13 +647,13 @@ export default function AnnotatePage() {
                     const combined = [...prev, ...createdBubbles];
                     return combined.sort((a, b) => a.order - b.order);
                 });
-                toast.success(`${createdBubbles.length} bulles Poneglyph créées !`);
+                toast.success(`${createdBubbles.length} bulles ${modelLabel} creees !`);
             } else {
                 toast.error("Échec de la création des bulles.");
             }
         } catch (error) {
             console.error(error);
-            toast.error(`${runMode === 'local' ? 'OCR local Poneglyph' : 'Service Modal Poneglyph'} indisponible : ${error.message}`);
+            toast.error(`${serviceLabel} indisponible : ${error.message}`);
         } finally {
             setIsPoneglyphLoading(false);
             setPoneglyphRunMode(null);
@@ -781,16 +665,40 @@ export default function AnnotatePage() {
             const reason = !tauriLocalOcr.isTauri
                 ? "App desktop non detectee."
                 : tauriLocalOcr.isDownloadingLocalModel
-                        ? "Telechargement du modele BBox local en cours."
+                        ? "Telechargement du modele Poneglyph-BBox en cours."
                         : !tauriLocalOcr.localModelStatus?.installed
-                            ? "Telechargez le modele BBox local d'abord."
+                            ? "Telechargez le modele Poneglyph-BBox d'abord."
                             : !tauriLocalOcr.localModelStatus?.ready
-                                ? "Chargez le modele BBox local en VRAM d'abord."
-                            : "OCR local indisponible.";
+                                ? "Chargez le modele Poneglyph-BBox en VRAM d'abord."
+                            : "Poneglyph-BBox indisponible.";
             toast.error(reason);
             return;
         }
         return handleOneShotPoneglyph({ preferLocal: true });
+    };
+
+    const handleOneShotLocalSuryaBbox = () => {
+        if (!tauriLocalOcr.canRunLocalSuryaBBoxOcr) {
+            const connectionState = tauriLocalOcr.localConnectionState?.status;
+            const reason = !tauriLocalOcr.isTauri
+                ? "App desktop non detectee."
+                : connectionState === 'reconnecting'
+                    ? "Serveur OCR local en reconnexion."
+                    : ['offline', 'unavailable'].includes(connectionState)
+                        ? "Serveur OCR local hors ligne."
+                        : tauriLocalOcr.isDownloadingLocalSuryaBBoxModel
+                            ? "Telechargement du modele Surya-BBox en cours."
+                            : tauriLocalOcr.localSuryaBBoxModelStatus?.error
+                                ? tauriLocalOcr.localSuryaBBoxModelStatus.error
+                                : !tauriLocalOcr.localSuryaBBoxModelStatus?.installed
+                                    ? "Telechargez le modele Surya-BBox d'abord."
+                                    : !tauriLocalOcr.localSuryaBBoxModelStatus?.ready
+                                        ? "Chargez le modele Surya-BBox en VRAM d'abord."
+                                        : "Surya-BBox indisponible.";
+            toast.error(reason);
+            return;
+        }
+        return handleOneShotPoneglyph({ preferLocal: true, localEngine: 'surya_bbox' });
     };
 
     if (error) return <div className="p-8 text-red-500">{error}</div>;
@@ -831,42 +739,50 @@ export default function AnnotatePage() {
                 isUpdatingPageStatus={isUpdatingPageStatus}
                 handleOneShot={handleOneShot}
                 isOneShotLoading={isOneShotLoading}
-                handleOneShotMimo={handleOneShotMimo}
-                isMimoLoading={isMimoLoading}
                 handleOneShotPoneglyph={handleOneShotPoneglyph}
                 isPoneglyphLoading={isPoneglyphLoading}
                 poneglyphRunMode={poneglyphRunMode}
                 handleOneShotLocalPoneglyph={handleOneShotLocalPoneglyph}
+                handleOneShotLocalSuryaBbox={handleOneShotLocalSuryaBbox}
                 isTauri={tauriLocalOcr.isTauri}
                 isCheckingLocalConnection={tauriLocalOcr.isCheckingLocalConnection}
                 localModelStatus={tauriLocalOcr.localModelStatus}
                 localTextModelStatus={tauriLocalOcr.localTextModelStatus}
                 localSuryaModelStatus={tauriLocalOcr.localSuryaModelStatus}
+                localSuryaBBoxModelStatus={tauriLocalOcr.localSuryaBBoxModelStatus}
                 localHealth={tauriLocalOcr.localHealth}
                 localConnectionState={tauriLocalOcr.localConnectionState}
                 isDownloadingLocalModel={tauriLocalOcr.isDownloadingLocalModel}
                 isDownloadingLocalTextModel={tauriLocalOcr.isDownloadingLocalTextModel}
                 isDownloadingLocalSuryaModel={tauriLocalOcr.isDownloadingLocalSuryaModel}
+                isDownloadingLocalSuryaBBoxModel={tauriLocalOcr.isDownloadingLocalSuryaBBoxModel}
                 localDownloadState={tauriLocalOcr.localDownloadState}
                 localTextDownloadState={tauriLocalOcr.localTextDownloadState}
                 localSuryaDownloadState={tauriLocalOcr.localSuryaDownloadState}
+                localSuryaBBoxDownloadState={tauriLocalOcr.localSuryaBBoxDownloadState}
                 localDownloadProgress={tauriLocalOcr.localDownloadProgress}
                 localTextDownloadProgress={tauriLocalOcr.localTextDownloadProgress}
                 localSuryaDownloadProgress={tauriLocalOcr.localSuryaDownloadProgress}
+                localSuryaBBoxDownloadProgress={tauriLocalOcr.localSuryaBBoxDownloadProgress}
                 isLoadingLocalModel={tauriLocalOcr.isLoadingLocalModel}
                 isLoadingLocalTextModel={tauriLocalOcr.isLoadingLocalTextModel}
                 isLoadingLocalSuryaModel={tauriLocalOcr.isLoadingLocalSuryaModel}
+                isLoadingLocalSuryaBBoxModel={tauriLocalOcr.isLoadingLocalSuryaBBoxModel}
                 isLocalInferencing={tauriLocalOcr.isLocalInferencing}
+                isLocalSuryaBBoxInferencing={tauriLocalOcr.isLocalSuryaBBoxInferencing}
                 localError={tauriLocalOcr.localError}
                 canRunLocalOcr={tauriLocalOcr.canRunLocalOcr}
                 canRunLocalTextOcr={tauriLocalOcr.canRunLocalTextOcr}
                 canRunLocalSuryaOcr={tauriLocalOcr.canRunLocalSuryaOcr}
+                canRunLocalSuryaBBoxOcr={tauriLocalOcr.canRunLocalSuryaBBoxOcr}
                 downloadLocalModel={tauriLocalOcr.downloadLocalModel}
                 downloadLocalTextModel={tauriLocalOcr.downloadLocalTextModel}
                 downloadLocalSuryaModel={tauriLocalOcr.downloadLocalSuryaModel}
+                downloadLocalSuryaBBoxModel={tauriLocalOcr.downloadLocalSuryaBBoxModel}
                 loadLocalModel={tauriLocalOcr.loadLocalModel}
                 loadLocalTextModel={tauriLocalOcr.loadLocalTextModel}
                 loadLocalSuryaModel={tauriLocalOcr.loadLocalSuryaModel}
+                loadLocalSuryaBBoxModel={tauriLocalOcr.loadLocalSuryaBBoxModel}
                 refreshLocalDiagnostics={tauriLocalOcr.refreshLocalDiagnostics}
             />
 
@@ -999,7 +915,7 @@ export default function AnnotatePage() {
                 <DialogContent className="sm:max-w-md">
                     <DialogHeader>
                         <DialogTitle>Configuration API</DialogTitle>
-                        <DialogDescription>Gérez vos clés API.</DialogDescription>
+                        <DialogDescription>Gérez votre clé API.</DialogDescription>
                     </DialogHeader>
                     <ApiKeyForm onSave={handleSaveApiKey} />
                 </DialogContent>
