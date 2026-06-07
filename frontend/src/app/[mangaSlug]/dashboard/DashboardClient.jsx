@@ -39,8 +39,10 @@ export default function DashboardPage() {
     const [searchTerm, setSearchTerm] = useState('');
     const [sortDirection, setSortDirection] = useState('asc');
     const [currentPage, setCurrentPage] = useState(1);
-    const [drawerDragY, setDrawerDragY] = useState(0);
+    const drawerRef = useRef(null);
     const drawerDragStartYRef = useRef(null);
+    const drawerDragYRef = useRef(0);
+    const drawerDragFrameRef = useRef(null);
     const isAdmin = profile?.role === 'Admin';
     const volumesPerPage = 5;
 
@@ -76,29 +78,101 @@ export default function DashboardPage() {
 
     useEffect(() => {
         if (isSheetOpen) {
-            setDrawerDragY(0);
+            const drawer = drawerRef.current;
+            if (drawer) {
+                drawer.style.transform = '';
+                drawer.style.transition = '';
+                drawer.style.willChange = '';
+            }
+            drawerDragYRef.current = 0;
             drawerDragStartYRef.current = null;
         }
     }, [isSheetOpen]);
 
+    useEffect(() => {
+        return () => {
+            if (drawerDragFrameRef.current) {
+                cancelAnimationFrame(drawerDragFrameRef.current);
+            }
+        };
+    }, []);
+
     const selectedTomeTitle = selectedTome?.titre || selectedTome?.title || selectedTome?.nom || "A l'aube d'une grande aventure";
 
+    const applyDrawerDrag = (dragY) => {
+        drawerDragYRef.current = dragY;
+
+        if (drawerDragFrameRef.current) return;
+
+        drawerDragFrameRef.current = requestAnimationFrame(() => {
+            drawerDragFrameRef.current = null;
+            const drawer = drawerRef.current;
+            if (!drawer) return;
+
+            drawer.style.transition = 'none';
+            drawer.style.transform = `translate3d(0, ${drawerDragYRef.current}px, 0)`;
+        });
+    };
+
     const handleDrawerPointerDown = (event) => {
+        if (event.pointerType === 'mouse' && event.button !== 0) return;
+
         drawerDragStartYRef.current = event.clientY;
+        drawerDragYRef.current = 0;
+        const drawer = drawerRef.current;
+        if (drawer) {
+            drawer.style.transition = 'none';
+            drawer.style.willChange = 'transform';
+        }
         event.currentTarget.setPointerCapture(event.pointerId);
     };
 
     const handleDrawerPointerMove = (event) => {
         if (drawerDragStartYRef.current === null) return;
-        setDrawerDragY(Math.max(0, event.clientY - drawerDragStartYRef.current));
+
+        const rawDragY = event.clientY - drawerDragStartYRef.current;
+        const dragY = rawDragY <= 0
+            ? Math.max(-14, rawDragY * 0.14)
+            : rawDragY > 420
+                ? 420 + (rawDragY - 420) * 0.28
+                : rawDragY;
+
+        applyDrawerDrag(dragY);
     };
 
-    const handleDrawerPointerUp = () => {
-        if (drawerDragY > 130) {
-            setIsSheetOpen(false);
+    const handleDrawerPointerUp = (event) => {
+        if (drawerDragStartYRef.current === null) return;
+
+        if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
         }
-        setDrawerDragY(0);
+
+        if (drawerDragFrameRef.current) {
+            cancelAnimationFrame(drawerDragFrameRef.current);
+            drawerDragFrameRef.current = null;
+        }
+
+        const drawer = drawerRef.current;
+        const shouldClose = drawerDragYRef.current > 130;
+
         drawerDragStartYRef.current = null;
+        drawerDragYRef.current = 0;
+
+        if (shouldClose) {
+            setIsSheetOpen(false);
+            return;
+        }
+
+        if (drawer) {
+            drawer.style.transition = 'transform 180ms cubic-bezier(0.22, 1, 0.36, 1)';
+            drawer.style.transform = 'translate3d(0, 0, 0)';
+            window.setTimeout(() => {
+                if (drawerDragStartYRef.current !== null || !drawerRef.current) return;
+                drawer.style.transform = '';
+                drawer.style.transition = '';
+                drawer.style.willChange = '';
+            }, 190);
+        }
     };
 
     const openTome = async (tome) => {
@@ -348,9 +422,9 @@ export default function DashboardPage() {
 
             <Sheet open={isSheetOpen} onOpenChange={handleSheetChange}>
                 <SheetContent
+                    ref={drawerRef}
                     side="bottom"
-                    style={{ transform: drawerDragY ? `translateY(${drawerDragY}px)` : undefined }}
-                    className="mx-auto h-[min(82vh,760px)] w-[calc(100%-1.5rem)] max-w-[1460px] overflow-hidden rounded-t-[28px] border border-[#c8dcf2] bg-white/96 p-0 shadow-[0_-22px_80px_rgba(7,19,60,0.30)] backdrop-blur-xl transition-transform duration-200 sm:w-[calc(100%-4rem)]"
+                    className="mx-auto h-[min(82vh,760px)] w-[calc(100%-1.5rem)] max-w-[1460px] overflow-hidden rounded-t-[28px] border border-[#c8dcf2] bg-white/96 p-0 shadow-[0_-22px_80px_rgba(7,19,60,0.30)] backdrop-blur-xl sm:w-[calc(100%-4rem)]"
                 >
 
                     <div
