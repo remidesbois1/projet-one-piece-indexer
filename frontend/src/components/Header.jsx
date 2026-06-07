@@ -56,7 +56,7 @@ const Header = ({ onOpenApiKeyModal }) => {
     const getLinkStyle = useCallback((path) => {
         const fullPath = `/${mangaSlug}${path}`;
         const isActive = pathname === fullPath;
-        return `text-sm font-medium transition-colors duration-200 ${isActive ? "text-[#2F7AAF] font-semibold" : "text-slate-500 hover:text-slate-900"}`;
+        return `relative flex h-16 items-center text-sm font-semibold transition-colors duration-200 ${isActive ? "text-[#1550b7] after:absolute after:bottom-0 after:left-0 after:h-0.5 after:w-full after:rounded-full after:bg-[#1550b7]" : "text-[#4b5574] hover:text-[#07133c]"}`;
     }, [mangaSlug, pathname]);
 
     const getInitials = useCallback((email) => {
@@ -69,17 +69,17 @@ const Header = ({ onOpenApiKeyModal }) => {
     if (!mangaSlug) return null; 
 
     return (
-        <header className="sticky top-0 z-50 w-full border-b border-slate-200/80 bg-white/85 backdrop-blur-md">
-            <div className="container mx-auto flex h-14 items-center justify-between px-4 sm:px-8 max-w-[1600px]">
+        <header className="sticky top-0 z-50 w-full border-b border-[#dbe8f7] bg-white/78 backdrop-blur-xl">
+            <div className="mx-auto flex h-20 items-center justify-between px-4 sm:px-8">
 
                 <div className="flex items-center gap-2.5">
                     <Link
                         href={pathname === `/${mangaSlug}/dashboard` ? `/` : `/${mangaSlug}/dashboard`}
                         prefetch={false}
-                        className="flex items-center gap-2.5 group"
+                        className="group flex items-center gap-3"
                     >
-                        <img src="/favicon-96x96.png" alt="Logo" className="h-8 w-8 transition-transform duration-200 group-hover:scale-105" />
-                        <span className="text-lg font-bold tracking-tight text-slate-900">
+                        <img src="/favicon-96x96.png" alt="Logo" className="h-11 w-11 transition-transform duration-200 group-hover:scale-105" />
+                        <span className="text-lg font-black tracking-tight text-[#07133c]">
                             Projet Poneglyph
                         </span>
                     </Link>
@@ -87,7 +87,7 @@ const Header = ({ onOpenApiKeyModal }) => {
                 </div>
 
                 
-                <nav className="hidden md:flex items-center gap-6">
+                <nav className="hidden items-center gap-8 md:flex">
                     <Link href={getHref('/dashboard')} prefetch={false} className={getLinkStyle('/dashboard')}>
                         Bibliothèque
                     </Link>
@@ -130,10 +130,10 @@ const Header = ({ onOpenApiKeyModal }) => {
                         {user && !isGuest ? (
                             <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" className="relative h-9 w-9 rounded-full">
-                                        <Avatar className="h-9 w-9 border border-slate-200">
+                                    <Button variant="ghost" className="relative h-11 w-11 rounded-full border border-[#c8dcf2] bg-white/70 p-0 text-[#07133c] shadow-sm hover:bg-white">
+                                        <Avatar className="h-10 w-10">
                                             <AvatarImage src={profile?.avatar_url} alt={user.email} />
-                                            <AvatarFallback>{getInitials(user.email)}</AvatarFallback>
+                                            <AvatarFallback className="bg-transparent text-sm font-black text-[#07133c]">{getInitials(user.email)}</AvatarFallback>
                                         </Avatar>
                                     </Button>
                                 </DropdownMenuTrigger>
