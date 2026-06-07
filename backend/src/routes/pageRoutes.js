@@ -2,9 +2,8 @@ const express = require('express');
 const router = express.Router();
 const { supabase, supabaseAdmin } = require('../config/supabaseClient');
 const { authMiddleware, roleCheck } = require('../middleware/auth');
-const sharp = require('sharp');
+const { createPublicPreviewImage } = require('../utils/protectedImage');
 const axios = require('axios');
-const path = require('path');
 
 router.get('/', async (req, res) => {
     console.log('GET pages', req.query);
@@ -109,30 +108,19 @@ router.get('/:id/image', async (req, res) => {
             return res.send(imageBuffer);
         }
 
-        const watermarkPath = path.join(__dirname, '../assets/watermark.png');
-        const image = sharp(imageBuffer);
-        const metadata = await image.metadata();
+        const { data: bubbles, error: bubblesError } = await supabase
+            .from('bulles')
+            .select('x, y, w, h')
+            .eq('id_page', id)
+            .neq('statut', 'Rejeté');
 
-        const watermarkHeight = Math.round(metadata.height * 0.8);
-        const watermark = await sharp(watermarkPath)
-            .resize({ height: watermarkHeight })
-            .toBuffer();
+        if (bubblesError) throw bubblesError;
 
-        const watermarkedBuffer = await image
-            .composite([{
-                input: watermark,
-                gravity: 'center'
-            }])
-            .avif({
-                quality: 15,
-                effort: 2,
-                chromaSubsampling: '4:2:0'
-            })
-            .toBuffer();
+        const protectedImageBuffer = await createPublicPreviewImage(imageBuffer, bubbles);
 
         res.set('Content-Type', 'image/avif');
         res.set('Cache-Control', 'public, max-age=86400');
-        res.send(watermarkedBuffer);
+        res.send(protectedImageBuffer);
 
     } catch (err) {
         console.error("Erreur service image:", err);

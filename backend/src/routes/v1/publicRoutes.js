@@ -370,14 +370,14 @@ router.get('/chapters/:chapterNo/pages/:pageNo', async (req, res) => {
 
         const protocol = req.protocol;
         const host = req.get('host');
-        const watermarkedImageUrl = `${protocol}://${host}/api/pages/${correctPage.id}/image`;
+        const protectedImageUrl = `${protocol}://${host}/api/pages/${correctPage.id}/image`;
 
         res.json({
             context: {
                 tome: correctPage.chapitres?.tomes?.numero,
                 chapter: parseInt(chapterNo),
                 page: parseInt(pageNo),
-                image_url: watermarkedImageUrl
+                image_url: protectedImageUrl
             },
             metadata: metadata,
             bubbles: validBubbles.map(b => ({

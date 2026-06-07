@@ -247,7 +247,7 @@ Fallback pour les configurations ne supportant pas WebGPU. 500 requêtes gratuit
 | `/quotes/random` | GET | Citation aléatoire |
 | `/search` | GET | Recherche textuelle |
 
-> Les images sont watermarkées et réduites en qualité.
+> Les images publiques sont fortement floutées, sauf dans les zones des bulles de texte.
 
 ---
 
@@ -406,7 +406,7 @@ projet-one-piece-indexer/
 
 > Ce projet est une démonstration technique à but éducatif et de recherche sur l'indexation sémantique et l'IA déportée.
 >
-> Les images accessibles publiquement sont **systématiquement réduites en qualité** et marquées d'un **filigrane visible**. Ces dégradations volontaires garantissent que l'expérience ne peut se substituer à l'achat de l'œuvre originale. Toutes les images restent la propriété de leurs ayants droit.
+> Les images accessibles publiquement sont **systématiquement floutées hors des zones de texte**. Cette dégradation volontaire garantit que l'expérience ne peut se substituer à l'achat de l'œuvre originale. Toutes les images restent la propriété de leurs ayants droit.
 
 ---
 

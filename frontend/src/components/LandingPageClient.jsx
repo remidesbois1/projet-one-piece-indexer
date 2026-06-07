@@ -408,8 +408,8 @@ export default function LandingPageClient({ mangas = [] }) {
                                 <p className="text-slate-400 text-xs leading-relaxed">
                                     Ce projet est une démonstration technique à but éducatif et de recherche.
                                     Afin de respecter les droits d&apos;auteur et prévenir toute utilisation à des fins de lecture illégale,
-                                    les images accessibles publiquement sont systématiquement réduites en qualité et marquées d&apos;un filigrane visible.
-                                    Ces dégradations volontaires garantissent que l&apos;expérience ne peut se substituer à l&apos;achat
+                                    les images accessibles publiquement sont systématiquement floutées hors des zones de texte.
+                                    Cette dégradation volontaire garantit que l&apos;expérience ne peut se substituer à l&apos;achat
                                     et à la lecture de l&apos;œuvre originale. Toutes les images restent la propriété de leurs ayants droit respectifs.
                                 </p>
                             </div>
