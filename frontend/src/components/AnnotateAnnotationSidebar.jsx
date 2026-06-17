@@ -24,9 +24,9 @@ export default function AnnotateAnnotationSidebar({
     const isAdmin = role === 'Admin';
 
     return (
-        <aside className="w-full lg:w-[380px] bg-white border-t lg:border-t-0 lg:border-l border-slate-200 flex flex-col h-[40vh] lg:h-full overflow-hidden z-10 shadow-lg shrink-0">
-            <div className="flex-none p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
-                <h3 className="font-semibold text-slate-900">Annotations</h3>
+        <aside className="z-10 flex h-[40vh] w-full shrink-0 flex-col overflow-hidden border-t border-white/10 bg-[#06111e] shadow-lg lg:h-full lg:w-[380px] lg:border-l lg:border-t-0">
+            <div className="flex flex-none items-center justify-between border-b border-white/10 bg-white/[0.045] p-4">
+                <h3 className="font-semibold text-white">Annotations</h3>
                 <Badge variant="secondary">{existingBubbles.length}</Badge>
             </div>
             <ScrollArea className="flex-1 w-full h-full">

@@ -31,11 +31,11 @@ export default function AnnotateCanvas({
     handleEditBubble
 }) {
     return (
-        <main className="flex-1 min-h-0 bg-slate-200/50 overflow-hidden flex items-center justify-center p-2 sm:p-4 relative cursor-default">
+        <main className="relative flex min-h-0 flex-1 cursor-default items-center justify-center overflow-hidden bg-[#020812]/82 p-2 sm:p-4">
             <div
                 ref={containerRef}
                 className={cn(
-                    "relative inline-flex flex-col min-w-0 min-h-0 max-w-full max-h-full bg-white shadow-xl select-none",
+                    "relative inline-flex min-h-0 min-w-0 max-h-full max-w-full select-none flex-col bg-[#040d18] shadow-xl",
                     canEdit ? "cursor-crosshair" : "cursor-default"
                 )}
                 style={{
@@ -60,8 +60,8 @@ export default function AnnotateCanvas({
                 />
 
                 {isSubmitting && (
-                    <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] z-50 flex flex-col items-center justify-center text-slate-800 font-semibold">
-                        <Loader2 className="h-10 w-10 animate-spin mb-2 text-slate-900" />
+                    <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#040d18]/72 font-semibold text-slate-100 backdrop-blur-[2px]">
+                        <Loader2 className="mb-2 h-10 w-10 animate-spin text-[#8dbbff]" />
                         <span>{loadingText}</span>
                     </div>
                 )}

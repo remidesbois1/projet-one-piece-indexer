@@ -325,12 +325,12 @@ function OcrSourceCard({ source, diffFlags, onChoose, processingReview }) {
     const hasDiff = Boolean(diffFlags?.some(Boolean));
 
     return (
-        <div className={`p-3 rounded-lg border bg-white ${hasDiff ? 'border-amber-200 shadow-sm shadow-amber-100/70' : 'border-slate-200'}`}>
+        <div className={`rounded-lg border bg-[#081827]/88 p-3 ${hasDiff ? 'border-amber-400/40 shadow-sm shadow-amber-950/30' : 'border-white/12'}`}>
             <div className="mb-1.5 flex items-center justify-between gap-2">
-                <p className="text-xs font-semibold text-slate-500">{source.label}</p>
-                {hasDiff && <Badge className="bg-amber-50 text-amber-700 border-amber-200">Diff</Badge>}
+                <p className="text-xs font-semibold text-slate-300">{source.label}</p>
+                {hasDiff && <Badge className="border-amber-400/35 bg-amber-500/14 text-amber-200">Diff</Badge>}
             </div>
-            <p className="min-h-10 text-sm leading-6 text-slate-900 whitespace-pre-wrap">
+            <p className="min-h-10 whitespace-pre-wrap text-sm leading-6 text-slate-100">
                 <DiffText text={source.text} flags={diffFlags} />
             </p>
             <Button
@@ -861,41 +861,40 @@ export default function BatchOcrManager() {
     const hasSuryaReview = reviewQueue.some(item => item.suryaEnabled && item.suryaText);
 
     return (
-        <div className="container max-w-6xl mx-auto py-10 px-4 space-y-6">
-            <div className="relative overflow-hidden rounded-3xl border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/70 to-sky-50 p-6 shadow-sm">
-                <div className="absolute -right-16 -top-16 h-48 w-48 rounded-full bg-indigo-200/40 blur-3xl" />
+        <div className="poneglyph-app -mx-4 -my-6 min-h-screen px-4 py-10 sm:-mx-8">
+            <div className="poneglyph-panel relative overflow-hidden rounded-3xl p-6">
                 <div className="relative flex items-center gap-3">
                 <Link href={`/${params.mangaSlug}/admin?tab=batch`}>
-                    <Button variant="outline" size="sm" className="bg-white/80">
+                    <Button variant="outline" size="sm" className="border-white/14 bg-white/8 text-slate-200 hover:bg-white/14 hover:text-white">
                         <ArrowLeft className="h-4 w-4 mr-1" />
                         Admin
                     </Button>
                 </Link>
                 <div>
                     <div className="flex items-center gap-2">
-                        <Wand2 className="h-6 w-6 text-indigo-600" />
-                        <h1 className="text-3xl font-extrabold tracking-tight text-slate-950">Batch OCR</h1>
+                        <Wand2 className="h-6 w-6 text-[#8dbbff]" />
+                        <h1 className="poneglyph-title text-3xl font-extrabold">Batch OCR</h1>
                     </div>
-                    <p className="text-sm text-slate-600">Détection, double OCR, puis validation rapide des bulles ambiguës.</p>
+                    <p className="poneglyph-muted text-sm">Détection, double OCR, puis validation rapide des bulles ambiguës.</p>
                 </div>
                 </div>
             </div>
 
             {phase === 'idle' && (
-                <Card>
+                <Card className="poneglyph-panel rounded-xl">
                     <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
+                        <CardTitle className="flex items-center gap-2 text-white">
                             <Zap className="h-5 w-5 text-indigo-600" />
                             Configuration
                         </CardTitle>
-                        <CardDescription>
+                        <CardDescription className="text-slate-400">
                             Sélectionnez un chapitre. YOLO détecte les bulles, Poneglyph-BBox + Poneglyph font l&apos;OCR, avec Surya en troisième voteur quand il est chargé. Les résultats concordants sont auto-validés.
                         </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
                         <div className="grid gap-3 md:grid-cols-[1fr_240px_auto] md:items-end">
                             <div className="flex-1">
-                                <label className="text-sm font-medium text-slate-700 mb-1.5 block">Chapitre</label>
+                                <label className="mb-1.5 block text-sm font-medium text-slate-200">Chapitre</label>
                                 <Select value={selectedChapterId} onValueChange={setSelectedChapterId}>
                                     <SelectTrigger>
                                         <SelectValue placeholder="Sélectionner un chapitre..." />
@@ -910,7 +909,7 @@ export default function BatchOcrManager() {
                                 </Select>
                             </div>
                             <div>
-                                <label className="text-sm font-medium text-slate-700 mb-1.5 block">OCR</label>
+                                <label className="mb-1.5 block text-sm font-medium text-slate-200">OCR</label>
                                 <Select value={ocrProvider} onValueChange={handleProviderChange}>
                                     <SelectTrigger>
                                         <SelectValue placeholder="Source OCR" />
@@ -930,15 +929,15 @@ export default function BatchOcrManager() {
                                 Lancer le batch
                             </Button>
                         </div>
-                        <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3 text-xs font-semibold text-slate-600">
+                        <div className="rounded-xl border border-white/12 bg-white/[0.06] p-3 text-xs font-semibold text-slate-300">
                             <div className="flex flex-wrap items-center gap-2">
-                                <Badge variant="outline" className="bg-white">Provider: {voterLabel}</Badge>
-                                {tauriLocalOcr.isTauri && <Badge variant="outline" className={tauriLocalOcr.localSuryaModelStatus?.ready ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-white"}>Surya {tauriLocalOcr.localSuryaModelStatus?.ready ? "charge" : "non charge"}</Badge>}
-                                {tauriLocalOcr.isTauri && <Badge variant="outline" className={tauriLocalOcr.localModelStatus?.ready ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-white"}>Poneglyph-BBox {tauriLocalOcr.localModelStatus?.ready ? "chargé" : "non chargé"}</Badge>}
-                                {tauriLocalOcr.isTauri && <Badge variant="outline" className={tauriLocalOcr.localTextModelStatus?.ready ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-white"}>Poneglyph {tauriLocalOcr.localTextModelStatus?.ready ? "chargé" : "non chargé"}</Badge>}
+                                <Badge variant="outline" className="border-white/12 bg-white/8 text-slate-200">Provider: {voterLabel}</Badge>
+                                {tauriLocalOcr.isTauri && <Badge variant="outline" className={tauriLocalOcr.localSuryaModelStatus?.ready ? "border-emerald-400/35 bg-emerald-500/14 text-emerald-200" : "border-white/12 bg-white/8 text-slate-300"}>Surya {tauriLocalOcr.localSuryaModelStatus?.ready ? "charge" : "non charge"}</Badge>}
+                                {tauriLocalOcr.isTauri && <Badge variant="outline" className={tauriLocalOcr.localModelStatus?.ready ? "border-emerald-400/35 bg-emerald-500/14 text-emerald-200" : "border-white/12 bg-white/8 text-slate-300"}>Poneglyph-BBox {tauriLocalOcr.localModelStatus?.ready ? "chargé" : "non chargé"}</Badge>}
+                                {tauriLocalOcr.isTauri && <Badge variant="outline" className={tauriLocalOcr.localTextModelStatus?.ready ? "border-emerald-400/35 bg-emerald-500/14 text-emerald-200" : "border-white/12 bg-white/8 text-slate-300"}>Poneglyph {tauriLocalOcr.localTextModelStatus?.ready ? "chargé" : "non chargé"}</Badge>}
                             </div>
                             {tauriLocalOcr.isTauri && !canUseLocalBatch && (
-                                <p className="mt-2 text-[11px] text-slate-500">Mode local disponible quand Poneglyph-BBox et Poneglyph sont tous les deux chargés.</p>
+                                <p className="mt-2 text-[11px] text-slate-400">Mode local disponible quand Poneglyph-BBox et Poneglyph sont tous les deux chargés.</p>
                             )}
                         </div>
                     </CardContent>
@@ -946,40 +945,40 @@ export default function BatchOcrManager() {
             )}
 
             {phase === 'loading-model' && (
-                <Card>
+                <Card className="poneglyph-panel rounded-xl">
                     <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
+                        <CardTitle className="flex items-center gap-2 text-white">
                             <Loader2 className="h-5 w-5 animate-spin text-indigo-600" />
                             Chargement du modèle YOLO...
                         </CardTitle>
-                        <CardDescription>Téléchargement des modèles de détection de bulles</CardDescription>
+                        <CardDescription className="text-slate-400">Téléchargement des modèles de détection de bulles</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-3">
                         <Progress value={downloadProgress} />
-                        <p className="text-sm text-slate-500">{downloadProgress}%</p>
+                        <p className="text-sm text-slate-400">{downloadProgress}%</p>
                         <Button variant="ghost" onClick={handleCancel}>Annuler</Button>
                     </CardContent>
                 </Card>
             )}
 
             {phase === 'processing' && (
-                <Card>
+                <Card className="poneglyph-panel rounded-xl">
                     <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
+                        <CardTitle className="flex items-center gap-2 text-white">
                             <Loader2 className="h-5 w-5 animate-spin text-indigo-600" />
                             Traitement en cours...
                         </CardTitle>
-                        <CardDescription>Page {progress.current} / {progress.total} - {voterLabel}</CardDescription>
+                        <CardDescription className="text-slate-400">Page {progress.current} / {progress.total} - {voterLabel}</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
                         <Progress value={(progress.current / progress.total) * 100} />
                         <div className="flex flex-wrap gap-2">
                             {pageStatuses.map(ps => (
                                 <div key={ps.id} className={`text-xs px-2.5 py-1.5 rounded-lg border font-medium ${
-                                    ps.status === 'done' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' :
-                                    ps.status === 'processing' ? 'bg-indigo-50 border-indigo-200 text-indigo-700 animate-pulse' :
-                                    ps.status === 'error' ? 'bg-red-50 border-red-200 text-red-700' :
-                                    'bg-slate-50 border-slate-200 text-slate-400'
+                                    ps.status === 'done' ? 'border-emerald-400/35 bg-emerald-500/14 text-emerald-200' :
+                                    ps.status === 'processing' ? 'border-indigo-400/35 bg-indigo-500/14 text-indigo-200 animate-pulse' :
+                                    ps.status === 'error' ? 'border-red-400/35 bg-red-500/14 text-red-200' :
+                                    'border-white/12 bg-white/8 text-slate-400'
                                 }`}>
                                     P.{ps.numero}
                                     {ps.status === 'done' && ` ✅${ps.bubbleCount || ''}`}
@@ -997,7 +996,7 @@ export default function BatchOcrManager() {
 
             {phase === 'review' && (
                 <>
-                    <Card className="border-indigo-100 shadow-sm">
+                    <Card className="poneglyph-panel rounded-xl">
                         <CardContent className="py-4">
                             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                                 <div className="flex flex-wrap gap-4">
@@ -1044,9 +1043,9 @@ export default function BatchOcrManager() {
                             const diffModel = buildDiffModel(reviewSources);
 
                             return (
-                            <Card key={itemKey} className="overflow-hidden border-slate-200 shadow-sm">
+                            <Card key={itemKey} className="overflow-hidden rounded-xl border-white/12 bg-[#071625]/88 shadow-sm">
                                 <div className="grid gap-0 md:grid-cols-[160px_1fr_52px]">
-                                    <div className="min-h-40 bg-white flex items-center justify-center p-3 md:border-r border-slate-200">
+                                    <div className="flex min-h-40 items-center justify-center border-white/12 bg-[#040d18]/82 p-3 md:border-r">
                                         <img
                                             src={item.cropUrl}
                                             alt={`Bulle page ${item.pageNumber}`}
@@ -1054,17 +1053,17 @@ export default function BatchOcrManager() {
                                         />
                                     </div>
 
-                                    <div className="p-4 space-y-3 bg-white">
+                                    <div className="space-y-3 bg-[#071625]/88 p-4">
                                         <div className="flex flex-wrap items-center gap-2">
                                             <Badge variant="outline">Page {item.pageNumber}</Badge>
                                             <Badge variant="outline">Ordre {item.order}</Badge>
                                             {item.rallied ? (
-                                                <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200">Rallié</Badge>
+                                                <Badge className="border-emerald-400/35 bg-emerald-500/14 text-emerald-200">Rallié</Badge>
                                             ) : (
-                                                <Badge className="bg-amber-50 text-amber-700 border-amber-200">YOLO seul</Badge>
+                                                <Badge className="border-amber-400/35 bg-amber-500/14 text-amber-200">YOLO seul</Badge>
                                             )}
                                             <span className="text-xs text-slate-400">#{idx + 1} / {reviewQueue.length}</span>
-                                            <Badge className={diffModel.allIdentical ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-700 border-amber-200"}>
+                                            <Badge className={diffModel.allIdentical ? "border-emerald-400/35 bg-emerald-500/14 text-emerald-200" : "border-amber-400/35 bg-amber-500/14 text-amber-200"}>
                                                 {diffModel.label}
                                             </Badge>
                                             {!diffModel.allIdentical && diffModel.changedTokenCount > 0 && (
@@ -1084,12 +1083,12 @@ export default function BatchOcrManager() {
                                             ))}
                                         </div>
 
-                                        <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
-                                            <p className="mb-2 text-xs font-semibold text-slate-500">Texte à enregistrer</p>
+                                        <div className="rounded-lg border border-white/12 bg-white/[0.06] p-3">
+                                            <p className="mb-2 text-xs font-semibold text-slate-300">Texte à enregistrer</p>
                                             <Textarea
                                                 value={customText}
                                                 onChange={(event) => handleCustomTextChange(item, event.target.value)}
-                                                className="min-h-16 resize-y bg-white"
+                                                className="min-h-16 resize-y bg-[#040d18]/86 text-slate-100"
                                                 placeholder="Modifier ou saisir le texte..."
                                             />
                                             <Button
@@ -1103,7 +1102,7 @@ export default function BatchOcrManager() {
                                         </div>
                                     </div>
 
-                                    <div className="flex items-center justify-center border-t border-slate-200 bg-white md:border-l md:border-t-0">
+                                    <div className="flex items-center justify-center border-t border-white/12 bg-[#040d18]/82 md:border-l md:border-t-0">
                                         <Button
                                             size="sm"
                                             variant="ghost"
@@ -1122,7 +1121,7 @@ export default function BatchOcrManager() {
             )}
 
             {phase === 'done' && (
-                <Card>
+                <Card className="poneglyph-panel rounded-xl">
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2 text-emerald-700">
                             <CheckCircle2 className="h-6 w-6" />
@@ -1131,17 +1130,17 @@ export default function BatchOcrManager() {
                     </CardHeader>
                     <CardContent className="space-y-4">
                         <div className="grid grid-cols-3 gap-4">
-                            <div className="text-center p-4 bg-emerald-50 rounded-xl border border-emerald-100">
+                            <div className="rounded-xl border border-emerald-400/35 bg-emerald-500/14 p-4 text-center">
                                 <p className="text-2xl font-bold text-emerald-700">{stats.autoValidated}</p>
                                 <p className="text-xs text-emerald-600">Auto-validées</p>
                             </div>
-                            <div className="text-center p-4 bg-blue-50 rounded-xl border border-blue-100">
+                            <div className="rounded-xl border border-blue-400/35 bg-blue-500/14 p-4 text-center">
                                 <p className="text-2xl font-bold text-blue-700">{stats.totalReview - reviewQueue.length}</p>
                                 <p className="text-xs text-blue-600">Manuellement validées</p>
                             </div>
-                            <div className="text-center p-4 bg-slate-50 rounded-xl border border-slate-200">
-                                <p className="text-2xl font-bold text-slate-500">{reviewQueue.length}</p>
-                                <p className="text-xs text-slate-500">Ignorées</p>
+                            <div className="rounded-xl border border-white/12 bg-white/[0.06] p-4 text-center">
+                                <p className="text-2xl font-bold text-slate-300">{reviewQueue.length}</p>
+                                <p className="text-xs text-slate-400">Ignorées</p>
                             </div>
                         </div>
                         {stats.errors > 0 && (

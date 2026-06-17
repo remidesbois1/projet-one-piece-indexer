@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { useManga } from '@/context/MangaContext';
 import { useAuth } from '@/context/AuthContext';
 import { getMySubmissions } from '@/lib/api';
@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 
-import { ChevronLeft, ChevronRight, Inbox, MessageCircle, Shield } from "lucide-react";
+import { ChevronLeft, ChevronRight, Inbox, MessageCircle } from "lucide-react";
 
 const RESULTS_PER_PAGE = 15;
 
@@ -36,7 +36,7 @@ export default function MySubmissionsPage() {
 
     const isStaff = role === 'Admin' || role === 'Modo';
 
-    const fetchSubmissions = (pageToFetch) => {
+    const fetchSubmissions = useCallback((pageToFetch) => {
         if (session && isStaff) {
             setIsLoading(true);
             getMySubmissions(pageToFetch, RESULTS_PER_PAGE)
@@ -50,15 +50,15 @@ export default function MySubmissionsPage() {
                 })
                 .finally(() => setIsLoading(false));
         }
-    };
+    }, [isStaff, session]);
 
     useEffect(() => {
         if (session && role === 'User') {
             router.push(`/${mangaSlug}/dashboard`);
         } else if (session && isStaff) {
-            fetchSubmissions(1);
+            Promise.resolve().then(() => fetchSubmissions(1));
         }
-    }, [session, role, mangaSlug]);
+    }, [fetchSubmissions, isStaff, mangaSlug, role, router, session]);
 
     if (!isGuest && role === 'User') {
         return null;
@@ -81,18 +81,18 @@ export default function MySubmissionsPage() {
         <div className="container max-w-7xl mx-auto py-10 px-4 sm:px-6">
             {pageTitle && <title>{pageTitle}</title>}
             <div className="mb-8 space-y-2">
-                <h1 className="text-3xl font-bold tracking-tight text-slate-900">Mes Soumissions</h1>
-                <p className="text-slate-500 text-lg">
-                    Suivez l'état de validation de vos contributions.
+                <h1 className="poneglyph-title text-3xl font-bold">Mes Soumissions</h1>
+                <p className="poneglyph-muted text-lg">
+                    Suivez l&apos;état de validation de vos contributions.
                 </p>
             </div>
 
-            <Card className="border-slate-200 shadow-sm">
-                <CardHeader className="border-b border-slate-100 bg-slate-50/50">
+            <Card className="poneglyph-panel rounded-xl">
+                <CardHeader className="border-b border-white/10 bg-white/[0.045]">
                     <div className="flex justify-between items-center">
                         <div>
-                            <CardTitle>Historique</CardTitle>
-                            <CardDescription>Vos {totalCount} propositions de traduction.</CardDescription>
+                            <CardTitle className="text-white">Historique</CardTitle>
+                            <CardDescription className="text-slate-400">Vos {totalCount} propositions de traduction.</CardDescription>
                         </div>
                     </div>
                 </CardHeader>
@@ -104,7 +104,7 @@ export default function MySubmissionsPage() {
                     ) : submissions.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-16 text-slate-500">
                             <Inbox className="h-12 w-12 mb-4 text-slate-300" />
-                            <p>Vous n'avez encore soumis aucune bulle.</p>
+                            <p>Vous n&apos;avez encore soumis aucune bulle.</p>
                         </div>
                     ) : (
                         <Table>
@@ -130,7 +130,7 @@ export default function MySubmissionsPage() {
                                                 className="font-medium text-slate-700 italic truncate"
                                                 title={sub.texte_propose}
                                             >
-                                                "{sub.texte_propose}"
+                                                &quot;{sub.texte_propose}&quot;
                                             </div>
                                             {sub.commentaire_moderation && (
                                                 <div className="mt-2 text-xs flex gap-2 items-start text-red-600 bg-red-50 p-2 rounded border border-red-100 max-w-md">

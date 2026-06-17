@@ -26,8 +26,8 @@ export default function MangaLayout({ children }) {
     return (
         <MangaProvider>
             <TauriLocalOcrProvider>
-                <div className="min-h-screen bg-[#f6fbff] bg-[image:url('/bg.webp')] bg-cover bg-center bg-fixed text-[#07133c]">
-                    <section className="mx-auto min-h-screen max-w-[1600px] overflow-hidden border-x border-[#c8dcf2] bg-white/62 shadow-[0_24px_70px_rgba(32,76,121,0.20)] backdrop-blur-md">
+                <div className="poneglyph-app">
+                    <section className="poneglyph-shell mx-auto min-h-screen max-w-[1600px] overflow-hidden border-x">
                         <Header onOpenApiKeyModal={() => setShowApiKeyModal(true)} />
                         <main className="page-transition px-4 py-7 sm:px-8 lg:px-10">
                             {children}

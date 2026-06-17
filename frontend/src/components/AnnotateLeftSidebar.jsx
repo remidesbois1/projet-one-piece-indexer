@@ -157,8 +157,8 @@ export default function AnnotateLeftSidebar({
     const suryaBBoxAction = canRunLocalSuryaBBoxOcr ? 'run' : canLoadSuryaBBox ? 'load' : canDownloadSuryaBBox ? 'download' : null;
 
     return (
-        <div className="hidden lg:flex w-[280px] shrink-0 h-full flex-col border-r border-slate-200 bg-white z-40 relative shadow-sm">
-            <div className="p-4 border-b border-slate-100 flex-none space-y-3 z-10">
+        <div className="relative z-40 hidden h-full w-[280px] shrink-0 flex-col border-r border-white/10 bg-[#06111e] text-slate-100 shadow-sm lg:flex">
+            <div className="z-10 flex-none space-y-3 border-b border-white/10 p-4">
                 <Link
                     href={!mangaSlug ? "/" : (fromSearch ? `/${mangaSlug}/search` : `/${mangaSlug}/dashboard`)}
                     className="inline-flex items-center text-[11px] font-bold text-slate-400 hover:text-slate-700 uppercase tracking-wider transition-colors"
@@ -170,7 +170,7 @@ export default function AnnotateLeftSidebar({
                 <div className="flex items-center justify-between">
                     <div>
                         <div className="flex items-baseline gap-1.5">
-                            <h2 className="text-xl font-black text-slate-900 tracking-tight">
+                            <h2 className="text-xl font-black tracking-tight text-white">
                                 {page.chapitres ? `Ch.${page.chapitres.numero}` : "Mode Local"}
                             </h2>
                             {page.chapitres?.tomes && (
@@ -185,7 +185,7 @@ export default function AnnotateLeftSidebar({
                         <Select value={page.statut} onValueChange={handlePageStatusChange} disabled={isUpdatingPageStatus}>
                             <SelectTrigger
                                 aria-label="Etat de la page"
-                                className="h-7 w-[130px] rounded-full bg-slate-50 border-slate-200 px-2 text-[10px] font-bold uppercase tracking-wide text-slate-700"
+                                className="h-7 w-[130px] rounded-full border-white/12 bg-white/[0.07] px-2 text-[10px] font-bold uppercase tracking-wide text-slate-200"
                             >
                                 <SelectValue placeholder="Etat" />
                             </SelectTrigger>
@@ -198,7 +198,7 @@ export default function AnnotateLeftSidebar({
                             </SelectContent>
                         </Select>
                     ) : (
-                        <Badge variant="secondary" className="bg-slate-50 text-slate-600 border border-slate-200/60 font-bold px-2 py-0.5 text-[10px] uppercase tracking-wide">
+                        <Badge variant="secondary" className="border border-white/12 bg-white/[0.07] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-200">
                             {page.statut.replace(/_/g, ' ')}
                         </Badge>
                     )}
@@ -211,7 +211,7 @@ export default function AnnotateLeftSidebar({
                             size="sm"
                             disabled={!navContext.prev}
                             onClick={goToPrev}
-                            className="h-8 flex-1 rounded-md border-slate-200 bg-white text-[11px] font-bold text-slate-600 shadow-none hover:bg-slate-50"
+                            className="h-8 flex-1 rounded-md border-white/12 bg-white/[0.07] text-[11px] font-bold text-slate-200 shadow-none hover:bg-white/12"
                         >
                             <ChevronLeft size={14} className="mr-1" /> Préc
                         </Button>
@@ -223,7 +223,7 @@ export default function AnnotateLeftSidebar({
                             size="sm"
                             disabled={!navContext.next}
                             onClick={goToNext}
-                            className="h-8 flex-1 rounded-md border-slate-200 bg-white text-[11px] font-bold text-slate-600 shadow-none hover:bg-slate-50"
+                            className="h-8 flex-1 rounded-md border-white/12 bg-white/[0.07] text-[11px] font-bold text-slate-200 shadow-none hover:bg-white/12"
                         >
                             Suiv <ChevronRight size={14} className="ml-1" />
                         </Button>
@@ -231,7 +231,7 @@ export default function AnnotateLeftSidebar({
                 )}
             </div>
 
-            <div className="flex-1 flex flex-col p-4 gap-3 overflow-y-auto bg-slate-50/50">
+            <div className="flex flex-1 flex-col gap-3 overflow-y-auto bg-[#030a13]/38 p-4">
                 {!isGuest && isStaff && (
                     <>
                         <AnnotateOcrModelSelector
@@ -275,12 +275,12 @@ export default function AnnotateLeftSidebar({
                         />
 
                         {role === 'Admin' && (handleOneShot || handleOneShotPoneglyph || handleOneShotLocalPoneglyph || handleOneShotLocalSuryaBbox) && (
-                            <div className="flex-none rounded-lg border border-slate-200/70 bg-white p-3 shadow-sm">
+                            <div className="flex-none rounded-lg border border-white/12 bg-white/[0.055] p-3 shadow-sm">
                                 <div className="mb-3 flex items-center justify-between gap-2">
                                     <h3 className="truncate text-[10px] font-black uppercase tracking-widest text-slate-500">
                                         Extraction intégrale
                                     </h3>
-                                    <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-500">
+                                    <span className="rounded-full border border-white/12 bg-white/[0.07] px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-300">
                                         {isExtractionRunning ? "En cours" : "Prêt"}
                                     </span>
                                 </div>
@@ -308,8 +308,8 @@ export default function AnnotateLeftSidebar({
                                                 poneglyphAction === 'run'
                                                     ? "bg-slate-900 text-white hover:bg-slate-800"
                                                     : poneglyphAction
-                                                        ? "border border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200"
-                                                        : "border border-slate-200 bg-slate-100 text-slate-400"
+                                                        ? "border border-white/12 bg-white/[0.08] text-slate-200 hover:bg-white/12"
+                                                        : "border border-white/10 bg-white/[0.045] text-slate-500"
                                             )}
                                         >
                                             {poneglyphAction === 'download' ? <Download size={14} /> : <Cpu size={14} />}
@@ -329,12 +329,12 @@ export default function AnnotateLeftSidebar({
                                     )}
 
                                     {handleOneShotLocalPoneglyph && (poneglyphDownloadActive || poneglyphIsLoading) && (
-                                        <div className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5">
-                                            <div className="mb-1 flex justify-between text-[9px] font-bold text-slate-600">
+                                        <div className="rounded-md border border-white/12 bg-white/[0.06] px-2 py-1.5">
+                                            <div className="mb-1 flex justify-between text-[9px] font-bold text-slate-400">
                                                 <span>{poneglyphDownloadActive ? "Telechargement" : "Chargement"} {PONEGLYPH_BBOX_LABEL}...</span>
                                                 {poneglyphDownloadPercent !== null && <span>{poneglyphDownloadPercent}%</span>}
                                             </div>
-                                            <div className="h-1 w-full overflow-hidden rounded-full bg-slate-200">
+                                            <div className="h-1 w-full overflow-hidden rounded-full bg-white/12">
                                                 <div className="h-full bg-slate-500 transition-all duration-300" style={{ width: `${poneglyphDownloadPercent ?? 40}%` }} />
                                             </div>
                                         </div>
@@ -360,7 +360,7 @@ export default function AnnotateLeftSidebar({
                                                     ? "bg-emerald-700 text-white hover:bg-emerald-800"
                                                     : suryaBBoxAction
                                                         ? "border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
-                                                        : "border border-slate-200 bg-slate-100 text-slate-400"
+                                                        : "border border-white/10 bg-white/[0.045] text-slate-500"
                                             )}
                                         >
                                             {suryaBBoxAction === 'download' ? <Download size={14} /> : <Cpu size={14} />}
@@ -392,7 +392,7 @@ export default function AnnotateLeftSidebar({
                                     )}
                                 </div>
 
-                                <div className="space-y-2 border-t border-slate-100 pt-2">
+                                <div className="space-y-2 border-t border-white/10 pt-2">
                                     <div className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wide text-slate-400">
                                         <CloudLightning size={10} /> En ligne
                                     </div>
@@ -402,7 +402,7 @@ export default function AnnotateLeftSidebar({
                                             variant="outline"
                                             onClick={handleOneShotPoneglyph}
                                             disabled={isPoneglyphLoading || isSubmitting || isAutoDetecting}
-                                            className="h-9 w-full justify-start gap-2 rounded-md border-slate-200 bg-white px-3 text-[11px] font-bold uppercase tracking-wide text-slate-700 shadow-none hover:bg-slate-50"
+                                            className="h-9 w-full justify-start gap-2 rounded-md border-white/12 bg-white/[0.07] px-3 text-[11px] font-bold uppercase tracking-wide text-slate-200 shadow-none hover:bg-white/12"
                                         >
                                             <CloudLightning size={14} className="text-slate-500" />
                                             <span className="min-w-0 flex-1 truncate text-left">
@@ -419,7 +419,7 @@ export default function AnnotateLeftSidebar({
                                             variant="outline"
                                             onClick={handleOneShot}
                                             disabled={isOneShotLoading || isSubmitting || isAutoDetecting}
-                                            className="h-9 w-full justify-start gap-2 rounded-md border-slate-200 bg-white px-3 text-[11px] font-bold uppercase tracking-wide text-slate-700 shadow-none hover:bg-slate-50"
+                                            className="h-9 w-full justify-start gap-2 rounded-md border-white/12 bg-white/[0.07] px-3 text-[11px] font-bold uppercase tracking-wide text-slate-200 shadow-none hover:bg-white/12"
                                         >
                                             <Sparkles size={14} className="text-slate-500" />
                                             <span className="min-w-0 flex-1 truncate text-left">
@@ -437,12 +437,12 @@ export default function AnnotateLeftSidebar({
                 )}
 
                 {role === 'User' && !isSandbox && (
-                    <div className="flex-none p-4 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-5 overflow-y-auto max-h-[500px]">
+                    <div className="flex max-h-[500px] flex-none flex-col gap-5 overflow-y-auto rounded-xl border border-white/12 bg-white/[0.055] p-4 shadow-sm">
                         <div className="flex items-center gap-2 pb-2 border-b border-slate-50">
                             <div className="bg-indigo-50 p-1.5 rounded-lg border border-indigo-100/50">
                                 <FileText size={14} className="text-indigo-600" />
                             </div>
-                            <h3 className="text-[11px] font-bold text-slate-900 uppercase tracking-widest">Métadonnées Page</h3>
+                            <h3 className="text-[11px] font-bold uppercase tracking-widest text-slate-100">Métadonnées Page</h3>
                         </div>
 
                         <div className="space-y-5">
@@ -450,7 +450,7 @@ export default function AnnotateLeftSidebar({
                                 <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-tight">
                                     <AlignLeft size={10} /> Description Sémantique
                                 </div>
-                                <div className="text-[11px] text-slate-600 leading-relaxed bg-slate-50/50 p-3 rounded-lg border border-slate-100/60 italic">
+                                <div className="rounded-lg border border-white/12 bg-white/[0.06] p-3 text-[11px] leading-relaxed text-slate-300 italic">
                                     {page.description_semantique?.content || "Aucune description rattachée à cette page."}
                                 </div>
                             </div>
@@ -474,12 +474,12 @@ export default function AnnotateLeftSidebar({
                                     <div className="flex flex-wrap gap-1.5">
                                         {page.description_semantique?.characters?.length > 0 ? (
                                             page.description_semantique.characters.map((char, idx) => (
-                                                <Badge key={idx} variant="secondary" className="text-[10px] font-medium bg-white border border-slate-100 text-slate-600 px-2 py-0.5">
+                                                <Badge key={idx} variant="secondary" className="border border-white/12 bg-white/[0.07] px-2 py-0.5 text-[10px] font-medium text-slate-200">
                                                     {char}
                                                 </Badge>
                                             ))
                                         ) : (
-                                            <span className="text-[10px] text-slate-400 italic bg-slate-50 px-2 py-1 rounded">Aucun personnage listé</span>
+                                            <span className="rounded bg-white/[0.06] px-2 py-1 text-[10px] text-slate-400 italic">Aucun personnage listé</span>
                                         )}
                                     </div>
                                 </div>
@@ -490,12 +490,12 @@ export default function AnnotateLeftSidebar({
             </div>
 
             {!isGuest && isStaff && !isSandbox && (
-                <div className="flex-none p-4 border-t border-slate-100 bg-white flex flex-col gap-2.5 z-10">
+                <div className="z-10 flex flex-none flex-col gap-2.5 border-t border-white/10 bg-[#06111e] p-4">
                     <div className="grid grid-cols-2 gap-2">
-                        <Button variant="outline" size="sm" className="h-8 text-[11px] font-bold text-slate-600 bg-slate-50 border-slate-200/60 hover:bg-slate-100 hover:text-slate-900 w-full" onClick={() => setShowDescModal(true)}>
+                        <Button variant="outline" size="sm" className="h-8 w-full border-white/12 bg-white/[0.07] text-[11px] font-bold text-slate-200 hover:bg-white/12 hover:text-white" onClick={() => setShowDescModal(true)}>
                             <FileText size={12} className="mr-1.5" /> Meta
                         </Button>
-                        <Button variant="outline" size="sm" className="h-8 text-[11px] font-bold text-slate-600 bg-slate-50 border-slate-200/60 hover:bg-slate-100 hover:text-slate-900 w-full" onClick={() => setShowApiKeyModal(true)}>
+                        <Button variant="outline" size="sm" className="h-8 w-full border-white/12 bg-white/[0.07] text-[11px] font-bold text-slate-200 hover:bg-white/12 hover:text-white" onClick={() => setShowApiKeyModal(true)}>
                             <Settings2 size={12} className="mr-1.5" /> Clé API
                         </Button>
                     </div>

@@ -479,25 +479,21 @@ export default function SandboxClient() {
 
     if (!page) {
         return (
-            <div className="relative flex flex-col items-center justify-center min-h-screen bg-white overflow-hidden p-6"
+            <div className="poneglyph-app relative flex min-h-screen flex-col items-center justify-center overflow-hidden p-6"
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={onDrop}>
                 <div className="absolute left-4 top-4 z-20">
                     <LocalOcrStatusIndicator />
                 </div>
 
-                <div className="absolute inset-0 -z-10">
-                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[600px] bg-[#2F7AAF]/5 rounded-full blur-3xl" />
-                    <div className="absolute bottom-0 right-0 w-[400px] h-[400px] bg-[#2F7AAF]/5 rounded-full blur-3xl" />
-                </div>
                 <PoneglyphBackground count={32} seed={123} />
 
                 <div className="max-w-md w-full space-y-12 relative z-10">
                     <div className="text-center space-y-4">
-                        <h1 className="text-4xl font-extrabold tracking-tight leading-none text-balance" style={{ color: '#2F7AAF' }}>
+                        <h1 className="poneglyph-title text-balance text-4xl font-extrabold leading-none">
                             Sandbox annotation
                         </h1>
-                        <p className="text-slate-500 text-sm leading-relaxed max-w-[380px] mx-auto text-balance">
+                        <p className="poneglyph-muted text-balance mx-auto max-w-[380px] text-sm leading-relaxed">
                             Expérimentez l&apos;annotation du projet directement dans votre navigateur.
                             Cette interface utilise <a href="https://huggingface.co/Remidesbois/YoloPiece_OneShot_Models" target="_blank" rel="noopener noreferrer" className="font-bold text-slate-700 hover:text-[#2F7AAF] underline decoration-slate-200">YoloPiece One-Shot</a> pour la détection et l&apos;ordre local,
                             <a href="https://huggingface.co/Remidesbois/trocr-onepiece-fr-large" target="_blank" rel="noopener noreferrer" className="font-bold text-slate-700 hover:text-[#2F7AAF] underline decoration-slate-200"> TrOCR</a> pour la reconnaissance.
@@ -506,7 +502,7 @@ export default function SandboxClient() {
                     </div>
 
                     <div
-                        className="group relative border-2 border-dashed border-slate-200 hover:border-[#2F7AAF]/50 bg-white/80 backdrop-blur-sm rounded-3xl p-14 transition-all-300 cursor-pointer text-center shadow-xl shadow-slate-200/50 hover:shadow-[#2F7AAF]/10"
+                        className="poneglyph-panel group relative cursor-pointer rounded-3xl border-2 border-dashed border-white/16 p-14 text-center transition hover:border-[#8dbbff]/55 hover:bg-[#0a1d30]/86"
                         onClick={() => fileInputRef.current.click()}
                     >
                         <input
@@ -517,11 +513,11 @@ export default function SandboxClient() {
                             onChange={(e) => handleImageUpload(e.target.files[0])}
                         />
                         <div className="flex flex-col items-center gap-5">
-                            <div className="w-14 h-14 bg-slate-50 rounded-2xl flex items-center justify-center group-hover:bg-[#2F7AAF]/10 group-hover:text-[#2F7AAF] transition-colors shadow-sm border border-slate-100">
+                            <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/12 bg-white/8 text-[#8dbbff] shadow-sm transition-colors group-hover:bg-[#3d86ff]/18 group-hover:text-white">
                                 <Upload size={24} />
                             </div>
                             <div className="space-y-1">
-                                <p className="text-slate-900 font-bold group-hover:text-[#2F7AAF] transition-colors">
+                                <p className="font-bold text-white transition-colors group-hover:text-[#8dbbff]">
                                     Charger une planche
                                 </p>
                                 <p className="text-[11px] text-slate-400 font-medium">Glissez-déposez ou cliquez ici</p>
@@ -530,7 +526,7 @@ export default function SandboxClient() {
                     </div>
 
                     <div className="flex justify-center pt-4">
-                        <Link href="/" className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-400 hover:text-slate-600 transition-all uppercase tracking-widest bg-slate-50 hover:bg-slate-100 px-4 py-2 rounded-full border border-slate-200/50">
+                        <Link href="/" className="inline-flex items-center gap-1.5 rounded-full border border-white/12 bg-white/8 px-4 py-2 text-[11px] font-bold uppercase tracking-widest text-slate-400 transition-all hover:bg-white/12 hover:text-white">
                             <ArrowLeft size={12} />
                             Retour Accueil
                         </Link>
@@ -541,7 +537,7 @@ export default function SandboxClient() {
     }
 
     return (
-        <div className="flex flex-col lg:flex-row h-screen bg-slate-50 overflow-hidden relative">
+        <div className="poneglyph-app relative flex h-screen flex-col overflow-hidden lg:flex-row">
             <AnnotateLeftSidebar
                 fromSearch={false}
                 mangaSlug=""
@@ -611,7 +607,7 @@ export default function SandboxClient() {
                 loadLocalSuryaBBoxModel={tauriLocalOcr.loadLocalSuryaBBoxModel}
             />
 
-            <div className="flex flex-col flex-1 overflow-hidden min-w-0 bg-slate-50 relative">
+            <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-[#030a13]">
                 <div className="absolute left-3 top-3 z-30">
                     <LocalOcrStatusIndicator />
                 </div>

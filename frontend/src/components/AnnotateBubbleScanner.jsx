@@ -14,7 +14,7 @@ export default function AnnotateBubbleScanner({
     queueLength
 }) {
     return (
-        <div className="flex-none p-3 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-3">
+        <div className="flex flex-none flex-col gap-3 rounded-xl border border-white/12 bg-white/[0.055] p-3 shadow-sm">
             <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-0.5">Détection des bulles</h3>
 
             {detectionStatus === 'idle' && (
@@ -22,14 +22,14 @@ export default function AnnotateBubbleScanner({
                     variant="outline"
                     size="sm"
                     onClick={loadDetectionModel}
-                    className="w-full h-8 text-[11px] font-bold bg-white border border-slate-200 hover:bg-slate-50 text-slate-600"
+                    className="h-8 w-full border border-white/12 bg-white/[0.07] text-[11px] font-bold text-slate-200 hover:bg-white/12"
                 >
                     <Download size={12} className="mr-1.5" /> Charger le modèle <span className="text-[10px] font-bold text-slate-400">(19.3MB)</span>
                 </Button>
             )}
             {detectionStatus === 'loading' && (
-                <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
-                    <div className="flex justify-between text-[9px] font-bold text-slate-500 mb-1.5">
+                <div className="rounded-lg border border-white/12 bg-white/[0.06] p-2">
+                    <div className="mb-1.5 flex justify-between text-[9px] font-bold text-slate-400">
                         <span>
                             {downloadStats?.total > 0 
                                 ? `${(downloadStats.loaded / (1024 * 1024)).toFixed(1)}MB / ${(downloadStats.total / (1024 * 1024)).toFixed(1)}MB`
@@ -38,7 +38,7 @@ export default function AnnotateBubbleScanner({
                         </span>
                         <span>{Math.round(detectionProgress)}%</span>
                     </div>
-                    <div className="h-1 w-full bg-slate-200 rounded-full overflow-hidden">
+                    <div className="h-1 w-full overflow-hidden rounded-full bg-white/12">
                         <div className="h-full bg-indigo-500 transition-all duration-300" style={{ width: `${detectionProgress}%` }} />
                     </div>
                 </div>

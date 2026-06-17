@@ -306,10 +306,10 @@ export default function DashboardPage() {
                 <div className="flex items-center gap-4">
                     <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-3">
-                            <h1 className="text-4xl font-extrabold tracking-tight text-slate-900 sm:text-5xl">
+                            <h1 className="poneglyph-title text-4xl font-extrabold sm:text-5xl">
                                 Bibliothèque {currentManga?.titre || 'Poneglyph'}
                             </h1>
-                            <Badge variant="outline" className="h-9 rounded-full border-[#c8dcf2] bg-white/72 px-4 text-xs font-black uppercase tracking-wide text-[#4b5574] shadow-sm">
+                            <Badge variant="outline" className="poneglyph-chip h-9 rounded-full px-4 text-xs font-black uppercase tracking-wide">
                                 {tomes.length} volumes
                             </Badge>
                         </div>
@@ -318,19 +318,19 @@ export default function DashboardPage() {
 
                 <div className="flex w-full flex-col gap-3 sm:flex-row lg:w-auto">
                     <label className="relative block min-w-0 flex-1 lg:w-[370px]">
-                        <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[#4b5574]" />
+                        <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-[#8dbbff]" />
                         <input
                             value={searchTerm}
                             onChange={(event) => setSearchTerm(event.target.value)}
                             placeholder="Rechercher un volume..."
-                            className="h-14 w-full rounded-lg border border-[#c8dcf2] bg-white/82 pl-12 pr-4 text-sm font-semibold text-[#07133c] shadow-sm outline-none transition focus:border-[#1550b7] focus:ring-4 focus:ring-[#1550b7]/10"
+                            className="poneglyph-input h-14 w-full rounded-lg pl-12 pr-4 text-sm font-semibold outline-none transition"
                         />
                     </label>
                     <Button
                         type="button"
                         variant="outline"
                         onClick={() => setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')}
-                        className="h-14 gap-2 rounded-lg border-[#c8dcf2] bg-white/82 px-5 text-[#1550b7] shadow-sm hover:bg-white"
+                        className="h-14 gap-2 rounded-lg border-white/14 bg-white/8 px-5 text-[#bdd6ff] shadow-sm hover:bg-white/14 hover:text-white"
                     >
                         <ArrowUpDown size={18} />
                         Trier {sortDirection === 'asc' ? '↑' : '↓'}
@@ -346,9 +346,9 @@ export default function DashboardPage() {
                         <article
                             key={tome.id}
                             onClick={() => openTome(tome)}
-                            className="group cursor-pointer overflow-hidden rounded-xl border border-[#c8dcf2] bg-white/84 shadow-[0_14px_34px_rgba(32,76,121,0.14)] transition duration-300 hover:-translate-y-1 hover:bg-white hover:shadow-[0_24px_48px_rgba(32,76,121,0.22)]"
+                            className="poneglyph-panel poneglyph-card-hover group cursor-pointer overflow-hidden rounded-xl"
                         >
-                            <div className="aspect-[2/3] w-full overflow-hidden bg-[#edf5fc]">
+                            <div className="aspect-[2/3] w-full overflow-hidden bg-[#071625]">
                                 {tome.cover_url ? (
                                     <img
                                         src={getProxiedImageUrl(tome.cover_url)}
@@ -358,27 +358,27 @@ export default function DashboardPage() {
                                         loading="lazy"
                                     />
                                 ) : (
-                                    <div className="flex h-full flex-col items-center justify-center gap-3 text-[#7b8aa9]">
+                                    <div className="flex h-full flex-col items-center justify-center gap-3 text-slate-500">
                                         <BookOpen size={44} strokeWidth={1.5} />
                                         <span className="text-xs font-black uppercase tracking-widest">No Cover</span>
                                     </div>
                                 )}
                             </div>
 
-                            <div className="relative min-h-36 border-t border-[#e6f0fb] bg-white/88 p-5">
-                                <span className="text-xs font-black uppercase tracking-wide text-[#627094]">
+                            <div className="relative min-h-36 border-t border-white/10 bg-[#071625]/82 p-5">
+                                <span className="text-xs font-black uppercase tracking-wide text-slate-400">
                                     Volume
                                 </span>
                                 <div className="mt-1 flex items-start justify-between gap-3">
                                     <div className="min-w-0">
-                                        <div className="font-serif text-3xl font-black leading-tight text-[#07133c]">
+                                        <div className="font-serif text-3xl font-black leading-tight text-white">
                                             {tome.numero}
                                         </div>
-                                        <div className="mt-2 truncate text-sm font-black text-[#07133c]">
+                                        <div className="mt-2 truncate text-sm font-black text-slate-100">
                                             {tomeTitle}
                                         </div>
                                     </div>
-                                    <div className="mt-8 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#c8dcf2] bg-white text-[#1550b7] shadow-sm transition group-hover:border-[#1550b7] group-hover:bg-[#1550b7] group-hover:text-white">
+                                    <div className="mt-8 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#8dbbff]/26 bg-white/8 text-[#8dbbff] shadow-sm transition group-hover:border-[#3d86ff] group-hover:bg-[#3d86ff] group-hover:text-white">
                                         <ChevronRight size={17} />
                                     </div>
                                 </div>
@@ -388,7 +388,7 @@ export default function DashboardPage() {
                 })}
 
                 {tomes.length === 0 && [1, 2, 3, 4, 5].map((i) => (
-                    <div key={i} className="aspect-[2/3] animate-pulse rounded-xl border border-[#dbe8f7] bg-white/62" />
+                    <div key={i} className="aspect-[2/3] animate-pulse rounded-xl border border-white/10 bg-white/8" />
                 ))}
             </div>
 
@@ -400,11 +400,11 @@ export default function DashboardPage() {
                         size="icon"
                         disabled={currentPage === 1}
                         onClick={() => setCurrentPage(page => Math.max(1, page - 1))}
-                        className="h-11 w-11 rounded-full border-[#c8dcf2] bg-white/82 text-[#1550b7] shadow-sm disabled:opacity-45"
+                        className="h-11 w-11 rounded-full border-white/14 bg-white/8 text-[#8dbbff] shadow-sm hover:bg-white/14 disabled:opacity-45"
                     >
                         <ChevronLeft size={20} />
                     </Button>
-                    <div className="flex h-14 min-w-14 items-center justify-center rounded-full bg-[#1550b7] px-5 text-xl font-black text-white shadow-[0_15px_30px_rgba(21,80,183,0.28)]">
+                    <div className="flex h-14 min-w-14 items-center justify-center rounded-full bg-[#3d86ff] px-5 text-xl font-black text-white shadow-[0_15px_30px_rgba(61,134,255,0.28)]">
                         {currentPage}
                     </div>
                     <Button
@@ -413,7 +413,7 @@ export default function DashboardPage() {
                         size="icon"
                         disabled={currentPage === totalPages}
                         onClick={() => setCurrentPage(page => Math.min(totalPages, page + 1))}
-                        className="h-11 w-11 rounded-full border-[#c8dcf2] bg-white/82 text-[#1550b7] shadow-sm disabled:opacity-45"
+                        className="h-11 w-11 rounded-full border-white/14 bg-white/8 text-[#8dbbff] shadow-sm hover:bg-white/14 disabled:opacity-45"
                     >
                         <ChevronRight size={20} />
                     </Button>
@@ -424,7 +424,7 @@ export default function DashboardPage() {
                 <SheetContent
                     ref={drawerRef}
                     side="bottom"
-                    className="mx-auto h-[min(82vh,760px)] w-[calc(100%-1.5rem)] max-w-[1460px] overflow-hidden rounded-t-[28px] border border-[#c8dcf2] bg-white/96 p-0 shadow-[0_-22px_80px_rgba(7,19,60,0.30)] backdrop-blur-xl sm:w-[calc(100%-4rem)]"
+                    className="mx-auto h-[min(82vh,760px)] w-[calc(100%-1.5rem)] max-w-[1460px] overflow-hidden rounded-t-[28px] border border-white/14 bg-[#06111e]/96 p-0 text-slate-100 shadow-[0_-22px_80px_rgba(0,0,0,0.48)] backdrop-blur-xl sm:w-[calc(100%-4rem)]"
                 >
 
                     <div
@@ -434,31 +434,25 @@ export default function DashboardPage() {
                         onPointerUp={handleDrawerPointerUp}
                         onPointerCancel={handleDrawerPointerUp}
                     >
-                        <span className="h-1.5 w-16 rounded-full bg-[#c4cfdf]" />
+                        <span className="h-1.5 w-16 rounded-full bg-white/24" />
                     </div>
 
-                    <div className="relative h-[220px] overflow-hidden border-b border-[#e3edf8] bg-white/80 px-5 pb-6 pt-1 sm:h-[250px] sm:px-8 lg:px-10">
-                        <img
-                            src="/chapter-drawer-ship.webp"
-                            alt=""
-                            aria-hidden="true"
-                            className="pointer-events-none absolute right-4 top-0 hidden h-full max-h-52 w-[42%] object-contain object-right opacity-45 sm:block"
-                        />
+                    <div className="relative h-[220px] overflow-hidden border-b border-white/10 bg-[#081827]/88 px-5 pb-6 pt-1 sm:h-[250px] sm:px-8 lg:px-10">
                         <SheetHeader className="relative z-10 h-full justify-center p-0 text-left">
                             {selectedChapter ? (
                                 <div className="space-y-3">
                                     <Button
                                         variant="ghost"
                                         size="sm"
-                                        className="h-9 px-2 -ml-2 rounded-full text-[#627094] hover:bg-[#edf5fc] hover:text-[#07133c]"
+                                        className="-ml-2 h-9 rounded-full px-2 text-slate-300 hover:bg-white/8 hover:text-white"
                                         onClick={() => setSelectedChapter(null)}
                                     >
                                         <ArrowLeft className="mr-1 h-4 w-4" />
                                         Retour au Tome {selectedTome?.numero}
                                     </Button>
                                      <div>
-                                         <SheetTitle className="font-serif text-3xl font-black text-[#07133c] sm:text-4xl">Chapitre {selectedChapter.numero}</SheetTitle>
-                                         <SheetDescription className="mt-2 max-w-2xl text-base font-medium text-[#627094]">
+                                         <SheetTitle className="font-serif text-3xl font-black text-white sm:text-4xl">Chapitre {selectedChapter.numero}</SheetTitle>
+                                         <SheetDescription className="mt-2 max-w-2xl text-base font-medium text-slate-300">
                                              {selectedChapter.titre || "SÃ©lectionnez une page Ã  Ã©diter"}
                                          </SheetDescription>
                                      </div>
@@ -481,7 +475,7 @@ export default function DashboardPage() {
                                  </div>
                              ) : (
                                 <div className="grid gap-5 sm:grid-cols-[120px_minmax(0,1fr)] sm:items-center lg:grid-cols-[140px_minmax(0,1fr)]">
-                                    <div className="hidden aspect-[2/3] overflow-hidden rounded-lg border border-[#c8dcf2] bg-[#edf5fc] shadow-[0_16px_34px_rgba(32,76,121,0.18)] sm:block">
+                                    <div className="hidden aspect-[2/3] overflow-hidden rounded-lg border border-white/14 bg-[#071625] shadow-[0_16px_34px_rgba(0,0,0,0.32)] sm:block">
                                         {selectedTome?.cover_url ? (
                                             <img
                                                 src={getProxiedImageUrl(selectedTome.cover_url)}
@@ -496,13 +490,13 @@ export default function DashboardPage() {
                                         )}
                                     </div>
                                     <div className="relative z-10 max-w-3xl">
-                                        <SheetTitle className="font-serif text-4xl font-black leading-tight text-[#07133c] sm:text-5xl">Tome {selectedTome?.numero}</SheetTitle>
-                                        <SheetDescription className="mt-3 text-base font-semibold text-[#627094] sm:text-lg">
+                                        <SheetTitle className="font-serif text-4xl font-black leading-tight text-white sm:text-5xl">Tome {selectedTome?.numero}</SheetTitle>
+                                        <SheetDescription className="mt-3 text-base font-semibold text-slate-300 sm:text-lg">
                                             {selectedTomeTitle}
                                         </SheetDescription>
                                         <div className="mt-6 flex flex-wrap gap-3">
-                                            <div className="inline-flex h-11 items-center gap-2 rounded-lg border border-[#dbe8f7] bg-white/78 px-4 text-sm font-black text-[#4b5574] shadow-sm">
-                                                <BookOpen size={17} className="text-[#1550b7]" />
+                                            <div className="inline-flex h-11 items-center gap-2 rounded-lg border border-white/12 bg-white/8 px-4 text-sm font-black text-slate-300 shadow-sm">
+                                                <BookOpen size={17} className="text-[#8dbbff]" />
                                                 {chapters.length} chapitres
                                             </div>
                                         </div>
@@ -512,13 +506,13 @@ export default function DashboardPage() {
                         </SheetHeader>
                     </div>
 
-                    <ScrollArea className="min-h-0 flex-1 bg-[#f8fbff]">
+                    <ScrollArea className="min-h-0 flex-1 bg-[#030a13]/82">
                         <div className="p-5 sm:p-8 lg:p-10">
 
                             {!selectedChapter && (
                                 isLoadingData ? (
                                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                                        {[1, 2, 3, 4, 5, 6, 7, 8].map(i => <Skeleton key={i} className="h-20 w-full rounded-xl bg-white" />)}
+                                        {[1, 2, 3, 4, 5, 6, 7, 8].map(i => <Skeleton key={i} className="h-20 w-full rounded-xl bg-white/10" />)}
                                     </div>
                                 ) : (
                                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -530,7 +524,7 @@ export default function DashboardPage() {
                                                     type="button"
                                                     key={chap.id}
                                                     onClick={() => openChapter(chap)}
-                                                    className="group flex min-h-20 items-center justify-between gap-4 rounded-xl border border-[#dbe8f7] bg-white p-4 text-left shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-[#b7d1ef] hover:shadow-[0_18px_34px_rgba(32,76,121,0.13)]"
+                                                    className="group flex min-h-20 items-center justify-between gap-4 rounded-xl border border-white/12 bg-white/[0.065] p-4 text-left shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-[#8dbbff]/38 hover:bg-white/[0.09]"
                                                 >
                                                     <span className="flex min-w-0 items-center gap-4">
                                                         <span className={`
@@ -541,15 +535,15 @@ export default function DashboardPage() {
                                                         </span>
 
                                                         <span className="min-w-0">
-                                                            <span className="block truncate text-sm font-black text-[#07133c]">
+                                                            <span className="block truncate text-sm font-black text-white">
                                                                 Chapitre {chap.numero}
                                                             </span>
-                                                            <span className="mt-1 line-clamp-2 text-xs font-semibold leading-snug text-[#627094]">
+                                                            <span className="mt-1 line-clamp-2 text-xs font-semibold leading-snug text-slate-300">
                                                                 {chap.titre || "Chapitre sans titre"}
                                                             </span>
                                                         </span>
                                                     </span>
-                                                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#dbe8f7] bg-white text-[#1550b7] shadow-sm transition group-hover:border-[#1550b7] group-hover:bg-[#1550b7] group-hover:text-white">
+                                                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/12 bg-white/8 text-[#8dbbff] shadow-sm transition group-hover:border-[#3d86ff] group-hover:bg-[#3d86ff] group-hover:text-white">
                                                         <ChevronRight size={17} />
                                                     </span>
                                                 </button>
@@ -566,20 +560,20 @@ export default function DashboardPage() {
                                     </div>
                                 ) : (
                                     <div className="space-y-5">
-                                        <div className="flex flex-col gap-4 rounded-xl border border-[#dbe8f7] bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+                                        <div className="flex flex-col gap-4 rounded-xl border border-white/12 bg-white/[0.065] p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
                                             <div>
-                                                <div className="text-[10px] font-black uppercase tracking-wider text-[#627094]">
+                                                <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">
                                                     Pages du chapitre
                                                 </div>
-                                                <div className="mt-1 text-sm font-semibold text-[#07133c]">
+                                                <div className="mt-1 text-sm font-semibold text-white">
                                                     {pages.length} pages disponibles
                                                 </div>
                                             </div>
                                             <div className="flex flex-wrap gap-x-4 gap-y-2">
-                                                <div className="flex items-center gap-1.5"><div className="h-2.5 w-2.5 rounded-full bg-slate-300"></div><span className="text-xs font-semibold text-[#627094]">Vide</span></div>
-                                                <div className="flex items-center gap-1.5"><div className="h-2.5 w-2.5 rounded-full bg-orange-400"></div><span className="text-xs font-semibold text-[#627094]">En cours</span></div>
-                                                <div className="flex items-center gap-1.5"><div className="h-2.5 w-2.5 rounded-full bg-yellow-400"></div><span className="text-xs font-semibold text-[#627094]">À valider</span></div>
-                                                <div className="flex items-center gap-1.5"><div className="h-2.5 w-2.5 rounded-full bg-green-400"></div><span className="text-xs font-semibold text-[#627094]">Terminé</span></div>
+                                                <div className="flex items-center gap-1.5"><div className="h-2.5 w-2.5 rounded-full bg-slate-300"></div><span className="text-xs font-semibold text-slate-300">Vide</span></div>
+                                                <div className="flex items-center gap-1.5"><div className="h-2.5 w-2.5 rounded-full bg-orange-400"></div><span className="text-xs font-semibold text-slate-300">En cours</span></div>
+                                                <div className="flex items-center gap-1.5"><div className="h-2.5 w-2.5 rounded-full bg-yellow-400"></div><span className="text-xs font-semibold text-slate-300">À valider</span></div>
+                                                <div className="flex items-center gap-1.5"><div className="h-2.5 w-2.5 rounded-full bg-green-400"></div><span className="text-xs font-semibold text-slate-300">Terminé</span></div>
                                             </div>
                                         </div>
 

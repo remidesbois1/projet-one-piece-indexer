@@ -21,7 +21,7 @@ export default async function LandingPage() {
     }
 
     return (
-        <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
+        <div className="poneglyph-app flex min-h-screen flex-col font-sans text-slate-100">
             <script
                 type="application/ld+json"
                 dangerouslySetInnerHTML={{

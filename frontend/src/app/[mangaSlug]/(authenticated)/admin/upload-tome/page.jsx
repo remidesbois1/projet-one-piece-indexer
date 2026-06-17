@@ -366,18 +366,18 @@ export default function UploadTomePage() {
     const assigningChapterObj = chapters.find(c => c.id === assigningChapter);
 
     return (
-        <div className="container max-w-7xl mx-auto py-10 px-4 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="flex items-center gap-4 pb-6 border-b border-slate-200">
+        <div className="container mx-auto max-w-7xl space-y-8 px-4 py-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="flex items-center gap-4 border-b border-white/10 pb-6">
                 <Link href={`/${params.mangaSlug}/admin?tab=content`}>
                     <Button variant="ghost" size="icon" className="shrink-0">
                         <ArrowLeft className="h-5 w-5" />
                     </Button>
                 </Link>
                 <div>
-                    <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">
+                    <h1 className="poneglyph-title text-3xl font-extrabold">
                         Upload Tome
                     </h1>
-                    <p className="text-slate-500 mt-1">
+                    <p className="poneglyph-muted mt-1">
                         Importez un tome complet (.cbz), gérez les pages et assignez-les à des chapitres.
                     </p>
                 </div>
@@ -387,17 +387,17 @@ export default function UploadTomePage() {
                 {[1, 2, 3].map(s => (
                     <React.Fragment key={s}>
                         <div className={`flex items-center justify-center w-10 h-10 rounded-full font-bold text-sm transition-all duration-300 ${step >= s
-                            ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/20'
-                            : 'bg-slate-100 text-slate-400'
+                            ? 'bg-[#3d86ff] text-white shadow-lg shadow-[#3d86ff]/20'
+                            : 'bg-white/8 text-slate-400'
                             }`}>
                             {step > s ? <CheckCircle2 className="h-5 w-5" /> : s}
                         </div>
-                        <span className={`text-sm font-medium ${step >= s ? 'text-slate-700' : 'text-slate-400'}`}>
+                        <span className={`text-sm font-medium ${step >= s ? 'text-slate-200' : 'text-slate-500'}`}>
                             {s === 1 && 'Extraction'}
                             {s === 2 && 'Organisation'}
                             {s === 3 && 'Terminé'}
                         </span>
-                        {s < 3 && <div className={`flex-1 h-0.5 rounded ${step > s ? 'bg-slate-900' : 'bg-slate-200'}`} />}
+                        {s < 3 && <div className={`h-0.5 flex-1 rounded ${step > s ? 'bg-[#3d86ff]' : 'bg-white/12'}`} />}
                     </React.Fragment>
                 ))}
             </div>
@@ -410,19 +410,19 @@ export default function UploadTomePage() {
             )}
 
             {step === 1 && (
-                <Card className="border-slate-200 shadow-xl shadow-slate-200/50">
+                <Card className="poneglyph-panel rounded-xl">
                     <CardHeader>
-                        <CardTitle className="flex items-center gap-2 text-2xl">
-                            <FileArchive className="h-6 w-6 text-slate-700" />
+                        <CardTitle className="flex items-center gap-2 text-2xl text-white">
+                            <FileArchive className="h-6 w-6 text-[#8dbbff]" />
                             Sélectionner un fichier
                         </CardTitle>
-                        <CardDescription>
+                        <CardDescription className="text-slate-400">
                             Choisissez un fichier .cbz ou .zip contenant les pages du tome.
                         </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-6">
                         <div className="space-y-2">
-                            <Label>Tome cible</Label>
+                            <Label className="text-slate-200">Tome cible</Label>
                             <Select value={selectedTome} onValueChange={setSelectedTome}>
                                 <SelectTrigger>
                                     <SelectValue placeholder="-- Sélectionner un tome --" />
@@ -438,21 +438,21 @@ export default function UploadTomePage() {
                         </div>
 
                         <div className="space-y-2">
-                            <Label>Fichier source (.cbz / .zip)</Label>
+                            <Label className="text-slate-200">Fichier source (.cbz / .zip)</Label>
                             <div className="relative">
                                 <Input
                                     type="file"
                                     accept=".cbz,.zip"
                                     onChange={handleFileSelect}
                                     disabled={extracting || !selectedTome}
-                                    className="cursor-pointer file:mr-4 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"
+                                    className="cursor-pointer file:mr-4 file:rounded-full file:border-0 file:bg-[#3d86ff]/18 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-[#bdd6ff] hover:file:bg-[#3d86ff]/28"
                                 />
                             </div>
                         </div>
 
                         {extracting && (
                             <div className="space-y-2">
-                                <div className="flex justify-between text-sm text-slate-500">
+                                <div className="flex justify-between text-sm text-slate-400">
                                     <span>Extraction en cours...</span>
                                     <span>{extractProgress}%</span>
                                 </div>
@@ -468,11 +468,11 @@ export default function UploadTomePage() {
                     <div className="space-y-4">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                                <h2 className="text-xl font-bold text-slate-900">
+                                <h2 className="text-xl font-bold text-white">
                                     Pages ({pages.length})
                                 </h2>
                                 {assignedCount < pages.length && (
-                                    <span className="text-xs font-medium text-amber-700 bg-amber-50 px-2 py-1 rounded-full border border-amber-200">
+                                    <span className="rounded-full border border-amber-400/35 bg-amber-500/14 px-2 py-1 text-xs font-medium text-amber-200">
                                         {pages.length - assignedCount} non assignée(s)
                                     </span>
                                 )}
@@ -525,14 +525,14 @@ export default function UploadTomePage() {
                                                 ? 'border-blue-500 ring-2 ring-blue-300 shadow-lg shadow-blue-100'
                                                 : colorSet
                                                     ? `${colorSet.border} ${colorSet.bg}`
-                                                    : 'border-slate-200 hover:border-slate-300'
+                                                    : 'border-white/12 bg-white/[0.055] hover:border-[#8dbbff]/38'
                                             }`}
                                     >
                                         {colorSet && (
                                             <div className={`absolute top-0 left-0 right-0 h-1 ${colorSet.ribbon} z-10`} />
                                         )}
 
-                                        <div className="aspect-[2/3] bg-slate-50 relative overflow-hidden">
+                                        <div className="relative aspect-[2/3] overflow-hidden bg-[#040d18]">
                                             <img
                                                 src={page.thumbUrl}
                                                 alt={`Page ${index + 1}`}
@@ -542,8 +542,8 @@ export default function UploadTomePage() {
                                             <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                                         </div>
 
-                                        <div className="px-2 py-1.5 bg-white/90 backdrop-blur-sm">
-                                            <p className="text-xs font-semibold text-slate-700 text-center truncate">
+                                        <div className="border-t border-white/10 bg-[#071625]/92 px-2 py-1.5 backdrop-blur-sm">
+                                            <p className="truncate text-center text-xs font-semibold text-slate-200">
                                                 {index + 1}
                                                 {chapter && (
                                                     <span className={`ml-1 ${colorSet.text}`}>
@@ -565,10 +565,10 @@ export default function UploadTomePage() {
                     </div>
 
                     <div className="space-y-4">
-                        <Card className="border-slate-200 shadow-lg sticky top-24 max-h-[calc(100vh-8rem)] flex flex-col">
+                        <Card className="poneglyph-panel sticky top-24 flex max-h-[calc(100vh-8rem)] flex-col rounded-xl">
                             <CardHeader className="pb-4">
                                 <CardTitle className="flex items-center gap-2 text-lg">
-                                    <Layers className="h-5 w-5 text-slate-600" />
+                                    <Layers className="h-5 w-5 text-[#8dbbff]" />
                                     Chapitres
                                 </CardTitle>
                                 <CardDescription className="text-sm">
@@ -577,7 +577,7 @@ export default function UploadTomePage() {
                             </CardHeader>
                             <CardContent className="space-y-3 overflow-y-auto flex-1">
                                 {selectedTomeObj && (
-                                    <div className="text-sm text-slate-500 bg-slate-50 rounded-lg px-3 py-2 border border-slate-100">
+                                    <div className="rounded-lg border border-white/12 bg-white/[0.06] px-3 py-2 text-sm text-slate-300">
                                         📖 Tome {selectedTomeObj.numero} — {selectedTomeObj.titre}
                                     </div>
                                 )}
@@ -599,7 +599,7 @@ export default function UploadTomePage() {
                                             key={chapter.id}
                                             className={`rounded-xl border-2 p-3 space-y-2 transition-all ${isAssigning
                                                 ? `${colorSet.border} ${colorSet.bg} shadow-md`
-                                                : 'border-slate-200 hover:border-slate-300'
+                                                : 'border-white/12 bg-white/[0.055] hover:border-[#8dbbff]/38'
                                                 }`}
                                         >
                                             <div className="flex items-center gap-2">
@@ -627,7 +627,7 @@ export default function UploadTomePage() {
                                             </div>
 
                                             <div className="flex items-center justify-between">
-                                                <span className="text-xs text-slate-500">
+                                                <span className="text-xs text-slate-400">
                                                     {chapterPages.length} page(s)
                                                 </span>
                                                 <Button
@@ -653,7 +653,7 @@ export default function UploadTomePage() {
                                     Ajouter un chapitre
                                 </Button>
 
-                                <div className="pt-4 border-t border-slate-200">
+                                <div className="border-t border-white/12 pt-4">
                                     <Button
                                         className="w-full bg-slate-900 hover:bg-slate-800 text-white shadow-lg"
                                         size="lg"
@@ -676,7 +676,7 @@ export default function UploadTomePage() {
                                     {uploading && (
                                         <div className="mt-3 space-y-1">
                                             <Progress value={uploadProgress} className="h-2" />
-                                            <p className="text-xs text-slate-500 text-center">{uploadProgress}%</p>
+                                            <p className="text-center text-xs text-slate-400">{uploadProgress}%</p>
                                         </div>
                                     )}
                                 </div>
@@ -687,23 +687,23 @@ export default function UploadTomePage() {
             )}
 
             {step === 3 && (
-                <Card className="border-slate-200 shadow-xl max-w-2xl mx-auto">
+                <Card className="poneglyph-panel mx-auto max-w-2xl rounded-xl">
                     <CardContent className="py-12 text-center space-y-6">
-                        <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center mx-auto">
+                        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-emerald-400/35 bg-emerald-500/14">
                             <CheckCircle2 className="h-8 w-8 text-emerald-600" />
                         </div>
                         <div>
-                            <h2 className="text-2xl font-bold text-slate-900">Upload terminé !</h2>
-                            <p className="text-slate-500 mt-2">
+                            <h2 className="text-2xl font-bold text-white">Upload terminé !</h2>
+                            <p className="mt-2 text-slate-400">
                                 {uploadResult?.message || "Toutes les pages ont été traitées et uploadées avec succès."}
                             </p>
                         </div>
 
                         {uploadResult?.results && (
-                            <div className="text-left bg-slate-50 rounded-xl p-4 space-y-2">
+                            <div className="space-y-2 rounded-xl border border-white/12 bg-white/[0.06] p-4 text-left">
                                 {uploadResult.results.map((r, i) => (
                                     <div key={i} className="flex items-center justify-between text-sm">
-                                        <span className="font-medium text-slate-700">Chapitre {r.numero}</span>
+                                        <span className="font-medium text-slate-200">Chapitre {r.numero}</span>
                                         {r.error ? (
                                             <span className="text-red-500 text-xs">{r.error}</span>
                                         ) : (

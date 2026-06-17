@@ -11,18 +11,12 @@ import {
     DialogDescription
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
     ChevronRight,
     BookOpen,
     FileText,
-    MessageCircle,
     Layers,
-    Calendar,
-    Search,
     Loader2,
     ImageOff
 } from "lucide-react";
@@ -125,20 +119,20 @@ export default function AdminDataPage() {
     return (
         <div className="container max-w-7xl mx-auto py-10 px-4 sm:px-6">
             {pageTitle && <title>{pageTitle}</title>}
-            <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
-                <h1 className="text-xl font-bold flex items-center gap-2">
-                    <Layers className="h-5 w-5 text-blue-600" />
+            <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
+                <h1 className="poneglyph-title flex items-center gap-2 text-xl font-bold">
+                    <Layers className="h-5 w-5 text-[#8dbbff]" />
                     Explorateur de Données
                 </h1>
-                <div className="text-sm text-slate-500">
+                <div className="text-sm text-slate-400">
                     Navigation rapide : Volumes &gt; Chapitres &gt; Pages &gt; Bulles
                 </div>
             </div>
 
-            <div className="flex-1 flex overflow-hidden min-h-0">
+            <div className="poneglyph-panel flex min-h-[720px] flex-1 overflow-hidden rounded-xl">
 
-                <div className="w-1/4 min-w-[250px] border-r bg-slate-50 flex flex-col min-h-0">
-                    <div className="p-3 font-semibold text-slate-700 border-b bg-slate-100 shrink-0">
+                <div className="flex min-h-0 w-1/4 min-w-[250px] flex-col border-r border-white/10 bg-white/[0.045]">
+                    <div className="shrink-0 border-b border-white/10 bg-white/[0.055] p-3 font-semibold text-slate-200">
                         Volumes
                     </div>
                     <ScrollArea className="flex-1 h-full">
@@ -193,8 +187,8 @@ export default function AdminDataPage() {
                 </div>
 
 
-                <div className="w-1/4 min-w-[250px] border-r bg-white flex flex-col min-h-0">
-                    <div className="p-3 font-semibold text-slate-700 border-b bg-slate-50 flex justify-between shrink-0">
+                <div className="flex min-h-0 w-1/4 min-w-[250px] flex-col border-r border-white/10 bg-white/[0.03]">
+                    <div className="flex shrink-0 justify-between border-b border-white/10 bg-white/[0.045] p-3 font-semibold text-slate-200">
                         <span>Pages</span>
                         {selectedChapter && <span className="text-xs font-normal text-slate-500 self-center">Chap. {selectedChapter.numero}</span>}
                     </div>
@@ -243,7 +237,7 @@ export default function AdminDataPage() {
                                                 </Badge>
                                             </div>
                                         </div>
-                                        <div className="text-xs font-medium text-slate-700">Page {page.numero_page}</div>
+                                        <div className="text-xs font-medium text-slate-200">Page {page.numero_page}</div>
                                         <div className="text-[10px] text-slate-400">{page.bulles[0]?.count || 0} bulles</div>
                                     </button>
                                 ))}
@@ -253,8 +247,8 @@ export default function AdminDataPage() {
                 </div>
 
 
-                <div className="flex-1 bg-slate-50/50 flex flex-col min-h-0">
-                    <div className="p-3 font-semibold text-slate-700 border-b bg-white flex justify-between shrink-0">
+                <div className="flex min-h-0 flex-1 flex-col bg-[#030a13]/28">
+                    <div className="flex shrink-0 justify-between border-b border-white/10 bg-white/[0.045] p-3 font-semibold text-slate-200">
                         <span>Détail Bubbles</span>
                         {selectedPage && <span className="text-xs font-normal text-slate-500 self-center">Page {selectedPage.numero_page}</span>}
                     </div>
@@ -390,7 +384,7 @@ export default function AdminDataPage() {
 
                                                     {entry.comment && (
                                                         <div className="bg-orange-50 border border-orange-100 text-orange-800 p-2 rounded text-xs italic mb-2">
-                                                            "{entry.comment}"
+                                                            &quot;{entry.comment}&quot;
                                                         </div>
                                                     )}
 

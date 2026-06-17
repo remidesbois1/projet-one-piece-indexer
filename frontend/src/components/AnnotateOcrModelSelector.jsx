@@ -50,31 +50,38 @@ export default function AnnotateOcrModelSelector({
     const modeDescription = isLocalMode ? "Inference locale" : "Inference distante";
 
     return (
-        <div className="flex-none p-3 rounded-xl border border-slate-200/60 bg-white shadow-sm flex flex-col gap-3">
+        <div className="flex flex-none flex-col gap-3 rounded-xl border border-white/12 bg-white/[0.055] p-3 shadow-sm">
             <div className="flex items-center justify-between mb-1">
                 <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-0.5">Moteur OCR</h3>
                 {!isSandbox && (
                     <button
                         onClick={toggleOcrPreference}
                         className={cn(
-                            "relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none",
-                            preferLocalOCR ? "bg-emerald-500" : "bg-blue-500"
+                            "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border transition-colors duration-200 focus:outline-none",
+                            preferLocalOCR
+                                ? "border-[#8dbbff]/35 bg-[#3d86ff]/24 shadow-[0_0_16px_rgba(61,134,255,0.18)]"
+                                : "border-white/12 bg-white/[0.075]"
                         )}
                     >
                         <span className={cn(
-                            "inline-block h-3 w-3 transform rounded-full bg-white transition-transform shadow-sm",
-                            preferLocalOCR ? "translate-x-3.5" : "translate-x-0.5"
+                            "absolute left-0.5 top-1/2 h-4 w-4 -translate-y-1/2 rounded-full border border-white/20 bg-slate-100 shadow-sm transition-transform",
+                            preferLocalOCR ? "translate-x-4" : "translate-x-0"
                         )} />
                     </button>
                 )}
             </div>
 
-            <div className="flex items-center gap-2.5 bg-slate-50 p-2 rounded-lg border border-slate-100/80">
-                <div className={cn("p-1.5 rounded-md", isLocalMode ? "bg-emerald-100/50 text-emerald-600" : "bg-blue-100/50 text-blue-600")}>
+            <div className="flex items-center gap-2.5 rounded-lg border border-white/12 bg-white/[0.06] p-2">
+                <div className={cn(
+                    "rounded-md border p-1.5",
+                    isLocalMode
+                        ? "border-[#8dbbff]/26 bg-[#3d86ff]/14 text-[#8dbbff]"
+                        : "border-white/12 bg-white/[0.06] text-slate-300"
+                )}>
                     {isLocalMode ? <Cpu size={14} /> : <CloudLightning size={14} />}
                 </div>
                 <div className="flex flex-col">
-                    <span className="text-[11px] font-bold text-slate-800 leading-tight">Mode {modeLabel}</span>
+                    <span className="text-[11px] font-bold leading-tight text-slate-100">Mode {modeLabel}</span>
                     <span className="text-[9px] font-bold text-slate-400 mt-0.5">{modeDescription}</span>
                 </div>
             </div>
@@ -94,8 +101,8 @@ export default function AnnotateOcrModelSelector({
                             className={cn(
                                 "flex-1 p-2 rounded-lg border text-left transition-all duration-200",
                                 activeModelKey === m.key
-                                    ? (m.type === 'api' ? "border-indigo-300 bg-indigo-50/80 ring-1 ring-indigo-200/50" : "border-emerald-300 bg-emerald-50/80 ring-1 ring-emerald-200/50")
-                                    : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50",
+                                    ? "border-[#8dbbff]/42 bg-[#3d86ff]/14 ring-1 ring-[#8dbbff]/18"
+                                    : "border-white/12 bg-white/[0.055] hover:border-[#8dbbff]/38 hover:bg-white/[0.09]",
                                 disabled && "opacity-50 cursor-not-allowed"
                             )}
                         >
@@ -104,11 +111,11 @@ export default function AnnotateOcrModelSelector({
                                     {m.type === 'api' && <Sparkles size={10} className={cn(m.key === 'gemini' ? "text-blue-500" : "text-indigo-500")} />}
                                     <span className={cn(
                                         "text-[10px] font-bold",
-                                        activeModelKey === m.key ? (m.type === 'api' ? (m.key === 'gemini' ? "text-blue-700" : "text-indigo-700") : "text-emerald-700") : "text-slate-600"
+                                        activeModelKey === m.key ? "text-[#bdd6ff]" : "text-slate-300"
                                     )}>{m.label}</span>
                                 </div>
                                 {activeModelKey === m.key && (
-                                    <div className={cn("w-1.5 h-1.5 rounded-full", m.type === 'api' ? (m.key === 'gemini' ? "bg-blue-500" : "bg-indigo-500") : "bg-emerald-500")} />
+                                    <div className="h-1.5 w-1.5 rounded-full bg-[#8dbbff]" />
                                 )}
                             </div>
                             <div className="text-[8px] font-semibold text-slate-400 leading-tight">
@@ -126,27 +133,27 @@ export default function AnnotateOcrModelSelector({
                     {activeIsTauriModel ? (
                         <>
                             {!isTauri && (
-                                <div className="text-[10px] font-bold text-slate-400 text-center py-2 bg-slate-50 rounded-lg border border-dashed border-slate-200">
+                                <div className="rounded-lg border border-dashed border-white/14 bg-white/[0.05] py-2 text-center text-[10px] font-bold text-slate-400">
                                     {activeLocalLabel} en local necessite l&apos;app desktop.
                                 </div>
                             )}
                             {isTauri && canDownloadTextModel && (
-                                <Button variant="outline" size="sm" onClick={activeDownloadModel} className="w-full h-8 text-[11px] font-bold bg-white border border-slate-200 hover:bg-slate-50 text-slate-600">
+                                <Button variant="outline" size="sm" onClick={activeDownloadModel} className="h-8 w-full border border-white/12 bg-white/[0.07] text-[11px] font-bold text-slate-200 hover:bg-white/12">
                                     <Download size={12} className="mr-1.5" /> Telecharger {activeLocalLabel}
                                 </Button>
                             )}
                             {isTauri && canLoadTextModel && (
-                                <Button variant="outline" size="sm" onClick={activeLoadModel} className="w-full h-8 text-[11px] font-bold bg-white border border-slate-200 hover:bg-slate-50 text-slate-600">
+                                <Button variant="outline" size="sm" onClick={activeLoadModel} className="h-8 w-full border border-white/12 bg-white/[0.07] text-[11px] font-bold text-slate-200 hover:bg-white/12">
                                     <Download size={12} className="mr-1.5" /> Charger {activeLocalLabel}
                                 </Button>
                             )}
                             {isTauri && (activeDownloadActive || activeLoading || activeLocalStatus?.loading) && (
-                                <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
-                                    <div className="flex justify-between text-[9px] font-bold text-slate-500 mb-1.5">
+                                <div className="rounded-lg border border-white/12 bg-white/[0.06] p-2">
+                                    <div className="mb-1.5 flex justify-between text-[9px] font-bold text-slate-400">
                                         <span>{activeDownloadActive ? "Telechargement" : "Chargement"} {activeLocalLabel}...</span>
                                         {activeDownloadPercent !== null && <span>{activeDownloadPercent}%</span>}
                                     </div>
-                                    <div className="h-1 w-full bg-slate-200 rounded-full overflow-hidden">
+                                    <div className="h-1 w-full overflow-hidden rounded-full bg-white/12">
                                         <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${activeDownloadPercent ?? 40}%` }} />
                                     </div>
                                 </div>
@@ -165,17 +172,17 @@ export default function AnnotateOcrModelSelector({
                     ) : OCR_MODELS[activeModelKey]?.type === 'local' ? (
                         <>
                             {(modelStatus === 'idle' || modelStatus === 'error') && (
-                                <Button variant="outline" size="sm" onClick={() => loadModel(activeModelKey)} className="w-full h-8 text-[11px] font-bold bg-white border border-slate-200 hover:bg-slate-50 text-slate-600">
+                                <Button variant="outline" size="sm" onClick={() => loadModel(activeModelKey)} className="h-8 w-full border border-white/12 bg-white/[0.07] text-[11px] font-bold text-slate-200 hover:bg-white/12">
                                     <Download size={12} className="mr-1.5" /> Charger {OCR_MODELS[activeModelKey]?.label}
                                 </Button>
                             )}
                             {modelStatus === 'loading' && (
-                                <div className="p-2 bg-slate-50 rounded-lg border border-slate-100">
-                                    <div className="flex justify-between text-[9px] font-bold text-slate-500 mb-1.5">
+                                <div className="rounded-lg border border-white/12 bg-white/[0.06] p-2">
+                                    <div className="mb-1.5 flex justify-between text-[9px] font-bold text-slate-400">
                                         <span>Installation {OCR_MODELS[activeModelKey]?.label}...</span>
                                         <span>{Math.round(downloadProgress)}%</span>
                                     </div>
-                                    <div className="h-1 w-full bg-slate-200 rounded-full overflow-hidden">
+                                    <div className="h-1 w-full overflow-hidden rounded-full bg-white/12">
                                         <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${downloadProgress}%` }} />
                                     </div>
                                 </div>
@@ -187,7 +194,7 @@ export default function AnnotateOcrModelSelector({
                             )}
                         </>
                     ) : (
-                        <div className="text-[10px] font-bold text-slate-400 text-center py-2 bg-slate-50 rounded-lg border border-dashed border-slate-200">
+                        <div className="rounded-lg border border-dashed border-white/14 bg-white/[0.05] py-2 text-center text-[10px] font-bold text-slate-400">
                             Sélectionnez un modèle local
                         </div>
                     )}
@@ -216,7 +223,7 @@ export default function AnnotateOcrModelSelector({
                                         variant="outline"
                                         size="sm"
                                         onClick={() => window.dispatchEvent(new Event('open-api-key-modal'))}
-                                        className="h-7 text-[9px] font-bold bg-white"
+                                        className="h-7 bg-white/[0.08] text-[9px] font-bold text-slate-100 hover:bg-white/12"
                                     >
                                         Configurer ma clé
                                     </Button>
@@ -229,7 +236,7 @@ export default function AnnotateOcrModelSelector({
                             )}
                         </>
                     ) : (
-                        <div className="text-[10px] font-bold text-slate-400 text-center py-2 bg-slate-50 rounded-lg border border-dashed border-slate-200">
+                        <div className="rounded-lg border border-dashed border-white/14 bg-white/[0.05] py-2 text-center text-[10px] font-bold text-slate-400">
                             Sélectionnez un modèle Cloud
                         </div>
                     )}

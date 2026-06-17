@@ -3,7 +3,8 @@ import React, { useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import Image from "next/image";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -53,19 +54,24 @@ export default function LoginPage() {
     };
 
     return (
-        <div className="flex items-center justify-center min-h-screen bg-slate-50 dark:bg-slate-950">
-            <div className="w-full max-w-md p-4">
-                <Card className="border-slate-200 dark:border-slate-800 shadow-xl">
+        <div className="poneglyph-app flex min-h-screen items-center justify-center px-4 py-10">
+            <div className="w-full max-w-md">
+                <div className="mb-8 flex flex-col items-center text-center">
+                    <Image src="/favicon-96x96.png" alt="Logo Projet Poneglyph" width={52} height={52} className="mb-4 rounded-lg" />
+                    <h1 className="poneglyph-title text-3xl font-black">Projet Poneglyph</h1>
+                    <p className="poneglyph-muted mt-2 text-sm">Accédez à votre espace d’annotation et de recherche.</p>
+                </div>
+                <Card className="poneglyph-panel rounded-xl">
                     <CardHeader className="space-y-1">
-                        <CardTitle className="text-2xl font-bold text-center">Connexion</CardTitle>
-                        <CardDescription className="text-center">
+                        <CardTitle className="text-center text-2xl font-bold text-white">Connexion</CardTitle>
+                        <CardDescription className="text-center text-slate-400">
                             Entrez vos identifiants pour accéder au Projet Poneglyph
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
                         <form onSubmit={handleLogin} className="space-y-4">
                             <div className="space-y-2">
-                                <Label htmlFor="email">Email</Label>
+                                <Label htmlFor="email" className="text-slate-200">Email</Label>
                                 <Input
                                     id="email"
                                     type="email"
@@ -73,16 +79,18 @@ export default function LoginPage() {
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
                                     required
+                                    className="poneglyph-input"
                                 />
                             </div>
                             <div className="space-y-2">
-                                <Label htmlFor="password">Mot de passe</Label>
+                                <Label htmlFor="password" className="text-slate-200">Mot de passe</Label>
                                 <Input
                                     id="password"
                                     type="password"
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
                                     required
+                                    className="poneglyph-input"
                                 />
                             </div>
 
@@ -92,23 +100,23 @@ export default function LoginPage() {
                                 </div>
                             )}
 
-                            <Button type="submit" className="w-full" disabled={loading}>
+                            <Button type="submit" className="poneglyph-blue-button w-full hover:bg-[#2f73dc]" disabled={loading}>
                                 {loading ? 'Connexion en cours...' : 'Se connecter'}
                             </Button>
                         </form>
 
                         <div className="mt-6 flex items-center gap-4">
                             <Separator className="flex-1" />
-                            <span className="text-xs text-muted-foreground uppercase">Ou</span>
+                            <span className="text-xs uppercase text-slate-500">Ou</span>
                             <Separator className="flex-1" />
                         </div>
 
                         <Button
                             variant="outline"
-                            className="w-full mt-6"
+                            className="mt-6 w-full border-white/14 bg-white/8 text-slate-200 hover:bg-white/14 hover:text-white"
                             onClick={handleGuestLogin}
                         >
-                            Continuer en tant qu'invité
+                            Continuer en tant qu&apos;invité
                         </Button>
                     </CardContent>
                 </Card>

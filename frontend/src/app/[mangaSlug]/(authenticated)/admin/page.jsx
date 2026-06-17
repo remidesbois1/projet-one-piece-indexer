@@ -64,13 +64,13 @@ export default function AdminDashboard() {
     };
 
     return (
-        <div className="container max-w-5xl mx-auto py-10 px-4 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="container mx-auto max-w-5xl space-y-8 px-4 py-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
 
-            <div className="flex flex-col space-y-2 pb-8 border-b border-slate-200">
-                <h1 className="text-4xl font-extrabold tracking-tight text-slate-900">
+            <div className="flex flex-col space-y-2 border-b border-white/10 pb-8">
+                <h1 className="poneglyph-title text-4xl font-extrabold">
                     Administration
                 </h1>
-                <p className="text-lg text-slate-500 max-w-2xl">
+                <p className="poneglyph-muted max-w-2xl text-lg">
                     Gérez votre bibliothèque de mangas, supervisez la sécurité et configurez les outils linguistiques.
                 </p>
             </div>
@@ -80,53 +80,53 @@ export default function AdminDashboard() {
                 params.set('tab', val);
                 window.history.pushState(null, '', `?${params.toString()}`);
             }} className="w-full">
-                <div className="sticky top-0 z-20 bg-white pt-2 pb-6">
-                    <TabsList className="grid w-full grid-cols-2 lg:grid-cols-6 h-auto p-1 bg-slate-100/80 border border-slate-200">
-                        <TabsTrigger value="content" className="py-3 px-4 data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all focus-visible:ring-0">
+                <div className="sticky top-16 z-20 bg-[#06111e]/86 pb-6 pt-2 backdrop-blur-xl">
+                    <TabsList className="grid h-auto w-full grid-cols-2 border border-white/12 bg-white/8 p-1 lg:grid-cols-6">
+                        <TabsTrigger value="content" className="px-4 py-3 text-slate-300 transition-all data-[state=active]:bg-white/12 data-[state=active]:text-white data-[state=active]:shadow-sm focus-visible:ring-0">
                             <Library className="h-4 w-4 mr-2" />
                             <span className="font-medium">Bibliothèque</span>
                         </TabsTrigger>
-                        <TabsTrigger value="mangas" className="py-3 px-4 data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all focus-visible:ring-0">
+                        <TabsTrigger value="mangas" className="px-4 py-3 text-slate-300 transition-all data-[state=active]:bg-white/12 data-[state=active]:text-white data-[state=active]:shadow-sm focus-visible:ring-0">
                             <BookOpen className="h-4 w-4 mr-2" />
                             <span className="font-medium">Mangas</span>
                         </TabsTrigger>
-                        <TabsTrigger value="covers" className="py-3 px-4 data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all focus-visible:ring-0">
+                        <TabsTrigger value="covers" className="px-4 py-3 text-slate-300 transition-all data-[state=active]:bg-white/12 data-[state=active]:text-white data-[state=active]:shadow-sm focus-visible:ring-0">
                             <ImageIcon className="h-4 w-4 mr-2" />
                             <span className="font-medium">Apparence</span>
                         </TabsTrigger>
-                        <TabsTrigger value="ai" className="py-3 px-4 data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all focus-visible:ring-0">
+                        <TabsTrigger value="ai" className="px-4 py-3 text-slate-300 transition-all data-[state=active]:bg-white/12 data-[state=active]:text-white data-[state=active]:shadow-sm focus-visible:ring-0">
                             <Cpu className="h-4 w-4 mr-2" />
                             <span className="font-medium">IA</span>
                         </TabsTrigger>
-                        <TabsTrigger value="security" className="py-3 px-4 data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all focus-visible:ring-0 text-red-600 data-[state=active]:text-red-700">
+                        <TabsTrigger value="security" className="px-4 py-3 text-red-300 transition-all data-[state=active]:bg-red-500/14 data-[state=active]:text-red-100 data-[state=active]:shadow-sm focus-visible:ring-0">
                             <ShieldAlert className="h-4 w-4 mr-2" />
                             <span className="font-medium">Sécurité</span>
                         </TabsTrigger>
-                        <TabsTrigger value="batch" className="py-3 px-4 data-[state=active]:bg-white data-[state=active]:shadow-sm transition-all focus-visible:ring-0 text-indigo-600 data-[state=active]:text-indigo-700">
+                        <TabsTrigger value="batch" className="px-4 py-3 text-[#8dbbff] transition-all data-[state=active]:bg-[#3d86ff]/16 data-[state=active]:text-white data-[state=active]:shadow-sm focus-visible:ring-0">
                             <Zap className="h-4 w-4 mr-2" />
                             <span className="font-medium">Batch OCR</span>
                         </TabsTrigger>
                     </TabsList>
                 </div>
 
-                <div className="mt-2 min-h-[600px] rounded-3xl border border-slate-200 bg-white shadow-xl shadow-slate-200/50 overflow-hidden">
+                <div className="poneglyph-panel mt-2 min-h-[600px] overflow-hidden rounded-3xl">
                     <TabsContent value="content" className="m-0 p-8 space-y-12 outline-none">
                         <AddTomeForm />
-                        <div className="h-px bg-slate-200 mx-4" />
+                        <div className="mx-4 h-px bg-white/10" />
                         <AddChapterForm />
-                        <div className="h-px bg-slate-200 mx-4" />
-                        <div className="flex items-center justify-between rounded-xl bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-200 p-6">
+                        <div className="mx-4 h-px bg-white/10" />
+                        <div className="flex items-center justify-between rounded-xl border border-[#8dbbff]/18 bg-[#071625]/78 p-6 shadow-[0_18px_48px_rgba(0,0,0,0.22)]">
                             <div>
-                                <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                                    <Upload className="h-5 w-5 text-indigo-600" />
+                                <h3 className="flex items-center gap-2 text-lg font-bold text-white">
+                                    <Upload className="h-5 w-5 text-[#8dbbff]" />
                                     Upload Tome complet
                                 </h3>
-                                <p className="text-sm text-slate-500 mt-1">
+                                <p className="mt-1 text-sm text-slate-400">
                                     Importez un CBZ, organisez les pages et assignez-les à des chapitres.
                                 </p>
                             </div>
                             <Link href={`/${params.mangaSlug}/admin/upload-tome`}>
-                                <Button className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg">
+                                <Button className="border border-[#8dbbff]/35 bg-[#3d86ff] text-white shadow-[0_14px_34px_rgba(61,134,255,0.28)] hover:bg-[#2f73dc]">
                                     <Upload className="h-4 w-4 mr-2" />
                                     Ouvrir
                                 </Button>

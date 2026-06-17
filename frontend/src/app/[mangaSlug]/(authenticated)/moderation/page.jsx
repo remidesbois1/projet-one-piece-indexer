@@ -34,11 +34,11 @@ export default function ModerationPage() {
 
                 <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
                     <div className="space-y-1">
-                        <h1 className="text-3xl font-bold tracking-tight text-slate-900 flex items-center gap-3">
-                            <ShieldCheck className="h-8 w-8 text-slate-900" />
+                        <h1 className="poneglyph-title flex items-center gap-3 text-3xl font-bold">
+                            <ShieldCheck className="h-8 w-8 text-[#8dbbff]" />
                             Espace Modération
                         </h1>
-                        <p className="text-slate-500 text-lg max-w-2xl">
+                        <p className="poneglyph-muted max-w-2xl text-lg">
                             Supervisez les contributions de la communauté. Validez les bulles individuelles ou approuvez les pages finales.
                         </p>
                     </div>
@@ -46,18 +46,18 @@ export default function ModerationPage() {
 
                 <Tabs defaultValue="bubbles" className="w-full space-y-6">
 
-                    <div className="bg-white p-1 rounded-xl border border-slate-200 w-fit shadow-sm">
-                        <TabsList className="grid w-full grid-cols-2 h-10 bg-slate-100/50">
+                    <div className="w-fit rounded-xl border border-white/12 bg-white/8 p-1 shadow-sm">
+                        <TabsList className="grid h-10 w-full grid-cols-2 bg-transparent">
                             <TabsTrigger
                                 value="bubbles"
-                                className="data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-slate-900 px-6 gap-2"
+                                className="gap-2 px-6 text-slate-300 data-[state=active]:bg-white/12 data-[state=active]:text-white data-[state=active]:shadow-sm"
                             >
                                 <MessageSquareDashed className="h-4 w-4" />
                                 Bulles à valider
                             </TabsTrigger>
                             <TabsTrigger
                                 value="pages"
-                                className="data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-slate-900 px-6 gap-2"
+                                className="gap-2 px-6 text-slate-300 data-[state=active]:bg-white/12 data-[state=active]:text-white data-[state=active]:shadow-sm"
                             >
                                 <FileCheck className="h-4 w-4" />
                                 Pages complètes

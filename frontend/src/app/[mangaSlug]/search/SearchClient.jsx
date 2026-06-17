@@ -97,7 +97,7 @@ function PoneglyphHeaderGlyphs({ count = 15, color = "#2F7AAF" }) {
 const ResultImage = ({ url, pageId, token, coords, type }) => {
     if (type === 'semantic' || !coords) {
         return (
-            <div className="w-full aspect-[2/3] bg-slate-100 overflow-hidden relative group">
+            <div className="w-full aspect-[2/3] bg-[#071625] overflow-hidden relative group">
                 <img
                     src={getProxiedImageUrl(url, pageId, token)}
                     crossOrigin="anonymous"
@@ -113,11 +113,11 @@ const ResultImage = ({ url, pageId, token, coords, type }) => {
     }
 
     return (
-        <div className="w-full h-56 bg-slate-50 overflow-hidden relative flex items-center justify-center border-b border-slate-100 group">
-            <div className="absolute inset-0 bg-slate-100/50 pattern-grid-lg opacity-20" />
+        <div className="w-full h-56 bg-[#071625] overflow-hidden relative flex items-center justify-center border-b border-white/10 group">
+            <div className="absolute inset-0 bg-[#0b1b2d]/70 pattern-grid-lg opacity-20" />
 
             <div
-                className="relative shadow-2xl rounded-lg overflow-hidden border border-slate-200 bg-white transition-all duration-300 group-hover:scale-[1.03] group-hover:rotate-1"
+                className="relative overflow-hidden rounded-lg border border-white/14 bg-white shadow-2xl transition-all duration-300 group-hover:scale-[1.03] group-hover:rotate-1"
                 style={{
                     width: Math.min(coords.w, 240),
                     height: Math.min(coords.h, 180),
@@ -138,7 +138,7 @@ const ResultImage = ({ url, pageId, token, coords, type }) => {
                 />
             </div>
 
-            <Badge variant="secondary" className="absolute bottom-3 right-3 bg-white/95 text-slate-800 backdrop-blur shadow-md gap-1 font-bold border-slate-200">
+            <Badge variant="secondary" className="absolute bottom-3 right-3 gap-1 border-white/14 bg-[#06111e]/92 font-bold text-slate-100 shadow-md backdrop-blur">
                 <Quote className="h-3 w-3" /> Bulle
             </Badge>
         </div>
@@ -320,16 +320,16 @@ export default function SearchPage() {
     const accentColor = useSemantic ? "#A11010" : "#2f7aaf";
 
     return (
-        <div className="min-h-screen pb-20 bg-slate-50/30">
-            <div className="bg-white border-b border-slate-200 pt-12 pb-10 px-4 -mx-4 sm:-mx-8 relative overflow-hidden">
+        <div className="min-h-screen pb-20">
+            <div className="relative -mx-4 overflow-hidden border-b border-white/10 bg-[#06111e]/72 px-4 pb-10 pt-12 sm:-mx-8">
                 <PoneglyphHeaderGlyphs color={accentColor} />
 
                 <div className="container max-w-5xl mx-auto space-y-8 relative z-10">
                     <div className="text-center space-y-2">
-                        <h1 className="text-3xl sm:text-5xl font-black tracking-tight text-slate-900">
+                        <h1 className="poneglyph-title text-3xl font-black sm:text-5xl">
                             Voix de Toute Chose
                         </h1>
-                        <p className="text-slate-500 font-medium text-sm sm:text-base max-w-xl mx-auto">
+                        <p className="poneglyph-muted mx-auto max-w-xl text-sm font-medium sm:text-base">
                             {useSemantic
                                 ? "Rio Poneglyph : Déchiffrer l'histoire à travers les concepts et les souvenirs."
                                 : "Poneglyph : Retrouver les traces écrites et les paroles exactes."
@@ -349,17 +349,17 @@ export default function SearchPage() {
                             }}
                             className="w-full max-w-md"
                         >
-                            <TabsList className="grid w-full grid-cols-2 h-12 p-1 bg-slate-100 rounded-xl border border-slate-200">
+                            <TabsList className="grid h-12 w-full grid-cols-2 rounded-xl border border-white/12 bg-white/8 p-1">
                                 <TabsTrigger
                                     value="keyword"
-                                    className="rounded-lg font-bold text-xs uppercase tracking-wider data-[state=active]:bg-white data-[state=active]:shadow-sm data-[state=active]:text-[#2F7AAF]"
+                                    className="rounded-lg text-xs font-bold uppercase tracking-wider text-slate-300 data-[state=active]:bg-white/12 data-[state=active]:text-[#8dbbff] data-[state=active]:shadow-sm"
                                 >
                                     <Quote className="h-3.5 w-3.5 mr-2 opacity-60" />
                                     Textuel
                                 </TabsTrigger>
                                 <TabsTrigger
                                     value="semantic"
-                                    className="rounded-lg font-bold text-xs uppercase tracking-wider data-[state=active]:bg-[#A11010] data-[state=active]:text-white"
+                                    className="rounded-lg text-xs font-bold uppercase tracking-wider text-slate-300 data-[state=active]:bg-[#A11010] data-[state=active]:text-white"
                                 >
                                     <Sparkles className="h-3.5 w-3.5 mr-2" />
                                     Sémantique
@@ -369,10 +369,10 @@ export default function SearchPage() {
 
                         <div className="relative w-full max-w-2xl group">
                             <div className={cn(
-                                "relative flex items-center transition-all duration-1000 rounded-2xl bg-white border shadow-sm group-focus-within:shadow-xl group-focus-within:ring-4",
+                                "relative flex items-center rounded-2xl border bg-[#040d18]/84 shadow-sm transition-all duration-1000 group-focus-within:shadow-xl group-focus-within:ring-4",
                                 useSemantic
                                     ? "border-red-200 group-focus-within:border-red-500/50 group-focus-within:ring-[#A11010]/5"
-                                    : "border-slate-200 group-focus-within:border-sky-400/50 group-focus-within:ring-[#2F7AAF]/5"
+                                    : "border-white/14 group-focus-within:border-sky-400/50 group-focus-within:ring-[#2F7AAF]/12"
                             )}>
                                 <Input
                                     ref={inputRef}
@@ -381,7 +381,7 @@ export default function SearchPage() {
                                     onChange={(e) => setQuery(e.target.value)}
                                     onKeyDown={handleKeyDown}
                                     placeholder={useSemantic ? "Ex: Luffy utilise le Gear 4 contre Doflamingo..." : "Cherchez un dialogue exact..."}
-                                    className="pl-6 pr-24 h-14 sm:h-16 text-base sm:text-lg rounded-2xl border-none ring-0 focus-visible:ring-0 shadow-none placeholder:text-slate-400"
+                                    className="h-14 rounded-2xl border-none bg-transparent pl-6 pr-24 text-base text-slate-100 shadow-none ring-0 placeholder:text-slate-500 focus-visible:ring-0 sm:h-16 sm:text-lg"
                                 />
 
                                 <div className="absolute right-2 flex items-center gap-1">
@@ -415,8 +415,8 @@ export default function SearchPage() {
                                 size="sm"
                                 onClick={() => setShowFilters(!showFilters)}
                                 className={cn(
-                                    "rounded-xl font-bold h-9 px-4 gap-2 border-slate-200 shadow-sm transition-all",
-                                    showFilters ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-600 hover:border-slate-300"
+                                    "h-9 gap-2 rounded-xl px-4 font-bold shadow-sm transition-all",
+                                    showFilters ? "border-[#3d86ff] bg-[#3d86ff] text-white" : "border-white/14 bg-white/8 text-slate-300 hover:bg-white/14 hover:text-white"
                                 )}
                             >
                                 <Filter className="h-3.5 w-3.5" />
@@ -440,7 +440,7 @@ export default function SearchPage() {
                                         setSelectedArc('all');
                                         setSelectedTome('all');
                                     }}
-                                    className="text-[11px] font-bold text-slate-400 hover:text-red-600 h-9 transition-colors"
+                                    className="h-9 text-[11px] font-bold text-slate-400 transition-colors hover:text-red-300"
                                 >
                                     Tout réinitialiser
                                 </Button>
@@ -449,7 +449,7 @@ export default function SearchPage() {
                     </div>
 
                     {showFilters && (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-6 border border-slate-100 rounded-3xl bg-slate-50/50 shadow-inner animate-in slide-in-from-top-4 fade-in duration-300 max-w-4xl mx-auto">
+                        <div className="poneglyph-panel mx-auto grid max-w-4xl grid-cols-1 gap-6 rounded-3xl p-6 shadow-inner animate-in slide-in-from-top-4 fade-in duration-300 md:grid-cols-3">
                             <div className="space-y-2 opacity-50 grayscale select-none">
                                 <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-[2px] mb-1.5 block">Personnages</Label>
                                 <Popover open={charPopoverOpen} onOpenChange={setCharPopoverOpen}>
@@ -541,10 +541,10 @@ export default function SearchPage() {
             <div className="container max-w-7xl mx-auto px-4 mt-12">
                 {results.length > 0 && (
                     <div className="flex items-center gap-3 mb-8 px-2 animate-in fade-in duration-500">
-                        <div className={cn("h-10 w-1 rounded-full transition-colors duration-1000", useSemantic ? "bg-[#A11010]" : "bg-[#2F7AAF]")} />
+                        <div className={cn("h-10 w-1 rounded-full transition-colors duration-1000", useSemantic ? "bg-[#A11010]" : "bg-[#3d86ff]")} />
                         <div>
-                            <span className="text-2xl font-black text-slate-900 tracking-tight">{totalCount}</span>
-                            <span className="ml-2 text-slate-500 font-bold text-sm uppercase tracking-wider">Résultats trouvés</span>
+                            <span className="text-2xl font-black tracking-tight text-white">{totalCount}</span>
+                            <span className="ml-2 text-sm font-bold uppercase tracking-wider text-slate-400">Résultats trouvés</span>
                         </div>
                     </div>
                 )}
@@ -563,8 +563,8 @@ export default function SearchPage() {
                                 )}
                             >
                                 <Card className={cn(
-                                    "h-full flex flex-col overflow-hidden border-slate-200/60 bg-white hover:shadow-2xl transition-all duration-500 rounded-3xl shadow-sm",
-                                    useSemantic ? "hover:border-red-200" : "hover:border-[#2F7AAF]/30"
+                                    "poneglyph-panel poneglyph-card-hover flex h-full flex-col overflow-hidden rounded-3xl",
+                                    useSemantic ? "hover:border-red-300/40" : "hover:border-[#2F7AAF]/35"
                                 )}>
                                     <ResultImage
                                         url={item.url_image}
@@ -591,7 +591,7 @@ export default function SearchPage() {
 
                                         {!isSemantic && item.content && (
                                             <div className={cn(
-                                                "text-sm font-medium text-slate-700 leading-relaxed italic border-l-2 pl-3 py-1",
+                                                "py-1 pl-3 text-sm font-medium italic leading-relaxed text-slate-200 border-l-2",
                                                 useSemantic ? "border-red-200" : "border-[#2F7AAF]/30"
                                             )}>
                                                 &quot;{highlightText(item.content, query)}&quot;
@@ -603,14 +603,14 @@ export default function SearchPage() {
                                                 <MapPin className={cn("h-3 w-3 transition-colors duration-1000", useSemantic ? "text-[#A11010]" : "text-[#2F7AAF]")} />
                                                 Page {item.context.match(/Page (\d+)/)?.[1]}
                                             </div>
-                                            <div className="p-1.5 rounded-full bg-slate-50 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <ChevronRight className="h-4 w-4 text-slate-400" />
+                                            <div className="rounded-full bg-white/8 p-1.5 opacity-0 transition-opacity group-hover:opacity-100">
+                                                <ChevronRight className="h-4 w-4 text-slate-300" />
                                             </div>
                                         </div>
                                     </CardContent>
 
                                     {useSemantic && (
-                                        <CardFooter className="px-6 py-4 bg-slate-50/50 border-t border-slate-100/60 flex items-center justify-between" onClick={(e) => e.preventDefault()}>
+                                        <CardFooter className="flex items-center justify-between border-t border-white/10 bg-white/[0.045] px-6 py-4" onClick={(e) => e.preventDefault()}>
                                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Utile ?</span>
                                             <div className="flex gap-2">
                                                 {feedbackGiven[item.id] ? (
@@ -648,11 +648,11 @@ export default function SearchPage() {
 
                 {!isLoading && results.length === 0 && query.length >= 2 && (
                     <div className="flex flex-col items-center justify-center py-20 text-center max-w-md mx-auto animate-in fade-in duration-700">
-                        <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-6">
-                            <BookOpen className="h-10 w-10 text-slate-300" />
+                        <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full border border-white/10 bg-white/8">
+                            <BookOpen className="h-10 w-10 text-slate-500" />
                         </div>
-                        <h3 className="text-xl font-black text-slate-900 mb-2 uppercase tracking-tight">Zone Inconnue</h3>
-                        <p className="text-slate-500 font-medium text-sm mb-8 leading-relaxed">
+                        <h3 className="mb-2 text-xl font-black uppercase tracking-tight text-white">Zone Inconnue</h3>
+                        <p className="mb-8 text-sm font-medium leading-relaxed text-slate-400">
                             Aucune occurrence de &quot;{query}&quot; dans nos archives.
                             {!useSemantic && " L'IA pourrait vous aider par analogie."}
                         </p>
@@ -673,7 +673,7 @@ export default function SearchPage() {
                         <Button
                             variant="outline"
                             onClick={loadMore}
-                            className="rounded-2xl h-12 px-10 font-black uppercase tracking-widest text-xs border-slate-200 hover:bg-slate-900 hover:text-white transition-all shadow-xl shadow-slate-200/50"
+                            className="h-12 rounded-2xl border-white/14 bg-white/8 px-10 text-xs font-black uppercase tracking-widest text-slate-200 shadow-xl transition-all hover:bg-white/14 hover:text-white"
                         >
                             Déchiffrer la suite
                         </Button>

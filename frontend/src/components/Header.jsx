@@ -56,7 +56,7 @@ const Header = ({ onOpenApiKeyModal }) => {
     const getLinkStyle = useCallback((path) => {
         const fullPath = `/${mangaSlug}${path}`;
         const isActive = pathname === fullPath;
-        return `relative flex h-16 items-center text-sm font-semibold transition-colors duration-200 ${isActive ? "text-[#1550b7] after:absolute after:bottom-0 after:left-0 after:h-0.5 after:w-full after:rounded-full after:bg-[#1550b7]" : "text-[#4b5574] hover:text-[#07133c]"}`;
+        return `relative flex h-16 items-center text-sm font-semibold transition-colors duration-200 ${isActive ? "text-[#8dbbff] after:absolute after:bottom-0 after:left-0 after:h-0.5 after:w-full after:rounded-full after:bg-[#3d86ff]" : "text-slate-300 hover:text-white"}`;
     }, [mangaSlug, pathname]);
 
     const getInitials = useCallback((email) => {
@@ -69,7 +69,7 @@ const Header = ({ onOpenApiKeyModal }) => {
     if (!mangaSlug) return null; 
 
     return (
-        <header className="sticky top-0 z-50 w-full border-b border-[#dbe8f7] bg-white/78 backdrop-blur-xl">
+        <header className="sticky top-0 z-50 w-full border-b border-white/10 bg-[#040b14]/82 backdrop-blur-xl">
             <div className="mx-auto flex h-20 items-center justify-between px-4 sm:px-8">
 
                 <div className="flex items-center gap-2.5">
@@ -79,7 +79,7 @@ const Header = ({ onOpenApiKeyModal }) => {
                         className="group flex items-center gap-3"
                     >
                         <img src="/favicon-96x96.png" alt="Logo" className="h-11 w-11 transition-transform duration-200 group-hover:scale-105" />
-                        <span className="text-lg font-black tracking-tight text-[#07133c]">
+                        <span className="text-lg font-black tracking-tight text-white">
                             Projet Poneglyph
                         </span>
                     </Link>
@@ -130,10 +130,10 @@ const Header = ({ onOpenApiKeyModal }) => {
                         {user && !isGuest ? (
                             <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" className="relative h-11 w-11 rounded-full border border-[#c8dcf2] bg-white/70 p-0 text-[#07133c] shadow-sm hover:bg-white">
+                                    <Button variant="ghost" className="relative h-11 w-11 rounded-full border border-white/14 bg-white/8 p-0 text-white shadow-sm hover:bg-white/14">
                                         <Avatar className="h-10 w-10">
                                             <AvatarImage src={profile?.avatar_url} alt={user.email} />
-                                            <AvatarFallback className="bg-transparent text-sm font-black text-[#07133c]">{getInitials(user.email)}</AvatarFallback>
+                                            <AvatarFallback className="bg-transparent text-sm font-black text-white">{getInitials(user.email)}</AvatarFallback>
                                         </Avatar>
                                     </Button>
                                 </DropdownMenuTrigger>
@@ -179,7 +179,7 @@ const Header = ({ onOpenApiKeyModal }) => {
                         ) : (
                             <div className="flex items-center gap-2">
                                 {isGuest && (
-                                    <Badge variant="outline" className="text-slate-500 border-slate-200">
+                                    <Badge variant="outline" className="border-white/14 bg-white/6 text-slate-300">
                                         Mode Invité
                                     </Badge>
                                 )}
@@ -194,12 +194,12 @@ const Header = ({ onOpenApiKeyModal }) => {
                     <div className="md:hidden">
                         <Sheet>
                             <SheetTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-10 w-10">
+                                <Button variant="ghost" size="icon" className="h-10 w-10 text-slate-200 hover:bg-white/10 hover:text-white">
                                     <Menu className="h-6 w-6" />
                                 </Button>
                             </SheetTrigger>
-                            <SheetContent side="right" className="p-0 flex flex-col w-[280px]">
-                                <SheetHeader className="p-6 text-left border-b border-slate-100">
+                            <SheetContent side="right" className="flex w-[280px] flex-col border-white/10 bg-[#06111e] p-0 text-slate-100">
+                                <SheetHeader className="border-b border-white/10 p-6 text-left">
                                     <SheetTitle className="text-xl font-bold">Menu</SheetTitle>
                                     <div className="flex items-center gap-3 mt-4">
                                         <Avatar className="h-10 w-10 border">
@@ -210,7 +210,7 @@ const Header = ({ onOpenApiKeyModal }) => {
                                             <span className="text-sm font-semibold truncate max-w-[150px]">
                                                 {user && !isGuest ? user.email : "Invité"}
                                             </span>
-                                            <span className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">
+                                            <span className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">
                                                 {isAdmin ? "Administrateur" : (isModo ? "Modérateur" : (isGuest ? "Visiteur" : "Utilisateur"))}
                                             </span>
                                         </div>
@@ -219,17 +219,18 @@ const Header = ({ onOpenApiKeyModal }) => {
 
                                 <div className="flex-1 overflow-y-auto py-4">
                                     <nav className="flex flex-col gap-1 px-4">
-                                        <p className="px-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 mt-2">Navigation</p>
-                                        <Link href={getHref('/dashboard')} prefetch={false} className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-50 text-slate-700 font-medium transition-all group">
-                                            <div className="p-1.5 bg-slate-100 group-hover:bg-white rounded border border-transparent group-hover:border-slate-200 shadow-sm transition-all text-slate-600">
+                                        <p className="px-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 mt-2">Navigation</p>
+                                        <Link href={getHref('/dashboard')} prefetch={false} className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/8 text-slate-200 font-medium transition-all group">
+                                            <div className="p-1.5 bg-white/8 group-hover:bg-white/12 rounded border border-white/10 shadow-sm transition-all text-slate-300">
                                                 <Book size={18} />
                                             </div>
                                             Bibliothèque
                                         </Link>
-                                        <Link href={getHref('/search')} prefetch={false} className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-50 text-slate-700 font-medium transition-all group">
-                                            <div className="p-1.5 bg-slate-100 group-hover:bg-white rounded border border-transparent group-hover:border-slate-200 shadow-sm transition-all text-slate-600">
+                                        <Link href={getHref('/search')} prefetch={false} className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-white/8 text-slate-200 font-medium transition-all group">
+                                            <div className="p-1.5 bg-white/8 group-hover:bg-white/12 rounded border border-white/10 shadow-sm transition-all text-slate-300">
                                                 <Search size={18} />
                                             </div>
+                                            Recherche
                                         </Link>
                                         {pathname === '/' && (
                                             <Link href="/sandbox" prefetch={false} className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-50 text-[#2F7AAF] font-medium transition-all group">

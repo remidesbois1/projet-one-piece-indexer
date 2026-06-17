@@ -705,7 +705,7 @@ export default function AnnotatePage() {
     if (!page) return null;
 
     return (
-        <div className="flex flex-col lg:flex-row h-[calc(100vh-64px)] bg-slate-50 overflow-hidden -mx-4 sm:-mx-8 -my-6 relative">
+        <div className="relative -mx-4 -my-6 flex h-[calc(100vh-64px)] flex-col overflow-hidden bg-[#030a13] sm:-mx-8 lg:flex-row">
             <AnnotateLeftSidebar
                 fromSearch={fromSearch}
                 mangaSlug={mangaSlug}
@@ -786,9 +786,9 @@ export default function AnnotatePage() {
                 refreshLocalDiagnostics={tauriLocalOcr.refreshLocalDiagnostics}
             />
 
-            <div className="flex flex-col flex-1 overflow-hidden min-w-0 bg-slate-50 relative">
+            <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-[#030a13]">
 
-                <header className="lg:hidden flex-none h-auto min-h-16 border-b border-slate-200 bg-white px-4 py-3 flex items-center justify-between z-20 shadow-sm">
+                <header className="z-20 flex h-auto min-h-16 flex-none items-center justify-between border-b border-white/10 bg-[#06111e] px-4 py-3 shadow-sm lg:hidden">
                     <div className="flex items-center gap-3 shrink-0">
                         <Link href={`/${mangaSlug}/dashboard`}>
                             <Button variant="ghost" size="icon" className="h-9 w-9">
@@ -796,7 +796,7 @@ export default function AnnotatePage() {
                             </Button>
                         </Link>
                         <div className="flex flex-col">
-                            <h2 className="text-sm font-bold text-slate-900 truncate max-w-[120px]">
+                            <h2 className="max-w-[120px] truncate text-sm font-bold text-white">
                                 T.{page.chapitres?.tomes?.numero} - Ch.{page.chapitres?.numero}
                             </h2>
                             <span className="text-[10px] text-slate-500">Page {page.numero_page}</span>
