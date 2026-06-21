@@ -78,7 +78,7 @@ const publicRoutes = require('./routes/v1/publicRoutes');
 
 
 
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);

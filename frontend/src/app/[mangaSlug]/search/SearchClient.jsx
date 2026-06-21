@@ -1,10 +1,12 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
-import { searchBubbles, getMetadataSuggestions, getTomes, submitSearchFeedback } from '@/lib/api';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { searchBubbles, searchOcrPageMatch, getMetadataSuggestions, getTomes, submitSearchFeedback } from '@/lib/api';
+import { generateGeminiImageEmbedding, generatePageOcrBboxes } from '@/lib/geminiClient';
 import { getProxiedImageUrl, cn } from '@/lib/utils';
 import { useDebounce } from '@/hooks/useDebounce';
 import { useAuth } from '@/context/AuthContext';
+import { useTauriLocalOcrContext } from '@/context/TauriLocalOcrContext';
 import Link from 'next/link';
 import { useManga } from '@/context/MangaContext';
 import { Input } from "@/components/ui/input";
@@ -18,9 +20,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
-import { Search, X, Loader2, Sparkles, BookOpen, MapPin, Quote, Info, ArrowRight, Settings, Filter, XCircle, Check, ChevronRight } from "lucide-react";
+import { Search, X, Loader2, Sparkles, BookOpen, MapPin, Quote, Filter, Check, ChevronRight, ImageUp, ScanText } from "lucide-react";
 
 const RESULTS_PER_PAGE = 24;
+const OCR_RESULTS_LIMIT = 3;
+const OCR_VISUAL_FALLBACK_RESULTS_LIMIT = 12;
+const OCR_CONFIDENT_THRESHOLD = 0.85;
 
 const PONEGLYPH_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
@@ -147,7 +152,8 @@ const ResultImage = ({ url, pageId, token, coords, type }) => {
 
 export default function SearchPage() {
     const { session } = useAuth();
-    const { mangaSlug, currentManga } = useManga();
+    const { mangaSlug } = useManga();
+    const localOcr = useTauriLocalOcrContext();
     const getSavedState = () => {
         if (typeof window === 'undefined') return {};
         try {
@@ -166,8 +172,16 @@ export default function SearchPage() {
     const [isLoading, setIsLoading] = useState(false);
     const [page, setPage] = useState(savedState.page || 1);
     const [hasMore, setHasMore] = useState(savedState.hasMore || false);
-    const [useSemantic, setUseSemantic] = useState(savedState.useSemantic || false);
+    const [searchMode, setSearchMode] = useState(savedState.searchMode || (savedState.useSemantic ? 'semantic' : 'keyword'));
+    const useSemantic = searchMode === 'semantic';
+    const useOcrSearch = searchMode === 'ocr';
     const [feedbackGiven, setFeedbackGiven] = useState({});
+    const [ocrImageFile, setOcrImageFile] = useState(null);
+    const [ocrImagePreviewUrl, setOcrImagePreviewUrl] = useState(null);
+    const [ocrExtractedBubbles, setOcrExtractedBubbles] = useState(savedState.ocrExtractedBubbles || []);
+    const [ocrProvider, setOcrProvider] = useState(savedState.ocrProvider || null);
+    const [ocrStatus, setOcrStatus] = useState('');
+    const [ocrHasSearched, setOcrHasSearched] = useState(savedState.ocrHasSearched || false);
 
     const [selectedCharacters, setSelectedCharacters] = useState(savedState.selectedCharacters || []);
     const [selectedArc, setSelectedArc] = useState(savedState.selectedArc || 'all');
@@ -181,17 +195,25 @@ export default function SearchPage() {
 
     const abortControllerRef = useRef(null);
     const inputRef = useRef(null);
+    const fileInputRef = useRef(null);
     const isFirstRun = useRef(true);
 
     // Persistence Effect
     useEffect(() => {
         if (!mangaSlug) return;
         const state = {
-            query, results, totalCount, page, hasMore, useSemantic,
+            query, results, totalCount, page, hasMore, useSemantic, searchMode,
+            ocrExtractedBubbles, ocrProvider, ocrHasSearched,
             selectedCharacters, selectedArc, selectedTome, showFilters
         };
         sessionStorage.setItem(`search_state_${mangaSlug}`, JSON.stringify(state));
-    }, [query, results, totalCount, page, hasMore, useSemantic, selectedCharacters, selectedArc, selectedTome, showFilters, mangaSlug]);
+    }, [query, results, totalCount, page, hasMore, useSemantic, searchMode, ocrExtractedBubbles, ocrProvider, ocrHasSearched, selectedCharacters, selectedArc, selectedTome, showFilters, mangaSlug]);
+
+    useEffect(() => {
+        return () => {
+            if (ocrImagePreviewUrl) URL.revokeObjectURL(ocrImagePreviewUrl);
+        };
+    }, [ocrImagePreviewUrl]);
 
     useEffect(() => {
         if (inputRef.current) inputRef.current.focus();
@@ -213,7 +235,7 @@ export default function SearchPage() {
     }, [mangaSlug]);
 
     useEffect(() => {
-        if (useSemantic) return;
+        if (useSemantic || useOcrSearch) return;
 
         if (isFirstRun.current) {
             isFirstRun.current = false;
@@ -228,9 +250,191 @@ export default function SearchPage() {
             setResults([]);
             setTotalCount(0);
         }
-    }, [debouncedQuery, useSemantic, selectedCharacters, selectedArc, selectedTome]);
+    }, [debouncedQuery, useSemantic, useOcrSearch, selectedCharacters, selectedArc, selectedTome]);
+
+    const getActiveFilters = () => ({
+        characters: selectedCharacters,
+        arc: selectedArc !== 'all' ? selectedArc : '',
+        tome: selectedTome !== 'all' ? selectedTome : ''
+    });
+
+    const normalizeOcrBubbles = (bubbles) => (Array.isArray(bubbles) ? bubbles : [])
+        .map((bubble) => {
+            const content = String(bubble?.content || bubble?.text || bubble?.texte_propose || '').trim();
+            const bbox = bubble?.bbox || bubble?.pos || null;
+            return content ? { content, bbox } : null;
+        })
+        .filter(Boolean);
+
+    const openApiKeyModal = () => {
+        if (typeof window !== 'undefined') {
+            window.dispatchEvent(new Event('open-api-key-modal'));
+        }
+    };
+
+    const loadOcrImageFile = useCallback((file) => {
+        if (!file) return;
+        if (!file.type.startsWith('image/')) {
+            toast.error("Image invalide.");
+            return;
+        }
+
+        if (ocrImagePreviewUrl) URL.revokeObjectURL(ocrImagePreviewUrl);
+        setOcrImageFile(file);
+        setOcrImagePreviewUrl(URL.createObjectURL(file));
+        setOcrExtractedBubbles([]);
+        setOcrProvider(null);
+        setOcrStatus('');
+        setOcrHasSearched(false);
+        setResults([]);
+        setTotalCount(0);
+        setHasMore(false);
+    }, [ocrImagePreviewUrl]);
+
+    useEffect(() => {
+        if (!useOcrSearch) return;
+
+        const handlePaste = (event) => {
+            const items = Array.from(event.clipboardData?.items || []);
+            const imageItem = items.find(item => item.type?.startsWith('image/'));
+            const file = imageItem?.getAsFile();
+            if (!file) return;
+
+            event.preventDefault();
+            loadOcrImageFile(file);
+        };
+
+        window.addEventListener('paste', handlePaste);
+        return () => window.removeEventListener('paste', handlePaste);
+    }, [useOcrSearch, loadOcrImageFile]);
+
+    const extractOcrBubblesFromImage = async (imageFile) => {
+        if (!imageFile) throw new Error("Image manquante.");
+
+        if (localOcr.canRunLocalOcr) {
+            setOcrStatus("OCR LightOn local...");
+            const result = await localOcr.runLocalOcrBlob(imageFile);
+            return {
+                provider: 'lighton-local',
+                bubbles: normalizeOcrBubbles(result?.bubbles),
+                rawText: result?.raw_text || '',
+            };
+        }
+
+        const apiKey = typeof window !== 'undefined' ? localStorage.getItem('google_api_key') : null;
+        if (!apiKey) {
+            openApiKeyModal();
+            throw new Error("Cle API Gemini requise pour la recherche OCR hors app desktop avec LightOn charge.");
+        }
+
+        setOcrStatus("OCR Gemini...");
+        const result = await generatePageOcrBboxes(imageFile, apiKey);
+        const bubbles = normalizeOcrBubbles(result?.data?.bubbles);
+        return {
+            provider: 'gemini',
+            bubbles,
+            rawText: bubbles.map(bubble => bubble.content).join('\n'),
+        };
+    };
+
+    const runOcrSearch = async (pageToFetch = 1, isNewSearch = true) => {
+        if (!ocrImageFile && (!ocrExtractedBubbles || ocrExtractedBubbles.length === 0)) {
+            toast.error("Ajoutez une image pour lancer la recherche OCR.");
+            return;
+        }
+
+        setIsLoading(true);
+        if (isNewSearch) {
+            setResults([]);
+            setFeedbackGiven({});
+        }
+
+        try {
+            let extracted = {
+                provider: ocrProvider || 'cached',
+                bubbles: ocrExtractedBubbles,
+                rawText: ocrExtractedBubbles.map(bubble => bubble.content).join('\n'),
+            };
+
+            if (isNewSearch || !extracted.bubbles?.length) {
+                extracted = await extractOcrBubblesFromImage(ocrImageFile);
+                if (!extracted.bubbles.length) {
+                    throw new Error("Aucune bulle lisible detectee dans l'image.");
+                }
+                setOcrExtractedBubbles(extracted.bubbles);
+                setOcrProvider(extracted.provider);
+            }
+
+            setOcrStatus("Recherche de la page...");
+            let displayLimit = OCR_RESULTS_LIMIT;
+            let response = await searchOcrPageMatch({
+                bubbles: extracted.bubbles,
+                page: pageToFetch,
+                limit: OCR_RESULTS_LIMIT,
+                filters: getActiveFilters(),
+                provider: extracted.provider,
+                rawText: extracted.rawText,
+            });
+
+            const firstResult = response.data.results?.[0] || null;
+            const firstMatch = firstResult?.ocr?.matches?.[0] || null;
+            const isOcrConfident = Boolean(
+                firstResult?.similarity >= OCR_CONFIDENT_THRESHOLD &&
+                firstMatch?.query_index === 0 &&
+                firstMatch?.score >= OCR_CONFIDENT_THRESHOLD
+            );
+
+            if (isNewSearch && ocrImageFile && !isOcrConfident) {
+                const apiKey = typeof window !== 'undefined' ? localStorage.getItem('google_api_key') : null;
+                if (apiKey) {
+                    setOcrStatus("OCR incertain, fallback image Gemini...");
+                    displayLimit = OCR_VISUAL_FALLBACK_RESULTS_LIMIT;
+                    const visualEmbedding = await generateGeminiImageEmbedding(ocrImageFile, apiKey);
+                    response = await searchOcrPageMatch({
+                        bubbles: extracted.bubbles,
+                        visualEmbedding,
+                        page: pageToFetch,
+                        limit: displayLimit,
+                        filters: getActiveFilters(),
+                        provider: `${extracted.provider}+gemini-visual`,
+                        rawText: extracted.rawText,
+                    });
+                } else {
+                    openApiKeyModal();
+                    setOcrStatus("OCR incertain. Ajoutez une cle Gemini pour le fallback image.");
+                }
+            }
+
+            const fallbackUsed = Boolean(response.data.ocr?.visualFallbackUsed);
+            const resultLimit = fallbackUsed ? OCR_VISUAL_FALLBACK_RESULTS_LIMIT : displayLimit;
+            const newResults = (response.data.results || []).slice(0, resultLimit);
+            const total = response.data.totalCount || 0;
+
+            setResults(prev => isNewSearch ? newResults : [...prev, ...newResults]);
+            setTotalCount(newResults.length);
+            setHasMore(false);
+            setOcrHasSearched(true);
+            setOcrStatus(`${extracted.bubbles.length} bulles OCR, top ${newResults.length} affiche sur ${total} pages classees${fallbackUsed ? ' avec fallback image' : ''}.`);
+        } catch (err) {
+            const message = err?.response?.data?.error || err?.message || "Recherche OCR impossible.";
+            toast.error(message);
+            setOcrStatus(message);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleOcrImageChange = (event) => {
+        const file = event.target.files?.[0];
+        loadOcrImageFile(file);
+    };
 
     const handleManualSearch = () => {
+        if (useOcrSearch) {
+            setPage(1);
+            runOcrSearch(1, true);
+            return;
+        }
         if (query.trim().length < 2) return;
         setPage(1);
         fetchResults(query, 1, true);
@@ -253,11 +457,7 @@ export default function SearchPage() {
         }
 
         try {
-            const filters = {
-                characters: selectedCharacters,
-                arc: selectedArc !== 'all' ? selectedArc : '',
-                tome: selectedTome !== 'all' ? selectedTome : ''
-            };
+            const filters = getActiveFilters();
             const response = await searchBubbles(
                 searchTerm,
                 pageToFetch,
@@ -289,6 +489,10 @@ export default function SearchPage() {
     const loadMore = () => {
         const nextPage = page + 1;
         setPage(nextPage);
+        if (useOcrSearch) {
+            runOcrSearch(nextPage, false);
+            return;
+        }
         fetchResults(query, nextPage, false);
     };
 
@@ -317,7 +521,11 @@ export default function SearchPage() {
         }
     };
 
-    const accentColor = useSemantic ? "#A11010" : "#2f7aaf";
+    const accentColor = useOcrSearch ? "#eab308" : useSemantic ? "#A11010" : "#2f7aaf";
+    const firstOcrMatch = results[0]?.ocr?.matches?.[0] || null;
+    const topOcrResult = useOcrSearch && firstOcrMatch?.query_index === 0 && firstOcrMatch?.score >= 0.85 ? results[0] : null;
+    const topOcrMatches = topOcrResult?.ocr?.matches || [];
+    const displayedTotalCount = topOcrResult ? 1 : totalCount;
 
     return (
         <div className="min-h-screen pb-20">
@@ -330,7 +538,7 @@ export default function SearchPage() {
                             Voix de Toute Chose
                         </h1>
                         <p className="poneglyph-muted mx-auto max-w-xl text-sm font-medium sm:text-base">
-                            {useSemantic
+                            {useOcrSearch ? "Poneglyph Vision : retrouver une page depuis une image ou un crop." : useSemantic
                                 ? "Rio Poneglyph : Déchiffrer l'histoire à travers les concepts et les souvenirs."
                                 : "Poneglyph : Retrouver les traces écrites et les paroles exactes."
                             }
@@ -340,16 +548,17 @@ export default function SearchPage() {
                     <div className="flex flex-col items-center gap-6">
                         <Tabs
                             defaultValue="keyword"
-                            value={useSemantic ? "semantic" : "keyword"}
+                            value={searchMode}
                             onValueChange={(v) => {
-                                setUseSemantic(v === "semantic");
+                                setSearchMode(v);
                                 setResults([]);
                                 setTotalCount(0);
                                 setHasMore(false);
+                                setOcrHasSearched(false);
                             }}
-                            className="w-full max-w-md"
+                            className="w-full max-w-xl"
                         >
-                            <TabsList className="grid h-12 w-full grid-cols-2 rounded-xl border border-white/12 bg-white/8 p-1">
+                            <TabsList className="grid h-12 w-full grid-cols-3 rounded-xl border border-white/12 bg-white/8 p-1">
                                 <TabsTrigger
                                     value="keyword"
                                     className="rounded-lg text-xs font-bold uppercase tracking-wider text-slate-300 data-[state=active]:bg-white/12 data-[state=active]:text-[#8dbbff] data-[state=active]:shadow-sm"
@@ -364,9 +573,77 @@ export default function SearchPage() {
                                     <Sparkles className="h-3.5 w-3.5 mr-2" />
                                     Sémantique
                                 </TabsTrigger>
+                                <TabsTrigger
+                                    value="ocr"
+                                    className="rounded-lg text-xs font-bold uppercase tracking-wider text-slate-300 data-[state=active]:bg-yellow-400 data-[state=active]:text-slate-950"
+                                >
+                                    <ScanText className="h-3.5 w-3.5 mr-2" />
+                                    OCR
+                                </TabsTrigger>
                             </TabsList>
                         </Tabs>
 
+                        {useOcrSearch ? (
+                            <div className="w-full max-w-2xl rounded-2xl border border-white/10 bg-[#06111d]/88 p-2.5 shadow-sm">
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                                    <button
+                                        type="button"
+                                        onClick={() => fileInputRef.current?.click()}
+                                        className="flex h-20 w-full shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-white/[0.06] text-slate-400 transition-colors hover:border-yellow-300/45 hover:bg-white/10 hover:text-white sm:w-20"
+                                    >
+                                        {ocrImagePreviewUrl ? (
+                                            <img src={ocrImagePreviewUrl} alt="OCR upload" className="h-full w-full object-cover" />
+                                        ) : (
+                                            <ImageUp className="h-6 w-6" />
+                                        )}
+                                    </button>
+                                    <input
+                                        ref={fileInputRef}
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={handleOcrImageChange}
+                                    />
+
+                                    <div className="min-w-0 flex-1 text-left">
+                                        <div className="flex min-w-0 items-center gap-2">
+                                            <div className="truncate text-sm font-semibold text-slate-100">
+                                                {ocrImageFile?.name || "Image ou crop de page"}
+                                            </div>
+                                            {ocrExtractedBubbles.length > 0 && (
+                                                <span className="shrink-0 rounded-full bg-white/8 px-2 py-0.5 text-[11px] font-bold text-slate-300">
+                                                    {ocrExtractedBubbles.length}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs font-medium text-slate-400">
+                                            <span className="text-yellow-300">
+                                                {localOcr.canRunLocalOcr ? 'LightOn local' : 'Gemini'}
+                                            </span>
+                                            {ocrProvider && (
+                                                <>
+                                                    <span className="text-slate-600">/</span>
+                                                    <span>OCR {ocrProvider === 'lighton-local' ? 'LightOn' : 'Gemini'}</span>
+                                                </>
+                                            )}
+                                        </div>
+                                        <div className="mt-1 min-h-4 truncate text-xs text-slate-500">
+                                            {ocrStatus || (localOcr.canRunLocalOcr ? "Modele local charge" : "Cle Gemini requise hors LightOn local")}
+                                        </div>
+                                    </div>
+
+                                    <Button
+                                        className="h-10 w-full shrink-0 rounded-xl bg-yellow-400 px-4 text-xs font-black uppercase tracking-widest text-slate-950 shadow-sm transition-all hover:bg-yellow-300 sm:w-auto"
+                                        onClick={handleManualSearch}
+                                        disabled={isLoading || (!ocrImageFile && ocrExtractedBubbles.length === 0)}
+                                        title="Scanner"
+                                    >
+                                        {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ScanText className="mr-2 h-4 w-4" />}
+                                        Scanner
+                                    </Button>
+                                </div>
+                            </div>
+                        ) : (
                         <div className="relative w-full max-w-2xl group">
                             <div className={cn(
                                 "relative flex items-center rounded-2xl border bg-[#040d18]/84 shadow-sm transition-all duration-1000 group-focus-within:shadow-xl group-focus-within:ring-4",
@@ -408,6 +685,7 @@ export default function SearchPage() {
                                 </div>
                             </div>
                         </div>
+                        )}
 
                         <div className="flex flex-wrap justify-center gap-3">
                             <Button
@@ -541,14 +819,91 @@ export default function SearchPage() {
             <div className="container max-w-7xl mx-auto px-4 mt-12">
                 {results.length > 0 && (
                     <div className="flex items-center gap-3 mb-8 px-2 animate-in fade-in duration-500">
-                        <div className={cn("h-10 w-1 rounded-full transition-colors duration-1000", useSemantic ? "bg-[#A11010]" : "bg-[#3d86ff]")} />
+                        <div className={cn("h-10 w-1 rounded-full transition-colors duration-1000", useOcrSearch ? "bg-yellow-400" : useSemantic ? "bg-[#A11010]" : "bg-[#3d86ff]")} />
                         <div>
-                            <span className="text-2xl font-black tracking-tight text-white">{totalCount}</span>
+                            <span className="text-2xl font-black tracking-tight text-white">{displayedTotalCount}</span>
                             <span className="ml-2 text-sm font-bold uppercase tracking-wider text-slate-400">Résultats trouvés</span>
                         </div>
                     </div>
                 )}
 
+                {topOcrResult && (
+                    <Link
+                        href={`/${mangaSlug}/annotate/${topOcrResult.page_id}?from=search`}
+                        prefetch={false}
+                        className="group mb-10 block rounded-3xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-yellow-400"
+                    >
+                        <Card className="poneglyph-panel overflow-hidden rounded-3xl border-yellow-300/25 bg-yellow-950/10">
+                            <div className="grid gap-0 lg:grid-cols-[minmax(280px,520px)_1fr]">
+                                <div className="min-h-[420px] bg-[#071625]">
+                                    <img
+                                        src={getProxiedImageUrl(topOcrResult.url_image, topOcrResult.page_id, session?.access_token)}
+                                        crossOrigin="anonymous"
+                                        alt="Meilleur resultat OCR"
+                                        className="h-full max-h-[680px] w-full object-contain object-top transition-transform duration-500 group-hover:scale-[1.015]"
+                                    />
+                                </div>
+                                <CardContent className="flex min-h-[420px] flex-col justify-between gap-8 p-6 sm:p-8">
+                                    <div className="space-y-5">
+                                        <div className="flex flex-wrap gap-2">
+                                            <Badge className="border-yellow-300/35 bg-yellow-400/16 text-yellow-100">Top OCR</Badge>
+                                            <Badge variant="secondary" className="bg-slate-100 text-slate-600">{topOcrResult.context}</Badge>
+                                            <Badge className="bg-yellow-100 text-yellow-800">
+                                                {(topOcrMatches[0].score * 100).toFixed(0)}% meilleure bulle
+                                            </Badge>
+                                            <Badge variant="outline" className="border-white/12 bg-white/8 text-slate-300">
+                                                {topOcrMatches.length} bulles reconnues
+                                            </Badge>
+                                        </div>
+
+                                        <div>
+                                            <div className="mb-2 text-[11px] font-black uppercase tracking-widest text-yellow-200/80">
+                                                Bulles reconnues
+                                            </div>
+                                            <div className="space-y-3">
+                                                {topOcrMatches.map((match, matchIndex) => (
+                                                    <div key={`${match.bubble_id || matchIndex}-${matchIndex}`} className="rounded-2xl border border-white/10 bg-white/[0.06] p-4 shadow-inner">
+                                                        <div className="mb-2 flex items-center justify-between gap-3">
+                                                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                                                Bulle {match.query_index + 1}
+                                                            </span>
+                                                            <Badge className={cn(
+                                                                "shrink-0 border-none text-[10px] font-black",
+                                                                match.score >= 0.85 ? "bg-yellow-100 text-yellow-800" : "bg-slate-100 text-slate-600"
+                                                            )}>
+                                                                {(match.score * 100).toFixed(0)}%
+                                                            </Badge>
+                                                        </div>
+                                                        <div className="text-base font-semibold italic leading-relaxed text-white">
+                                                            &quot;{match.matched_text}&quot;
+                                                        </div>
+                                                        {match.query_text && (
+                                                            <div className="mt-2 text-xs font-medium leading-relaxed text-slate-400">
+                                                                OCR upload : &quot;{match.query_text}&quot;
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center justify-between border-t border-white/10 pt-5">
+                                        <div className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-widest text-slate-400">
+                                            <MapPin className="h-3 w-3 text-yellow-300" />
+                                            Page {topOcrResult.context.match(/Page (\d+)/)?.[1]}
+                                        </div>
+                                        <div className="rounded-full bg-white/8 p-2 transition-colors group-hover:bg-yellow-400/20">
+                                            <ChevronRight className="h-5 w-5 text-slate-200" />
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </div>
+                        </Card>
+                    </Link>
+                )}
+
+                {!topOcrResult && (
                 <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-8">
                     {results.map((item, index) => {
                         const isSemantic = item.type === 'semantic';
@@ -645,20 +1000,21 @@ export default function SearchPage() {
                         </div>
                     ))}
                 </div>
+                )}
 
-                {!isLoading && results.length === 0 && query.length >= 2 && (
+                {!isLoading && results.length === 0 && (useOcrSearch ? ocrHasSearched : query.length >= 2) && (
                     <div className="flex flex-col items-center justify-center py-20 text-center max-w-md mx-auto animate-in fade-in duration-700">
                         <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full border border-white/10 bg-white/8">
                             <BookOpen className="h-10 w-10 text-slate-500" />
                         </div>
                         <h3 className="mb-2 text-xl font-black uppercase tracking-tight text-white">Zone Inconnue</h3>
                         <p className="mb-8 text-sm font-medium leading-relaxed text-slate-400">
-                            Aucune occurrence de &quot;{query}&quot; dans nos archives.
-                            {!useSemantic && " L'IA pourrait vous aider par analogie."}
+                            {useOcrSearch ? "Aucune page proche dans nos archives." : <>Aucune occurrence de &quot;{query}&quot; dans nos archives.</>}
+                            {!useSemantic && !useOcrSearch && " L'IA pourrait vous aider par analogie."}
                         </p>
-                        {!useSemantic && (
+                        {!useSemantic && !useOcrSearch && (
                             <Button
-                                onClick={() => setUseSemantic(true)}
+                                onClick={() => setSearchMode('semantic')}
                                 className="rounded-2xl h-12 px-8 bg-[#A11010] shadow-xl shadow-red-900/20 gap-2 font-bold uppercase tracking-widest text-xs transition-all active:scale-95 text-white"
                             >
                                 <Sparkles className="h-4 w-4" />

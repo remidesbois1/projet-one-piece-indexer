@@ -61,6 +61,19 @@ export const searchBubbles = (query, page = 1, limit = 10, mode = 'keyword', fil
 
     return apiClient.get(`/search?${params.toString()}`);
 };
+export const searchOcrPageMatch = ({ bubbles, visualEmbedding = null, page = 1, limit = 24, filters = {}, provider = 'unknown', rawText = '' }) => {
+    return apiClient.post('/search/ocr-match', {
+        bubbles,
+        visual_embedding: visualEmbedding,
+        page,
+        limit,
+        provider,
+        raw_text: rawText,
+        characters: filters.characters || [],
+        arc: filters.arc || '',
+        tome: filters.tome || '',
+    });
+};
 export const searchSemantic = (query, limit = 6) => apiClient.get(`/search/semantic?q=${query}&limit=${limit}`);
 
 export const getPendingBubbles = (page = 1, limit = 5) => apiClient.get(`/bulles/pending?page=${page}&limit=${limit}`);

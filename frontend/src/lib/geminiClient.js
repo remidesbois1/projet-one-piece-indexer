@@ -7,6 +7,22 @@ const DESCRIPTION_PROMPT = "Analyse cette page de One Piece. Ton but est de gén
 
 const STRICT_JSON_SUFFIX = "La reponse doit etre un objet JSON brut et valide. Elle doit commencer par { et finir par }. N'ajoute aucun markdown, aucune puce, aucun commentaire, aucun libelle Input/Output.";
 
+const PAGE_OCR_BBOX_PROMPT = `Tu es un moteur OCR de page/crop de manga.
+Extrais uniquement les textes visibles dans les bulles, cartouches ou onomatopees lisibles, avec leur bbox.
+Renvoie un JSON strict:
+{
+  "bubbles": [
+    { "content": "texte exact", "bbox": [x1, y1, x2, y2] }
+  ]
+}
+Regles:
+- Coordonnees normalisees entre 0 et 1000 dans le repere de l'image fournie.
+- Ordre de lecture japonais: haut droite vers bas gauche.
+- Garde le francais, ne traduis pas.
+- Corrige seulement les erreurs OCR evidentes de ponctuation/casse.
+- Ignore les bulles vides ou illisibles.
+- N'ajoute aucun texte hors JSON.`;
+
 const COOKIE_NAME = 'ai_models';
 const COOKIE_TTL = 5 * 60 * 1000;
 
@@ -66,6 +82,39 @@ async function blobToBase64(blob) {
         };
         reader.readAsDataURL(blob);
     });
+}
+
+function normalizeGeneratedBubbles(data) {
+    const rawBubbles = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.bubbles)
+            ? data.bubbles
+            : [];
+
+    return rawBubbles
+        .map((bubble) => {
+            const content = String(bubble?.content || bubble?.text || bubble?.texte || '').trim();
+            const rawBox = bubble?.bbox || bubble?.pos || bubble?.box;
+            let bbox = null;
+
+            if (Array.isArray(rawBox) && rawBox.length >= 4) {
+                bbox = rawBox.slice(0, 4).map(Number);
+            } else if (rawBox && typeof rawBox === 'object') {
+                const x = Number(rawBox.x ?? rawBox.x1);
+                const y = Number(rawBox.y ?? rawBox.y1);
+                const w = Number(rawBox.w);
+                const h = Number(rawBox.h);
+                const x2 = Number(rawBox.x2);
+                const y2 = Number(rawBox.y2);
+                bbox = Number.isFinite(w) && Number.isFinite(h)
+                    ? [x, y, x + w, y + h]
+                    : [x, y, x2, y2];
+            }
+
+            if (!content || !bbox?.every(Number.isFinite)) return null;
+            return { content, bbox };
+        })
+        .filter(Boolean);
 }
 
 function handleGeminiError(error) {
@@ -246,6 +295,45 @@ export async function generateGeminiEmbedding(text, imageSource, apiKey) {
     }
 }
 
+export async function generateGeminiImageEmbedding(imageBlob, apiKey) {
+    if (!apiKey) throw new Error("Cle API manquante");
+    if (!imageBlob) throw new Error("Image manquante");
+
+    const base64Data = await blobToBase64(imageBlob);
+
+    try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-2-preview:embedContent?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                content: {
+                    parts: [
+                        {
+                            inlineData: {
+                                mimeType: imageBlob.type || "image/jpeg",
+                                data: base64Data
+                            }
+                        }
+                    ]
+                },
+                taskType: "RETRIEVAL_QUERY"
+            })
+        });
+
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.error?.message || "Erreur Gemini Embedding");
+        }
+
+        const res = await response.json();
+        return res.embedding.values;
+    } catch (error) {
+        handleGeminiError(error);
+        console.error("Gemini Image Embedding Error:", error);
+        throw error;
+    }
+}
+
 export async function generateOneShotBubbles(imageSource, apiKey) {
     if (!apiKey) throw new Error("Clé API manquante");
 
@@ -307,6 +395,42 @@ Position normalisé à 1000 que tu va re-normaliser derrière selon la page.`;
     } catch (error) {
         handleGeminiError(error);
         console.error("Gemini API One-Shot Error:", error);
+        throw error;
+    }
+}
+
+export async function generatePageOcrBboxes(imageBlob, apiKey) {
+    if (!apiKey) throw new Error("Cle API manquante");
+    if (!imageBlob) throw new Error("Image manquante");
+
+    const config = await getAiModelConfig();
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({
+        model: config.model_ocr,
+        generationConfig: { responseMimeType: "application/json" }
+    });
+
+    const base64Data = await blobToBase64(imageBlob);
+    const imagePart = {
+        inlineData: {
+            data: base64Data,
+            mimeType: imageBlob.type || "image/jpeg",
+        },
+    };
+
+    try {
+        const result = await model.generateContent([`${PAGE_OCR_BBOX_PROMPT}\n\n${STRICT_JSON_SUFFIX}`, imagePart]);
+        const response = await result.response;
+        const data = parseModelJson(response.text(), "OCR recherche Gemini");
+        return {
+            data: {
+                bubbles: normalizeGeneratedBubbles(data),
+                raw: data,
+            }
+        };
+    } catch (error) {
+        handleGeminiError(error);
+        console.error("Gemini OCR Search Error:", error);
         throw error;
     }
 }

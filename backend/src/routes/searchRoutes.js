@@ -4,8 +4,20 @@ const { supabase, supabaseAdmin } = require('../config/supabaseClient');
 
 const { generateVoyageEmbedding, rerankVoyage } = require('../utils/voyageClient');
 const { generateGeminiEmbedding } = require('../utils/geminiClient');
+const {
+    buildCandidateTokenQueries,
+    buildInformativeTokens,
+    normalizeQueryBubbles,
+    rankOcrPageCandidates,
+} = require('../utils/ocrPageSearch');
 
 const DUAL_OVERLAP_BONUS = 1.15;
+const OCR_CANDIDATE_TOKEN_LIMIT = 12;
+const OCR_CANDIDATE_QUERY_LIMIT = 56;
+const OCR_CANDIDATE_PAGES_PER_TOKEN = 1200;
+const OCR_MAX_CANDIDATE_PAGES = 3500;
+const OCR_CONFIDENT_SCORE = 0.85;
+const VISUAL_FALLBACK_THRESHOLD = 0.30;
 
 async function getUserFromReq(req) {
     try {
@@ -26,6 +38,385 @@ async function insertSearchLog(log) {
     }
 }
 
+function parseCharacters(chars) {
+    if (!chars) return null;
+    if (Array.isArray(chars)) return chars;
+    try {
+        return JSON.parse(chars);
+    } catch {
+        return [chars];
+    }
+}
+
+function chunkArray(items, size) {
+    const chunks = [];
+    for (let i = 0; i < items.length; i += size) {
+        chunks.push(items.slice(i, i + size));
+    }
+    return chunks;
+}
+
+function getNestedPageMeta(page) {
+    const chapitre = Array.isArray(page.chapitres) ? page.chapitres[0] : page.chapitres;
+    const tome = Array.isArray(chapitre?.tomes) ? chapitre.tomes[0] : chapitre?.tomes;
+    const manga = Array.isArray(tome?.mangas) ? tome.mangas[0] : tome?.mangas;
+    return { chapitre, tome, manga };
+}
+
+function pageMatchesMetadataFilters(page, filterCharacters, filterArc) {
+    if (!filterCharacters && !filterArc) return true;
+
+    let desc = page.description;
+    try {
+        if (typeof desc === 'string') desc = JSON.parse(desc);
+    } catch {
+        return false;
+    }
+    if (!desc?.metadata) return false;
+
+    if (filterCharacters && filterCharacters.length > 0) {
+        const pageChars = desc.metadata.characters || [];
+        if (!filterCharacters.some(char =>
+            pageChars.some(pc => String(pc).toLowerCase().includes(String(char).toLowerCase()))
+        )) return false;
+    }
+
+    if (filterArc) {
+        const pageArc = desc.metadata.arc || "";
+        if (!pageArc.toLowerCase().includes(filterArc.toLowerCase())) return false;
+    }
+
+    return true;
+}
+
+async function findCandidatePageIdsFromTokenQueries(tokenQueries) {
+    const pageScores = new Map();
+
+    for (const query of tokenQueries.slice(0, OCR_CANDIDATE_QUERY_LIMIT)) {
+        const term = typeof query === 'string' ? query : query.term;
+        const weight = typeof query === 'string' ? Math.max(1, query.length / 5) : query.weight;
+        if (!term) continue;
+
+        const { data, error } = await supabaseAdmin
+            .from('bulles')
+            .select('id_page')
+            .ilike('texte_propose', `%${term}%`)
+            .limit(OCR_CANDIDATE_PAGES_PER_TOKEN);
+
+        if (error) throw error;
+
+        for (const row of data || []) {
+            if (!row.id_page) continue;
+            pageScores.set(row.id_page, (pageScores.get(row.id_page) || 0) + weight);
+        }
+    }
+
+    return Array.from(pageScores.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, OCR_MAX_CANDIDATE_PAGES)
+        .map(([pageId]) => pageId);
+}
+
+async function fetchCandidatePages(pageIds) {
+    if (!pageIds.length) return [];
+
+    const pages = [];
+    for (const chunk of chunkArray(pageIds, 250)) {
+        const { data, error } = await supabaseAdmin
+            .from('pages')
+            .select(`
+                id,
+                numero_page,
+                url_image,
+                description,
+                chapitres (
+                    numero,
+                    tomes (
+                        numero,
+                        mangas (
+                            slug
+                        )
+                    )
+                ),
+                bulles (
+                    id,
+                    id_page,
+                    texte_propose,
+                    x,
+                    y,
+                    w,
+                    h,
+                    order
+                )
+            `)
+            .in('id', chunk);
+
+        if (error) throw error;
+        pages.push(...(data || []));
+    }
+
+    return pages;
+}
+
+function formatOcrPageResult(pageRecord, provider) {
+    const { chapitre, tome: pageTome } = getNestedPageMeta(pageRecord);
+    const content = pageRecord.matches?.length
+        ? pageRecord.matches.map(match => match.matched_text).join(' / ')
+        : '';
+
+    return {
+        type: 'ocr',
+        id: `page-${pageRecord.id}`,
+        page_id: pageRecord.id,
+        url_image: pageRecord.url_image,
+        content,
+        context: `Tome ${pageTome?.numero ?? '?'} - Chap. ${chapitre?.numero ?? '?'} - Page ${pageRecord.numero_page}`,
+        scores: {
+            ocr: Math.round(pageRecord.score * 100),
+            text: Math.round((pageRecord.scoreBreakdown?.text || 0) * 100),
+            layout: Math.round((pageRecord.scoreBreakdown?.layout || 0) * 100),
+        },
+        similarity: pageRecord.score,
+        ocr: {
+            provider,
+            matched_count: pageRecord.scoreBreakdown?.matched_count || 0,
+            query_count: pageRecord.scoreBreakdown?.query_count || 0,
+            matches: pageRecord.matches || [],
+        },
+    };
+}
+
+function formatVisualPageResult(pageRecord) {
+    return {
+        type: 'visual',
+        id: `page-${pageRecord.id}`,
+        page_id: pageRecord.id,
+        url_image: pageRecord.url_image,
+        content: "Similarite visuelle Gemini",
+        context: `Tome ${pageRecord.tome_numero ?? '?'} - Chap. ${pageRecord.chapitre_numero ?? '?'} - Page ${pageRecord.numero_page}`,
+        scores: {
+            visual: Math.round((pageRecord.similarity || 0) * 100),
+        },
+        similarity: Math.max(0, Math.min(1, pageRecord.similarity || 0)),
+        visual: {
+            provider: 'gemini-embedding-2',
+            similarity: pageRecord.similarity || 0,
+        },
+    };
+}
+
+function mergeOcrAndVisualResults(ocrResults, visualResults, limit) {
+    const pageMap = new Map();
+
+    for (const result of ocrResults) {
+        pageMap.set(result.page_id, {
+            ...result,
+            sources: ['ocr'],
+            combinedSimilarity: result.similarity,
+        });
+    }
+
+    for (const result of visualResults) {
+        const visualScore = Math.max(0, Math.min(1, result.similarity));
+        if (pageMap.has(result.page_id)) {
+            const existing = pageMap.get(result.page_id);
+            existing.sources = Array.from(new Set([...(existing.sources || []), 'visual']));
+            existing.visual = result.visual;
+            existing.scores = { ...existing.scores, visual: result.scores.visual };
+            existing.combinedSimilarity = Math.min(1, Math.max(existing.combinedSimilarity, visualScore * 0.92) + 0.06);
+            existing.similarity = existing.combinedSimilarity;
+        } else {
+            pageMap.set(result.page_id, {
+                ...result,
+                sources: ['visual'],
+                combinedSimilarity: visualScore * 0.92,
+                similarity: visualScore * 0.92,
+            });
+        }
+    }
+
+    return Array.from(pageMap.values())
+        .sort((a, b) => (b.combinedSimilarity || b.similarity || 0) - (a.combinedSimilarity || a.similarity || 0))
+        .slice(0, limit)
+        .map(({ combinedSimilarity, sources, ...result }) => ({
+            ...result,
+            sources,
+        }));
+}
+
+async function runGeminiVisualFallback(visualEmbedding, { limit, filterManga, filterTome, filterCharacters, filterArc }) {
+    if (!Array.isArray(visualEmbedding) || visualEmbedding.length < 100) return [];
+
+    const { data, error } = await supabase.rpc('match_pages_gemini', {
+        query_embedding: visualEmbedding,
+        match_threshold: VISUAL_FALLBACK_THRESHOLD,
+        match_count: Math.max(20, limit * 8),
+    });
+
+    if (error) throw error;
+
+    return (data || [])
+        .filter(page => {
+            if (filterManga && page.manga_slug !== filterManga) return false;
+            if (filterTome && Number(page.tome_numero) !== filterTome) return false;
+            if (!pageMatchesMetadataFilters(page, filterCharacters, filterArc)) return false;
+            return true;
+        })
+        .map(formatVisualPageResult);
+}
+
+router.post('/ocr-match', async (req, res) => {
+    const {
+        bubbles,
+        visual_embedding,
+        page = 1,
+        limit = 24,
+        manga,
+        characters,
+        arc,
+        tome,
+        provider = 'unknown',
+        raw_text,
+    } = req.body || {};
+
+    const queryBubbles = normalizeQueryBubbles(bubbles);
+    if (!queryBubbles.some(bubble => bubble.content)) {
+        return res.status(400).json({ error: "Aucun texte OCR exploitable dans l'image." });
+    }
+
+    const filterCharacters = parseCharacters(characters);
+    const filterArc = arc && arc !== 'all' ? arc : null;
+    const filterTome = tome && tome !== 'all' ? parseInt(tome, 10) : null;
+    const filterManga = manga || req.query.manga || null;
+    const parsedLimit = Math.max(1, Math.min(48, parseInt(limit, 10) || 24));
+    const parsedPage = Math.max(1, parseInt(page, 10) || 1);
+    const offset = (parsedPage - 1) * parsedLimit;
+    const totalStart = Date.now();
+    const userInfo = await getUserFromReq(req);
+
+    const searchLog = {
+        raw_query: raw_text || queryBubbles.map(bubble => bubble.content).join('\n'),
+        model_provider: provider,
+        search_mode: 'ocr',
+        manga_slug: filterManga,
+        filter_characters: filterCharacters,
+        filter_arc: filterArc,
+        filter_tome: filterTome,
+        rerank_enabled: false,
+        ...userInfo,
+    };
+
+    try {
+        const tokenStart = Date.now();
+        const informativeTokens = buildInformativeTokens(queryBubbles);
+        const tokenQueries = buildCandidateTokenQueries(queryBubbles, OCR_CANDIDATE_TOKEN_LIMIT);
+        searchLog.duration_normalization_ms = Date.now() - tokenStart;
+
+        const candidateStart = Date.now();
+        const candidatePageIds = await findCandidatePageIdsFromTokenQueries(tokenQueries);
+        searchLog.merged_candidates_count = candidatePageIds.length;
+        const candidateLookupMs = Date.now() - candidateStart;
+
+        if (!candidatePageIds.length) {
+            const visualResults = Array.isArray(visual_embedding)
+                ? await runGeminiVisualFallback(visual_embedding, {
+                    limit: parsedLimit,
+                    filterManga,
+                    filterTome,
+                    filterCharacters,
+                    filterArc,
+                })
+                : [];
+
+            searchLog.final_results_count = visualResults.length;
+            if (visualResults.length > 0) {
+                searchLog.top_result_id = visualResults[0].page_id;
+                searchLog.top_result_score = visualResults[0].scores.visual;
+            }
+            searchLog.duration_total_ms = Date.now() - totalStart;
+            insertSearchLog(searchLog);
+            return res.json({
+                results: visualResults.slice(offset, offset + parsedLimit),
+                totalCount: visualResults.length,
+                ocr: {
+                    provider,
+                    queryBubblesCount: queryBubbles.length,
+                    candidatePagesCount: 0,
+                    rankedPagesCount: 0,
+                    topScore: 0,
+                    visualFallbackUsed: visualResults.length > 0,
+                    visualFallbackCount: visualResults.length,
+                },
+            });
+        }
+
+        const fetchStart = Date.now();
+        let candidatePages = await fetchCandidatePages(candidatePageIds);
+        const candidateFetchMs = Date.now() - fetchStart;
+
+        candidatePages = candidatePages.filter(pageRecord => {
+            const { chapitre, tome: pageTome, manga: pageManga } = getNestedPageMeta(pageRecord);
+            if (filterManga && pageManga?.slug !== filterManga) return false;
+            if (filterTome && Number(pageTome?.numero) !== filterTome) return false;
+            if (!pageMatchesMetadataFilters(pageRecord, filterCharacters, filterArc)) return false;
+            return Boolean(chapitre && pageTome);
+        });
+
+        const rankStart = Date.now();
+        const rankedPages = rankOcrPageCandidates(queryBubbles, candidatePages, {
+            limit: OCR_MAX_CANDIDATE_PAGES,
+        });
+        searchLog.duration_merge_ms = candidateLookupMs + candidateFetchMs + (Date.now() - rankStart);
+
+        const topOcrScore = rankedPages[0]?.score || 0;
+        const shouldUseVisualFallback = topOcrScore < OCR_CONFIDENT_SCORE && Array.isArray(visual_embedding);
+        const visualResults = shouldUseVisualFallback
+            ? await runGeminiVisualFallback(visual_embedding, {
+                limit: parsedLimit,
+                filterManga,
+                filterTome,
+                filterCharacters,
+                filterArc,
+            })
+            : [];
+        const ocrResults = rankedPages.map(pageRecord => formatOcrPageResult(pageRecord, provider));
+        const mergedResults = visualResults.length
+            ? mergeOcrAndVisualResults(ocrResults, visualResults, offset + parsedLimit)
+            : ocrResults;
+        const finalResults = mergedResults.slice(offset, offset + parsedLimit);
+
+        searchLog.final_results_count = finalResults.length;
+        if (finalResults.length > 0) {
+            searchLog.top_result_id = finalResults[0].page_id;
+            searchLog.top_result_score = finalResults[0].scores.ocr ?? finalResults[0].scores.visual ?? Math.round((finalResults[0].similarity || 0) * 100);
+        }
+        searchLog.duration_total_ms = Date.now() - totalStart;
+        insertSearchLog(searchLog);
+
+        res.json({
+            results: finalResults,
+            totalCount: mergedResults.length,
+            ocr: {
+                provider,
+                queryBubblesCount: queryBubbles.length,
+                candidatePagesCount: candidatePageIds.length,
+                rankedPagesCount: rankedPages.length,
+                topScore: topOcrScore,
+                visualFallbackUsed: shouldUseVisualFallback,
+                visualFallbackCount: visualResults.length,
+                tokens: informativeTokens,
+                candidateQueries: tokenQueries.slice(0, OCR_CANDIDATE_QUERY_LIMIT).map(query => query.term),
+            },
+        });
+    } catch (error) {
+        console.error("Erreur recherche OCR:", error);
+        searchLog.error = error.message;
+        searchLog.duration_total_ms = Date.now() - totalStart;
+        insertSearchLog(searchLog);
+        res.status(500).json({ error: "Erreur recherche OCR" });
+    }
+});
+
 router.get('/', async (req, res) => {
     const { q, page = 1, limit = 10, mode = 'keyword', characters, arc, tome, rerank } = req.query;
     const shouldRerank = rerank === 'true';
@@ -35,16 +426,6 @@ router.get('/', async (req, res) => {
     const offset = (parseInt(page) - 1) * parseInt(limit);
     let finalResults = [];
     let totalCount = 0;
-
-    const parseCharacters = (chars) => {
-        if (!chars) return null;
-        if (Array.isArray(chars)) return chars;
-        try {
-            return JSON.parse(chars);
-        } catch {
-            return [chars];
-        }
-    };
 
     const filterCharacters = parseCharacters(characters);
     const filterArc = arc && arc !== '' ? arc : null;
