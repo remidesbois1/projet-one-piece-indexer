@@ -538,7 +538,7 @@ export default function SearchPage() {
                             Voix de Toute Chose
                         </h1>
                         <p className="poneglyph-muted mx-auto max-w-xl text-sm font-medium sm:text-base">
-                            {useOcrSearch ? "Poneglyph Vision : retrouver une page depuis une image ou un crop." : useSemantic
+                            {useOcrSearch ? "Poneglyph Doré : retrouver une page depuis une image ou un crop." : useSemantic
                                 ? "Rio Poneglyph : Déchiffrer l'histoire à travers les concepts et les souvenirs."
                                 : "Poneglyph : Retrouver les traces écrites et les paroles exactes."
                             }
@@ -578,7 +578,7 @@ export default function SearchPage() {
                                     className="rounded-lg text-xs font-bold uppercase tracking-wider text-slate-300 data-[state=active]:bg-yellow-400 data-[state=active]:text-slate-950"
                                 >
                                     <ScanText className="h-3.5 w-3.5 mr-2" />
-                                    OCR
+                                    Visuelle
                                 </TabsTrigger>
                             </TabsList>
                         </Tabs>
@@ -657,7 +657,7 @@ export default function SearchPage() {
                                     value={query}
                                     onChange={(e) => setQuery(e.target.value)}
                                     onKeyDown={handleKeyDown}
-                                    placeholder={useSemantic ? "Ex: Luffy utilise le Gear 4 contre Doflamingo..." : "Cherchez un dialogue exact..."}
+                                    placeholder={useSemantic ? "Ex: Première rencontre entre Luffy et Sanji..." : "Cherchez un dialogue exact..."}
                                     className="h-14 rounded-2xl border-none bg-transparent pl-6 pr-24 text-base text-slate-100 shadow-none ring-0 placeholder:text-slate-500 focus-visible:ring-0 sm:h-16 sm:text-lg"
                                 />
 
