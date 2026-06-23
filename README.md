@@ -2,7 +2,6 @@
 
 ![Status](https://img.shields.io/badge/Status-Live-success?style=for-the-badge)
 ![WebGPU](https://img.shields.io/badge/WebGPU-Enabled-8A2BE2?style=for-the-badge)
-![Desktop](https://img.shields.io/badge/Desktop-Tauri_v2-FFC131?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)
 
 Le **Projet Poneglyph** est une plateforme de haute performance dédiée à la numérisation, l'indexation sémantique et la recherche contextuelle de mangas et bandes dessinées. En combinant l'intelligence artificielle déportée (**WebGPU**) et une infrastructure hybride optimisée, le système permet une exploration inédite des œuvres.
@@ -15,7 +14,6 @@ Le **Projet Poneglyph** est une plateforme de haute performance dédiée à la n
 
 ## Sommaire
 
-- [Application Desktop (One-Click)](#application-desktop-one-click)
 - [Architecture](#architecture)
 - [Moteur de Recherche Multi-Modal](#moteur-de-recherche-multi-modal)
 - [Pipeline OCR Hybride](#pipeline-ocr-hybride)
@@ -26,75 +24,6 @@ Le **Projet Poneglyph** est une plateforme de haute performance dédiée à la n
 - [Pipeline MLOps](#pipeline-mlops)
 - [Sécurité et FinOps](#sécurité-et-finops)
 - [Avertissement Légal](#avertissement-légal)
-
----
-
-## Application Desktop (One-Click)
-
-Poneglyph est disponible en tant qu'application desktop Windows via **Tauri v2**. L'application charge directement `https://poneglyph.fr` et ajoute un backend Python local pour l'OCR sur GPU.
-
-### Prérequis pour le mode desktop avec OCR local
-
-- **Windows 10/11 64-bit**
-- **Python 3.10+** avec **PyTorch** (CUDA recommandé)
-- **GPU NVIDIA** avec >= 4 Go VRAM (ou CPU lent)
-- Connexion internet
-
-> L'application fonctionne sans Python/GPU. Dans ce cas, seul l'OCR cloud (Modal) est disponible.
-
-### Installation rapide (depuis l'installer)
-
-1. Téléchargez `Poneglyph_1.0.0_x64-setup.exe`
-2. Lancez l'installer
-3. Lancez **Poneglyph** depuis le menu Démarrer
-
-### Premier lancement avec OCR local
-
-1. Ouvrez l'application
-2. Allez sur une page d'annotation
-3. Dans le panneau OCR, choisissez un modèle local (**Poneglyph-BBox**, **Poneglyph**, **Surya-BBox** ou **Surya**) et cliquez sur **Télécharger** (~2-4 Go par modèle)
-4. Les modèles sont téléchargés dans `%APPDATA%\poneglyph\models\`
-5. Cliquez sur **Charger** puis lancez l'inférence sur votre GPU
-
-### Backend OCR local: performance transformers
-
-Le backend desktop utilise uniquement `transformers` pour l'inference locale.
-Sur CUDA, il active les optimisations compatibles avec LightOnOCR sans chemin
-experimental supplementaire: TF32, choix d'attention avec fallback
-`flash_attention_2` -> `sdpa` -> implementation par defaut, deplacements GPU
-non bloquants, kernels SDPA CUDA rapides, `cudnn.benchmark`, chargement
-`safetensors` a faible memoire CPU, autocast fp16/bf16, warmup optionnel et
-limites de tokens configurables.
-
-Options de performance:
-
-- `PONEGLYPH_TORCH_COMPILE=1/0` (defaut: `0`)
-- `PONEGLYPH_FLASH_ATTN=1/0` (defaut: `1`)
-- `PONEGLYPH_TF32=1/0` (defaut: `1`)
-- `PONEGLYPH_TEXT_MAX_NEW_TOKENS` (defaut: `128`)
-- `PONEGLYPH_BBOX_MAX_NEW_TOKENS` (defaut: `2048`)
-- `PONEGLYPH_SURYA_MODEL_ID` (defaut: `Remidesbois/surya-bubble-ocr-poneglyph`)
-- `PONEGLYPH_SURYA_MODEL_DIR` (defaut: `%APPDATA%\poneglyph\models\surya-bubble-ocr-poneglyph`)
-- `PONEGLYPH_SURYA_MAX_NEW_TOKENS` (defaut: `96`)
-- `PONEGLYPH_SURYA_USER_PROMPT` (prompt OCR Surya optionnel)
-- `PONEGLYPH_SURYA_BBOX_MODEL_ID` (defaut: `Remidesbois/surya-ocr-2-poneglyph-bbox`)
-- `PONEGLYPH_SURYA_BBOX_MODEL_DIR` (defaut: `%APPDATA%\poneglyph\models\surya-ocr-2-poneglyph-bbox`)
-- `PONEGLYPH_SURYA_BBOX_MAX_NEW_TOKENS` (defaut: `2048`)
-- `PONEGLYPH_SURYA_BBOX_USER_PROMPT` (prompt OCR Surya-BBox optionnel)
-- `PONEGLYPH_WARMUP=1/0` (defaut: `1`)
-
-Verification rapide sans telechargement des modeles:
-
-```powershell
-python desktop_backend/verify_inference_backends.py
-```
-
-Benchmark manuel optionnel:
-
-```powershell
-python desktop_backend/benchmark_local_ocr.py --image sample.png --endpoint /ocr/text --runs 5
-```
-
 ---
 
 ## Architecture
