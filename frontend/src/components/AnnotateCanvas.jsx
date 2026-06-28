@@ -1,6 +1,6 @@
 import React from 'react';
 import { cn } from "@/lib/utils";
-import { Loader2, MousePointer2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 export default function AnnotateCanvas({
@@ -60,9 +60,11 @@ export default function AnnotateCanvas({
                 />
 
                 {isSubmitting && (
-                    <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[#040d18]/72 font-semibold text-slate-100 backdrop-blur-[2px]">
-                        <Loader2 className="mb-2 h-10 w-10 animate-spin text-[#8dbbff]" />
-                        <span>{loadingText}</span>
+                    <div className="pointer-events-none absolute inset-x-0 top-4 z-50 flex justify-center px-4">
+                        <div className="flex max-w-[calc(100%-2rem)] items-center gap-2 rounded-md border border-white/10 bg-[#06111e]/92 px-3 py-2 text-xs font-semibold text-slate-100 shadow-lg">
+                            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-[#8dbbff]" />
+                            <span className="truncate">{loadingText}</span>
+                        </div>
                     </div>
                 )}
 
@@ -186,10 +188,10 @@ export default function AnnotateCanvas({
 
                 {hoveredBubble && (
                     <div
-                        className="fixed z-50 pointer-events-none bg-slate-900/95 text-white p-3 rounded-lg shadow-xl border border-slate-700 backdrop-blur-sm max-w-[300px]"
+                        className="absolute z-50 pointer-events-none bg-slate-900/95 text-white p-3 rounded-lg shadow-xl border border-slate-700 backdrop-blur-sm max-w-[300px]"
                         style={{
                             left: 0, top: 0,
-                            transform: `translate(${(mousePos.x + 20 + (containerRef.current?.getBoundingClientRect()?.left || 0))}px, ${(mousePos.y + 20 + (containerRef.current?.getBoundingClientRect()?.top || 0))}px)`
+                            transform: `translate(${mousePos.x + 20}px, ${mousePos.y + 20}px)`
                         }}
                     >
                         <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">

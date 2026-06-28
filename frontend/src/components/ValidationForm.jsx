@@ -1,22 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useAuth } from '@/context/AuthContext';
 import { createBubble, updateBubbleText } from '@/lib/api';
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 
 
 import { AlertCircle, Loader2 } from "lucide-react";
 
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
-const ValidationForm = ({ annotationData, onValidationSuccess, onCancel, onReject, isSandbox = false }) => {
-  const { session } = useAuth();
+const ValidationForm = ({ annotationData, onValidationSuccess, onCancel, onReject, isSandbox = false, tone = 'light' }) => {
   const [text, setText] = useState('');
   const [isAiFailure, setIsAiFailure] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmitting = false;
   const textareaRef = useRef(null);
 
   const isEditing = annotationData && annotationData.id && typeof annotationData.id !== 'string';
@@ -30,15 +28,18 @@ const ValidationForm = ({ annotationData, onValidationSuccess, onCancel, onRejec
   }, []);
 
   useEffect(() => {
-    if (annotationData) {
-      if (annotationData.texte_propose === '<REJET>') {
-        setText('');
-        setIsAiFailure(true);
-      } else {
-        setText(annotationData.texte_propose || '');
-        setIsAiFailure(false);
+    const timeout = setTimeout(() => {
+      if (annotationData) {
+        if (annotationData.texte_propose === '<REJET>') {
+          setText('');
+          setIsAiFailure(true);
+        } else {
+          setText(annotationData.texte_propose || '');
+          setIsAiFailure(false);
+        }
       }
-    }
+    }, 0);
+    return () => clearTimeout(timeout);
   }, [annotationData]);
 
   const handleSubmit = async (event) => {
@@ -82,14 +83,19 @@ const ValidationForm = ({ annotationData, onValidationSuccess, onCancel, onRejec
     <form onSubmit={handleSubmit} className="space-y-6">
 
       {isAiFailure && (
-        <div className="bg-amber-50 border border-amber-200 rounded-md p-3 flex gap-2 text-sm text-amber-800">
+        <div className={cn(
+          "rounded-md p-3 flex gap-2 text-sm",
+          tone === 'dark'
+            ? "border border-amber-400/30 bg-amber-400/10 text-amber-100"
+            : "border border-amber-200 bg-amber-50 text-amber-800"
+        )}>
           <AlertCircle className="h-5 w-5 shrink-0" />
-          <p>L'IA n'a pas pu lire le texte. Veuillez le transcrire manuellement.</p>
+          <p>{"L'IA n'a pas pu lire le texte. Veuillez le transcrire manuellement."}</p>
         </div>
       )}
 
       <div className="space-y-2">
-        <Label htmlFor="bubble-text">Texte de la bulle</Label>
+        <Label htmlFor="bubble-text" className={tone === 'dark' ? "text-slate-200" : undefined}>Texte de la bulle</Label>
         <Textarea
           id="bubble-text"
           ref={textareaRef}
@@ -102,7 +108,12 @@ const ValidationForm = ({ annotationData, onValidationSuccess, onCancel, onRejec
             }
           }}
           placeholder="Saisissez le texte ici..."
-          className="min-h-[120px] text-base resize-y font-medium"
+          className={cn(
+            "min-h-[120px] text-base resize-y font-medium",
+            tone === 'dark'
+              ? "border-white/15 bg-slate-900 text-slate-50 placeholder:text-slate-500 focus-visible:border-sky-400 focus-visible:ring-sky-400/20"
+              : ""
+          )}
         />
       </div>
 
@@ -124,6 +135,7 @@ const ValidationForm = ({ annotationData, onValidationSuccess, onCancel, onRejec
             variant="outline"
             onClick={onCancel}
             disabled={isSubmitting}
+            className={tone === 'dark' ? "border-white/15 bg-white/5 text-slate-200 hover:bg-white/10 hover:text-white" : undefined}
           >
             Annuler
           </Button>
@@ -132,7 +144,10 @@ const ValidationForm = ({ annotationData, onValidationSuccess, onCancel, onRejec
         <Button
           type="submit"
           disabled={isSubmitting}
-          className="bg-slate-900 hover:bg-slate-800 text-white min-w-[140px]"
+          className={cn(
+            "min-w-[140px] text-white",
+            tone === 'dark' ? "bg-sky-600 hover:bg-sky-500" : "bg-slate-900 hover:bg-slate-800"
+          )}
         >
           {isSubmitting ? (
             <>

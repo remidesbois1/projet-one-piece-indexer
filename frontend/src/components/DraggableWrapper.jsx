@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { GripHorizontal } from "lucide-react";
+import { cn } from "@/lib/utils";
 
-const DraggableWrapper = ({ children, title, onClose, className }) => {
+const DraggableWrapper = ({ children, title, onClose, className, tone = 'light' }) => {
     const [isDragging, setIsDragging] = useState(false);
     
     
@@ -61,19 +62,39 @@ const DraggableWrapper = ({ children, title, onClose, className }) => {
                 zIndex: 51,
                 touchAction: 'none'
             }}
-            className={`bg-white rounded-lg shadow-xl border border-slate-200 flex flex-col overflow-hidden ${className}`}
+            className={cn(
+                "rounded-lg shadow-2xl flex flex-col overflow-hidden",
+                tone === 'dark'
+                    ? "border border-white/10 bg-slate-950 text-slate-100 shadow-black/40"
+                    : "border border-slate-200 bg-white text-slate-900 shadow-xl",
+                className
+            )}
         >
             
             <div 
                 onMouseDown={handleMouseDown}
-                className="drag-handle flex items-center justify-between px-4 py-3 bg-slate-50 border-b border-slate-100 cursor-grab active:cursor-grabbing select-none transition-colors hover:bg-slate-100"
+                className={cn(
+                    "drag-handle flex items-center justify-between px-4 py-3 cursor-grab active:cursor-grabbing select-none transition-colors",
+                    tone === 'dark'
+                        ? "border-b border-white/10 bg-slate-900 hover:bg-slate-800"
+                        : "border-b border-slate-100 bg-slate-50 hover:bg-slate-100"
+                )}
             >
-                <div className="flex items-center gap-2 text-slate-700 font-semibold text-sm">
-                    <GripHorizontal className="h-4 w-4 text-slate-400" />
+                <div className={cn(
+                    "flex items-center gap-2 font-semibold text-sm",
+                    tone === 'dark' ? "text-slate-100" : "text-slate-700"
+                )}>
+                    <GripHorizontal className={cn("h-4 w-4", tone === 'dark' ? "text-slate-500" : "text-slate-400")} />
                     <span>{title}</span>
                 </div>
                 {onClose && (
-                    <button onClick={onClose} className="text-slate-400 hover:text-red-500 text-lg leading-none px-2">
+                    <button
+                        onClick={onClose}
+                        className={cn(
+                            "text-lg leading-none px-2 transition-colors",
+                            tone === 'dark' ? "text-slate-400 hover:text-red-300" : "text-slate-400 hover:text-red-500"
+                        )}
+                    >
                         &times;
                     </button>
                 )}
