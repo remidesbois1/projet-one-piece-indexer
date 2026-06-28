@@ -5,22 +5,17 @@ const WorkerContext = createContext();
 
 export const useWorker = () => useContext(WorkerContext);
 
+const DEFAULT_OCR_MODEL_KEY = 'ppocrv6Line';
+
 export const OCR_MODELS = {
-    base: {
-        key: 'base',
-        label: 'TrOCR Base',
-        description: 'Rapide (~1.3 Go)',
-        cer: '2.90%',
-        size: '~1.3 Go',
-        type: 'local'
-    },
-    large: {
-        key: 'large',
-        label: 'TrOCR Large',
-        description: 'Précis (~2.3 Go)',
-        cer: '1.83%',
-        size: '~2.3 Go',
-        type: 'local'
+    ppocrv6Line: {
+        key: 'ppocrv6Line',
+        label: 'PP-OCRv6',
+        description: 'YOLO lignes + OCR ONNX',
+        cer: '3.74%',
+        size: '~87 Mo',
+        type: 'local',
+        runtime: 'onnx'
     },
     poneglyphLocal: {
         key: 'poneglyphLocal',
@@ -68,9 +63,10 @@ export const WorkerProvider = ({ children }) => {
     const [currentFile, setCurrentFile] = useState("");
     const [activeModelKey, setActiveModelKey] = useState(() => {
         if (typeof window !== 'undefined') {
-            return localStorage.getItem('ocrModelKey') || 'base';
+            const storedKey = localStorage.getItem('ocrModelKey');
+            return OCR_MODELS[storedKey] ? storedKey : DEFAULT_OCR_MODEL_KEY;
         }
-        return 'base';
+        return DEFAULT_OCR_MODEL_KEY;
     });
 
     useEffect(() => {

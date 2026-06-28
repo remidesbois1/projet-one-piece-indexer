@@ -224,10 +224,10 @@ function MangaCard({ manga, index }) {
 const features = [
     {
         icon: ScanText,
-        title: "OCR Local - TrOCR Fine-tuned",
-        badge: "WebGPU",
-        description: "Modèles spécialisés Base et Large, fine-tunés sur la typographie manga et accélérés via WebGPU.",
-        details: ["TrOCR Large", "SSIM Patch", "2.3s @ 1080p", "Split Multi-stage", "CER 1.62%", "RTF 0.81x"],
+        title: "OCR Local - PP-OCRv6 Ligne",
+        badge: "ONNX",
+        description: "Detecteur YOLO26n et recognizer PP-OCRv6 specialises pour transcrire les lignes de bulles en local navigateur.",
+        details: ["PP-OCRv6", "YOLO lignes", "~87 Mo", "WASM", "CER 3.74%", "0 $/OCR"],
     },
     {
         icon: Zap,

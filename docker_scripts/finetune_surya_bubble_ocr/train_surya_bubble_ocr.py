@@ -616,22 +616,12 @@ def load_benchmark_samples(path: Path):
 
 def default_baseline_paths():
     candidates = []
-    for env_name in ("SURYA_TROCR_BENCHMARK_PATH", "SURYA_LIGHTON_BENCHMARK_PATH"):
+    for env_name in ("SURYA_LIGHTON_BENCHMARK_PATH",):
         value = os.getenv(env_name)
         if value:
             candidates.append(Path(value))
     candidates.extend(
         [
-            DOCKER_SCRIPTS_DIR
-            / "finetune_trocr_large"
-            / "outputs_trocr_manga_large"
-            / "final_manga_model"
-            / "benchmark_test.json",
-            DOCKER_SCRIPTS_DIR
-            / "finetune_trocr"
-            / "outputs_trocr_manga"
-            / "final_manga_model"
-            / "benchmark_test.json",
             DOCKER_SCRIPTS_DIR
             / "finetune_lighton_ocr"
             / "outputs_lighton_manga"

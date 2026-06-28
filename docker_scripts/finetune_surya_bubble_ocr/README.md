@@ -11,12 +11,11 @@ Intended ONNX package repository:
 
 - `Remidesbois/surya-bubble-ocr-poneglyph-onnx`
 
-## Why This Is Separate From TrOCR
+## Why This Uses A Dedicated Runtime
 
-TrOCR uses a supported encoder-decoder image-to-text path. Surya OCR 2 is a
-Qwen3.5 VLM-style model. Its processor emits patch tensors, `image_grid_thw`,
-image token spans, and M-RoPE metadata. Do not route Surya through the TrOCR
-export or browser runtime assumptions.
+Surya OCR 2 is a Qwen3.5 VLM-style model. Its processor emits patch tensors,
+`image_grid_thw`, image token spans, and M-RoPE metadata, so it needs its own
+export and browser runtime assumptions.
 
 ## Working FP32 Export
 
@@ -92,7 +91,7 @@ listed in `surya_runtime_manifest.json` before uploading.
 
 ## Browser Integration
 
-The frontend exposes `Surya OCR 2 FP32` next to TrOCR. The worker uses:
+The frontend exposes `Surya OCR 2 FP32` as its own local OCR backend. The worker uses:
 
 - Transformers.js `AutoProcessor` and `AutoTokenizer`
 - `onnxruntime-web` for `vision_encoder.onnx` and `decoder_model.onnx`

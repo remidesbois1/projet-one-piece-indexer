@@ -496,7 +496,7 @@ export default function SandboxClient() {
                         <p className="poneglyph-muted text-balance mx-auto max-w-[380px] text-sm leading-relaxed">
                             Expérimentez l&apos;annotation du projet directement dans votre navigateur.
                             Cette interface utilise <a href="https://huggingface.co/Remidesbois/YoloPiece_OneShot_Models" target="_blank" rel="noopener noreferrer" className="font-bold text-slate-700 hover:text-[#2F7AAF] underline decoration-slate-200">YoloPiece One-Shot</a> pour la détection et l&apos;ordre local,
-                            <a href="https://huggingface.co/Remidesbois/trocr-onepiece-fr-large" target="_blank" rel="noopener noreferrer" className="font-bold text-slate-700 hover:text-[#2F7AAF] underline decoration-slate-200"> TrOCR</a> pour la reconnaissance.
+                            <a href="https://huggingface.co/Remidesbois/pp-ocrv6-one-piece-bubble-line-rec" target="_blank" rel="noopener noreferrer" className="font-bold text-slate-700 hover:text-[#2F7AAF] underline decoration-slate-200"> PP-OCRv6 Ligne</a> pour la reconnaissance.
                             Dans l&apos;app desktop, elle peut aussi lancer Poneglyph en mode local via Tauri.
                         </p>
                     </div>

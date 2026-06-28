@@ -1,0 +1,6 @@
+runs/
+*.pt
+*.onnx
+*.engine
+dataset.docker.yaml
+__pycache__/

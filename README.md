@@ -39,7 +39,7 @@ Le **Projet Poneglyph** est une plateforme de haute performance dédiée à la n
 
 - **Framework :** React 19 / Next.js
 - **UI :** [ShadCn UI](https://ui.shadcn.com/)
-- **OCR Hybride :** TrOCR Fine-tuned (WebGPU) + Poneglyph & Surya (Cloud/Local)
+- **OCR Hybride :** PP-OCRv6 Ligne (ONNX navigateur) + Poneglyph & Surya (Cloud/Local)
 - **Détection de Bulles :** YOLO26 Nano via ONNX Runtime Web (WASM)
 - **Desktop :** Tauri v2 (Rust shell + Python backend)
 
@@ -100,18 +100,15 @@ Architecture hybride, multicouche et parallélisée :
 
 ## Pipeline OCR Hybride
 
-### TrOCR Fine-tuned (Local WebGPU)
+### PP-OCRv6 Ligne (Local Navigateur)
 
-> Détails : [ocr_pipeline.md](https://github.com/remidesbois1/projet-poneglyph/blob/master/documentation/ocr_pipeline.md)
+Le moteur navigateur local combine un detecteur de lignes YOLO26n ONNX et un recognizer PP-OCRv6 ONNX pour transcrire les bulles sans appel cloud.
 
-| | **TrOCR Base** | **TrOCR Large** |
-|---|---|---|
-| **HuggingFace** | [`trocr-onepiece-fr`](https://huggingface.co/Remidesbois/trocr-onepiece-fr) | [`trocr-onepiece-fr-large`](https://huggingface.co/Remidesbois/trocr-onepiece-fr-large) |
-| **Paramètres** | ~334M | ~558M |
-| **Taille ONNX** | ~1.33 Go | ~2.33 Go |
-| **CER (brut)** | 2.90% | **1.83%** |
-| **WER (brut)** | 9.20% | **6.03%** |
-| **Coût** | 0 $/OCR | 0 $/OCR |
+- **HuggingFace :** [`pp-ocrv6-one-piece-bubble-line-rec`](https://huggingface.co/Remidesbois/pp-ocrv6-one-piece-bubble-line-rec)
+- **Runtime :** ONNX Runtime Web (WASM)
+- **Taille :** ~87 Mo
+- **CER :** 3.74%
+- **Cout :** 0 $/OCR
 
 ### LightOn-OCR Poneglyph (Cloud Modal / Local GPU)
 
@@ -287,7 +284,7 @@ L'installer NSIS est généré dans `frontend\src-tauri\target\release\bundle\ns
 Les scripts `/docker_scripts` automatisent le cycle de vie des modèles IA :
 
 1. **Extraction :** Récupération des bulles/pages validées (Supabase)
-2. **Fine-Tuning :** Entraînement de TrOCR, LightOnOCR, Surya (bulle + bbox) et modèles de détection/tri
+2. **Fine-Tuning :** Entraînement de PP-OCRv6, LightOnOCR, Surya (bulle + bbox) et modèles de détection/tri
 3. **Déploiement :** Push automatique vers Hugging Face si les métriques sont validées
 
 ---

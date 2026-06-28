@@ -1,0 +1,6 @@
+ultralytics>=8.4.0
+pyyaml
+pandas
+onnx
+onnxruntime
+onnxslim
