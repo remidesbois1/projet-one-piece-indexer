@@ -20,3 +20,6 @@ desktop_backend/dist/
 desktop_backend/local_ocr_server.exe
 desktop_backend/local_ocr_server_bundle/
 desktop_backend/*.spec
+
+backend/models/
+frontend/public/models/

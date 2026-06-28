@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { searchBubbles, searchOcrPageMatch, getMetadataSuggestions, getTomes, submitSearchFeedback } from '@/lib/api';
+import { searchBubbles, searchF2llmLocal, searchOcrPageMatch, getMetadataSuggestions, getTomes, submitSearchFeedback } from '@/lib/api';
 import { generateGeminiImageEmbedding, generatePageOcrBboxes } from '@/lib/geminiClient';
+import { generateF2llmBrowserQueryEmbedding } from '@/lib/f2llmBrowserEmbedding';
 import { getProxiedImageUrl, cn } from '@/lib/utils';
 import { useDebounce } from '@/hooks/useDebounce';
 import { useAuth } from '@/context/AuthContext';
@@ -17,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
@@ -173,6 +175,7 @@ export default function SearchPage() {
     const [page, setPage] = useState(savedState.page || 1);
     const [hasMore, setHasMore] = useState(savedState.hasMore || false);
     const [searchMode, setSearchMode] = useState(savedState.searchMode || (savedState.useSemantic ? 'semantic' : 'keyword'));
+    const [localOnly, setLocalOnly] = useState(savedState.localOnly || false);
     const useSemantic = searchMode === 'semantic';
     const useOcrSearch = searchMode === 'ocr';
     const [feedbackGiven, setFeedbackGiven] = useState({});
@@ -181,6 +184,7 @@ export default function SearchPage() {
     const [ocrExtractedBubbles, setOcrExtractedBubbles] = useState(savedState.ocrExtractedBubbles || []);
     const [ocrProvider, setOcrProvider] = useState(savedState.ocrProvider || null);
     const [ocrStatus, setOcrStatus] = useState('');
+    const [localModelStatus, setLocalModelStatus] = useState('');
     const [ocrHasSearched, setOcrHasSearched] = useState(savedState.ocrHasSearched || false);
 
     const [selectedCharacters, setSelectedCharacters] = useState(savedState.selectedCharacters || []);
@@ -202,18 +206,29 @@ export default function SearchPage() {
     useEffect(() => {
         if (!mangaSlug) return;
         const state = {
-            query, results, totalCount, page, hasMore, useSemantic, searchMode,
+            query, results, totalCount, page, hasMore, useSemantic, searchMode, localOnly,
             ocrExtractedBubbles, ocrProvider, ocrHasSearched,
             selectedCharacters, selectedArc, selectedTome, showFilters
         };
         sessionStorage.setItem(`search_state_${mangaSlug}`, JSON.stringify(state));
-    }, [query, results, totalCount, page, hasMore, useSemantic, searchMode, ocrExtractedBubbles, ocrProvider, ocrHasSearched, selectedCharacters, selectedArc, selectedTome, showFilters, mangaSlug]);
+    }, [query, results, totalCount, page, hasMore, useSemantic, searchMode, localOnly, ocrExtractedBubbles, ocrProvider, ocrHasSearched, selectedCharacters, selectedArc, selectedTome, showFilters, mangaSlug]);
 
     useEffect(() => {
         return () => {
             if (ocrImagePreviewUrl) URL.revokeObjectURL(ocrImagePreviewUrl);
         };
     }, [ocrImagePreviewUrl]);
+
+    useEffect(() => {
+        const handleProgress = (event) => {
+            const progress = Math.round(event.detail?.progress || 0);
+            const file = event.detail?.file || '';
+            setLocalModelStatus(`F2LLM ${progress}% ${file ? file.split('/').pop() : ''}`.trim());
+        };
+
+        window.addEventListener('f2llm-progress', handleProgress);
+        return () => window.removeEventListener('f2llm-progress', handleProgress);
+    }, []);
 
     useEffect(() => {
         if (inputRef.current) inputRef.current.focus();
@@ -458,14 +473,29 @@ export default function SearchPage() {
 
         try {
             const filters = getActiveFilters();
-            const response = await searchBubbles(
-                searchTerm,
-                pageToFetch,
-                RESULTS_PER_PAGE,
-                useSemantic ? 'semantic' : 'keyword',
-                filters,
-                useSemantic
-            );
+            let response;
+            if (useSemantic && localOnly) {
+                setLocalModelStatus('F2LLM');
+                const embedding = await generateF2llmBrowserQueryEmbedding(searchTerm);
+                setLocalModelStatus('F2LLM pret');
+                response = await searchF2llmLocal({
+                    query: searchTerm,
+                    embedding,
+                    page: pageToFetch,
+                    limit: RESULTS_PER_PAGE,
+                    filters,
+                });
+            } else {
+                response = await searchBubbles(
+                    searchTerm,
+                    pageToFetch,
+                    RESULTS_PER_PAGE,
+                    useSemantic ? 'semantic' : 'keyword',
+                    filters,
+                    useSemantic && !localOnly,
+                    false
+                );
+            }
 
             let newResults = response.data.results;
             const total = response.data.totalCount;
@@ -511,7 +541,7 @@ export default function SearchPage() {
                 doc_id: item.id,
                 doc_text: item.content,
                 is_relevant: isRelevant,
-                model_provider: 'dual'
+                model_provider: localOnly ? 'f2llm-local-ft' : 'dual'
             });
 
             setFeedbackGiven(prev => ({ ...prev, [item.id]: true }));
@@ -582,6 +612,31 @@ export default function SearchPage() {
                                 </TabsTrigger>
                             </TabsList>
                         </Tabs>
+
+                        {useSemantic && (
+                            <div className="flex w-full max-w-xl items-center justify-between rounded-xl border border-white/12 bg-white/[0.06] px-4 py-3">
+                                <div className="min-w-0">
+                                    <Label htmlFor="local-only-search" className="text-xs font-black uppercase tracking-widest text-slate-200">
+                                        Local Only
+                                    </Label>
+                                    {localOnly && localModelStatus && (
+                                        <p className="mt-1 truncate text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                                            {localModelStatus}
+                                        </p>
+                                    )}
+                                </div>
+                                <Switch
+                                    id="local-only-search"
+                                    checked={localOnly}
+                                    onCheckedChange={(checked) => {
+                                        setLocalOnly(checked);
+                                        setResults([]);
+                                        setTotalCount(0);
+                                        setHasMore(false);
+                                    }}
+                                />
+                            </div>
+                        )}
 
                         {useOcrSearch ? (
                             <div className="w-full max-w-2xl rounded-2xl border border-white/10 bg-[#06111d]/88 p-2.5 shadow-sm">

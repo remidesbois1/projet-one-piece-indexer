@@ -13,6 +13,8 @@ const { supabaseAdmin } = require('../config/supabaseClient');
 const { logBubbleHistory } = require('../utils/auditLogger');
 const { generateGeminiEmbedding } = require('../utils/geminiClient');
 const { generateVoyageEmbedding } = require('../utils/voyageClient');
+const { generateF2llmEmbedding } = require('../utils/f2llmClient');
+const { buildPageEmbeddingText } = require('../utils/pageEmbeddingText');
 
 // Ensure environment variables are loaded
 if (process.env.NODE_ENV !== 'production') {
@@ -598,7 +600,7 @@ router.get('/ai-models/embedding-stats', authMiddleware, roleCheck(['Admin']), a
     let query = supabaseAdmin
       .from('pages')
       .select(`
-        id, description, embedding_voyage, embedding_gemini, id_chapitre, numero_page, statut, url_image,
+        id, description, embedding_voyage, embedding_gemini, embedding_f2llm, id_chapitre, numero_page, statut, url_image,
         chapitres!inner(
           numero,
           tomes!inner(
@@ -624,6 +626,7 @@ router.get('/ai-models/embedding-stats', authMiddleware, roleCheck(['Admin']), a
       url_image: page.url_image,
       has_voyage: page.embedding_voyage !== null,
       has_gemini: page.embedding_gemini !== null,
+      has_f2llm: page.embedding_f2llm !== null,
       has_description: page.description !== null && page.description !== '',
       statut: page.statut
     }));
@@ -643,7 +646,7 @@ router.get('/ai-models/embedding-stats', authMiddleware, roleCheck(['Admin']), a
 
 
 router.post('/ai-models/save-page-data', authMiddleware, roleCheck(['Admin']), async (req, res) => {
-  const { id_page, description, embedding_voyage, embedding_gemini } = req.body;
+  const { id_page, description, embedding_voyage, embedding_gemini, embedding_f2llm } = req.body;
 
   if (!id_page) return res.status(400).json({ error: "Page ID requis." });
 
@@ -652,6 +655,7 @@ router.post('/ai-models/save-page-data', authMiddleware, roleCheck(['Admin']), a
     if (description) updateData.description = typeof description === 'string' ? description : JSON.stringify(description);
     if (embedding_voyage) updateData.embedding_voyage = embedding_voyage;
     if (embedding_gemini) updateData.embedding_gemini = embedding_gemini;
+    if (embedding_f2llm) updateData.embedding_f2llm = embedding_f2llm;
 
     const { error } = await supabaseAdmin
       .from('pages')
@@ -676,6 +680,19 @@ router.post('/ai-models/generate-voyage-embedding', authMiddleware, roleCheck(['
   } catch (error) {
     console.error("Erreur generation Voyage:", error);
     res.status(500).json({ error: "Erreur lors de la génération de l'embedding Voyage." });
+  }
+});
+
+router.post('/ai-models/generate-f2llm-embedding', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+  const { text } = req.body;
+  if (!text) return res.status(400).json({ error: "Texte requis." });
+
+  try {
+    const embedding = await generateF2llmEmbedding(text, "document");
+    res.json({ embedding });
+  } catch (error) {
+    console.error("Erreur generation F2LLM:", error);
+    res.status(500).json({ error: error.message || "Erreur lors de la generation de l'embedding F2LLM." });
   }
 });
 
@@ -833,6 +850,64 @@ router.post('/ai-models/trigger-backfill-voyage', authMiddleware, roleCheck(['Ad
       console.log(`[Backfill Voyage] Terminé. Traitées: ${processed}, Erreurs: ${errors}`);
     } catch (e) {
       console.error("[Backfill Voyage] Erreur globale lors du backfill:", e);
+    }
+  })();
+});
+
+router.post('/ai-models/trigger-backfill-f2llm', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+  const { manga } = req.query;
+  res.json({ message: "Processus de backfill F2LLM demarre en tache de fond." });
+
+  (async () => {
+    try {
+      console.log(`[Backfill F2LLM] Demarrage${manga ? ` pour ${manga}` : ''}...`);
+
+      let query = supabaseAdmin
+        .from('pages')
+        .select(`
+            id, description,
+            bulles ( texte_propose, statut ),
+            chapitres!inner( tomes!inner( mangas!inner(slug) ) )
+        `)
+        .is('embedding_f2llm', null)
+        .not('description', 'is', null);
+
+      if (manga) {
+        query = query.eq('chapitres.tomes.mangas.slug', manga);
+      }
+
+      const { data: pagesToProcess, error: pagesError } = await query;
+      if (pagesError) throw pagesError;
+
+      let processed = 0;
+      let skipped = 0;
+      let errors = 0;
+
+      for (const page of pagesToProcess || []) {
+        const contentToEmbed = buildPageEmbeddingText(page);
+        if (!contentToEmbed) {
+          skipped++;
+          continue;
+        }
+
+        try {
+          const embedding = await generateF2llmEmbedding(contentToEmbed, "document");
+          const { error: updateError } = await supabaseAdmin
+            .from('pages')
+            .update({ embedding_f2llm: embedding })
+            .eq('id', page.id);
+
+          if (updateError) throw updateError;
+          processed++;
+        } catch (embedError) {
+          console.error(`[Backfill F2LLM] Erreur pour la page ${page.id}:`, embedError.message);
+          errors++;
+        }
+      }
+
+      console.log(`[Backfill F2LLM] Termine. Traitees: ${processed}, ignorees: ${skipped}, erreurs: ${errors}`);
+    } catch (e) {
+      console.error("[Backfill F2LLM] Erreur globale:", e);
     }
   })();
 });

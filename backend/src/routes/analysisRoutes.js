@@ -15,9 +15,11 @@ const { generateVoyageEmbedding } = require('../utils/voyageClient');
 
 
 const { generateGeminiEmbedding } = require('../utils/geminiClient');
+const { generateF2llmEmbedding } = require('../utils/f2llmClient');
+const { buildPageEmbeddingText } = require('../utils/pageEmbeddingText');
 
 router.post('/page-description', authMiddleware, async (req, res) => {
-    const { id_page, description, embedding_voyage, embedding_gemini } = req.body;
+    const { id_page, description, embedding_voyage, embedding_gemini, embedding_f2llm } = req.body;
 
     if (!id_page || !description) {
         return res.status(400).json({ error: 'Données manquantes (id_page ou description).' });
@@ -41,11 +43,12 @@ router.post('/page-description', authMiddleware, async (req, res) => {
 
         let voyageEmb = embedding_voyage || null;
         let geminiEmb = embedding_gemini || null;
+        let f2llmEmb = embedding_f2llm || null;
 
-        if (!voyageEmb || !geminiEmb) {
+        if (!voyageEmb || !geminiEmb || !f2llmEmb) {
             const { data: pageData } = await supabaseAdmin
                 .from('pages')
-                .select('url_image')
+                .select('url_image, bulles(texte_propose, statut)')
                 .eq('id', id_page)
                 .single();
             const pageImageUrl = pageData?.url_image || null;
@@ -71,6 +74,13 @@ router.post('/page-description', authMiddleware, async (req, res) => {
                         .catch(e => console.error("Erreur Gemini embedding:", e.message)));
                 }
 
+                if (!f2llmEmb) {
+                    const f2llmText = buildPageEmbeddingText({ description: jsonDesc, bulles: pageData?.bulles || [] });
+                    promises.push(generateF2llmEmbedding(f2llmText, "document")
+                        .then(emb => f2llmEmb = emb)
+                        .catch(e => console.error("Erreur F2LLM embedding:", e.message)));
+                }
+
                 await Promise.all(promises);
             }
         }
@@ -80,7 +90,8 @@ router.post('/page-description', authMiddleware, async (req, res) => {
             .update({
                 description: finalDescStr,
                 embedding_voyage: voyageEmb,
-                embedding_gemini: geminiEmb
+                embedding_gemini: geminiEmb,
+                embedding_f2llm: f2llmEmb
             })
             .eq('id', id_page);
 

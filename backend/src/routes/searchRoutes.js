@@ -89,6 +89,95 @@ function pageMatchesMetadataFilters(page, filterCharacters, filterArc) {
     return true;
 }
 
+function formatSemanticPageResult(c) {
+    let snippet = c.description;
+    try {
+        if (typeof snippet === 'string') snippet = JSON.parse(snippet).content;
+        else if (typeof snippet === 'object') snippet = snippet.content;
+    } catch (e) { }
+
+    return {
+        type: 'semantic',
+        id: `page-${c.id}`,
+        page_id: c.id,
+        url_image: c.url_image,
+        content: snippet || "",
+        context: `Tome ${c.tome_numero} - Chap. ${c.chapitre_numero} - Page ${c.numero_page}`,
+        scores: { ai: 0, vector: Math.round(c.similarity * 100), local: Math.round(c.similarity * 100) },
+        similarity: c.similarity,
+        sources: ['f2llm-browser-ft'],
+    };
+}
+
+async function runF2llmVectorSearch({ req, query, embedding, page = 1, limit = 10, characters, arc, tome }) {
+    if (!query || query.length < 2) {
+        const err = new Error("Recherche trop courte");
+        err.statusCode = 400;
+        throw err;
+    }
+
+    if (!Array.isArray(embedding) || embedding.length !== 640 || embedding.some(value => typeof value !== 'number' || !Number.isFinite(value))) {
+        const err = new Error("Embedding F2LLM client invalide");
+        err.statusCode = 400;
+        throw err;
+    }
+
+    const filterCharacters = parseCharacters(characters);
+    const filterArc = arc && arc !== '' ? arc : null;
+    const filterTome = tome && tome !== '' ? parseInt(tome) : null;
+    const filterManga = req.query.manga || req.body?.manga;
+    const totalStart = Date.now();
+    const userInfo = await getUserFromReq(req);
+    const searchLog = {
+        raw_query: query,
+        model_provider: 'f2llm-browser-ft',
+        search_mode: 'semantic',
+        manga_slug: filterManga || null,
+        filter_characters: filterCharacters,
+        filter_arc: filterArc,
+        filter_tome: filterTome,
+        rerank_enabled: false,
+        ...userInfo,
+    };
+
+    const rpcStart = Date.now();
+    const { data, error } = await supabase.rpc('match_pages_f2llm', {
+        query_embedding: embedding,
+        match_threshold: 0.30,
+        match_count: 50,
+    });
+    searchLog.duration_f2llm_rpc_ms = Date.now() - rpcStart;
+    if (error) throw error;
+
+    let filteredPages = data || [];
+    searchLog.f2llm_candidates_count = filteredPages.length;
+
+    if (filterManga) {
+        filteredPages = filteredPages.filter(p => p.manga_slug === filterManga);
+    }
+    if (filterTome) {
+        filteredPages = filteredPages.filter(p => p.tome_numero === filterTome);
+    }
+    if (filterCharacters || filterArc) {
+        filteredPages = filteredPages.filter(page => pageMatchesMetadataFilters(page, filterCharacters, filterArc));
+    }
+
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const finalResults = filteredPages.slice(offset, offset + parseInt(limit)).map(formatSemanticPageResult);
+    const totalCount = filteredPages.length;
+
+    searchLog.merged_candidates_count = filteredPages.length;
+    searchLog.final_results_count = finalResults.length;
+    if (finalResults.length > 0) {
+        searchLog.top_result_id = finalResults[0].page_id;
+        searchLog.top_result_score = finalResults[0].scores.vector;
+    }
+    searchLog.duration_total_ms = Date.now() - totalStart;
+    insertSearchLog(searchLog);
+
+    return { results: finalResults, totalCount };
+}
+
 async function findCandidatePageIdsFromTokenQueries(tokenQueries) {
     const pageScores = new Map();
 
@@ -417,9 +506,40 @@ router.post('/ocr-match', async (req, res) => {
     }
 });
 
+router.post('/f2llm-local', async (req, res) => {
+    try {
+        const {
+            query,
+            embedding,
+            page = 1,
+            limit = 10,
+            characters,
+            arc,
+            tome,
+        } = req.body || {};
+
+        const result = await runF2llmVectorSearch({
+            req,
+            query,
+            embedding,
+            page,
+            limit,
+            characters,
+            arc,
+            tome,
+        });
+
+        return res.json(result);
+    } catch (err) {
+        console.error("F2LLM browser search error:", err);
+        return res.status(err.statusCode || 500).json({ error: err.message || "Erreur recherche F2LLM" });
+    }
+});
+
 router.get('/', async (req, res) => {
     const { q, page = 1, limit = 10, mode = 'keyword', characters, arc, tome, rerank } = req.query;
     const shouldRerank = rerank === 'true';
+    const localOnly = req.query.local_only === 'true' || req.query.localOnly === 'true';
 
     if (!q || q.length < 2) return res.status(400).json({ error: "Recherche trop courte" });
 
@@ -434,7 +554,7 @@ router.get('/', async (req, res) => {
     const userInfo = await getUserFromReq(req);
     const searchLog = {
         raw_query: q,
-        model_provider: 'dual',
+        model_provider: mode === 'semantic' && localOnly ? 'f2llm-local' : 'dual',
         search_mode: mode,
         manga_slug: req.query.manga || null,
         filter_characters: filterCharacters,
@@ -450,6 +570,12 @@ router.get('/', async (req, res) => {
         if (mode === 'semantic') {
             const candidatesQueryLimit = shouldRerank ? Math.max(24, parseInt(limit)) : parseInt(limit);
             const filterManga = req.query.manga;
+
+            if (localOnly) {
+                return res.status(400).json({
+                    error: "Local Only doit envoyer un embedding F2LLM calculé dans le navigateur via POST /api/search/f2llm-local."
+                });
+            }
 
             let voyageEmbedMs = 0, geminiEmbedMs = 0, voyageRpcMs = 0, geminiRpcMs = 0;
 

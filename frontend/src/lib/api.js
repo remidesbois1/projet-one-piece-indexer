@@ -40,13 +40,14 @@ export const deleteBubblesForPage = (pageId) => apiClient.delete(`/bulles/page/$
 export const deleteBubblesForChapter = (chapterId) => apiClient.delete(`/bulles/chapter/${chapterId}`);
 export const reorderBubbles = (orderedBubbles) => apiClient.put('/bulles/reorder', { orderedBubbles });
 
-export const searchBubbles = (query, page = 1, limit = 10, mode = 'keyword', filters = {}, rerank = false) => {
+export const searchBubbles = (query, page = 1, limit = 10, mode = 'keyword', filters = {}, rerank = false, localOnly = false) => {
     const params = new URLSearchParams({
         q: query,
         page: page.toString(),
         limit: limit.toString(),
         mode,
         rerank: rerank.toString(),
+        local_only: localOnly.toString(),
     });
 
     if (filters.characters && filters.characters.length > 0) {
@@ -60,6 +61,17 @@ export const searchBubbles = (query, page = 1, limit = 10, mode = 'keyword', fil
     }
 
     return apiClient.get(`/search?${params.toString()}`);
+};
+export const searchF2llmLocal = ({ query, embedding, page = 1, limit = 10, filters = {} }) => {
+    return apiClient.post('/search/f2llm-local', {
+        query,
+        embedding,
+        page,
+        limit,
+        characters: filters.characters || [],
+        arc: filters.arc || '',
+        tome: filters.tome || '',
+    });
 };
 export const searchOcrPageMatch = ({ bubbles, visualEmbedding = null, page = 1, limit = 24, filters = {}, provider = 'unknown', rawText = '' }) => {
     return apiClient.post('/search/ocr-match', {
@@ -91,12 +103,13 @@ export const createTome = (tomeData, mangaSlug) => apiClient.post('/admin/tomes'
 export const uploadChapter = (formData) => apiClient.post('/admin/chapitres/upload', formData);
 
 
-export const savePageDescription = (pageId, description, embedding_voyage = null, embedding_gemini = null) => {
+export const savePageDescription = (pageId, description, embedding_voyage = null, embedding_gemini = null, embedding_f2llm = null) => {
     return apiClient.post('/analyse/page-description', { 
         id_page: pageId, 
         description, 
         embedding_voyage, 
-        embedding_gemini 
+        embedding_gemini,
+        embedding_f2llm,
     });
 };
 export const getMetadataSuggestions = (mangaSlug) => apiClient.get('/analyse/metadata-suggestions', { params: mangaSlug ? { manga: mangaSlug } : {} });
@@ -136,8 +149,10 @@ export const getAvailableAiModels = () => apiClient.get('/admin/ai-models/availa
 export const getEmbeddingStats = (mangaSlug) => apiClient.get('/admin/ai-models/embedding-stats', { params: mangaSlug ? { manga: mangaSlug } : {} });
 export const triggerGeminiBackfill = (mangaSlug) => apiClient.post('/admin/ai-models/trigger-backfill', { manga: mangaSlug });
 export const triggerVoyageBackfill = (mangaSlug) => apiClient.post('/admin/ai-models/trigger-backfill-voyage', { manga: mangaSlug });
+export const triggerF2llmBackfill = (mangaSlug) => apiClient.post('/admin/ai-models/trigger-backfill-f2llm', { manga: mangaSlug });
 export const savePageData = (data) => apiClient.post('/admin/ai-models/save-page-data', data);
 export const generateVoyageEmbedding = (text) => apiClient.post('/admin/ai-models/generate-voyage-embedding', { text });
+export const generateF2llmEmbedding = (text) => apiClient.post('/admin/ai-models/generate-f2llm-embedding', { text });
 
 export const uploadPageToR2 = (formData) => apiClient.post('/admin/upload/page', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
