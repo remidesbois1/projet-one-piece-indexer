@@ -1,7 +1,9 @@
 outputs/
+outputs*/
 __pycache__/
 *.pyc
 .env
+*.log
 *.pt
 *.onnx
 *.safetensors

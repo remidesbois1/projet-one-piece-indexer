@@ -4,7 +4,7 @@ setlocal
 set "SCRIPT_DIR=%~dp0"
 set "REPO_ROOT=%SCRIPT_DIR%..\.."
 set "SOURCE_DIR=%REPO_ROOT%\scripts\bubble_line_dataset"
-set "DETECTOR_DIR=%REPO_ROOT%\docker_scripts\train_bubble_line_detector\runs\yolo26n_bubble_line\weights"
+if "%DETECTOR_DIR%"=="" set "DETECTOR_DIR=%REPO_ROOT%\docker_scripts\train_bubble_line_detector\runs\yolo26n_bubble_line_20260629_171127\weights"
 set "ENV_FILE=%REPO_ROOT%\.env"
 if "%IMAGE_NAME%"=="" set IMAGE_NAME=paddleocr-line-rec-finetune
 

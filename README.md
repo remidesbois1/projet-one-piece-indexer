@@ -17,6 +17,7 @@ Le **Projet Poneglyph** est une plateforme de haute performance dédiée à la n
 - [Architecture](#architecture)
 - [Moteur de Recherche Multi-Modal](#moteur-de-recherche-multi-modal)
 - [Pipeline OCR Hybride](#pipeline-ocr-hybride)
+- [Modèle PP-OCRv6 Bubble Line](documentation/ppocrv6_bubble_line_recognition.md)
 - [API Publique V1](#api-publique-v1)
 - [Infrastructure](#infrastructure)
 - [Développement Local](#développement-local)
@@ -102,13 +103,15 @@ Architecture hybride, multicouche et parallélisée :
 
 ### PP-OCRv6 Ligne (Local Navigateur)
 
-Le moteur navigateur local combine un detecteur de lignes YOLO26n ONNX et un recognizer PP-OCRv6 ONNX pour transcrire les bulles sans appel cloud.
+Le moteur navigateur local combine un détecteur de lignes YOLO26n ONNX et un recognizer PP-OCRv6 ONNX pour transcrire les bulles sans appel cloud. Le pipeline détecte les lignes dans une bulle, les déduplique, les assemble en une image horizontale, puis lance le recognizer CTC PP-OCRv6.
 
 - **HuggingFace :** [`pp-ocrv6-one-piece-bubble-line-rec`](https://huggingface.co/Remidesbois/pp-ocrv6-one-piece-bubble-line-rec)
+- **Documentation :** [`documentation/ppocrv6_bubble_line_recognition.md`](documentation/ppocrv6_bubble_line_recognition.md)
 - **Runtime :** ONNX Runtime Web (WASM)
-- **Taille :** ~87 Mo
-- **CER :** 3.74%
-- **Cout :** 0 $/OCR
+- **Taille :** ~83 Mo (`YOLO lignes` + `PP-OCRv6 rec`)
+- **CER validation :** 1.92% (`71.62%` exact-match)
+- **CER test :** 1.71% (`71.21%` exact-match)
+- **Coût :** 0 $/OCR
 
 ### LightOn-OCR Poneglyph (Cloud Modal / Local GPU)
 
@@ -286,6 +289,8 @@ Les scripts `/docker_scripts` automatisent le cycle de vie des modèles IA :
 1. **Extraction :** Récupération des bulles/pages validées (Supabase)
 2. **Fine-Tuning :** Entraînement de PP-OCRv6, LightOnOCR, Surya (bulle + bbox) et modèles de détection/tri
 3. **Déploiement :** Push automatique vers Hugging Face si les métriques sont validées
+
+Le pipeline PP-OCRv6 local navigateur est documenté avec captures et métriques ici : [`documentation/ppocrv6_bubble_line_recognition.md`](documentation/ppocrv6_bubble_line_recognition.md).
 
 ---
 
