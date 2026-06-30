@@ -2,27 +2,58 @@ import * as ort from 'onnxruntime-web';
 import { fixFrenchPunctuation } from '../lib/ocr-utils.js';
 
 ort.env.wasm.wasmPaths = new URL('/onnx/', self.location.origin).href;
+ort.env.wasm.proxy = false;
+ort.env.wasm.simd = true;
+ort.env.wasm.numThreads = self.crossOriginIsolated
+    ? Math.min(16, Math.max(1, self.navigator?.hardwareConcurrency || 1))
+    : 1;
+if (ort.env.webgpu) {
+    ort.env.webgpu.powerPreference = 'high-performance';
+}
 
 let currentModelId = null;
 let ppocrLineDetectorSession = null;
 let ppocrRecSession = null;
 let ppocrManifest = null;
 let ppocrRuntimeProvider = null;
+let ppocrWarmupDone = false;
+let ppocrLineDetectorBuffer = null;
+let ppocrRecBuffer = null;
+let ppocrRunQueue = Promise.resolve();
 
 const PPOCR_LINE_MODEL_BASE = 'https://huggingface.co/Remidesbois/pp-ocrv6-one-piece-bubble-line-rec/resolve/main/onnx';
 const PPOCR_LINE_DETECTOR_PATH = `${PPOCR_LINE_MODEL_BASE}/bubble_line_detector_yolo26n.onnx`;
 const PPOCR_REC_PATH = `${PPOCR_LINE_MODEL_BASE}/ppocrv6_bubble_line_rec.onnx`;
+const PPOCR_REC_WEBGPU_COMPAT_PATH = `${PPOCR_LINE_MODEL_BASE}/ppocrv6_bubble_line_rec_webgpu.onnx`;
 const PPOCR_MANIFEST_PATH = `${PPOCR_LINE_MODEL_BASE}/browser_manifest.json`;
 const PPOCR_LINE_CONF = 0.25;
-const PPOCR_LINE_NMS_IOU = 0.85;
+const PPOCR_LINE_NMS_IOU = 0.75;
 const PPOCR_LINE_PAD = 2;
 const PPOCR_LINE_GAP = 8;
+const PPOCR_LINE_FALLBACK_INPUT_SIZE = 1280;
+const PPOCR_SESSION_PROVIDER_CANDIDATES = self.navigator?.gpu
+    ? [['webgpu', 'wasm'], ['wasm']]
+    : [['wasm']];
 
 const MODELS = {
     ppocrv6Line: {
+        id: 'Remidesbois/pp-ocrv6-one-piece-bubble-line-rec#webgpu-compat',
+        runtime: 'onnx',
+        paths: {
+            detector: PPOCR_LINE_DETECTOR_PATH,
+            rec: PPOCR_REC_WEBGPU_COMPAT_PATH,
+            manifest: PPOCR_MANIFEST_PATH,
+        },
+    },
+    ppocrv6LineOriginal: {
         id: 'Remidesbois/pp-ocrv6-one-piece-bubble-line-rec',
-        runtime: 'onnx'
-    }
+        runtime: 'onnx',
+        paths: {
+            detector: PPOCR_LINE_DETECTOR_PATH,
+            rec: PPOCR_REC_PATH,
+            manifest: PPOCR_MANIFEST_PATH,
+        },
+    },
 };
 
 async function fetchArrayBufferWithProgress(url, onProgress) {
@@ -52,24 +83,70 @@ async function fetchArrayBufferWithProgress(url, onProgress) {
     return buffer;
 }
 
-async function createOrtSession(buffer) {
-    ppocrRuntimeProvider = 'wasm';
-    return ort.InferenceSession.create(buffer, {
-        executionProviders: ['wasm'],
-        graphOptimizationLevel: 'all',
-    });
+function roundMs(value) {
+    return Math.round(value * 10) / 10;
 }
 
-async function loadPpocrLinePipeline(progressCallback) {
-    if (ppocrLineDetectorSession && ppocrRecSession && ppocrManifest) return;
+async function createOrtSession(buffer, name, providerCandidates = PPOCR_SESSION_PROVIDER_CANDIDATES) {
+    let lastError = null;
+    for (const executionProviders of providerCandidates) {
+        try {
+            const session = await ort.InferenceSession.create(buffer, {
+                executionProviders,
+                graphOptimizationLevel: 'all',
+                executionMode: 'sequential',
+                enableCpuMemArena: true,
+                enableMemPattern: true,
+            });
+            return { session, provider: executionProviders[0] };
+        } catch (err) {
+            lastError = err;
+            if (executionProviders[0] !== 'wasm') {
+                console.warn(`[Worker] ${name} indisponible en ${executionProviders[0]}, fallback WASM`, err);
+            }
+        }
+    }
+    throw lastError || new Error(`Session ONNX impossible: ${name}`);
+}
 
-    const manifestResponse = await fetch(PPOCR_MANIFEST_PATH);
+async function forcePpocrWasmSessions(reason) {
+    if (!ppocrLineDetectorBuffer || !ppocrRecBuffer) {
+        throw reason || new Error("Buffers PP-OCRv6 indisponibles pour fallback WASM.");
+    }
+    console.warn("[Worker] Fallback PP-OCRv6 vers WASM", reason);
+    await ppocrLineDetectorSession?.release?.();
+    await ppocrRecSession?.release?.();
+    ppocrWarmupDone = false;
+
+    const detectorSession = await createOrtSession(ppocrLineDetectorBuffer, 'YOLO lignes', [['wasm']]);
+    const recSession = await createOrtSession(ppocrRecBuffer, 'PP-OCRv6 recognition', [['wasm']]);
+    ppocrLineDetectorSession = detectorSession.session;
+    ppocrRecSession = recSession.session;
+    ppocrRuntimeProvider = 'wasm';
+    await warmupPpocrLinePipeline();
+}
+
+async function loadPpocrLinePipeline(progressCallback, modelConfig = MODELS.ppocrv6Line) {
+    if (ppocrLineDetectorSession && ppocrRecSession && ppocrManifest && currentModelId === modelConfig.id) return;
+
+    await ppocrLineDetectorSession?.release?.();
+    await ppocrRecSession?.release?.();
+    ppocrLineDetectorSession = null;
+    ppocrRecSession = null;
+    ppocrManifest = null;
+    ppocrRuntimeProvider = null;
+    ppocrWarmupDone = false;
+    ppocrLineDetectorBuffer = null;
+    ppocrRecBuffer = null;
+
+    const paths = modelConfig.paths || MODELS.ppocrv6Line.paths;
+    const manifestResponse = await fetch(paths.manifest);
     if (!manifestResponse.ok) throw new Error("Manifest PP-OCRv6 introuvable.");
     ppocrManifest = await manifestResponse.json();
 
     const files = [
-        { url: PPOCR_LINE_DETECTOR_PATH, name: 'YOLO lignes' },
-        { url: PPOCR_REC_PATH, name: 'PP-OCRv6 recognition' },
+        { url: paths.detector, name: 'YOLO lignes' },
+        { url: paths.rec, name: 'PP-OCRv6 recognition' },
     ];
 
     const sizes = await Promise.all(files.map(async (file) => {
@@ -86,13 +163,29 @@ async function loadPpocrLinePipeline(progressCallback) {
     const detectorBuffer = await fetchArrayBufferWithProgress(files[0].url, (loaded) => {
         progressCallback({ file: files[0].name, progress: ((loadedBefore + loaded) / totalSize) * 100 });
     });
-    ppocrLineDetectorSession = await createOrtSession(detectorBuffer, files[0].name);
+    ppocrLineDetectorBuffer = detectorBuffer;
+    const detectorSession = await createOrtSession(detectorBuffer, files[0].name);
+    ppocrLineDetectorSession = detectorSession.session;
     loadedBefore += detectorBuffer.byteLength;
 
     const recBuffer = await fetchArrayBufferWithProgress(files[1].url, (loaded) => {
         progressCallback({ file: files[1].name, progress: ((loadedBefore + loaded) / totalSize) * 100 });
     });
-    ppocrRecSession = await createOrtSession(recBuffer, files[1].name);
+    ppocrRecBuffer = recBuffer;
+    const recSession = await createOrtSession(recBuffer, files[1].name);
+    ppocrRecSession = recSession.session;
+    ppocrRuntimeProvider = detectorSession.provider === recSession.provider
+        ? recSession.provider
+        : `${detectorSession.provider}+${recSession.provider}`;
+    try {
+        await warmupPpocrLinePipeline();
+    } catch (err) {
+        if ((ppocrRuntimeProvider || '').includes('webgpu')) {
+            await forcePpocrWasmSessions(err);
+        } else {
+            console.warn("[Worker] Warmup PP-OCRv6 ignoré", err);
+        }
+    }
 }
 
 function detectorInputSize(session) {
@@ -103,9 +196,9 @@ function detectorInputSize(session) {
         const width = Number(dims?.[3]);
         if (height > 0 && width > 0) return { height, width };
     } catch (err) {
-        console.warn("[Worker] Taille YOLO lignes illisible, fallback 800", err);
+        console.warn("[Worker] Taille YOLO lignes illisible, fallback 1280", err);
     }
-    return { height: 800, width: 800 };
+    return { height: PPOCR_LINE_FALLBACK_INPUT_SIZE, width: PPOCR_LINE_FALLBACK_INPUT_SIZE };
 }
 
 function preprocessYoloBitmap(bitmap, targetH, targetW) {
@@ -116,7 +209,7 @@ function preprocessYoloBitmap(bitmap, targetH, targetW) {
     const padY = (targetH - newH) / 2;
 
     const canvas = new OffscreenCanvas(targetW, targetH);
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     ctx.fillStyle = '#808080';
     ctx.fillRect(0, 0, targetW, targetH);
     ctx.drawImage(bitmap, padX, padY, newW, newH);
@@ -233,7 +326,7 @@ function preprocessPpocrCanvas(canvas) {
     const width = Math.min(maxWidth, Math.max(minWidth, aspectWidth));
 
     const resized = new OffscreenCanvas(width, height);
-    const ctx = resized.getContext('2d');
+    const ctx = resized.getContext('2d', { willReadFrequently: true });
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, width, height);
     ctx.imageSmoothingEnabled = true;
@@ -280,24 +373,112 @@ function decodePpocrCtc(output) {
     return decoded.join('');
 }
 
-async function ocrPpocrv6Line(imageBlob) {
-    const bitmap = await createImageBitmap(imageBlob);
+async function warmupPpocrLinePipeline() {
+    if (ppocrWarmupDone || !ppocrLineDetectorSession || !ppocrRecSession || !ppocrManifest) return;
+    const { height, width } = detectorInputSize(ppocrLineDetectorSession);
+    const detectorTensor = new ort.Tensor('float32', new Float32Array(3 * height * width), [1, 3, height, width]);
+    await ppocrLineDetectorSession.run({
+        [ppocrLineDetectorSession.inputNames[0]]: detectorTensor,
+    });
+
+    const recHeight = ppocrManifest.image_height || 48;
+    const recWidth = ppocrManifest.min_image_width || 960;
+    const recTensor = new ort.Tensor('float32', new Float32Array(3 * recHeight * recWidth), [1, 3, recHeight, recWidth]);
+    await ppocrRecSession.run({
+        [ppocrRecSession.inputNames[0]]: recTensor,
+    });
+    ppocrWarmupDone = true;
+}
+
+async function runPpocrOnBitmap(bitmap, timings, totalStart) {
+    const detectStart = performance.now();
     const boxes = await detectLineBoxes(bitmap);
+    timings.detectMs = roundMs(performance.now() - detectStart);
+
+    const stitchStart = performance.now();
     const stitched = stitchLineBoxes(bitmap, boxes);
+    timings.stitchMs = roundMs(performance.now() - stitchStart);
+
+    const preprocessStart = performance.now();
     const tensor = preprocessPpocrCanvas(stitched);
+    timings.preprocessMs = roundMs(performance.now() - preprocessStart);
+
+    const recognizeStart = performance.now();
     const result = await ppocrRecSession.run({
         [ppocrRecSession.inputNames[0]]: tensor,
     });
+    timings.recognizeMs = roundMs(performance.now() - recognizeStart);
+
+    const decodeTextStart = performance.now();
     const output = result[ppocrRecSession.outputNames[0]].data;
+    const text = decodePpocrCtc(output);
+    timings.decodeTextMs = roundMs(performance.now() - decodeTextStart);
+    timings.totalMs = roundMs(performance.now() - totalStart);
+
     return {
-        text: decodePpocrCtc(output),
+        text,
         lineCount: boxes.length,
         provider: ppocrRuntimeProvider || 'wasm',
+        timings,
     };
 }
 
+async function ocrPpocrv6Line(imageInput) {
+    const totalStart = performance.now();
+    const timings = {};
+    let bitmap = null;
+
+    const decodeStart = performance.now();
+    if (typeof ImageBitmap !== 'undefined' && imageInput instanceof ImageBitmap) {
+        bitmap = imageInput;
+        timings.decodeMs = 0;
+    } else {
+        bitmap = await createImageBitmap(imageInput);
+        timings.decodeMs = roundMs(performance.now() - decodeStart);
+    }
+
+    try {
+        try {
+            return await runPpocrOnBitmap(bitmap, timings, totalStart);
+        } catch (err) {
+            if (!(ppocrRuntimeProvider || '').includes('webgpu')) throw err;
+            const fallbackStart = performance.now();
+            await forcePpocrWasmSessions(err);
+            timings.providerFallbackMs = roundMs(performance.now() - fallbackStart);
+            timings.providerFallback = 'wasm';
+            return await runPpocrOnBitmap(bitmap, timings, totalStart);
+        }
+    } finally {
+        bitmap?.close?.();
+    }
+}
+
+async function handlePpocrRun({ imageBlob, imageBitmap, requestId }) {
+    if (!ppocrLineDetectorSession || !ppocrRecSession || !ppocrManifest) {
+        self.postMessage({ status: 'error', error: 'Modèle PP-OCRv6 non chargé.', requestId });
+        return;
+    }
+    try {
+        const result = await ocrPpocrv6Line(imageBitmap || imageBlob);
+        const text = fixFrenchPunctuation(result.text);
+        console.log("[Worker] PP-OCRv6 line OCR result:", text, result);
+        self.postMessage({
+            status: 'complete',
+            text,
+            requestId,
+            lineCount: result.lineCount,
+            provider: result.provider,
+            timings: result.timings,
+        });
+    } catch (err) {
+        console.error("[Worker PP-OCRv6 Run Error]", err);
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        self.postMessage({ status: 'error', error: `Erreur OCR PP-OCRv6 : ${errorMsg}`, requestId });
+    }
+}
+
 self.addEventListener('message', async (event) => {
-    const { type, imageBlob, modelKey } = event.data;
+    const { type, imageBlob, imageBitmap, modelKey } = event.data;
 
     if (type === 'init') {
         try {
@@ -317,7 +498,7 @@ self.addEventListener('message', async (event) => {
                         progress: Math.min(Math.max(progress || 0, 0), 100),
                     });
                 };
-                await loadPpocrLinePipeline(progressCallback);
+                await loadPpocrLinePipeline(progressCallback, selectedModel);
                 currentModelId = selectedModel.id;
                 self.postMessage({ status: 'download_progress', file: '', progress: 100 });
                 self.postMessage({ status: 'ready', modelKey: selectedKey });
@@ -331,7 +512,7 @@ self.addEventListener('message', async (event) => {
         }
     }
 
-    if (type === 'run' && imageBlob) {
+    if (type === 'run' && (imageBitmap || imageBlob)) {
         const { requestId } = event.data;
         const activeKey = Object.keys(MODELS).find(k => MODELS[k].id === currentModelId) || 'ppocrv6Line';
         const activeModel = MODELS[activeKey];
@@ -341,22 +522,9 @@ self.addEventListener('message', async (event) => {
                 self.postMessage({ status: 'error', error: 'ModÃ¨le PP-OCRv6 non chargÃ©.', requestId });
                 return;
             }
-            try {
-                const result = await ocrPpocrv6Line(imageBlob);
-                const text = fixFrenchPunctuation(result.text);
-                console.log("[Worker] PP-OCRv6 line OCR result:", text, result);
-                self.postMessage({
-                    status: 'complete',
-                    text,
-                    requestId,
-                    lineCount: result.lineCount,
-                    provider: result.provider,
-                });
-            } catch (err) {
-                console.error("[Worker PP-OCRv6 Run Error]", err);
-                const errorMsg = err instanceof Error ? err.message : String(err);
-                self.postMessage({ status: 'error', error: `Erreur OCR PP-OCRv6 : ${errorMsg}`, requestId });
-            }
+            ppocrRunQueue = ppocrRunQueue
+                .catch(() => undefined)
+                .then(() => handlePpocrRun({ imageBlob, imageBitmap, requestId }));
             return;
         }
     }

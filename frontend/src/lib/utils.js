@@ -63,6 +63,33 @@ export const cropImage = (imageElement, rect) => {
         }, 'image/jpeg', 0.95);
     });
 };
+
+export const cropImageBitmap = async (imageElement, rect) => {
+    if (!imageElement) {
+        console.error("cropImageBitmap: imageElement is missing");
+        throw "No image provided";
+    }
+    if (!rect) {
+        console.error("cropImageBitmap: rect is missing");
+        throw "No rect provided";
+    }
+    if (rect.w <= 0 || rect.h <= 0) {
+        console.error("cropImageBitmap: Invalid dimensions", rect);
+        throw "Invalid rect dimensions";
+    }
+
+    if (typeof createImageBitmap !== 'function') {
+        return cropImage(imageElement, rect);
+    }
+
+    return createImageBitmap(
+        imageElement,
+        Math.round(rect.x),
+        Math.round(rect.y),
+        Math.round(rect.w),
+        Math.round(rect.h)
+    );
+};
 export const loadImage = (src) => {
     return new Promise((resolve, reject) => {
         const img = new Image();

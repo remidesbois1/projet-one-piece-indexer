@@ -136,11 +136,15 @@ export const WorkerProvider = ({ children }) => {
         setDownloadProgress(0);
     }, [activeModelKey, modelStatus]);
 
-    const runOcr = useCallback(async (blob, requestId = null) => {
+    const runOcr = useCallback(async (imageInput, requestId = null) => {
         if (workerRef.current && modelStatus === 'ready') {
-            workerRef.current.postMessage({ type: 'run', imageBlob: blob, requestId });
+            const isBitmap = typeof ImageBitmap !== 'undefined' && imageInput instanceof ImageBitmap;
+            const payload = isBitmap
+                ? { type: 'run', imageBitmap: imageInput, requestId }
+                : { type: 'run', imageBlob: imageInput, requestId };
+            workerRef.current.postMessage(payload, isBitmap ? [imageInput] : []);
         }
-    }, [activeModelKey, modelStatus]);
+    }, [modelStatus]);
 
     const value = useMemo(() => ({
         worker: workerInstance,

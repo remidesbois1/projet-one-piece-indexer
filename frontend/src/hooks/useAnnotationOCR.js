@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useWorker, OCR_MODELS } from '@/context/WorkerContext';
 import { useTauriLocalOcrContext } from '@/context/TauriLocalOcrContext';
 import { analyzeBubble } from '@/lib/geminiClient';
-import { cropImage } from '@/lib/utils';
+import { cropImage, cropImageBitmap } from '@/lib/utils';
 import { toast } from 'sonner';
 
 export function useAnnotationOCR({
@@ -175,8 +175,8 @@ export function useAnnotationOCR({
             }
 
             if (modelData.type === 'local' && modelStatus === 'ready') {
-                const blob = await cropImage(imageRef.current, areaToCrop);
-                runOcr(blob, requestId);
+                const imageInput = await cropImageBitmap(imageRef.current, areaToCrop);
+                runOcr(imageInput, requestId);
             } else {
                 activeRequests.current.delete(requestId);
             }
@@ -271,8 +271,8 @@ export function useAnnotationOCR({
             setIsSubmitting(true);
             activeRequests.current.add(requestId);
 
-            const blob = await cropImage(imageRef.current, areaToCrop);
-            runOcr(blob, requestId);
+            const imageInput = await cropImageBitmap(imageRef.current, areaToCrop);
+            runOcr(imageInput, requestId);
         } catch (err) {
             console.error(err);
             activeRequests.current.delete(lastRequestId.current);
