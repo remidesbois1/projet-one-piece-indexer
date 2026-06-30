@@ -7,9 +7,15 @@ export const useDetection = () => useContext(DetectionContext);
 
 export const DetectionProvider = ({ children }) => {
     const workerRef = useRef(null);
+    const [detectionWorker, setDetectionWorker] = useState(null);
     const [detectionStatus, setDetectionStatus] = useState('idle'); 
     const [downloadProgress, setDownloadProgress] = useState(0);
     const [downloadStats, setDownloadStats] = useState({ loaded: 0, total: 0 });
+    const detectionStatusRef = useRef(detectionStatus);
+
+    useEffect(() => {
+        detectionStatusRef.current = detectionStatus;
+    }, [detectionStatus]);
 
     
     useEffect(() => {
@@ -17,9 +23,10 @@ export const DetectionProvider = ({ children }) => {
             workerRef.current = new Worker(new URL('../workers/detection.worker.js', import.meta.url), {
                 type: 'module'
             });
+            setDetectionWorker(workerRef.current);
 
             workerRef.current.addEventListener('message', (e) => {
-                const { status, progress, loadedBytes, totalBytes, error } = e.data;
+                const { status, progress, loadedBytes, totalBytes } = e.data;
 
                 if (status === 'download_progress') {
                     setDetectionStatus('loading');
@@ -49,7 +56,7 @@ export const DetectionProvider = ({ children }) => {
     
     const detectBubbles = React.useCallback((blob) => {
         return new Promise((resolve, reject) => {
-            if (!workerRef.current || detectionStatus !== 'ready') {
+            if (!workerRef.current || detectionStatusRef.current !== 'ready') {
                 return reject(new Error("Modèle de détection non prêt."));
             }
 
@@ -68,11 +75,11 @@ export const DetectionProvider = ({ children }) => {
             workerRef.current.addEventListener('message', handleMessage);
             workerRef.current.postMessage({ type: 'run', imageBlob: blob });
         });
-    }, [detectionStatus]);
+    }, []);
 
     const detectBubblesPositionsOnly = React.useCallback((blob) => {
         return new Promise((resolve, reject) => {
-            if (!workerRef.current || detectionStatus !== 'ready') {
+            if (!workerRef.current || detectionStatusRef.current !== 'ready') {
                 return reject(new Error("Modèle de détection non prêt."));
             }
 
@@ -91,11 +98,11 @@ export const DetectionProvider = ({ children }) => {
             workerRef.current.addEventListener('message', handleMessage);
             workerRef.current.postMessage({ type: 'run-positions-only', imageBlob: blob });
         });
-    }, [detectionStatus]);
+    }, []);
 
     return (
         <DetectionContext.Provider value={{
-            detectionWorker: workerRef.current,
+            detectionWorker,
             detectionStatus,
             loadDetectionModel,
             downloadProgress,

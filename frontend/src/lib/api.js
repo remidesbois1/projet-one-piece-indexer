@@ -73,10 +73,9 @@ export const searchF2llmLocal = ({ query, embedding, page = 1, limit = 10, filte
         tome: filters.tome || '',
     });
 };
-export const searchOcrPageMatch = ({ bubbles, visualEmbedding = null, page = 1, limit = 24, filters = {}, provider = 'unknown', rawText = '' }) => {
+export const searchOcrPageMatch = ({ bubbles, page = 1, limit = 24, filters = {}, provider = 'unknown', rawText = '' }) => {
     return apiClient.post('/search/ocr-match', {
         bubbles,
-        visual_embedding: visualEmbedding,
         page,
         limit,
         provider,

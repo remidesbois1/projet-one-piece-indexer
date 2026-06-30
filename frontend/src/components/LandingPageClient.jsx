@@ -227,7 +227,7 @@ const features = [
         title: "OCR Local - PP-OCRv6 Ligne",
         badge: "ONNX",
         description: "Detecteur YOLO26n et recognizer PP-OCRv6 specialises pour transcrire les lignes de bulles en local navigateur.",
-        details: ["PP-OCRv6", "YOLO lignes", "~87 Mo", "WASM", "CER 3.74%", "0 $/OCR"],
+        details: ["PP-OCRv6", "YOLO lignes", "~87 Mo", "WebGPU", "CER 1.92%", "0 $/OCR"],
     },
     {
         icon: Zap,

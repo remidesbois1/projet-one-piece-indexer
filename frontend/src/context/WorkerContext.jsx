@@ -12,7 +12,7 @@ export const OCR_MODELS = {
         key: 'ppocrv6Line',
         label: 'PP-OCRv6',
         description: 'YOLO lignes + OCR ONNX',
-        cer: '3.74%',
+        cer: '1.92%',
         size: '~87 Mo',
         type: 'local',
         runtime: 'onnx'

@@ -16,8 +16,6 @@ const OCR_CANDIDATE_TOKEN_LIMIT = 12;
 const OCR_CANDIDATE_QUERY_LIMIT = 56;
 const OCR_CANDIDATE_PAGES_PER_TOKEN = 1200;
 const OCR_MAX_CANDIDATE_PAGES = 3500;
-const OCR_CONFIDENT_SCORE = 0.85;
-const VISUAL_FALLBACK_THRESHOLD = 0.30;
 
 async function getUserFromReq(req) {
     try {
@@ -275,89 +273,9 @@ function formatOcrPageResult(pageRecord, provider) {
     };
 }
 
-function formatVisualPageResult(pageRecord) {
-    return {
-        type: 'visual',
-        id: `page-${pageRecord.id}`,
-        page_id: pageRecord.id,
-        url_image: pageRecord.url_image,
-        content: "Similarite visuelle Gemini",
-        context: `Tome ${pageRecord.tome_numero ?? '?'} - Chap. ${pageRecord.chapitre_numero ?? '?'} - Page ${pageRecord.numero_page}`,
-        scores: {
-            visual: Math.round((pageRecord.similarity || 0) * 100),
-        },
-        similarity: Math.max(0, Math.min(1, pageRecord.similarity || 0)),
-        visual: {
-            provider: 'gemini-embedding-2',
-            similarity: pageRecord.similarity || 0,
-        },
-    };
-}
-
-function mergeOcrAndVisualResults(ocrResults, visualResults, limit) {
-    const pageMap = new Map();
-
-    for (const result of ocrResults) {
-        pageMap.set(result.page_id, {
-            ...result,
-            sources: ['ocr'],
-            combinedSimilarity: result.similarity,
-        });
-    }
-
-    for (const result of visualResults) {
-        const visualScore = Math.max(0, Math.min(1, result.similarity));
-        if (pageMap.has(result.page_id)) {
-            const existing = pageMap.get(result.page_id);
-            existing.sources = Array.from(new Set([...(existing.sources || []), 'visual']));
-            existing.visual = result.visual;
-            existing.scores = { ...existing.scores, visual: result.scores.visual };
-            existing.combinedSimilarity = Math.min(1, Math.max(existing.combinedSimilarity, visualScore * 0.92) + 0.06);
-            existing.similarity = existing.combinedSimilarity;
-        } else {
-            pageMap.set(result.page_id, {
-                ...result,
-                sources: ['visual'],
-                combinedSimilarity: visualScore * 0.92,
-                similarity: visualScore * 0.92,
-            });
-        }
-    }
-
-    return Array.from(pageMap.values())
-        .sort((a, b) => (b.combinedSimilarity || b.similarity || 0) - (a.combinedSimilarity || a.similarity || 0))
-        .slice(0, limit)
-        .map(({ combinedSimilarity, sources, ...result }) => ({
-            ...result,
-            sources,
-        }));
-}
-
-async function runGeminiVisualFallback(visualEmbedding, { limit, filterManga, filterTome, filterCharacters, filterArc }) {
-    if (!Array.isArray(visualEmbedding) || visualEmbedding.length < 100) return [];
-
-    const { data, error } = await supabase.rpc('match_pages_gemini', {
-        query_embedding: visualEmbedding,
-        match_threshold: VISUAL_FALLBACK_THRESHOLD,
-        match_count: Math.max(20, limit * 8),
-    });
-
-    if (error) throw error;
-
-    return (data || [])
-        .filter(page => {
-            if (filterManga && page.manga_slug !== filterManga) return false;
-            if (filterTome && Number(page.tome_numero) !== filterTome) return false;
-            if (!pageMatchesMetadataFilters(page, filterCharacters, filterArc)) return false;
-            return true;
-        })
-        .map(formatVisualPageResult);
-}
-
 router.post('/ocr-match', async (req, res) => {
     const {
         bubbles,
-        visual_embedding,
         page = 1,
         limit = 24,
         manga,
@@ -407,34 +325,18 @@ router.post('/ocr-match', async (req, res) => {
         const candidateLookupMs = Date.now() - candidateStart;
 
         if (!candidatePageIds.length) {
-            const visualResults = Array.isArray(visual_embedding)
-                ? await runGeminiVisualFallback(visual_embedding, {
-                    limit: parsedLimit,
-                    filterManga,
-                    filterTome,
-                    filterCharacters,
-                    filterArc,
-                })
-                : [];
-
-            searchLog.final_results_count = visualResults.length;
-            if (visualResults.length > 0) {
-                searchLog.top_result_id = visualResults[0].page_id;
-                searchLog.top_result_score = visualResults[0].scores.visual;
-            }
+            searchLog.final_results_count = 0;
             searchLog.duration_total_ms = Date.now() - totalStart;
             insertSearchLog(searchLog);
             return res.json({
-                results: visualResults.slice(offset, offset + parsedLimit),
-                totalCount: visualResults.length,
+                results: [],
+                totalCount: 0,
                 ocr: {
                     provider,
                     queryBubblesCount: queryBubbles.length,
                     candidatePagesCount: 0,
                     rankedPagesCount: 0,
                     topScore: 0,
-                    visualFallbackUsed: visualResults.length > 0,
-                    visualFallbackCount: visualResults.length,
                 },
             });
         }
@@ -458,41 +360,26 @@ router.post('/ocr-match', async (req, res) => {
         searchLog.duration_merge_ms = candidateLookupMs + candidateFetchMs + (Date.now() - rankStart);
 
         const topOcrScore = rankedPages[0]?.score || 0;
-        const shouldUseVisualFallback = topOcrScore < OCR_CONFIDENT_SCORE && Array.isArray(visual_embedding);
-        const visualResults = shouldUseVisualFallback
-            ? await runGeminiVisualFallback(visual_embedding, {
-                limit: parsedLimit,
-                filterManga,
-                filterTome,
-                filterCharacters,
-                filterArc,
-            })
-            : [];
         const ocrResults = rankedPages.map(pageRecord => formatOcrPageResult(pageRecord, provider));
-        const mergedResults = visualResults.length
-            ? mergeOcrAndVisualResults(ocrResults, visualResults, offset + parsedLimit)
-            : ocrResults;
-        const finalResults = mergedResults.slice(offset, offset + parsedLimit);
+        const finalResults = ocrResults.slice(offset, offset + parsedLimit);
 
         searchLog.final_results_count = finalResults.length;
         if (finalResults.length > 0) {
             searchLog.top_result_id = finalResults[0].page_id;
-            searchLog.top_result_score = finalResults[0].scores.ocr ?? finalResults[0].scores.visual ?? Math.round((finalResults[0].similarity || 0) * 100);
+            searchLog.top_result_score = finalResults[0].scores.ocr ?? Math.round((finalResults[0].similarity || 0) * 100);
         }
         searchLog.duration_total_ms = Date.now() - totalStart;
         insertSearchLog(searchLog);
 
         res.json({
             results: finalResults,
-            totalCount: mergedResults.length,
+            totalCount: ocrResults.length,
             ocr: {
                 provider,
                 queryBubblesCount: queryBubbles.length,
                 candidatePagesCount: candidatePageIds.length,
                 rankedPagesCount: rankedPages.length,
                 topScore: topOcrScore,
-                visualFallbackUsed: shouldUseVisualFallback,
-                visualFallbackCount: visualResults.length,
                 tokens: informativeTokens,
                 candidateQueries: tokenQueries.slice(0, OCR_CANDIDATE_QUERY_LIMIT).map(query => query.term),
             },

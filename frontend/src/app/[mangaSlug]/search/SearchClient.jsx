@@ -2,12 +2,12 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { searchBubbles, searchF2llmLocal, searchOcrPageMatch, getMetadataSuggestions, getTomes, submitSearchFeedback } from '@/lib/api';
-import { generateGeminiImageEmbedding, generatePageOcrBboxes } from '@/lib/geminiClient';
 import { generateF2llmBrowserQueryEmbedding } from '@/lib/f2llmBrowserEmbedding';
 import { getProxiedImageUrl, cn } from '@/lib/utils';
 import { useDebounce } from '@/hooks/useDebounce';
 import { useAuth } from '@/context/AuthContext';
-import { useTauriLocalOcrContext } from '@/context/TauriLocalOcrContext';
+import { useDetection } from '@/context/DetectionContext';
+import { useWorker } from '@/context/WorkerContext';
 import Link from 'next/link';
 import { useManga } from '@/context/MangaContext';
 import { Input } from "@/components/ui/input";
@@ -26,8 +26,7 @@ import { Search, X, Loader2, Sparkles, BookOpen, MapPin, Quote, Filter, Check, C
 
 const RESULTS_PER_PAGE = 24;
 const OCR_RESULTS_LIMIT = 3;
-const OCR_VISUAL_FALLBACK_RESULTS_LIMIT = 12;
-const OCR_CONFIDENT_THRESHOLD = 0.85;
+const OCR_SEARCH_PROVIDER = 'one-shot+ppocrv6';
 
 const PONEGLYPH_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
@@ -101,6 +100,35 @@ function PoneglyphHeaderGlyphs({ count = 15, color = "#2F7AAF" }) {
     );
 }
 
+const waitForCondition = (predicate, timeoutMs, errorMessage) => {
+    const started = Date.now();
+    return new Promise((resolve, reject) => {
+        const tick = () => {
+            if (predicate()) {
+                resolve();
+                return;
+            }
+            if (Date.now() - started >= timeoutMs) {
+                reject(new Error(errorMessage));
+                return;
+            }
+            window.setTimeout(tick, 100);
+        };
+        tick();
+    });
+};
+
+const clampDetectedBox = (box, imageWidth, imageHeight) => {
+    const pad = 4;
+    const x = Math.max(0, Math.floor(Number(box.x || 0)) - pad);
+    const y = Math.max(0, Math.floor(Number(box.y || 0)) - pad);
+    const right = Math.min(imageWidth, Math.ceil(Number(box.x || 0) + Number(box.w || 0)) + pad);
+    const bottom = Math.min(imageHeight, Math.ceil(Number(box.y || 0) + Number(box.h || 0)) + pad);
+    const w = Math.max(0, right - x);
+    const h = Math.max(0, bottom - y);
+    return { x, y, w, h };
+};
+
 const ResultImage = ({ url, pageId, token, coords, type }) => {
     if (type === 'semantic' || !coords) {
         return (
@@ -155,37 +183,49 @@ const ResultImage = ({ url, pageId, token, coords, type }) => {
 export default function SearchPage() {
     const { session } = useAuth();
     const { mangaSlug } = useManga();
-    const localOcr = useTauriLocalOcrContext();
+    const {
+        detectBubbles,
+        detectionStatus,
+        loadDetectionModel,
+    } = useDetection();
+    const {
+        worker: ocrWorker,
+        modelStatus: ocrModelStatus,
+        activeModelKey: activeOcrModelKey,
+    } = useWorker();
     const getSavedState = () => {
         if (typeof window === 'undefined') return {};
         try {
             const saved = sessionStorage.getItem(`search_state_${mangaSlug}`);
             return saved ? JSON.parse(saved) : {};
-        } catch (e) { return {}; }
+        } catch { return {}; }
     };
 
     const savedState = getSavedState();
+    const savedOcrProvider = savedState.ocrProvider === OCR_SEARCH_PROVIDER ? savedState.ocrProvider : null;
+    const savedSearchMode = savedState.searchMode || (savedState.useSemantic ? 'semantic' : 'keyword');
+    const canRestoreResults = savedSearchMode !== 'ocr' || Boolean(savedOcrProvider);
 
     const [query, setQuery] = useState(savedState.query || '');
     const debouncedQuery = useDebounce(query, 400);
 
-    const [results, setResults] = useState(savedState.results || []);
-    const [totalCount, setTotalCount] = useState(savedState.totalCount || 0);
+    const [results, setResults] = useState(canRestoreResults ? savedState.results || [] : []);
+    const [totalCount, setTotalCount] = useState(canRestoreResults ? savedState.totalCount || 0 : 0);
     const [isLoading, setIsLoading] = useState(false);
-    const [page, setPage] = useState(savedState.page || 1);
-    const [hasMore, setHasMore] = useState(savedState.hasMore || false);
-    const [searchMode, setSearchMode] = useState(savedState.searchMode || (savedState.useSemantic ? 'semantic' : 'keyword'));
+    const [page, setPage] = useState(canRestoreResults ? savedState.page || 1 : 1);
+    const [hasMore, setHasMore] = useState(canRestoreResults ? savedState.hasMore || false : false);
+    const [searchMode, setSearchMode] = useState(savedSearchMode);
     const [localOnly, setLocalOnly] = useState(savedState.localOnly || false);
     const useSemantic = searchMode === 'semantic';
     const useOcrSearch = searchMode === 'ocr';
     const [feedbackGiven, setFeedbackGiven] = useState({});
     const [ocrImageFile, setOcrImageFile] = useState(null);
     const [ocrImagePreviewUrl, setOcrImagePreviewUrl] = useState(null);
-    const [ocrExtractedBubbles, setOcrExtractedBubbles] = useState(savedState.ocrExtractedBubbles || []);
-    const [ocrProvider, setOcrProvider] = useState(savedState.ocrProvider || null);
+    const [ocrExtractedBubbles, setOcrExtractedBubbles] = useState(savedOcrProvider ? savedState.ocrExtractedBubbles || [] : []);
+    const [ocrProvider, setOcrProvider] = useState(savedOcrProvider);
     const [ocrStatus, setOcrStatus] = useState('');
     const [localModelStatus, setLocalModelStatus] = useState('');
-    const [ocrHasSearched, setOcrHasSearched] = useState(savedState.ocrHasSearched || false);
+    const [ocrHasSearched, setOcrHasSearched] = useState(savedOcrProvider ? savedState.ocrHasSearched || false : false);
 
     const [selectedCharacters, setSelectedCharacters] = useState(savedState.selectedCharacters || []);
     const [selectedArc, setSelectedArc] = useState(savedState.selectedArc || 'all');
@@ -201,6 +241,26 @@ export default function SearchPage() {
     const inputRef = useRef(null);
     const fileInputRef = useRef(null);
     const isFirstRun = useRef(true);
+    const detectionStatusRef = useRef(detectionStatus);
+    const ocrModelStatusRef = useRef(ocrModelStatus);
+    const activeOcrModelKeyRef = useRef(activeOcrModelKey);
+    const ocrWorkerRef = useRef(ocrWorker);
+
+    useEffect(() => {
+        detectionStatusRef.current = detectionStatus;
+    }, [detectionStatus]);
+
+    useEffect(() => {
+        ocrModelStatusRef.current = ocrModelStatus;
+    }, [ocrModelStatus]);
+
+    useEffect(() => {
+        activeOcrModelKeyRef.current = activeOcrModelKey;
+    }, [activeOcrModelKey]);
+
+    useEffect(() => {
+        ocrWorkerRef.current = ocrWorker;
+    }, [ocrWorker]);
 
     // Persistence Effect
     useEffect(() => {
@@ -281,10 +341,103 @@ export default function SearchPage() {
         })
         .filter(Boolean);
 
-    const openApiKeyModal = () => {
-        if (typeof window !== 'undefined') {
-            window.dispatchEvent(new Event('open-api-key-modal'));
+    const ensureOneShotReady = async () => {
+        if (detectionStatusRef.current === 'ready') return;
+        setOcrStatus("Chargement One-Shot...");
+        loadDetectionModel();
+        await waitForCondition(
+            () => detectionStatusRef.current === 'ready',
+            120000,
+            "Le pipeline One-Shot n'a pas pu etre charge."
+        );
+    };
+
+    const ensurePpocrReady = async () => {
+        if (ocrWorkerRef.current && ocrModelStatusRef.current === 'ready' && activeOcrModelKeyRef.current === 'ppocrv6Line') return;
+        setOcrStatus("Chargement PP-OCRv6...");
+        await waitForCondition(
+            () => Boolean(ocrWorkerRef.current),
+            10000,
+            "Worker PP-OCRv6 indisponible."
+        );
+        ocrWorkerRef.current.postMessage({ type: 'init', modelKey: 'ppocrv6Line' });
+        await waitForCondition(
+            () => ocrWorkerRef.current && ocrModelStatusRef.current === 'ready' && activeOcrModelKeyRef.current === 'ppocrv6Line',
+            120000,
+            "PP-OCRv6 n'a pas pu etre charge."
+        );
+    };
+
+    const runPpocrSearchCrop = (imageBitmap, requestId) => new Promise((resolve, reject) => {
+        const worker = ocrWorkerRef.current;
+        if (!worker) {
+            imageBitmap?.close?.();
+            reject(new Error("Worker PP-OCRv6 indisponible."));
+            return;
         }
+
+        const timeout = window.setTimeout(() => {
+            worker.removeEventListener('message', handleMessage);
+            reject(new Error("Timeout PP-OCRv6 sur une bulle."));
+        }, 90000);
+
+        const handleMessage = (event) => {
+            const data = event.data || {};
+            if (data.requestId !== requestId) return;
+            window.clearTimeout(timeout);
+            worker.removeEventListener('message', handleMessage);
+            if (data.status === 'complete') {
+                resolve(data);
+            } else {
+                reject(new Error(data.error || "Erreur PP-OCRv6."));
+            }
+        };
+
+        worker.addEventListener('message', handleMessage);
+        worker.postMessage({ type: 'run', imageBitmap, requestId }, [imageBitmap]);
+    });
+
+    const extractOcrBubblesFromImage = async (imageFile) => {
+        if (!imageFile) throw new Error("Image manquante.");
+
+        await ensureOneShotReady();
+        setOcrStatus("Detection One-Shot...");
+        const boxes = await detectBubbles(imageFile);
+        if (!boxes?.length) {
+            throw new Error("Aucune bulle detectee par le pipeline One-Shot.");
+        }
+
+        await ensurePpocrReady();
+        const pageBitmap = await createImageBitmap(imageFile);
+        const bubbles = [];
+
+        try {
+            for (let index = 0; index < boxes.length; index += 1) {
+                const bbox = clampDetectedBox(boxes[index], pageBitmap.width, pageBitmap.height);
+                if (bbox.w <= 0 || bbox.h <= 0) continue;
+
+                setOcrStatus(`PP-OCRv6 ${index + 1}/${boxes.length}...`);
+                const crop = await createImageBitmap(pageBitmap, bbox.x, bbox.y, bbox.w, bbox.h);
+                const result = await runPpocrSearchCrop(crop, `search-ppocr-${Date.now()}-${index}`);
+                const content = String(result?.text || '').trim();
+                if (!content) continue;
+
+                bubbles.push({
+                    content,
+                    bbox,
+                    score: boxes[index]?.score || boxes[index]?.conf || null,
+                    lineCount: result?.lineCount || null,
+                });
+            }
+        } finally {
+            pageBitmap.close?.();
+        }
+
+        return {
+            provider: OCR_SEARCH_PROVIDER,
+            bubbles: normalizeOcrBubbles(bubbles),
+            rawText: bubbles.map(bubble => bubble.content).join('\n'),
+        };
     };
 
     const loadOcrImageFile = useCallback((file) => {
@@ -323,35 +476,6 @@ export default function SearchPage() {
         return () => window.removeEventListener('paste', handlePaste);
     }, [useOcrSearch, loadOcrImageFile]);
 
-    const extractOcrBubblesFromImage = async (imageFile) => {
-        if (!imageFile) throw new Error("Image manquante.");
-
-        if (localOcr.canRunLocalOcr) {
-            setOcrStatus("OCR LightOn local...");
-            const result = await localOcr.runLocalOcrBlob(imageFile);
-            return {
-                provider: 'lighton-local',
-                bubbles: normalizeOcrBubbles(result?.bubbles),
-                rawText: result?.raw_text || '',
-            };
-        }
-
-        const apiKey = typeof window !== 'undefined' ? localStorage.getItem('google_api_key') : null;
-        if (!apiKey) {
-            openApiKeyModal();
-            throw new Error("Cle API Gemini requise pour la recherche OCR hors app desktop avec LightOn charge.");
-        }
-
-        setOcrStatus("OCR Gemini...");
-        const result = await generatePageOcrBboxes(imageFile, apiKey);
-        const bubbles = normalizeOcrBubbles(result?.data?.bubbles);
-        return {
-            provider: 'gemini',
-            bubbles,
-            rawText: bubbles.map(bubble => bubble.content).join('\n'),
-        };
-    };
-
     const runOcrSearch = async (pageToFetch = 1, isNewSearch = true) => {
         if (!ocrImageFile && (!ocrExtractedBubbles || ocrExtractedBubbles.length === 0)) {
             toast.error("Ajoutez une image pour lancer la recherche OCR.");
@@ -366,7 +490,7 @@ export default function SearchPage() {
 
         try {
             let extracted = {
-                provider: ocrProvider || 'cached',
+                provider: ocrProvider === OCR_SEARCH_PROVIDER ? ocrProvider : OCR_SEARCH_PROVIDER,
                 bubbles: ocrExtractedBubbles,
                 rawText: ocrExtractedBubbles.map(bubble => bubble.content).join('\n'),
             };
@@ -381,8 +505,7 @@ export default function SearchPage() {
             }
 
             setOcrStatus("Recherche de la page...");
-            let displayLimit = OCR_RESULTS_LIMIT;
-            let response = await searchOcrPageMatch({
+            const response = await searchOcrPageMatch({
                 bubbles: extracted.bubbles,
                 page: pageToFetch,
                 limit: OCR_RESULTS_LIMIT,
@@ -391,45 +514,14 @@ export default function SearchPage() {
                 rawText: extracted.rawText,
             });
 
-            const firstResult = response.data.results?.[0] || null;
-            const firstMatch = firstResult?.ocr?.matches?.[0] || null;
-            const isOcrConfident = Boolean(
-                firstResult?.similarity >= OCR_CONFIDENT_THRESHOLD &&
-                firstMatch?.query_index === 0 &&
-                firstMatch?.score >= OCR_CONFIDENT_THRESHOLD
-            );
-
-            if (isNewSearch && ocrImageFile && !isOcrConfident) {
-                const apiKey = typeof window !== 'undefined' ? localStorage.getItem('google_api_key') : null;
-                if (apiKey) {
-                    setOcrStatus("OCR incertain, fallback image Gemini...");
-                    displayLimit = OCR_VISUAL_FALLBACK_RESULTS_LIMIT;
-                    const visualEmbedding = await generateGeminiImageEmbedding(ocrImageFile, apiKey);
-                    response = await searchOcrPageMatch({
-                        bubbles: extracted.bubbles,
-                        visualEmbedding,
-                        page: pageToFetch,
-                        limit: displayLimit,
-                        filters: getActiveFilters(),
-                        provider: `${extracted.provider}+gemini-visual`,
-                        rawText: extracted.rawText,
-                    });
-                } else {
-                    openApiKeyModal();
-                    setOcrStatus("OCR incertain. Ajoutez une cle Gemini pour le fallback image.");
-                }
-            }
-
-            const fallbackUsed = Boolean(response.data.ocr?.visualFallbackUsed);
-            const resultLimit = fallbackUsed ? OCR_VISUAL_FALLBACK_RESULTS_LIMIT : displayLimit;
-            const newResults = (response.data.results || []).slice(0, resultLimit);
+            const newResults = (response.data.results || []).slice(0, OCR_RESULTS_LIMIT);
             const total = response.data.totalCount || 0;
 
             setResults(prev => isNewSearch ? newResults : [...prev, ...newResults]);
             setTotalCount(newResults.length);
             setHasMore(false);
             setOcrHasSearched(true);
-            setOcrStatus(`${extracted.bubbles.length} bulles OCR, top ${newResults.length} affiche sur ${total} pages classees${fallbackUsed ? ' avec fallback image' : ''}.`);
+            setOcrStatus(`${extracted.bubbles.length} bulles OCR, top ${newResults.length} affiche sur ${total} pages classees.`);
         } catch (err) {
             const message = err?.response?.data?.error || err?.message || "Recherche OCR impossible.";
             toast.error(message);
@@ -673,17 +765,17 @@ export default function SearchPage() {
                                         </div>
                                         <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs font-medium text-slate-400">
                                             <span className="text-yellow-300">
-                                                {localOcr.canRunLocalOcr ? 'LightOn local' : 'Gemini'}
+                                                One-Shot + PP-OCRv6
                                             </span>
                                             {ocrProvider && (
                                                 <>
                                                     <span className="text-slate-600">/</span>
-                                                    <span>OCR {ocrProvider === 'lighton-local' ? 'LightOn' : 'Gemini'}</span>
+                                                    <span>OCR navigateur</span>
                                                 </>
                                             )}
                                         </div>
                                         <div className="mt-1 min-h-4 truncate text-xs text-slate-500">
-                                            {ocrStatus || (localOcr.canRunLocalOcr ? "Modele local charge" : "Cle Gemini requise hors LightOn local")}
+                                            {ocrStatus || "Detection One-Shot puis OCR PP-OCRv6"}
                                         </div>
                                     </div>
 
