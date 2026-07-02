@@ -1,123 +1,320 @@
+import argparse
+import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 
-# Force unbuffered stdout/stderr for RunPod real-time logs
+from dotenv import load_dotenv
+from huggingface_hub import HfApi, login
+
+
 os.environ["PYTHONUNBUFFERED"] = "1"
 sys.stdout.reconfigure(line_buffering=True)
 sys.stderr.reconfigure(line_buffering=True)
 
-import requests
-from huggingface_hub import HfApi, login
-from pathlib import Path
-from dotenv import load_dotenv
-
 SCRIPT_DIR = Path(__file__).resolve().parent
+DOCKER_SCRIPTS_DIR = SCRIPT_DIR.parent
+PROJECT_ROOT = DOCKER_SCRIPTS_DIR.parent
 os.chdir(SCRIPT_DIR)
+sys.path.insert(0, str(DOCKER_SCRIPTS_DIR))
+
 load_dotenv(SCRIPT_DIR / ".env")
-load_dotenv(SCRIPT_DIR.parent / ".env")
-load_dotenv(SCRIPT_DIR.parent.parent / ".env")
+load_dotenv(DOCKER_SCRIPTS_DIR / ".env")
+load_dotenv(PROJECT_ROOT / ".env")
 
-REQUIRED_ENV_VARS = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "HF_TOKEN"]
-missing_vars = [var for var in REQUIRED_ENV_VARS if var not in os.environ]
-
-if missing_vars:
-    print(f"Error: Missing environment variables: {', '.join(missing_vars)}")
-    sys.exit(1)
-
-import time
+from common_training.artifacts import standard_pipeline_summary, write_json
+from common_training.env import env_bool, training_job_id, training_provider
+from common_training.provider import provider_from_env
 
 
-def terminate_runpod(is_error=False):
-    pod_id = os.environ.get("RUNPOD_POD_ID")
-    api_key = os.environ.get("RUNPOD_API_KEY")
-
-    if not pod_id:
-        print("ℹ️ Not running on RunPod. Skipping termination.")
-        return
-
-    if not api_key:
-        print("⚠️ RUNPOD_API_KEY is missing. Cannot terminate automatically.")
-        return
-
-    if is_error:
-        print(
-            "\n⏳ ERROR: Pipeline failed. Autodestruct in 10 minutes to allow log reading...",
-            flush=True,
-        )
-        time.sleep(600)
-
-    print(f"🛑 Terminating Pod ID: {pod_id}")
-    url = f"https://api.runpod.io/graphql?api_key={api_key}"
-    query = f'mutation {{ podTerminate(input: {{podId: "{pod_id}"}}) }}'
-
-    try:
-        response = requests.post(url, json={"query": query})
-        print(f"✅ Termination status: {response.text}")
-    except Exception as e:
-        print(f"❌ Failed to terminate: {e}")
+DEFAULT_HF_REPO = "Remidesbois/LightonOCR-2-1b-poneglyph"
 
 
-print("🚀 Starting LightOnOCR-2-1B Fine-Tuning Pipeline...", flush=True)
-login(token=os.environ["HF_TOKEN"])
+def parse_args():
+    parser = argparse.ArgumentParser(description="Run the LightOnOCR crop OCR fine-tune pipeline.")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate env, writable paths, processor import, and optional remote access without exporting or training.",
+    )
+    parser.add_argument(
+        "--check-remote",
+        action="store_true",
+        help="With --dry-run, also validate Supabase query access and Hugging Face token.",
+    )
+    return parser.parse_args()
+
+
+def hf_repo_id():
+    return os.getenv("HF_REPO", DEFAULT_HF_REPO)
+
+
+def dataset_dir():
+    return Path(os.getenv("LIGHTON_DATASET_DIR", str(SCRIPT_DIR / "lighton_dataset")))
+
+
+def output_dir():
+    return Path(os.getenv("LIGHTON_OUTPUT_DIR", str(SCRIPT_DIR / "outputs_lighton_manga")))
+
+
+def final_model_dir():
+    return output_dir() / "final_lora_merged"
+
+
+def dataset_is_ready(path: Path):
+    return all((path / split / "metadata.jsonl").exists() for split in ("train", "val", "test"))
+
+
+def final_model_is_ready(path: Path):
+    return (path / "config.json").exists()
+
+
+def benchmark_is_ready(path: Path):
+    return (path / "benchmark_test.json").exists()
+
+
+def missing_required_env():
+    required = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"]
+    missing = [name for name in required if not os.getenv(name)]
+    if env_bool("LIGHTON_REQUIRE_UPLOAD", False) and not os.getenv("HF_TOKEN"):
+        missing.append("HF_TOKEN")
+    return missing
+
+
+def required_env():
+    missing = missing_required_env()
+    if missing:
+        print(f"Missing required environment variables: {', '.join(missing)}", flush=True)
+        sys.exit(1)
 
 
 def run_step(label, script, *script_args):
-    """Run a sub-script with real-time unbuffered output."""
-    print(f"\n{label}", flush=True)
+    print("", flush=True)
+    print(label, flush=True)
     result = subprocess.run(
         [sys.executable, "-u", script, *script_args],
         env={**os.environ, "PYTHONUNBUFFERED": "1"},
     )
     if result.returncode != 0:
-        print(f"❌ {script} failed.", flush=True)
-        terminate_runpod(is_error=True)
-        sys.exit(1)
+        raise RuntimeError(f"{script} failed with exit code {result.returncode}")
 
 
-def env_flag(name):
-    return os.getenv(name, "0") not in {"0", "false", "False", ""}
+def run_probe(label, command):
+    print("", flush=True)
+    print(label, flush=True)
+    return subprocess.run(command, env={**os.environ, "PYTHONUNBUFFERED": "1"}).returncode
 
 
-def dataset_is_ready(dataset_dir):
-    required = [dataset_dir / split / "metadata.jsonl" for split in ["train", "val", "test"]]
-    return all(path.exists() for path in required)
+def assert_writable_dir(path: Path):
+    path.mkdir(parents=True, exist_ok=True)
+    probe = path / ".poneglyph_write_test"
+    probe.write_text("ok", encoding="utf-8")
+    probe.unlink(missing_ok=True)
 
 
-# 1. Dataset Export
-dataset_dir = Path("lighton_dataset")
-if dataset_dir.exists() and dataset_is_ready(dataset_dir) and not env_flag("LIGHTON_FORCE_EXPORT"):
-    print("✅ Dataset already exists. Skipping export.", flush=True)
-else:
-    run_step("1️⃣  Exporting Dataset from Supabase...", "export_dataset.py")
+def print_env_presence():
+    keys = [
+        "TRAINING_PROVIDER",
+        "TRAINING_JOB_ID",
+        "SUPABASE_URL",
+        "SUPABASE_SERVICE_ROLE_KEY",
+        "HF_TOKEN",
+        "HF_REPO",
+        "LIGHTON_REQUIRE_UPLOAD",
+        "LIGHTON_SKIP_UPLOAD",
+        "RUNPOD_API_KEY",
+        "RUNPOD_POD_ID",
+        "RUNPOD_TERMINATE_ON_EXIT",
+    ]
+    print("Environment presence:", flush=True)
+    for key in keys:
+        value = hf_repo_id() if key == "HF_REPO" else os.getenv(key)
+        status = "present" if value else "missing"
+        if key == "HF_REPO" and value == DEFAULT_HF_REPO and not os.getenv("HF_REPO"):
+            status = f"default ({DEFAULT_HF_REPO})"
+        if key.startswith("LIGHTON_") and value:
+            status = value
+        print(f"  {key}: {status}", flush=True)
 
-# 2. Fine-Tuning
-model_out = Path("outputs_lighton_manga/final_lora_merged")
-if model_out.exists() and (model_out / "config.json").exists() and not env_flag("LIGHTON_FORCE_TRAIN"):
-    print("✅ Final model already exists. Skipping training.", flush=True)
-    if not (model_out / "benchmark_test.json").exists() and env_flag("LIGHTON_RUN_BENCHMARK_IF_MISSING"):
-        run_step("2️⃣  Running final benchmark on existing model...", "train_lighton_ocr.py", "--benchmark-only")
-else:
-    run_step("2️⃣  Starting Fine-Tuning (SFT/LoRA)...", "train_lighton_ocr.py")
 
-# 3. Upload to Hugging Face
-print("\n3️⃣  Uploading to Hugging Face...", flush=True)
-repo_id = os.getenv("HF_REPO", "Remidesbois/LightonOCR-2-1b-poneglyph")
-api = HfApi()
+def check_supabase_access():
+    from supabase import create_client
 
-try:
-    api.create_repo(repo_id=repo_id, exist_ok=True, private=False)
-    print(f"📦 Uploading merged weights to {repo_id} (repo root)...", flush=True)
+    status_value = os.getenv("LIGHTON_STATUS_VALUE", "Valid\u00e9")
+    client = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_ROLE_KEY"])
+    response = (
+        client.table("bulles")
+        .select("id, x, y, w, h, texte_propose, id_page, pages(url_image)")
+        .eq("statut", status_value)
+        .limit(1)
+        .execute()
+    )
+    sample_count = len(response.data or [])
+    print(f"Supabase query access ok; sample rows returned: {sample_count}", flush=True)
+
+
+def check_hf_access():
+    token = os.getenv("HF_TOKEN")
+    if not token:
+        print("HF_TOKEN missing; skipping Hugging Face token check.", flush=True)
+        return
+    api = HfApi(token=token)
+    whoami = api.whoami()
+    username = whoami.get("name") or whoami.get("fullname") or "authenticated"
+    print(f"Hugging Face token ok for: {username}", flush=True)
+
+
+def dry_run(check_remote=False):
+    print(f"LightOnOCR dry run on provider: {training_provider()}.", flush=True)
+    print_env_presence()
+
+    failures = []
+    missing = missing_required_env()
+    if missing:
+        failures.append(f"missing env: {', '.join(sorted(set(missing)))}")
+
+    for label, path in (("dataset_dir", dataset_dir()), ("output_dir", output_dir())):
+        try:
+            assert_writable_dir(path)
+            print(f"Writable {label}: {path}", flush=True)
+        except Exception as exc:
+            failures.append(f"{label} not writable: {path} ({exc})")
+
+    smoke_status = run_probe("Running LightOnOCR smoke check...", [sys.executable, "-u", "smoke_check.py"])
+    if smoke_status != 0:
+        failures.append(f"smoke_check.py failed with exit code {smoke_status}")
+
+    if check_remote:
+        print("", flush=True)
+        print("Checking remote credentials and query access...", flush=True)
+        try:
+            check_supabase_access()
+        except Exception as exc:
+            failures.append(f"Supabase query check failed: {exc}")
+        try:
+            check_hf_access()
+        except Exception as exc:
+            failures.append(f"Hugging Face token check failed: {exc}")
+
+    if failures:
+        print("", flush=True)
+        print("Dry run failed:", flush=True)
+        for failure in failures:
+            print(f"  - {failure}", flush=True)
+        return 1
+
+    print("", flush=True)
+    print("Dry run passed. Launch without --dry-run to export, train, benchmark, and upload.", flush=True)
+    return 0
+
+
+def write_pipeline_summary(status: str, error_message: str | None = None):
+    summary = standard_pipeline_summary(
+        status=status,
+        training_kind="lighton_ocr",
+        provider=training_provider(),
+        dataset_dir=dataset_dir(),
+        output_dir=output_dir(),
+        final_model_dir=final_model_dir(),
+        benchmark_path=final_model_dir() / "benchmark_test.json",
+        hf_repo=hf_repo_id(),
+        error_message=error_message,
+    )
+    summary.update(
+        {
+            "status": status,
+            "dataset_dir": str(dataset_dir()),
+            "output_dir": str(output_dir()),
+            "final_model_dir": str(final_model_dir()),
+            "benchmark_path": str(final_model_dir() / "benchmark_test.json"),
+            "hf_repo": hf_repo_id(),
+        }
+    )
+    summary_path = output_dir() / "pipeline_summary.json"
+    write_json(summary_path, summary)
+    print(f"Pipeline summary saved to {summary_path}", flush=True)
+    return summary
+
+
+def maybe_upload_to_hf():
+    if env_bool("LIGHTON_SKIP_UPLOAD", False):
+        print("Skipping Hugging Face upload because LIGHTON_SKIP_UPLOAD=1.", flush=True)
+        return
+
+    token = os.getenv("HF_TOKEN")
+    repo_id = hf_repo_id()
+    if not token:
+        message = "HF_TOKEN missing; skipping optional Hugging Face upload."
+        if env_bool("LIGHTON_REQUIRE_UPLOAD", False):
+            raise RuntimeError(message)
+        print(message, flush=True)
+        return
+
+    login(token=token)
+    api = HfApi()
+    api.create_repo(repo_id=repo_id, exist_ok=True, private=env_bool("HF_PRIVATE", False))
+    print(f"Uploading merged weights to Hugging Face: {repo_id}", flush=True)
     api.upload_folder(
-        folder_path=str(model_out),
+        folder_path=str(final_model_dir()),
         repo_id=repo_id,
         repo_type="model",
+        commit_message="Upload LightOnOCR Poneglyph fine-tuned model",
     )
-    print("✅ Upload completed.", flush=True)
-except Exception as e:
-    print(f"❌ Upload failed: {e}", flush=True)
-    terminate_runpod(is_error=True)
-    sys.exit(1)
+    print("Hugging Face upload complete.", flush=True)
 
-print("\n🎉 LightOn Pipeline Finished!", flush=True)
-terminate_runpod()
+
+def main():
+    args = parse_args()
+    if args.dry_run or env_bool("LIGHTON_DRY_RUN", False):
+        sys.exit(dry_run(check_remote=args.check_remote or env_bool("LIGHTON_DRY_RUN_CHECK_REMOTE", False)))
+
+    hooks = provider_from_env(job_id=training_job_id(), kind="lighton_ocr")
+    try:
+        required_env()
+        hooks.on_start(
+            status="running",
+            hf_repo=hf_repo_id(),
+            modal_volume_name=os.getenv("PONEGLYPH_MODAL_VOLUME_NAME"),
+            runpod_pod_id=os.getenv("RUNPOD_POD_ID"),
+        )
+        print(f"Starting LightOnOCR pipeline on provider: {training_provider()}.", flush=True)
+        print(f"Dataset directory: {dataset_dir()}", flush=True)
+        print(f"Output directory:  {output_dir()}", flush=True)
+        print(f"Hugging Face repo: {hf_repo_id()}", flush=True)
+
+        if dataset_is_ready(dataset_dir()) and not env_bool("LIGHTON_FORCE_EXPORT", False):
+            print("Dataset already exists. Skipping export.", flush=True)
+        else:
+            hooks.set_status("preparing_dataset")
+            run_step("Step 1: exporting Supabase bubble dataset", "export_dataset.py")
+            hooks.set_status("dataset_ready")
+
+        model_ready = final_model_is_ready(final_model_dir())
+        benchmark_ready = benchmark_is_ready(final_model_dir())
+
+        hooks.set_status("running")
+        if model_ready and benchmark_ready and not env_bool("LIGHTON_FORCE_TRAIN", False):
+            print("Final model and benchmark already exist. Skipping training.", flush=True)
+        elif model_ready and not env_bool("LIGHTON_FORCE_TRAIN", False):
+            print("Final model exists but benchmark is missing.", flush=True)
+            hooks.set_status("benchmarking")
+            run_step("Step 2: benchmarking existing final model", "train_lighton_ocr.py", "--benchmark-only")
+        else:
+            run_step("Step 2: fine-tuning LightOnOCR", "train_lighton_ocr.py")
+
+        hooks.set_status("uploading")
+        maybe_upload_to_hf()
+    except Exception as exc:
+        print(f"LightOnOCR pipeline failed: {exc}", flush=True)
+        write_pipeline_summary("failed", error_message=str(exc))
+        hooks.on_error(str(exc))
+        sys.exit(1)
+
+    summary = write_pipeline_summary("complete")
+    print("LightOnOCR pipeline complete.", flush=True)
+    hooks.on_complete(summary)
+
+
+if __name__ == "__main__":
+    main()

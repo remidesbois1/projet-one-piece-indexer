@@ -2,6 +2,7 @@ import io
 import json
 import os
 import re
+import shutil
 import sys
 import threading
 from collections import defaultdict
@@ -38,12 +39,22 @@ if not SUPABASE_URL or not SUPABASE_KEY:
     print("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.", flush=True)
     sys.exit(1)
 
-OUTPUT_DIR = SCRIPT_DIR / "lighton_dataset"
+OUTPUT_DIR = Path(os.getenv("LIGHTON_DATASET_DIR", str(SCRIPT_DIR / "lighton_dataset")))
+STATUS_VALUE = os.getenv("LIGHTON_STATUS_VALUE", "Valid\u00e9")
 VAL_SIZE = float(os.getenv("LIGHTON_VAL_SIZE", "0.15"))
 TEST_SIZE = float(os.getenv("LIGHTON_TEST_SIZE", "0.15"))
 RANDOM_SEED = int(os.getenv("LIGHTON_RANDOM_SEED", "42"))
 MIN_TEXT_LENGTH = int(os.getenv("LIGHTON_MIN_TEXT_LENGTH", "2"))
 DOWNLOAD_WORKERS = int(os.getenv("LIGHTON_DOWNLOAD_WORKERS", "16"))
+SUPABASE_PAGE_SIZE = int(os.getenv("LIGHTON_SUPABASE_PAGE_SIZE", "1000"))
+REQUEST_TIMEOUT_SECONDS = int(os.getenv("LIGHTON_REQUEST_TIMEOUT_SECONDS", "30"))
+CLEAN_DATASET = os.getenv("LIGHTON_CLEAN_DATASET", "0").lower() not in {
+    "0",
+    "false",
+    "no",
+    "off",
+    "",
+}
 
 
 def normalize_text(text):
@@ -68,15 +79,14 @@ def process_bubble_image(page_image, x, y, w, h):
 def fetch_all_bubbles(supabase: Client):
     print("Fetching validated bubbles from Supabase...", flush=True)
     bubbles = []
-    page_size = 1000
     offset = 0
 
     while True:
         response = (
             supabase.table("bulles")
             .select("id, x, y, w, h, texte_propose, id_page, pages(url_image)")
-            .eq("statut", "Validé")
-            .range(offset, offset + page_size - 1)
+            .eq("statut", STATUS_VALUE)
+            .range(offset, offset + SUPABASE_PAGE_SIZE - 1)
             .execute()
         )
 
@@ -87,9 +97,9 @@ def fetch_all_bubbles(supabase: Client):
         bubbles.extend(batch)
         print(f"  -> {len(bubbles)} fetched so far...", flush=True)
 
-        if len(batch) < page_size:
+        if len(batch) < SUPABASE_PAGE_SIZE:
             break
-        offset += page_size
+        offset += SUPABASE_PAGE_SIZE
 
     print(f"Total: {len(bubbles)} validated bubbles.", flush=True)
     return bubbles
@@ -182,7 +192,7 @@ def download_pages(pages):
 
     def download_page(page_id, url):
         try:
-            resp = requests.get(url, timeout=30)
+            resp = requests.get(url, timeout=REQUEST_TIMEOUT_SECONDS)
             resp.raise_for_status()
             with Image.open(io.BytesIO(resp.content)) as img:
                 page_img = img.convert("RGB")
@@ -326,6 +336,11 @@ def verify_dataset(splits):
 
 
 def main():
+    if CLEAN_DATASET and OUTPUT_DIR.exists():
+        print(f"Cleaning existing dataset directory: {OUTPUT_DIR}", flush=True)
+        shutil.rmtree(OUTPUT_DIR)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
     bubbles = fetch_all_bubbles(supabase)
     pages = build_page_groups(bubbles)
@@ -348,6 +363,28 @@ def main():
         stats[split_name] = {"saved": saved, "skipped": skipped}
 
     verify_dataset(splits)
+
+    report = {
+        "dataset_dir": str(OUTPUT_DIR),
+        "source_table": "bulles",
+        "status_value": STATUS_VALUE,
+        "random_seed": RANDOM_SEED,
+        "val_size": VAL_SIZE,
+        "test_size": TEST_SIZE,
+        "min_text_length": MIN_TEXT_LENGTH,
+        "splits": {},
+    }
+    for split_name, page_ids in splits.items():
+        report["splits"][split_name] = {
+            "pages": len(page_ids),
+            "bubbles": stats[split_name]["saved"],
+            "metadata": str(OUTPUT_DIR / split_name / "metadata.jsonl"),
+            "skipped": stats[split_name]["skipped"],
+        }
+    report_path = OUTPUT_DIR / "dataset_report.json"
+    with open(report_path, "w", encoding="utf-8") as f:
+        json.dump(report, f, ensure_ascii=False, indent=2)
+    print(f"Dataset report saved to {report_path}", flush=True)
 
     print("\nDataset export summary", flush=True)
     print("-" * 60, flush=True)

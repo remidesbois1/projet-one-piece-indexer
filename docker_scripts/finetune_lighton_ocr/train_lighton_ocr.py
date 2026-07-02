@@ -16,6 +16,7 @@ from PIL import Image
 from transformers import (
     LightOnOcrForConditionalGeneration,
     LightOnOcrProcessor,
+    EarlyStoppingCallback,
     Seq2SeqTrainer,
     Seq2SeqTrainingArguments,
     TrainerCallback,
@@ -685,13 +686,18 @@ def main():
             data_seed=RANDOM_SEED,
         )
 
+        callbacks = [LiveMetricsCallback()]
+        patience = int(os.getenv("LIGHTON_EARLY_STOPPING_PATIENCE", "0"))
+        if patience > 0:
+            callbacks.append(EarlyStoppingCallback(early_stopping_patience=patience))
+
         trainer = PromptOnlyEvalTrainer(
             model=model,
             args=training_args,
             train_dataset=train_dataset,
             eval_dataset=val_dataset,
             data_collator=CustomDataCollator(processor),
-            callbacks=[LiveMetricsCallback()],
+            callbacks=callbacks,
             processor=processor,
             gen_eval_max_samples=GEN_EVAL_MAX_SAMPLES,
         )

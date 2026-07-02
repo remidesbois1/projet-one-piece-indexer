@@ -3,10 +3,8 @@ import json
 import os
 import subprocess
 import sys
-import time
 from pathlib import Path
 
-import requests
 from dotenv import load_dotenv
 from huggingface_hub import HfApi, login
 
@@ -19,19 +17,17 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 DOCKER_SCRIPTS_DIR = SCRIPT_DIR.parent
 PROJECT_ROOT = DOCKER_SCRIPTS_DIR.parent
 os.chdir(SCRIPT_DIR)
+sys.path.insert(0, str(DOCKER_SCRIPTS_DIR))
 
 load_dotenv(SCRIPT_DIR / ".env")
 load_dotenv(DOCKER_SCRIPTS_DIR / ".env")
 load_dotenv(PROJECT_ROOT / ".env")
 
+from common_training.artifacts import standard_pipeline_summary, write_json
+from common_training.env import env_bool, training_job_id, training_provider
+from common_training.provider import provider_from_env
+
 DEFAULT_HF_REPO = "Remidesbois/surya-ocr-2-poneglyph-bbox"
-
-
-def env_bool(name: str, default: bool) -> bool:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() not in {"0", "false", "no", "off", ""}
 
 
 def parse_args():
@@ -84,28 +80,6 @@ def required_env():
         sys.exit(1)
 
 
-def terminate_runpod(is_error=False):
-    pod_id = os.getenv("RUNPOD_POD_ID")
-    api_key = os.getenv("RUNPOD_API_KEY")
-    if not pod_id or not api_key or not env_bool("RUNPOD_TERMINATE_ON_EXIT", True):
-        print("RunPod auto-termination skipped.", flush=True)
-        return
-
-    if is_error:
-        delay = int(os.getenv("RUNPOD_ERROR_SHUTDOWN_DELAY_SECONDS", "600"))
-        print(f"Pipeline failed. Waiting {delay}s before RunPod termination.", flush=True)
-        time.sleep(delay)
-
-    print(f"Terminating RunPod pod: {pod_id}", flush=True)
-    url = f"https://api.runpod.io/graphql?api_key={api_key}"
-    query = f'mutation {{ podTerminate(input: {{podId: "{pod_id}"}}) }}'
-    try:
-        response = requests.post(url, json={"query": query}, timeout=30)
-        print(f"RunPod termination response: {response.text}", flush=True)
-    except Exception as exc:
-        print(f"RunPod termination failed: {exc}", flush=True)
-
-
 def run_step(label, script, *args):
     print("", flush=True)
     print(label, flush=True)
@@ -115,8 +89,7 @@ def run_step(label, script, *args):
     )
     if result.returncode != 0:
         print(f"{script} failed with exit code {result.returncode}.", flush=True)
-        terminate_runpod(is_error=True)
-        sys.exit(result.returncode)
+        raise RuntimeError(f"{script} failed with exit code {result.returncode}")
 
 
 def run_probe(label, command):
@@ -153,6 +126,8 @@ def assert_writable_dir(path: Path):
 
 def print_env_presence():
     keys = [
+        "TRAINING_PROVIDER",
+        "TRAINING_JOB_ID",
         "SUPABASE_URL",
         "SUPABASE_SERVICE_ROLE_KEY",
         "HF_TOKEN",
@@ -203,7 +178,7 @@ def check_hf_access():
 
 
 def dry_run(check_remote=False):
-    print("Surya bbox RunPod dry run.", flush=True)
+    print(f"Surya bbox dry run on provider: {training_provider()}.", flush=True)
     print_env_presence()
 
     failures = []
@@ -249,8 +224,20 @@ def dry_run(check_remote=False):
     return 0
 
 
-def write_pipeline_summary(status: str):
-    summary = {
+def write_pipeline_summary(status: str, error_message: str | None = None):
+    summary = standard_pipeline_summary(
+        status=status,
+        training_kind="surya_bbox",
+        provider=training_provider(),
+        dataset_dir=dataset_dir(),
+        output_dir=output_dir(),
+        final_model_dir=final_model_dir(),
+        benchmark_path=final_model_dir() / "benchmark_surya_bbox.json",
+        comparison_path=final_model_dir() / "comparison_lighton_bbox.json",
+        hf_repo=hf_repo_id(),
+        error_message=error_message,
+    )
+    summary.update({
         "status": status,
         "dataset_dir": str(dataset_dir()),
         "output_dir": str(output_dir()),
@@ -258,12 +245,11 @@ def write_pipeline_summary(status: str):
         "benchmark_path": str(final_model_dir() / "benchmark_surya_bbox.json"),
         "comparison_path": str(final_model_dir() / "comparison_lighton_bbox.json"),
         "hf_repo": hf_repo_id(),
-    }
+    })
     summary_path = output_dir() / "pipeline_summary.json"
-    summary_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(summary_path, "w", encoding="utf-8") as f:
-        json.dump(summary, f, ensure_ascii=False, indent=2)
+    write_json(summary_path, summary)
     print(f"Pipeline summary saved to {summary_path}", flush=True)
+    return summary
 
 
 def write_model_card():
@@ -302,51 +288,63 @@ def main():
     if args.dry_run or env_bool("SURYA_BBOX_DRY_RUN", False):
         sys.exit(dry_run(check_remote=args.check_remote or env_bool("SURYA_BBOX_DRY_RUN_CHECK_REMOTE", False)))
 
-    required_env()
-    print("Starting Surya OCR 2 Poneglyph bbox pipeline.", flush=True)
-    print(f"Dataset directory: {dataset_dir()}", flush=True)
-    print(f"Output directory:  {output_dir()}", flush=True)
-    print(f"Hugging Face repo: {hf_repo_id()}", flush=True)
-
-    if dataset_is_ready(dataset_dir()) and not env_bool("SURYA_BBOX_FORCE_EXPORT", False):
-        print("Dataset already exists. Skipping export.", flush=True)
-    else:
-        run_step("Step 1: exporting Supabase full-page bbox dataset", "export_dataset.py")
-
-    model_ready = final_model_is_ready(final_model_dir())
-    benchmark_ready = benchmark_is_ready(final_model_dir())
-    comparison_ready = comparison_is_ready(final_model_dir())
-    need_comparison = env_bool("SURYA_BBOX_COMPARE_LIGHTON", True)
-
-    if (
-        model_ready
-        and benchmark_ready
-        and (comparison_ready or not need_comparison)
-        and not env_bool("SURYA_BBOX_FORCE_TRAIN", False)
-    ):
-        print("Final model, benchmark, and comparison already exist. Skipping training.", flush=True)
-    elif model_ready and not env_bool("SURYA_BBOX_FORCE_TRAIN", False):
-        print("Final model exists but benchmark/comparison is missing.", flush=True)
-        run_step(
-            "Step 2: benchmarking existing final model",
-            "train_surya_bbox.py",
-            "--benchmark-only",
-        )
-    else:
-        run_step("Step 2: fine-tuning Surya OCR 2 bbox model", "train_surya_bbox.py")
-
-    write_model_card()
-
+    hooks = provider_from_env(job_id=training_job_id(), kind="surya_bbox")
     try:
+        required_env()
+        hooks.on_start(
+            status="running",
+            hf_repo=hf_repo_id(),
+            modal_volume_name=os.getenv("PONEGLYPH_MODAL_VOLUME_NAME"),
+            runpod_pod_id=os.getenv("RUNPOD_POD_ID"),
+        )
+        print(f"Starting Surya OCR 2 Poneglyph bbox pipeline on provider: {training_provider()}.", flush=True)
+        print(f"Dataset directory: {dataset_dir()}", flush=True)
+        print(f"Output directory:  {output_dir()}", flush=True)
+        print(f"Hugging Face repo: {hf_repo_id()}", flush=True)
+
+        if dataset_is_ready(dataset_dir()) and not env_bool("SURYA_BBOX_FORCE_EXPORT", False):
+            print("Dataset already exists. Skipping export.", flush=True)
+        else:
+            hooks.set_status("preparing_dataset")
+            run_step("Step 1: exporting Supabase full-page bbox dataset", "export_dataset.py")
+            hooks.set_status("dataset_ready")
+
+        model_ready = final_model_is_ready(final_model_dir())
+        benchmark_ready = benchmark_is_ready(final_model_dir())
+        comparison_ready = comparison_is_ready(final_model_dir())
+        need_comparison = env_bool("SURYA_BBOX_COMPARE_LIGHTON", True)
+
+        hooks.set_status("running")
+        if (
+            model_ready
+            and benchmark_ready
+            and (comparison_ready or not need_comparison)
+            and not env_bool("SURYA_BBOX_FORCE_TRAIN", False)
+        ):
+            print("Final model, benchmark, and comparison already exist. Skipping training.", flush=True)
+        elif model_ready and not env_bool("SURYA_BBOX_FORCE_TRAIN", False):
+            print("Final model exists but benchmark/comparison is missing.", flush=True)
+            hooks.set_status("benchmarking")
+            run_step(
+                "Step 2: benchmarking existing final model",
+                "train_surya_bbox.py",
+                "--benchmark-only",
+            )
+        else:
+            run_step("Step 2: fine-tuning Surya OCR 2 bbox model", "train_surya_bbox.py")
+
+        write_model_card()
+        hooks.set_status("uploading")
         maybe_upload_to_hf()
     except Exception as exc:
-        print(f"Hugging Face upload failed: {exc}", flush=True)
-        terminate_runpod(is_error=True)
+        print(f"Surya bbox pipeline failed: {exc}", flush=True)
+        write_pipeline_summary("failed", error_message=str(exc))
+        hooks.on_error(str(exc))
         sys.exit(1)
 
-    write_pipeline_summary("complete")
+    summary = write_pipeline_summary("complete")
     print("Surya bbox pipeline complete.", flush=True)
-    terminate_runpod(is_error=False)
+    hooks.on_complete(summary)
 
 
 if __name__ == "__main__":
