@@ -41,6 +41,32 @@ Dernier run validé :
 | Bubble exact order inside panels | 0.9818 |
 | Page full accuracy | 0.9375 (15/16) |
 
+## Benchmark expérimental
+
+Le script `docker_scripts/train_reading_order/benchmark_reading_order.py`
+formalise la baseline `current_panel_then_in_panel_ranker` et compare les
+variantes globales, assignment-aware et panel-less sans utiliser le test split
+pour choisir les hyperparamètres.
+
+Les résultats reproductibles sont écrits dans :
+
+- `docker_scripts/train_reading_order/metrics/reading_order_benchmark.json`
+- `docker_scripts/train_reading_order/predictions/benchmark_page_orders.json`
+- `documentation/reading_order_experiments.md`
+
+Le correcteur global `global_bubble_order.onnx` n'est exporté et activé dans le
+packaging que si une variante compatible ONNX Runtime Web bat clairement la
+baseline sur le holdout.
+
+Le benchmark accepte aussi `--detection-predictions` pour rejouer un pipeline
+plus proche du worker avec des boîtes YOLO pré-exportées. Dans ce mode,
+l'expérience `current_detector_replay_pipeline` ordonne les panels détectés,
+assigne les bulles détectées, puis remappe les boîtes aux IDs ground truth par
+IoU afin de mesurer les erreurs de détection, d'assignation et d'ordre ensemble.
+Le fichier de replay peut être généré avec
+`docker_scripts/train_reading_order/export_detection_replay_predictions.py` dès
+que le dossier d'annotations panel contient les images locales.
+
 ## Packaging Hugging Face
 
 Le package est préparé avec :

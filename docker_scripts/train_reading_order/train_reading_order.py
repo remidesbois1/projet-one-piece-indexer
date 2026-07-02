@@ -885,6 +885,37 @@ def evaluate_ordering(
     return metrics, predictions
 
 
+def evaluate_panel_ordering(
+    pages: Sequence[PageSample],
+    panel_model: Any,
+    panel_heuristic_weight: float,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    panel_exact: list[bool] = []
+    predictions: list[dict[str, Any]] = []
+
+    for page in pages:
+        gt_panels = sorted(page.panels, key=lambda panel: panel.order)
+        predicted_panels = predict_panel_order(page, panel_model, panel_heuristic_weight)
+        panel_match = [panel.panel_id for panel in predicted_panels] == [
+            panel.panel_id for panel in gt_panels
+        ]
+        panel_exact.append(panel_match)
+        predictions.append(
+            {
+                "page_id": page.page_id,
+                "full_accuracy_match": panel_match,
+                "ground_truth_panel_order": [panel.panel_id for panel in gt_panels],
+                "predicted_panel_order": [panel.panel_id for panel in predicted_panels],
+            }
+        )
+
+    return {
+        "panel_order_full_accuracy": exact_accuracy(panel_exact),
+        "page_exact_matches": sum(1 for value in panel_exact if value),
+        "page_count": len(panel_exact),
+    }, predictions
+
+
 def parse_float_list(value: str) -> list[float]:
     candidates = []
     for raw_item in value.split(","):
@@ -966,6 +997,31 @@ def select_heuristic_weights(
     return best
 
 
+def select_panel_heuristic_weight(
+    train_pages: Sequence[PageSample],
+    panel_model: Any,
+    candidates: Sequence[float],
+) -> dict[str, Any]:
+    best: dict[str, Any] | None = None
+    for panel_weight in candidates:
+        metrics, _ = evaluate_panel_ordering(train_pages, panel_model, panel_weight)
+        score = (
+            metrics["panel_order_full_accuracy"] or 0.0,
+            -panel_weight,
+        )
+        candidate = {
+            "panel_heuristic_weight": panel_weight,
+            "train_ordering": metrics,
+            "score": score,
+        }
+        if best is None or score > best["score"]:
+            best = candidate
+
+    if best is None:
+        raise ValueError("No panel heuristic blend candidate could be evaluated.")
+    return best
+
+
 def summarize_pages(pages: Sequence[PageSample]) -> dict[str, int]:
     return {
         "pages": len(pages),
@@ -975,6 +1031,135 @@ def summarize_pages(pages: Sequence[PageSample]) -> dict[str, int]:
             1 for page in pages for panel in page.panels if len(panel.bubbles) > 1
         ),
     }
+
+
+def train_panel_only(args: argparse.Namespace) -> dict[str, Any]:
+    annotations_path = args.annotations.resolve()
+    output_dir = args.output_dir.resolve()
+    manifest_path = args.split_manifest.resolve() if args.split_manifest else None
+
+    pages, skipped = load_pages(annotations_path)
+    if len(pages) < 2:
+        raise ValueError("Need at least two usable annotated pages.")
+
+    train_pages, test_pages, split_source = split_pages(
+        pages=pages,
+        manifest_path=manifest_path,
+        test_size=args.test_size,
+        seed=args.seed,
+    )
+    if not train_pages or not test_pages:
+        raise ValueError("Train/test split produced an empty side.")
+
+    train_panel_pairs = build_panel_pairs(train_pages)
+    test_panel_pairs = build_panel_pairs(test_pages)
+
+    panel_model = create_ranker("panel_order", args.ranker, seed=args.seed)
+    panel_training = panel_model.fit(
+        train_panel_pairs,
+        epochs=args.epochs,
+        learning_rate=args.learning_rate,
+        l2=args.l2,
+        seed=args.seed,
+    )
+
+    heuristic_candidates = parse_float_list(args.heuristic_weights)
+    selected_blend = select_panel_heuristic_weight(
+        train_pages,
+        panel_model,
+        candidates=heuristic_candidates,
+    )
+    panel_heuristic_weight = selected_blend["panel_heuristic_weight"]
+
+    train_order_metrics, _ = evaluate_panel_ordering(
+        train_pages,
+        panel_model,
+        panel_heuristic_weight,
+    )
+    test_order_metrics, predictions = evaluate_panel_ordering(
+        test_pages,
+        panel_model,
+        panel_heuristic_weight,
+    )
+
+    metrics = {
+        "kind": "panel_order_training_metrics",
+        "mode": "panel_only",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "annotations": str(annotations_path),
+        "split_source": split_source,
+        "seed": args.seed,
+        "test_size": args.test_size,
+        "ranker": args.ranker,
+        "uses_ground_truth_boxes": True,
+        "note": (
+            "Panel-only training: ground-truth panel boxes are used to train and "
+            "evaluate the panel reading-order ranker. Bubble order artifacts are "
+            "not retrained or overwritten."
+        ),
+        "skipped_pages": skipped,
+        "dataset": {
+            "all": summarize_pages(pages),
+            "train": summarize_pages(train_pages),
+            "test": summarize_pages(test_pages),
+        },
+        "train_page_ids": [page.page_id for page in train_pages],
+        "test_page_ids": [page.page_id for page in test_pages],
+        "pairs": {
+            "panel_train": len(train_panel_pairs.labels),
+            "panel_test": len(test_panel_pairs.labels),
+        },
+        "heuristic_blend": {
+            "candidate_weights": heuristic_candidates,
+            "selected_panel_weight": panel_heuristic_weight,
+            "selection_metric": (
+                "train panel_order_full_accuracy, tie-broken by lower blend weight"
+            ),
+            "selected_train_ordering": selected_blend["train_ordering"],
+        },
+        "panel_order": {
+            "training": panel_training,
+            "train_pair_accuracy": pair_accuracy(panel_model, train_panel_pairs),
+            "test_pair_accuracy": pair_accuracy(panel_model, test_panel_pairs),
+        },
+        "train_ordering": train_order_metrics,
+        "test_ordering": test_order_metrics,
+        "primary_metric": {
+            "name": "panel_order_full_accuracy",
+            "value": test_order_metrics["panel_order_full_accuracy"],
+            "exact_matches": test_order_metrics["page_exact_matches"],
+            "page_count": test_order_metrics["page_count"],
+        },
+    }
+
+    model_metadata = {
+        "annotations": str(annotations_path),
+        "split_source": split_source,
+        "seed": args.seed,
+        "train_page_count": len(train_pages),
+        "test_page_count": len(test_pages),
+        "heuristic_blend": {
+            "panel_weight": panel_heuristic_weight,
+        },
+        "mode": "panel_only",
+    }
+    panel_model_path = output_dir / "models" / "panel_order_model.json"
+    write_model_artifacts(
+        panel_model,
+        panel_model_path,
+        {**model_metadata, "training": panel_training},
+    )
+    panel_onnx = export_linear_probability_onnx(
+        panel_model,
+        output_dir / "models" / "panel_order.onnx",
+        {"name": "panel_order", "ranker": args.ranker},
+    )
+    metrics["onnx_models"] = {
+        "panel_order": str(panel_onnx) if panel_onnx else None,
+    }
+    write_json(output_dir / "metrics" / "panel_order_metrics.json", metrics)
+    write_json(output_dir / "predictions" / "panel_test_orders.json", predictions)
+    return metrics
 
 
 def train_and_evaluate(args: argparse.Namespace) -> dict[str, Any]:
@@ -1153,11 +1338,48 @@ def train_and_evaluate(args: argparse.Namespace) -> dict[str, Any]:
     return metrics
 
 
+def format_optional_float(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.4f}"
+
+
 def print_summary(metrics: dict[str, Any]) -> None:
     primary = metrics["primary_metric"]
-    test = metrics["test_ordering"]
     print()
     print("=" * 72)
+    if metrics.get("mode") == "panel_only":
+        test = metrics["test_ordering"]
+        print("  Panel Order Training Summary")
+        print("=" * 72)
+        print(f"  Split source:       {metrics['split_source']}")
+        print(
+            f"  Train/Test pages:   {metrics['dataset']['train']['pages']} / "
+            f"{metrics['dataset']['test']['pages']}"
+        )
+        print(f"  Ranker:             {metrics['ranker']}")
+        print(
+            f"  Panel pairs:        {metrics['pairs']['panel_train']} train / "
+            f"{metrics['pairs']['panel_test']} test"
+        )
+        print()
+        print(
+            "  Heuristic blend:   "
+            f"panel={metrics['heuristic_blend']['selected_panel_weight']:.2f}"
+        )
+        print(
+            "  Panel pair acc:     "
+            f"{format_optional_float(metrics['panel_order']['test_pair_accuracy'])}"
+        )
+        print(
+            "  Panel exact order:  "
+            f"{format_optional_float(test['panel_order_full_accuracy'])}"
+        )
+        print(
+            f"  Page exact panels:  {primary['exact_matches']}/{primary['page_count']}"
+        )
+        print("=" * 72)
+        return
+
+    test = metrics["test_ordering"]
     print("  Reading Order Training Summary")
     print("=" * 72)
     print(f"  Split source:       {metrics['split_source']}")
@@ -1183,10 +1405,22 @@ def print_summary(metrics: dict[str, Any]) -> None:
         "  Bubble override:   "
         f"{metrics['heuristic_blend']['selected_bubble_vertical_override_gap']}"
     )
-    print(f"  Panel pair acc:     {metrics['panel_order']['test_pair_accuracy']:.4f}")
-    print(f"  Bubble pair acc:    {metrics['bubble_order']['test_pair_accuracy']:.4f}")
-    print(f"  Panel exact order:  {test['panel_order_full_accuracy']:.4f}")
-    print(f"  Bubble exact order: {test['bubble_within_panel_full_accuracy']:.4f}")
+    print(
+        "  Panel pair acc:     "
+        f"{format_optional_float(metrics['panel_order']['test_pair_accuracy'])}"
+    )
+    print(
+        "  Bubble pair acc:    "
+        f"{format_optional_float(metrics['bubble_order']['test_pair_accuracy'])}"
+    )
+    print(
+        "  Panel exact order:  "
+        f"{format_optional_float(test['panel_order_full_accuracy'])}"
+    )
+    print(
+        "  Bubble exact order: "
+        f"{format_optional_float(test['bubble_within_panel_full_accuracy'])}"
+    )
     print(
         f"  Page full accuracy: {primary['value']:.4f} "
         f"({primary['exact_matches']}/{primary['page_count']})"
@@ -1197,13 +1431,18 @@ def print_summary(metrics: dict[str, Any]) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Train panel and in-panel bubble reading-order rankers, then evaluate "
-            "page-level full accuracy on held-out pages."
+            "Train panel and in-panel bubble reading-order rankers, or only the "
+            "panel ranker with --panel-only."
         )
     )
     parser.add_argument("--annotations", type=Path, default=DEFAULT_ANNOTATIONS)
     parser.add_argument("--split-manifest", type=Path, default=DEFAULT_SPLIT_MANIFEST)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument(
+        "--panel-only",
+        action="store_true",
+        help="Train/export only panel_order artifacts; leave bubble_order untouched.",
+    )
     parser.add_argument("--test-size", type=float, default=0.2)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--epochs", type=int, default=80)
@@ -1237,7 +1476,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    metrics = train_and_evaluate(args)
+    metrics = train_panel_only(args) if args.panel_only else train_and_evaluate(args)
     print_summary(metrics)
 
 

@@ -5,25 +5,38 @@ ort.env.wasm.wasmPaths = new URL('/onnx/', self.location.origin).href;
 // ---------------------------------------------------------------------------
 // Model URLs
 // ---------------------------------------------------------------------------
-const ONE_SHOT_MODEL_BASE = 'https://huggingface.co/Remidesbois/YoloPiece_OneShot_Models/resolve/main';
+const ONE_SHOT_MODEL_REVISION = 'c4d5393095fadacfedc49d81acb2a8ac29d23aad';
+const ONE_SHOT_MODEL_BASE = `https://huggingface.co/Remidesbois/YoloPiece_OneShot_Models/resolve/${ONE_SHOT_MODEL_REVISION}`;
 const BUBBLE_MODEL_PATH = `${ONE_SHOT_MODEL_BASE}/bubble_detector.onnx`;
 const PANEL_MODEL_PATH = `${ONE_SHOT_MODEL_BASE}/panel_detector.onnx`;
 const PANEL_ORDER_PATH = `${ONE_SHOT_MODEL_BASE}/panel_order.onnx`;
 const BUBBLE_ORDER_PATH = `${ONE_SHOT_MODEL_BASE}/bubble_order.onnx`;
+const GLOBAL_BUBBLE_ORDER_PATH = `${ONE_SHOT_MODEL_BASE}/global_bubble_order.onnx`;
+const GLOBAL_BUBBLE_ORDER_FEATURES_PATH = `${ONE_SHOT_MODEL_BASE}/global_bubble_order_features.json`;
 
-const BUBBLE_SCORE_THRESHOLD = 0.25;
+const BUBBLE_SCORE_THRESHOLD = 0.45;
 const BUBBLE_DUPLICATE_IOU_THRESHOLD = 0.9;
+const VERTICAL_REPAIR_GAP_FACTOR = 1.5;
+const VERTICAL_REPAIR_MAX_Y_OVERLAP = 0.05;
+const VERTICAL_REPAIR_MAX_AREA_RATIO = 0.7;
 
 let bubbleSession = null;
 let panelSession = null;
 let panelOrderSession = null;
 let bubbleOrderSession = null;
+let globalBubbleOrderSession = null;
+let globalBubbleOrderFeatureCount = null;
+let globalBubbleOrderPostprocess = null;
+let globalBubbleOrderLoadAttempted = false;
 
 // ---------------------------------------------------------------------------
 // Progress helper
 // ---------------------------------------------------------------------------
 async function fetchModel(url, onProgress) {
     const response = await fetch(url);
+    if (!response.ok) {
+        throw new Error(`Failed to fetch ${url}: HTTP ${response.status}`);
+    }
     const contentLength = response.headers.get('content-length');
     const total = contentLength ? parseInt(contentLength, 10) : 0;
     let loaded = 0;
@@ -47,12 +60,95 @@ async function fetchModel(url, onProgress) {
     return arrayBuffer;
 }
 
+async function fetchOptionalJson(url) {
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    return response.json();
+}
+
+function numberOrDefault(value, fallback) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function normalizeGlobalBubbleOrderPostprocess(postprocess) {
+    if (postprocess?.name !== 'vertical_small_bubble_repair_v1') {
+        return null;
+    }
+    return {
+        name: postprocess.name,
+        gapFactor: numberOrDefault(postprocess.gap_factor, VERTICAL_REPAIR_GAP_FACTOR),
+        maxYOverlap: numberOrDefault(postprocess.max_y_overlap, VERTICAL_REPAIR_MAX_Y_OVERLAP),
+        maxAreaRatio: numberOrDefault(postprocess.max_area_ratio, VERTICAL_REPAIR_MAX_AREA_RATIO)
+    };
+}
+
+function sessionFeatureCount(session) {
+    try {
+        const inputName = session.inputNames?.[0];
+        const dims = session.inputMetadata?.[inputName]?.dims;
+        const featureCount = Number(dims?.[1]);
+        return Number.isFinite(featureCount) && featureCount > 0 ? featureCount : null;
+    } catch {
+        return null;
+    }
+}
+
+async function loadOptionalGlobalBubbleOrder() {
+    globalBubbleOrderLoadAttempted = true;
+    globalBubbleOrderPostprocess = null;
+    try {
+        const featureSchema = await fetchOptionalJson(GLOBAL_BUBBLE_ORDER_FEATURES_PATH);
+        const featureCount = Number(featureSchema?.feature_count);
+        if (!Number.isFinite(featureCount) || featureCount <= 0) {
+            console.warn("[Worker] Global bubble reranker disabled: feature schema missing");
+            return;
+        }
+
+        const buffer = await fetchModel(GLOBAL_BUBBLE_ORDER_PATH);
+        const session = await ort.InferenceSession.create(buffer, {
+            executionProviders: ['wasm'],
+            graphOptimizationLevel: 'all'
+        });
+        const onnxFeatureCount = sessionFeatureCount(session);
+        if (onnxFeatureCount !== null && onnxFeatureCount !== featureCount) {
+            console.warn(
+                "[Worker] Global bubble reranker disabled: feature count mismatch",
+                { featureCount, onnxFeatureCount }
+            );
+            await session.release?.();
+            return;
+        }
+
+        globalBubbleOrderSession = session;
+        globalBubbleOrderFeatureCount = featureCount;
+        globalBubbleOrderPostprocess = normalizeGlobalBubbleOrderPostprocess(
+            featureSchema?.postprocess
+        );
+        console.log(
+            `[Worker] Global bubble reranker loaded (${featureCount} features)`,
+            { postprocess: globalBubbleOrderPostprocess?.name ?? null }
+        );
+    } catch (err) {
+        globalBubbleOrderSession = null;
+        globalBubbleOrderFeatureCount = null;
+        globalBubbleOrderPostprocess = null;
+        console.warn("[Worker] Global bubble reranker unavailable; using current pipeline", err);
+    }
+}
+
 self.addEventListener('message', async (event) => {
-    const { type, imageBlob } = event.data;
+    const { type, imageBlob, debug = false } = event.data;
 
     if (type === 'init') {
         try {
-            if (bubbleSession && panelSession && panelOrderSession && bubbleOrderSession) {
+            if (
+                bubbleSession &&
+                panelSession &&
+                panelOrderSession &&
+                bubbleOrderSession &&
+                globalBubbleOrderLoadAttempted
+            ) {
                 self.postMessage({ status: 'ready' });
                 return;
             }
@@ -76,7 +172,7 @@ self.addEventListener('message', async (event) => {
             const totalSize = sizes.reduce((a, b) => a + b, 0);
             let totalLoaded = 0;
 
-            const updateGlobalProgress = (loadedInFile, fileTotal) => {
+            const updateGlobalProgress = (loadedInFile) => {
                 if (totalSize > 0) {
                     const loaded = totalLoaded + loadedInFile;
                     const currentProgress = (loaded / totalSize) * 100;
@@ -113,6 +209,8 @@ self.addEventListener('message', async (event) => {
             totalLoaded += buf4.byteLength;
             console.log("[Worker] Bubble order model loaded");
 
+            await loadOptionalGlobalBubbleOrder();
+
             self.postMessage({ status: 'download_progress', progress: 100 });
             self.postMessage({ status: 'ready' });
         } catch (err) {
@@ -142,7 +240,6 @@ self.addEventListener('message', async (event) => {
         if (!bubbleSession) return;
         try {
             const bitmap = await createImageBitmap(imageBlob);
-            const { width: imgW, height: imgH } = bitmap;
 
             // 1. Detect bubbles
             const { height: inputH, width: inputW } = getImageInputSize(bubbleSession, 800, 800);
@@ -153,30 +250,94 @@ self.addEventListener('message', async (event) => {
             const boxes = simplifyPostProcess(bubbleOutput, scale, padX, padY);
 
             if (boxes.length <= 1) {
-                self.postMessage({ status: 'complete', boxes });
+                self.postMessage({
+                    status: 'complete',
+                    boxes,
+                    debug: debug ? buildReadingOrderDebug({
+                        mode: 'single_or_empty',
+                        rawBubbles: boxes,
+                        finalBoxes: boxes,
+                        panels: [],
+                        contexts: new Map(),
+                        assignmentDetails: []
+                    }) : undefined
+                });
                 return;
             }
 
             let sortedBoxes;
+            let sortedPanels = [];
+            let assignmentDetails = [];
+            let currentOrder = null;
+            let readingOrderMode = 'current_pipeline';
 
             // 2. Detect panels
             const panels = await detectPanels(bitmap);
 
             if (panels.length > 0 && panelOrderSession && bubbleOrderSession) {
                 // 3. Sort panels by reading order
-                const sortedPanels = await rankPanels(panels, bitmap);
+                sortedPanels = await rankPanels(panels, bitmap);
 
                 // 4. Assign bubbles to panels
-                const assignments = assignBubblesToPanels(boxes, sortedPanels);
+                assignmentDetails = assignBubblesToPanelsDetailed(boxes, sortedPanels, bitmap);
 
-                // 5. Sort bubbles within each panel using the new reading-order ranker
-                sortedBoxes = await sortBubblesWithReadingOrder(boxes, sortedPanels, assignments, bitmap);
+                // 5. Sort bubbles within each panel using the current reading-order ranker
+                currentOrder = await sortBubblesWithReadingOrderDetails(
+                    boxes,
+                    sortedPanels,
+                    assignmentDetails,
+                    bitmap
+                );
+                sortedBoxes = currentOrder.boxes;
+
+                if (globalBubbleOrderSession) {
+                    try {
+                        const globalBoxes = await applyPanelConstrainedGlobalBubbleReranker(
+                            currentOrder.boxes,
+                            sortedPanels,
+                            currentOrder.contexts,
+                            bitmap
+                        );
+                        if (globalBoxes.length === boxes.length) {
+                            sortedBoxes = applyGlobalBubblePostprocess(
+                                globalBoxes,
+                                currentOrder.contexts
+                            );
+                            console.log("[Worker] Reading order mode: global_reranker_panel_constrained");
+                            readingOrderMode = 'global_reranker_panel_constrained';
+                        } else {
+                            console.warn("[Worker] Global reranker returned incomplete order");
+                            console.log("[Worker] Reading order mode: current_pipeline");
+                            readingOrderMode = 'current_pipeline';
+                        }
+                    } catch (err) {
+                        console.warn("[Worker] Global reranker failed; using current pipeline", err);
+                        console.log("[Worker] Reading order mode: current_pipeline");
+                        readingOrderMode = 'current_pipeline';
+                    }
+                } else {
+                    console.log("[Worker] Reading order mode: current_pipeline");
+                    readingOrderMode = 'current_pipeline';
+                }
             } else {
                 // Fallback when no panel could be detected on the page.
                 sortedBoxes = mangaOrderSort(boxes);
+                console.log("[Worker] Reading order mode: panel_less_fallback");
+                readingOrderMode = 'panel_less_fallback';
             }
 
-            self.postMessage({ status: 'complete', boxes: sortedBoxes });
+            self.postMessage({
+                status: 'complete',
+                boxes: sortedBoxes,
+                debug: debug ? buildReadingOrderDebug({
+                    mode: readingOrderMode,
+                    rawBubbles: boxes,
+                    finalBoxes: sortedBoxes,
+                    panels: sortedPanels,
+                    contexts: currentOrder?.contexts || new Map(),
+                    assignmentDetails
+                }) : undefined
+            });
         } catch (err) {
             console.error("[Worker] Run Error:", err);
             self.postMessage({ status: 'error', error: err.message });
@@ -293,9 +454,78 @@ function suppressDuplicateBoxes(boxes, iouThreshold) {
         .map(box => ({ x: box.x, y: box.y, w: box.w, h: box.h, score: box.score }));
 }
 
+function roundDebugNumber(value) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? Math.round(numeric * 1000) / 1000 : null;
+}
+
+function debugBox(box) {
+    if (!box) return null;
+    return {
+        x: roundDebugNumber(box.x),
+        y: roundDebugNumber(box.y),
+        w: roundDebugNumber(box.w),
+        h: roundDebugNumber(box.h),
+        score: roundDebugNumber(box.score ?? box.conf)
+    };
+}
+
+function buildReadingOrderDebug({
+    mode,
+    rawBubbles,
+    finalBoxes,
+    panels,
+    contexts,
+    assignmentDetails
+}) {
+    const finalIndexByBox = new Map(finalBoxes.map((box, index) => [box, index]));
+    const rawIndexByBox = new Map(rawBubbles.map((box, index) => [box, index]));
+    const assignmentByBox = new Map(
+        rawBubbles.map((box, index) => [box, assignmentDetails[index] || null])
+    );
+
+    return {
+        mode,
+        modelRevision: ONE_SHOT_MODEL_REVISION,
+        bubbleThreshold: BUBBLE_SCORE_THRESHOLD,
+        panelCount: panels.length,
+        bubbleCount: finalBoxes.length,
+        panels: panels.map((panel, index) => ({
+            order: index + 1,
+            id: panel.panelId ?? panel.id ?? `panel_${index}`,
+            score: roundDebugNumber(panel.score ?? panel.conf),
+            box: debugBox(panel)
+        })),
+        bubbles: finalBoxes.map((box, index) => {
+            const context = contexts.get(box);
+            const assignment = context?.assignment || assignmentByBox.get(box);
+            return {
+                order: index + 1,
+                rawIndex: (rawIndexByBox.get(box) ?? index) + 1,
+                finalIndex: (finalIndexByBox.get(box) ?? index) + 1,
+                score: roundDebugNumber(box.score ?? box.conf),
+                box: debugBox(box),
+                panelOrder: Number.isInteger(context?.predictedPanelIndex)
+                    ? context.predictedPanelIndex + 1
+                    : null,
+                panelId: context?.predictedPanelId ?? assignment?.panelId ?? null,
+                localOrder: Number.isInteger(context?.predictedLocalOrder)
+                    ? context.predictedLocalOrder + 1
+                    : null,
+                assignmentReason: assignment?.reason ?? null,
+                centerInside: assignment?.centerInside ?? null,
+                overlapRatio: roundDebugNumber(assignment?.overlapRatio),
+                secondBestPanelMargin: roundDebugNumber(assignment?.secondBestPanelMargin)
+            };
+        })
+    };
+}
+
 // ---------------------------------------------------------------------------
-// Panel detection (YOLO-pose)
+// Panel detection (YOLO)
 // ---------------------------------------------------------------------------
+const PANEL_SCORE_THRESHOLD = 0.25;
+
 async function detectPanels(bitmap) {
     if (!panelSession) return [];
 
@@ -309,7 +539,7 @@ async function detectPanels(bitmap) {
             inH = meta.dims[2];
             inW = meta.dims[3];
         }
-    } catch (e) {
+    } catch {
         console.warn("[Worker] Could not read panel detector input dims, using 800x800");
     }
 
@@ -343,16 +573,16 @@ async function detectPanels(bitmap) {
     
     const output = results[outKeys[0]];
     const d = output.dims;
-    let numPreds, numFeatures, isTransposed;
+    let numPreds, numFeatures, isRowMajor;
     if (d.length === 3) {
         if (d[1] > d[2]) {
             numPreds = d[1];
             numFeatures = d[2];
-            isTransposed = true;
+            isRowMajor = true;
         } else {
             numPreds = d[2];
             numFeatures = d[1];
-            isTransposed = false;
+            isRowMajor = false;
         }
     } else {
         return [];
@@ -361,29 +591,13 @@ async function detectPanels(bitmap) {
     const raw = output.data;
     const candidates = [];
     for (let col = 0; col < numPreds; col++) {
-        let conf, cx, cy, w, h;
-        if (isTransposed) {
-            conf = raw[col * numFeatures + 4];
-            cx = raw[col * numFeatures + 0];
-            cy = raw[col * numFeatures + 1];
-            w  = raw[col * numFeatures + 2];
-            h  = raw[col * numFeatures + 3];
-        } else {
-            conf = raw[4 * numPreds + col];
-            cx = raw[0 * numPreds + col];
-            cy = raw[1 * numPreds + col];
-            w  = raw[2 * numPreds + col];
-            h  = raw[3 * numPreds + col];
-        }
+        const conf = readYoloOutputFeature(raw, col, 4, numPreds, numFeatures, isRowMajor);
+        if (conf < PANEL_SCORE_THRESHOLD) continue;
 
-        if (conf < 0.25) continue;
+        const box = parseYoloPanelBox(raw, col, numPreds, numFeatures, isRowMajor);
+        if (!box) continue;
 
-        const x1 = cx - w / 2;
-        const y1 = cy - h / 2;
-        const x2 = cx + w / 2;
-        const y2 = cy + h / 2;
-
-        candidates.push({ x1, y1, x2, y2, w, h, conf, idx: col });
+        candidates.push({ ...box, conf, idx: col });
     }
 
     candidates.sort((a, b) => b.conf - a.conf);
@@ -412,15 +626,55 @@ async function detectPanels(bitmap) {
         const y1_img = (p.y1 - padTop) / scale;
         const x2_img = (p.x2 - padLeft) / scale;
         const y2_img = (p.y2 - padTop) / scale;
+        const x = Math.max(0, x1_img);
+        const y = Math.max(0, y1_img);
+        const clippedX2 = Math.min(width, x2_img);
+        const clippedY2 = Math.min(height, y2_img);
+        const w = clippedX2 - x;
+        const h = clippedY2 - y;
+        if (w <= 1 || h <= 1) continue;
+
         panels.push({
-            x: Math.max(0, x1_img),
-            y: Math.max(0, y1_img),
-            w: Math.min(width, x2_img) - Math.max(0, x1_img),
-            h: Math.min(height, y2_img) - Math.max(0, y1_img),
+            x,
+            y,
+            w,
+            h,
             conf: p.conf
         });
     }
     return panels;
+}
+
+function readYoloOutputFeature(raw, predIndex, featureIndex, numPreds, numFeatures, isRowMajor) {
+    if (featureIndex >= numFeatures) return 0;
+    return isRowMajor
+        ? raw[predIndex * numFeatures + featureIndex]
+        : raw[featureIndex * numPreds + predIndex];
+}
+
+function parseYoloPanelBox(raw, predIndex, numPreds, numFeatures, isRowMajor) {
+    const a = readYoloOutputFeature(raw, predIndex, 0, numPreds, numFeatures, isRowMajor);
+    const b = readYoloOutputFeature(raw, predIndex, 1, numPreds, numFeatures, isRowMajor);
+    const c = readYoloOutputFeature(raw, predIndex, 2, numPreds, numFeatures, isRowMajor);
+    const d = readYoloOutputFeature(raw, predIndex, 3, numPreds, numFeatures, isRowMajor);
+
+    if (![a, b, c, d].every(Number.isFinite)) return null;
+
+    // Ultralytics ONNX exports with nms=True emit [x1, y1, x2, y2, score, class].
+    // Raw detector heads emit [cx, cy, w, h, ...]. The current panel artifact is
+    // [1, 300, 6], so treating it as cx/cy/w/h creates nonsense rectangles.
+    const isNmsOutput = numFeatures >= 6 && numPreds <= 1000;
+    if (isNmsOutput) {
+        if (c <= a || d <= b) return null;
+        return { x1: a, y1: b, x2: c, y2: d };
+    }
+
+    const x1 = a - c / 2;
+    const y1 = b - d / 2;
+    const x2 = a + c / 2;
+    const y2 = b + d / 2;
+    if (x2 <= x1 || y2 <= y1) return null;
+    return { x1, y1, x2, y2 };
 }
 
 // ---------------------------------------------------------------------------
@@ -441,6 +695,14 @@ function safeDiv(a, b) {
     return b === 0 ? 0 : a / b;
 }
 
+function finite(value) {
+    return Number.isFinite(value) ? Math.max(-20, Math.min(20, value)) : 0;
+}
+
+function finiteFeatures(values) {
+    return values.map(finite);
+}
+
 function boxRight(box) {
     return box.x + box.w;
 }
@@ -459,6 +721,14 @@ function boxCenterY(box) {
 
 function intervalOverlap(a1, a2, b1, b2) {
     return Math.max(0, Math.min(a2, b2) - Math.max(a1, b1));
+}
+
+function intersectionArea(a, b) {
+    const ix1 = Math.max(a.x, b.x);
+    const iy1 = Math.max(a.y, b.y);
+    const ix2 = Math.min(boxRight(a), boxRight(b));
+    const iy2 = Math.min(boxBottom(a), boxBottom(b));
+    return Math.max(0, ix2 - ix1) * Math.max(0, iy2 - iy1);
 }
 
 function boxFeatures(box, width, height) {
@@ -588,72 +858,465 @@ async function rankItemsByPairwiseModel(items, session, featureBuilder) {
 // ---------------------------------------------------------------------------
 // Assignment
 // ---------------------------------------------------------------------------
-function assignBubblesToPanels(bubbles, panels) {
-    const assignments = [];
-    for (const b of bubbles) {
-        const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
-        let assigned = -1;
-        for (let pi = 0; pi < panels.length; pi++) {
-            const p = panels[pi];
-            if (p.x <= cx && cx <= p.x + p.w && p.y <= cy && cy <= p.y + p.h) {
-                assigned = pi;
-                break;
-            }
-        }
-        if (assigned === -1) {
-            let bestArea = -1;
-            const bx1 = b.x, by1 = b.y, bx2 = b.x + b.w, by2 = b.y + b.h;
-            for (let pi = 0; pi < panels.length; pi++) {
-                const p = panels[pi];
-                const px1 = p.x, py1 = p.y, px2 = p.x + p.w, py2 = p.y + p.h;
-                const ix1 = Math.max(bx1, px1), iy1 = Math.max(by1, py1), ix2 = Math.min(bx2, px2), iy2 = Math.min(by2, py2);
-                if (ix1 < ix2 && iy1 < iy2) {
-                    const area = (ix2 - ix1) * (iy2 - iy1);
-                    if (area > bestArea) { bestArea = area; assigned = pi; }
-                }
-            }
-        }
-        if (assigned === -1) {
-            let minDist = Infinity;
-            for (let pi = 0; pi < panels.length; pi++) {
-                const p = panels[pi], pcx = p.x + p.w / 2, pcy = p.y + p.h / 2;
-                const dist = Math.hypot(cx - pcx, cy - pcy);
-                if (dist < minDist) { minDist = dist; assigned = pi; }
-            }
-        }
-        assignments.push(assigned);
+function pageShape(bitmap, bubbles, panels) {
+    if (bitmap?.width && bitmap?.height) {
+        return { width: bitmap.width, height: bitmap.height };
     }
-    return assignments;
+    const boxes = [...(bubbles || []), ...(panels || [])];
+    return {
+        width: Math.max(1, ...boxes.map(boxRight)),
+        height: Math.max(1, ...boxes.map(boxBottom)),
+    };
+}
+
+function containsCenter(panel, bubble) {
+    const cx = boxCenterX(bubble);
+    const cy = boxCenterY(bubble);
+    return panel.x <= cx && cx <= boxRight(panel) && panel.y <= cy && cy <= boxBottom(panel);
+}
+
+function borderDistance(panel, bubble) {
+    const cx = boxCenterX(bubble);
+    const cy = boxCenterY(bubble);
+    const divisor = Math.max(1, Math.max(panel.w, panel.h));
+    if (!containsCenter(panel, bubble)) {
+        const dx = Math.max(panel.x - cx, 0, cx - boxRight(panel));
+        const dy = Math.max(panel.y - cy, 0, cy - boxBottom(panel));
+        return -Math.hypot(dx, dy) / divisor;
+    }
+    return Math.min(
+        cx - panel.x,
+        boxRight(panel) - cx,
+        cy - panel.y,
+        boxBottom(panel) - cy
+    ) / divisor;
+}
+
+function panelDistance(page, panel, bubble) {
+    return Math.hypot(
+        boxCenterX(bubble) - boxCenterX(panel),
+        boxCenterY(bubble) - boxCenterY(panel)
+    ) / Math.max(1, Math.hypot(page.width, page.height));
+}
+
+function panelAssignmentStats(page, bubble, panel) {
+    const overlapArea = intersectionArea(bubble, panel);
+    return {
+        centerInside: containsCenter(panel, bubble),
+        overlapArea,
+        overlapRatio: overlapArea / Math.max(1, boxArea(bubble)),
+        distance: panelDistance(page, panel, bubble),
+        borderDistance: borderDistance(panel, bubble),
+        panelArea: boxArea(panel),
+    };
+}
+
+function assignmentScore(stats) {
+    return (stats.centerInside ? 2 : 0) + stats.overlapRatio - Math.min(1, stats.distance);
+}
+
+function emptyAssignment(reason) {
+    return {
+        panelIndex: -1,
+        panelId: null,
+        reason,
+        centerInside: false,
+        overlapRatio: 0,
+        distanceToCenter: 1,
+        borderDistance: -1,
+        secondBestPanelMargin: 0,
+        overlapPanelCount: 0,
+    };
+}
+
+function buildAssignmentInfo(panels, panelIndex, reason, statsByPanel) {
+    if (panelIndex < 0 || panelIndex >= panels.length) {
+        return emptyAssignment(reason);
+    }
+
+    const stats = statsByPanel[panelIndex];
+    const scores = statsByPanel
+        .map(assignmentScore)
+        .sort((a, b) => b - a);
+    const margin = scores.length > 1 ? scores[0] - scores[1] : scores[0];
+    const panel = panels[panelIndex];
+    return {
+        panelIndex,
+        panelId: panel.panelId ?? panel.id ?? `panel_${panelIndex}`,
+        reason,
+        centerInside: stats.centerInside,
+        overlapRatio: stats.overlapRatio,
+        distanceToCenter: stats.distance,
+        borderDistance: stats.borderDistance,
+        secondBestPanelMargin: margin,
+        overlapPanelCount: statsByPanel.filter(item => item.overlapArea > 0).length,
+    };
+}
+
+function chooseAssignmentDetailed(page, bubble, panels) {
+    if (!panels.length) return emptyAssignment('no_panels');
+
+    const statsByPanel = panels.map(panel => panelAssignmentStats(page, bubble, panel));
+
+    for (let index = 0; index < statsByPanel.length; index++) {
+        if (statsByPanel[index].centerInside) {
+            return buildAssignmentInfo(panels, index, 'first_center_panel', statsByPanel);
+        }
+    }
+
+    let bestOverlapArea = -1;
+    let bestOverlapIndex = -1;
+    for (let index = 0; index < statsByPanel.length; index++) {
+        const overlapArea = statsByPanel[index].overlapArea;
+        if (overlapArea > 0 && overlapArea > bestOverlapArea) {
+            bestOverlapArea = overlapArea;
+            bestOverlapIndex = index;
+        }
+    }
+    if (bestOverlapIndex >= 0) {
+        return buildAssignmentInfo(panels, bestOverlapIndex, 'largest_overlap_area', statsByPanel);
+    }
+
+    let bestDistance = Infinity;
+    let bestDistanceIndex = -1;
+    for (let index = 0; index < statsByPanel.length; index++) {
+        const distance = statsByPanel[index].distance;
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            bestDistanceIndex = index;
+        }
+    }
+    return buildAssignmentInfo(panels, bestDistanceIndex, 'nearest_panel_center', statsByPanel);
+}
+
+function assignBubblesToPanelsDetailed(bubbles, panels, bitmap) {
+    const page = pageShape(bitmap, bubbles, panels);
+    return bubbles.map(bubble => chooseAssignmentDetailed(page, bubble, panels));
 }
 
 // ---------------------------------------------------------------------------
 // Reading-order rankers
 // ---------------------------------------------------------------------------
-async function sortBubblesWithReadingOrder(bubbles, panels, assignments, bitmap) {
-    if (!bubbleOrderSession || bubbles.length < 2) return mangaOrderSort(bubbles);
+function confidence(box) {
+    const value = Number(box?.score ?? box?.conf);
+    return Number.isFinite(value) ? value : 1;
+}
+
+function fullPageBox(page) {
+    return { x: 0, y: 0, w: page.width, h: page.height };
+}
+
+function relativeBox(box, panel) {
+    return {
+        x: box.x - panel.x,
+        y: box.y - panel.y,
+        w: box.w,
+        h: box.h,
+    };
+}
+
+function normalizedOrder(index, total) {
+    return safeDiv(index, Math.max(1, total - 1));
+}
+
+function fallbackContexts(ordered, bitmap, assignmentByBubble = new Map()) {
+    const page = pageShape(bitmap, ordered, []);
+    const pageBox = fullPageBox(page);
+    const contexts = new Map();
+    for (let index = 0; index < ordered.length; index++) {
+        const bubble = ordered[index];
+        contexts.set(bubble, {
+            predictedPanelIndex: -1,
+            predictedPanelId: null,
+            predictedPanelOrder: -1,
+            predictedLocalOrder: index,
+            currentPipelineIndex: index,
+            panelBox: pageBox,
+            assignment: assignmentByBubble.get(bubble) || emptyAssignment('mangaOrderSort'),
+            bubbleConfidence: confidence(bubble),
+            panelConfidence: 1,
+        });
+    }
+    return contexts;
+}
+
+async function sortBubblesWithReadingOrderDetails(bubbles, panels, assignmentDetails, bitmap) {
+    if (!bubbleOrderSession || bubbles.length < 2) {
+        const boxes = mangaOrderSort(bubbles);
+        return {
+            boxes,
+            contexts: fallbackContexts(boxes, bitmap),
+            fallbackUsed: true,
+        };
+    }
 
     const { width, height } = bitmap;
     const panelGroups = new Map();
+    const assignmentByBubble = new Map();
     for (let i = 0; i < bubbles.length; i++) {
-        const panelIndex = assignments[i] < 0 ? 0 : assignments[i];
+        const assignment = assignmentDetails[i] || emptyAssignment('missing_assignment');
+        const panelIndex = assignment.panelIndex < 0 ? 0 : assignment.panelIndex;
+        assignmentByBubble.set(bubbles[i], assignment);
         if (!panelGroups.has(panelIndex)) panelGroups.set(panelIndex, []);
         panelGroups.get(panelIndex).push(bubbles[i]);
     }
 
     const sorted = [];
+    const contexts = new Map();
     for (let panelIndex = 0; panelIndex < panels.length; panelIndex++) {
         const group = panelGroups.get(panelIndex) || [];
         if (!group.length) continue;
         const panel = panels[panelIndex];
-        const orderedGroup = await rankItemsByPairwiseModel(
-            group,
-            bubbleOrderSession,
-            (a, b) => bubblePairFeatures(a, b, width, height, panel)
-        );
+        const orderedGroup = group.length <= 1
+            ? [...group]
+            : await rankItemsByPairwiseModel(
+                group,
+                bubbleOrderSession,
+                (a, b) => bubblePairFeatures(a, b, width, height, panel)
+            );
+        const panelId = panel.panelId ?? panel.id ?? `panel_${panelIndex}`;
+        for (let localIndex = 0; localIndex < orderedGroup.length; localIndex++) {
+            const bubble = orderedGroup[localIndex];
+            contexts.set(bubble, {
+                predictedPanelIndex: panelIndex,
+                predictedPanelId: panelId,
+                predictedPanelOrder: panelIndex,
+                predictedLocalOrder: localIndex,
+                currentPipelineIndex: sorted.length + localIndex,
+                panelBox: panel,
+                assignment: assignmentByBubble.get(bubble) || emptyAssignment('missing_assignment'),
+                bubbleConfidence: confidence(bubble),
+                panelConfidence: confidence(panel),
+            });
+        }
         sorted.push(...orderedGroup);
     }
 
-    return sorted.length === bubbles.length ? sorted : mangaOrderSort(bubbles);
+    if (sorted.length !== bubbles.length) {
+        const boxes = mangaOrderSort(bubbles);
+        return {
+            boxes,
+            contexts: fallbackContexts(boxes, bitmap, assignmentByBubble),
+            fallbackUsed: true,
+        };
+    }
+
+    return { boxes: sorted, contexts, fallbackUsed: false };
+}
+
+function assignmentFeatures(info, panelCount) {
+    return [
+        info.centerInside ? 1 : 0,
+        info.overlapRatio,
+        info.distanceToCenter,
+        info.borderDistance,
+        info.secondBestPanelMargin,
+        safeDiv(info.overlapPanelCount, Math.max(1, panelCount)),
+    ];
+}
+
+function defaultBubbleContext(page, bubbles, bubble, contexts) {
+    const index = Math.max(0, bubbles.indexOf(bubble));
+    const pageBox = fullPageBox(page);
+    return contexts.get(bubble) || {
+        predictedPanelIndex: -1,
+        predictedPanelId: null,
+        predictedPanelOrder: -1,
+        predictedLocalOrder: index,
+        currentPipelineIndex: index,
+        panelBox: pageBox,
+        assignment: emptyAssignment('missing_context'),
+        bubbleConfidence: confidence(bubble),
+        panelConfidence: 1,
+    };
+}
+
+function globalBubblePairFeatures(page, bubbles, a, b, contexts, panelCount) {
+    const aContext = defaultBubbleContext(page, bubbles, a, contexts);
+    const bContext = defaultBubbleContext(page, bubbles, b, contexts);
+    const bubbleCount = Math.max(1, bubbles.length);
+    const normalizedPanelCount = Math.max(1, panelCount);
+    const panelOrderA = normalizedOrder(Math.max(0, aContext.predictedPanelOrder), normalizedPanelCount);
+    const panelOrderB = normalizedOrder(Math.max(0, bContext.predictedPanelOrder), normalizedPanelCount);
+    const localOrderA = normalizedOrder(Math.max(0, aContext.predictedLocalOrder), bubbleCount);
+    const localOrderB = normalizedOrder(Math.max(0, bContext.predictedLocalOrder), bubbleCount);
+    const currentIndexA = normalizedOrder(Math.max(0, aContext.currentPipelineIndex), bubbleCount);
+    const currentIndexB = normalizedOrder(Math.max(0, bContext.currentPipelineIndex), bubbleCount);
+    const relativeA = relativeBox(a, aContext.panelBox);
+    const relativeB = relativeBox(b, bContext.panelBox);
+
+    return finiteFeatures([
+        ...pairFeatures(a, b, page.width, page.height),
+        aContext.predictedPanelId === bContext.predictedPanelId ? 1 : 0,
+        panelOrderA,
+        panelOrderB,
+        panelOrderA - panelOrderB,
+        localOrderA,
+        localOrderB,
+        localOrderA - localOrderB,
+        currentIndexA,
+        currentIndexB,
+        currentIndexA - currentIndexB,
+        ...boxFeatures(relativeA, Math.max(1, aContext.panelBox.w), Math.max(1, aContext.panelBox.h)),
+        ...boxFeatures(relativeB, Math.max(1, bContext.panelBox.w), Math.max(1, bContext.panelBox.h)),
+        ...boxFeatures(aContext.panelBox, page.width, page.height),
+        ...boxFeatures(bContext.panelBox, page.width, page.height),
+        aContext.bubbleConfidence,
+        bContext.bubbleConfidence,
+        aContext.panelConfidence,
+        bContext.panelConfidence,
+        ...assignmentFeatures(aContext.assignment, normalizedPanelCount),
+        ...assignmentFeatures(bContext.assignment, normalizedPanelCount),
+    ]);
+}
+
+async function applyGlobalBubbleReranker(bubbles, panels, contexts, bitmap, featureBubbles = bubbles) {
+    if (!globalBubbleOrderSession || !globalBubbleOrderFeatureCount || bubbles.length <= 1) {
+        return [...bubbles];
+    }
+
+    const page = pageShape(bitmap, featureBubbles, panels);
+    const pairs = [];
+    const featureRows = [];
+    for (let i = 0; i < bubbles.length; i++) {
+        for (let j = 0; j < bubbles.length; j++) {
+            if (i === j) continue;
+            const features = globalBubblePairFeatures(
+                page,
+                featureBubbles,
+                bubbles[i],
+                bubbles[j],
+                contexts,
+                panels.length
+            );
+            if (features.length !== globalBubbleOrderFeatureCount) {
+                throw new Error(
+                    `Global reranker feature mismatch: got ${features.length}, expected ${globalBubbleOrderFeatureCount}`
+                );
+            }
+            pairs.push([i, j]);
+            featureRows.push(features);
+        }
+    }
+
+    const probabilities = await runPairwiseModel(globalBubbleOrderSession, featureRows);
+    const scores = new Float32Array(bubbles.length).fill(0);
+    for (let index = 0; index < pairs.length; index++) {
+        const [i] = pairs[index];
+        scores[i] += probabilities[index];
+    }
+
+    return Array.from({ length: bubbles.length }, (_, index) => index)
+        .sort((a, b) => scores[b] - scores[a] || a - b)
+        .map(index => bubbles[index]);
+}
+
+async function applyPanelConstrainedGlobalBubbleReranker(currentBoxes, panels, contexts, bitmap) {
+    if (!globalBubbleOrderSession || currentBoxes.length <= 1) {
+        return [...currentBoxes];
+    }
+
+    const groups = Array.from({ length: panels.length }, () => []);
+    const unassigned = [];
+    for (const box of currentBoxes) {
+        const context = contexts.get(box);
+        const panelIndex = Number(context?.predictedPanelIndex);
+        if (
+            Number.isInteger(panelIndex) &&
+            panelIndex >= 0 &&
+            panelIndex < panels.length
+        ) {
+            groups[panelIndex].push(box);
+        } else {
+            unassigned.push(box);
+        }
+    }
+
+    const ordered = [];
+    for (const group of groups) {
+        if (!group.length) continue;
+        let orderedGroup = group;
+        if (group.length > 1) {
+            orderedGroup = await applyGlobalBubbleReranker(
+                group,
+                panels,
+                contexts,
+                bitmap,
+                currentBoxes
+            );
+        }
+        if (orderedGroup.length !== group.length) {
+            orderedGroup = group;
+        }
+        ordered.push(...applyGlobalBubblePostprocess(orderedGroup, contexts));
+    }
+    ordered.push(...unassigned);
+
+    return ordered.length === currentBoxes.length ? ordered : [...currentBoxes];
+}
+
+function applyGlobalBubblePostprocess(boxes, contexts) {
+    if (globalBubbleOrderPostprocess?.name === 'vertical_small_bubble_repair_v1') {
+        return applyVerticalSmallBubbleRepair(boxes, contexts, globalBubbleOrderPostprocess);
+    }
+    return boxes;
+}
+
+function shouldApplyVerticalSmallBubbleRepair(
+    lowerCandidate,
+    upperCandidate,
+    contexts,
+    config
+) {
+    const lowerContext = contexts.get(lowerCandidate);
+    const upperContext = contexts.get(upperCandidate);
+    if (!lowerContext || !upperContext) return false;
+    if (lowerContext.predictedPanelId !== upperContext.predictedPanelId) return false;
+
+    const gapFactor = config?.gapFactor ?? VERTICAL_REPAIR_GAP_FACTOR;
+    const maxYOverlap = config?.maxYOverlap ?? VERTICAL_REPAIR_MAX_Y_OVERLAP;
+    const maxAreaRatio = config?.maxAreaRatio ?? VERTICAL_REPAIR_MAX_AREA_RATIO;
+
+    const verticalGap = boxCenterY(lowerCandidate) - boxCenterY(upperCandidate);
+    if (
+        verticalGap < Math.max(lowerCandidate.h, upperCandidate.h) * gapFactor
+    ) {
+        return false;
+    }
+
+    const overlapY = safeDiv(
+        intervalOverlap(
+            lowerCandidate.y,
+            boxBottom(lowerCandidate),
+            upperCandidate.y,
+            boxBottom(upperCandidate)
+        ),
+        Math.min(lowerCandidate.h, upperCandidate.h)
+    );
+    if (overlapY > maxYOverlap) return false;
+
+    const areaRatio = safeDiv(
+        boxArea(lowerCandidate),
+        Math.max(1, boxArea(upperCandidate))
+    );
+    return areaRatio <= maxAreaRatio;
+}
+
+function applyVerticalSmallBubbleRepair(boxes, contexts, config) {
+    const repaired = [...boxes];
+    for (let index = 0; index < repaired.length - 1; index++) {
+        if (
+            shouldApplyVerticalSmallBubbleRepair(
+                repaired[index],
+                repaired[index + 1],
+                contexts,
+                config
+            )
+        ) {
+            [repaired[index], repaired[index + 1]] = [repaired[index + 1], repaired[index]];
+        }
+    }
+    return repaired;
 }
 
 function mangaOrderSort(boxes) {

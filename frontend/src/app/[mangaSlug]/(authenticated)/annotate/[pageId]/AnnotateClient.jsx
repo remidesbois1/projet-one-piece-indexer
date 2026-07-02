@@ -60,6 +60,7 @@ export default function AnnotatePage() {
     const params = useParams();
     const searchParams = useSearchParams();
     const fromSearch = searchParams.get('from') === 'search';
+    const detectionDebugEnabled = searchParams.get('debug') === '1';
     const paramsPageId = params?.pageId;
     const [pageId, setPageId] = useState(paramsPageId);
     const { mangaSlug, currentManga } = useManga();
@@ -78,6 +79,7 @@ export default function AnnotatePage() {
     const [imageDimensions, setImageDimensions] = useState(null);
     const [ocrSource, setOcrSource] = useState(null);
     const [debugImageUrl, setDebugImageUrl] = useState(null);
+    const [detectionDebugData, setDetectionDebugData] = useState(null);
     const [showApiKeyModal, setShowApiKeyModal] = useState(false);
     const [showDescModal, setShowDescModal] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -106,6 +108,12 @@ export default function AnnotatePage() {
     }, [paramsPageId]);
 
     useEffect(() => {
+        if (!detectionDebugEnabled) {
+            setDetectionDebugData(null);
+        }
+    }, [detectionDebugEnabled]);
+
+    useEffect(() => {
         const handlePopState = () => {
             const pathParts = window.location.pathname.split('/');
             const urlPageId = pathParts[pathParts.length - 1];
@@ -116,6 +124,7 @@ export default function AnnotatePage() {
                 setRectangle(null);
                 setIsModalOpen(false);
                 setDebugImageUrl(null);
+                setDetectionDebugData(null);
                 setError(null);
             }
         };
@@ -131,6 +140,7 @@ export default function AnnotatePage() {
         setRectangle(null);
         setIsModalOpen(false);
         setDebugImageUrl(null);
+        setDetectionDebugData(null);
         setError(null);
         const pages = chapterPagesRef.current;
         if (pages.length > 0) {
@@ -191,8 +201,19 @@ export default function AnnotatePage() {
         processNextBubble, detectBubbles
     } = useAnnotationDetection({
         imageRef, pageId, setRectangle, setPendingAnnotation, setDebugImageUrl,
-        runLocalOcr, runBackgroundOcr, setIsSubmitting, setLoadingText
+        runLocalOcr, runBackgroundOcr, setIsSubmitting, setLoadingText,
+        detectionDebugEnabled, setDetectionDebugData
     });
+
+    const runDebuggableDetection = useCallback(async (blob) => {
+        const result = await detectBubbles(blob, {
+            debug: detectionDebugEnabled,
+            returnDebug: detectionDebugEnabled
+        });
+        if (!detectionDebugEnabled) return result;
+        setDetectionDebugData(result?.debug || null);
+        return result?.boxes || [];
+    }, [detectBubbles, detectionDebugEnabled]);
 
     const {
         isDrawing, startPoint, endPoint, mousePos, isShiftPressed,
@@ -413,7 +434,7 @@ export default function AnnotatePage() {
             if (detectionStatus === 'ready') {
                 yoloPromise = fetch(imageRef.current.src)
                     .then(r => r.blob())
-                    .then(b => detectBubbles(b))
+                    .then(b => runDebuggableDetection(b))
                     .catch(e => {
                         console.error('YOLO Failed', e);
                         return null;
@@ -540,7 +561,7 @@ export default function AnnotatePage() {
             if (detectionStatus === 'ready') {
                 yoloPromise = fetch(imageRef.current.src)
                     .then(r => r.blob())
-                    .then(b => detectBubbles(b))
+                    .then(b => runDebuggableDetection(b))
                     .catch(e => {
                         console.error('YOLO Failed', e);
                         return null;
@@ -878,6 +899,8 @@ export default function AnnotatePage() {
                         hoveredBubble={hoveredBubble}
                         mousePos={mousePos}
                         handleEditBubble={handleEditBubble}
+                        detectionDebugEnabled={detectionDebugEnabled}
+                        detectionDebugData={detectionDebugData}
                     />
 
                     <AnnotateAnnotationSidebar

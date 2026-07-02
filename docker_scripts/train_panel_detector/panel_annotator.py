@@ -21,6 +21,7 @@ except ImportError:
 SCRIPT_DIR = Path(__file__).resolve().parent
 DEFAULT_DATASET_PATH = SCRIPT_DIR / "panel_annotation_dataset" / "dataset.json"
 DEFAULT_OUTPUT_PATH = SCRIPT_DIR / "panel_annotation_dataset" / "panel_annotations.json"
+DEFAULT_PANEL_METRICS_PATH = SCRIPT_DIR / "metrics" / "latest_panel_metrics.json"
 RESAMPLE = getattr(Image, "Resampling", Image).LANCZOS
 
 
@@ -118,12 +119,42 @@ def bubble_sort_key(bubble: dict[str, Any]) -> tuple[int, int, int]:
     return (0, to_int(order), to_int(bubble.get("id")))
 
 
+def sort_cases_rtl_in_place(cases: list[dict[str, Any]]) -> None:
+    if not cases:
+        return
+    heights = sorted(bbox_from_item(case)["h"] for case in cases)
+    median_height = heights[len(heights) // 2]
+    row_band = max(40, int(median_height * 0.6))
+
+    def key(case: dict[str, Any]) -> tuple[int, int]:
+        bbox = bbox_from_item(case)
+        center_y = bbox["y"] + bbox["h"] / 2
+        center_x = bbox["x"] + bbox["w"] / 2
+        return (int(center_y // row_band), -int(center_x))
+
+    cases.sort(key=key)
+
+
 class PanelAnnotator(tk.Tk):
-    def __init__(self, dataset_path: Path, output_path: Path) -> None:
+    def __init__(
+        self,
+        dataset_path: Path,
+        output_path: Path,
+        auto_model_path: Path | None = None,
+        auto_conf: float = 0.25,
+        auto_iou: float = 0.70,
+        auto_imgsz: int = 800,
+    ) -> None:
         super().__init__()
         self.dataset_path = dataset_path.resolve()
         self.dataset_dir = self.dataset_path.parent
         self.output_path = output_path.resolve()
+        self.auto_model_path = auto_model_path.resolve() if auto_model_path else None
+        self.auto_conf = auto_conf
+        self.auto_iou = auto_iou
+        self.auto_imgsz = auto_imgsz
+        self.auto_detector: Any | None = None
+        self.auto_detector_path: Path | None = None
 
         self.dataset = read_json(self.dataset_path)
         self.pages: list[dict[str, Any]] = self.dataset.get("pages") or []
@@ -250,6 +281,12 @@ class PanelAnnotator(tk.Tk):
             side=tk.LEFT, fill=tk.X, expand=True
         )
 
+        detect_buttons = ttk.Frame(side)
+        detect_buttons.pack(fill=tk.X, pady=(0, 10))
+        ttk.Button(detect_buttons, text="Auto panels", command=self.auto_detect_panels).pack(
+            side=tk.LEFT, fill=tk.X, expand=True
+        )
+
         ttk.Label(side, text="Bulles").pack(anchor="w")
         bubble_frame = ttk.Frame(side)
         bubble_frame.pack(fill=tk.BOTH, expand=True, pady=(2, 4))
@@ -337,6 +374,15 @@ class PanelAnnotator(tk.Tk):
     def current_bubbles(self) -> list[dict[str, Any]]:
         return self.current_page().get("bubbles") or []
 
+    def current_image_path(self) -> Path:
+        image_file = self.current_page().get("image_file")
+        if not image_file:
+            return self.dataset_dir / ""
+        image_path = Path(image_file)
+        if not image_path.is_absolute():
+            image_path = self.dataset_dir / image_path
+        return image_path
+
     def normalize_page_cases(self, page: dict[str, Any]) -> None:
         valid_bubble_ids = {to_int(b.get("id")) for b in page.get("bubbles") or []}
         seen: set[int] = set()
@@ -408,7 +454,7 @@ class PanelAnnotator(tk.Tk):
 
         self.current_index = index
         page = self.current_page()
-        image_path = self.dataset_dir / page["image_file"]
+        image_path = self.current_image_path()
         if not image_path.exists():
             messagebox.showerror("Missing image", f"Image not found:\n{image_path}")
             return
@@ -743,12 +789,10 @@ class PanelAnnotator(tk.Tk):
         self.auto_assign_case(case, only_unassigned=True)
         self.mark_dirty()
 
-    def auto_assign_page(self) -> None:
-        cases = self.current_cases()
-        if not cases:
-            return
+    def assign_bubbles_to_cases(self, cases: list[dict[str, Any]]) -> int:
         for case in cases:
             case["bubble_ids"] = []
+        assigned_count = 0
         for bubble in self.current_bubbles():
             bid = to_int(bubble.get("id"))
             candidates = []
@@ -759,8 +803,141 @@ class PanelAnnotator(tk.Tk):
             if candidates:
                 _, _, best_case = min(candidates)
                 best_case.setdefault("bubble_ids", []).append(bid)
+                assigned_count += 1
         for case in cases:
             self.sort_case_bubbles(case)
+        return assigned_count
+
+    def auto_assign_page(self) -> None:
+        cases = self.current_cases()
+        if not cases:
+            self.auto_detect_panels(replace_existing=False)
+            return
+        self.assign_bubbles_to_cases(cases)
+        self.mark_dirty()
+
+    def resolve_auto_model_path(self) -> Path | None:
+        if self.auto_model_path is not None:
+            return self.auto_model_path if self.auto_model_path.exists() else None
+
+        if DEFAULT_PANEL_METRICS_PATH.exists():
+            metrics = read_json(DEFAULT_PANEL_METRICS_PATH)
+            for key in ("best_model", "onnx_model"):
+                raw_path = metrics.get(key)
+                if not raw_path:
+                    continue
+                model_path = Path(raw_path)
+                if model_path.exists():
+                    return model_path
+
+        candidates = sorted(
+            (SCRIPT_DIR / "runs").glob("*/weights/best.pt"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        return candidates[0] if candidates else None
+
+    def load_auto_detector(self) -> Any | None:
+        model_path = self.resolve_auto_model_path()
+        if model_path is None:
+            messagebox.showerror(
+                "Auto panels",
+                "No panel detector model found.\n\n"
+                "Train one with run_pipeline.py, or pass --auto-model PATH.",
+            )
+            return None
+
+        if self.auto_detector is not None and self.auto_detector_path == model_path:
+            return self.auto_detector
+
+        try:
+            from ultralytics import YOLO
+        except ImportError:
+            messagebox.showerror(
+                "Auto panels",
+                "Missing ultralytics. Install the panel detector requirements first.",
+            )
+            return None
+
+        try:
+            self.auto_detector = YOLO(str(model_path))
+            self.auto_detector_path = model_path
+            return self.auto_detector
+        except Exception as exc:
+            messagebox.showerror("Auto panels", f"Could not load model:\n{model_path}\n\n{exc}")
+            return None
+
+    def auto_detect_panels(self, replace_existing: bool = True) -> None:
+        if self.current_image is None:
+            return
+
+        page = self.current_page()
+        if page.get("cases") and replace_existing:
+            replace = messagebox.askyesno(
+                "Auto panels",
+                "Replace existing panels on this page with detector predictions?",
+            )
+            if not replace:
+                return
+
+        image_path = self.current_image_path()
+        if not image_path.exists():
+            messagebox.showerror("Auto panels", f"Image not found:\n{image_path}")
+            return
+
+        detector = self.load_auto_detector()
+        if detector is None:
+            return
+
+        try:
+            results = detector.predict(
+                source=str(image_path),
+                imgsz=self.auto_imgsz,
+                conf=self.auto_conf,
+                iou=self.auto_iou,
+                verbose=False,
+            )
+        except Exception as exc:
+            messagebox.showerror("Auto panels", f"Panel detection failed:\n{exc}")
+            return
+
+        width, height = self.current_image.size
+        detected_cases = []
+        seen: set[tuple[int, int, int, int]] = set()
+        for result in results:
+            boxes = getattr(result, "boxes", None)
+            if boxes is None:
+                continue
+            for index, box in enumerate(boxes):
+                xyxy = box.xyxy[0].detach().cpu().tolist()
+                bbox = rect_from_points(xyxy[0], xyxy[1], xyxy[2], xyxy[3], width, height)
+                if bbox["w"] < 8 or bbox["h"] < 8:
+                    continue
+                key = (bbox["x"], bbox["y"], bbox["w"], bbox["h"])
+                if key in seen:
+                    continue
+                seen.add(key)
+                detected_cases.append(
+                    {
+                        "id": f"auto_case_{page_id(page)}_{index + 1}",
+                        "order": len(detected_cases) + 1,
+                        "bbox": bbox,
+                        "bubble_ids": [],
+                    }
+                )
+
+        if not detected_cases:
+            messagebox.showwarning(
+                "Auto panels",
+                f"No panel detected above conf={self.auto_conf:.2f}.",
+            )
+            return
+
+        sort_cases_rtl_in_place(detected_cases)
+        page["cases"] = detected_cases
+        self.update_case_orders(page)
+        self.assign_bubbles_to_cases(detected_cases)
+        self.selected_case_index = 0 if detected_cases else None
         self.mark_dirty()
 
     def assign_selected_bubble(self) -> None:
@@ -841,17 +1018,7 @@ class PanelAnnotator(tk.Tk):
         cases = self.current_cases()
         if not cases:
             return
-        heights = sorted(bbox_from_item(case)["h"] for case in cases)
-        median_height = heights[len(heights) // 2]
-        row_band = max(40, int(median_height * 0.6))
-
-        def key(case: dict[str, Any]) -> tuple[int, int]:
-            bbox = bbox_from_item(case)
-            center_y = bbox["y"] + bbox["h"] / 2
-            center_x = bbox["x"] + bbox["w"] / 2
-            return (int(center_y // row_band), -int(center_x))
-
-        cases.sort(key=key)
+        sort_cases_rtl_in_place(cases)
         self.selected_case_index = None
         self.update_case_orders()
         self.mark_dirty()
@@ -974,6 +1141,18 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_OUTPUT_PATH,
         help=f"Output annotation JSON. Default: {DEFAULT_OUTPUT_PATH}",
     )
+    parser.add_argument(
+        "--auto-model",
+        type=Path,
+        default=None,
+        help=(
+            "Optional panel detector model for Auto panels. Defaults to "
+            "metrics/latest_panel_metrics.json, then latest runs/*/weights/best.pt."
+        ),
+    )
+    parser.add_argument("--auto-conf", type=float, default=0.25)
+    parser.add_argument("--auto-iou", type=float, default=0.70)
+    parser.add_argument("--auto-imgsz", type=int, default=800)
     return parser.parse_args()
 
 
@@ -983,7 +1162,14 @@ def main() -> None:
     if not dataset_path.exists():
         raise SystemExit(f"Dataset file not found: {dataset_path}")
 
-    app = PanelAnnotator(dataset_path=dataset_path, output_path=args.output)
+    app = PanelAnnotator(
+        dataset_path=dataset_path,
+        output_path=args.output,
+        auto_model_path=args.auto_model,
+        auto_conf=args.auto_conf,
+        auto_iou=args.auto_iou,
+        auto_imgsz=args.auto_imgsz,
+    )
     app.mainloop()
 
 

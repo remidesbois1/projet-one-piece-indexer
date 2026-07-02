@@ -28,8 +28,23 @@ export default function AnnotateCanvas({
     setHoveredBubble,
     hoveredBubble,
     mousePos,
-    handleEditBubble
+    handleEditBubble,
+    detectionDebugEnabled = false,
+    detectionDebugData = null
 }) {
+    const debugScale = imageDimensions?.width && imageDimensions?.naturalWidth
+        ? imageDimensions.width / imageDimensions.naturalWidth
+        : 0;
+    const toDebugStyle = (box) => {
+        if (!debugScale || !box) return null;
+        return {
+            left: `${box.x * debugScale}px`,
+            top: `${box.y * debugScale}px`,
+            width: `${box.w * debugScale}px`,
+            height: `${box.h * debugScale}px`,
+        };
+    };
+
     return (
         <main className="relative flex min-h-0 flex-1 cursor-default items-center justify-center overflow-hidden bg-[#020812]/82 p-2 sm:p-4">
             <div
@@ -105,6 +120,60 @@ export default function AnnotateCanvas({
                         }}
                         className="absolute border-2 border-dashed border-red-500 bg-red-500/10 pointer-events-none z-20"
                     />
+                )}
+
+                {detectionDebugEnabled && imageDimensions && (
+                    <div className="pointer-events-none absolute inset-0 z-40">
+                        <div className="absolute left-2 top-2 max-w-[calc(100%-1rem)] rounded-md border border-cyan-300/40 bg-slate-950/80 px-2.5 py-2 text-[11px] font-semibold leading-tight text-cyan-50 shadow-lg backdrop-blur-sm">
+                            <div>debug detection</div>
+                            {detectionDebugData ? (
+                                <div className="mt-1 space-y-0.5 text-cyan-100/90">
+                                    <div>mode: {detectionDebugData.mode}</div>
+                                    <div>panels: {detectionDebugData.panelCount} · bulles: {detectionDebugData.bubbleCount}</div>
+                                    <div>seuil bulle: {detectionDebugData.bubbleThreshold}</div>
+                                </div>
+                            ) : (
+                                <div className="mt-1 text-cyan-100/80">lance une detection auto</div>
+                            )}
+                        </div>
+
+                        {detectionDebugData?.panels?.map((panel) => {
+                            const style = toDebugStyle(panel.box);
+                            if (!style) return null;
+                            return (
+                                <div
+                                    key={`debug-panel-${panel.order}-${panel.id}`}
+                                    style={style}
+                                    className="absolute border-2 border-cyan-300/90 bg-cyan-300/5 shadow-[0_0_0_1px_rgba(8,47,73,0.75)]"
+                                >
+                                    <div className="absolute -left-[2px] -top-6 rounded-sm bg-cyan-300 px-1.5 py-0.5 text-[10px] font-black text-slate-950 shadow-sm">
+                                        P{panel.order} {panel.score != null ? `· ${panel.score}` : ''}
+                                    </div>
+                                </div>
+                            );
+                        })}
+
+                        {detectionDebugData?.bubbles?.map((bubble) => {
+                            const style = toDebugStyle(bubble.box);
+                            if (!style) return null;
+                            return (
+                                <div
+                                    key={`debug-bubble-${bubble.order}-${bubble.rawIndex}`}
+                                    style={style}
+                                    className="absolute border border-fuchsia-300/90 bg-fuchsia-500/10"
+                                >
+                                    <div className="absolute -right-[2px] -top-5 rounded-sm bg-fuchsia-500 px-1 py-0.5 text-[10px] font-black text-white shadow-sm">
+                                        #{bubble.order}{bubble.panelOrder ? ` P${bubble.panelOrder}` : ' P?'}
+                                    </div>
+                                    <div className="absolute -bottom-5 left-0 max-w-[160px] truncate rounded-sm bg-slate-950/85 px-1 py-0.5 text-[9px] font-semibold text-fuchsia-50">
+                                        raw {bubble.rawIndex}
+                                        {bubble.localOrder ? ` · local ${bubble.localOrder}` : ''}
+                                        {bubble.assignmentReason ? ` · ${bubble.assignmentReason}` : ''}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
                 )}
 
                 {imageDimensions && existingBubbles.map((bubble, index) => {

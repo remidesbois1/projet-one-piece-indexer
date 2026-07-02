@@ -50,8 +50,17 @@ Main controls:
 - `Unassign` removes the selected bubble from its current case.
 - `Auto case` assigns unassigned bubbles inside the selected case.
 - `Auto page` recomputes all page assignments by choosing the smallest containing case for each bubble.
+- `Auto panels` runs the latest trained panel detector on the current page,
+  replaces page panels with predictions, sorts them RTL, then assigns bubbles.
 - `Up` / `Down` changes case order.
 - `Sort RTL` sorts cases with a right-to-left, top-to-bottom heuristic.
+
+`Auto panels` loads `metrics/latest_panel_metrics.json` by default. To force a
+specific model:
+
+```powershell
+python panel_annotator.py --auto-model runs/yolo26n_panel/weights/best.pt
+```
 
 ## Output
 

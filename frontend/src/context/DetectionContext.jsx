@@ -54,17 +54,17 @@ export const DetectionProvider = ({ children }) => {
     }, [detectionStatus]);
 
     
-    const detectBubbles = React.useCallback((blob) => {
+    const detectBubbles = React.useCallback((blob, options = {}) => {
         return new Promise((resolve, reject) => {
             if (!workerRef.current || detectionStatusRef.current !== 'ready') {
                 return reject(new Error("Modèle de détection non prêt."));
             }
 
             const handleMessage = (e) => {
-                const { status, boxes, error } = e.data;
+                const { status, boxes, debug, error } = e.data;
                 if (status === 'complete') {
                     workerRef.current.removeEventListener('message', handleMessage);
-                    resolve(boxes);
+                    resolve(options.returnDebug ? { boxes, debug } : boxes);
                 }
                 if (status === 'error') {
                     workerRef.current.removeEventListener('message', handleMessage);
@@ -73,7 +73,11 @@ export const DetectionProvider = ({ children }) => {
             };
 
             workerRef.current.addEventListener('message', handleMessage);
-            workerRef.current.postMessage({ type: 'run', imageBlob: blob });
+            workerRef.current.postMessage({
+                type: 'run',
+                imageBlob: blob,
+                debug: Boolean(options.debug || options.returnDebug)
+            });
         });
     }, []);
 

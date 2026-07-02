@@ -13,7 +13,9 @@ export function useAnnotationDetection({
     runLocalOcr,
     runBackgroundOcr,
     setIsSubmitting,
-    setLoadingText
+    setLoadingText,
+    detectionDebugEnabled = false,
+    setDetectionDebugData
 }) {
     const { detectBubbles, detectionStatus, loadDetectionModel, downloadProgress: detectionProgress, downloadStats } = useDetection();
     const [isAutoDetecting, setIsAutoDetecting] = useState(false);
@@ -52,7 +54,16 @@ export function useAnnotationDetection({
             const response = await fetch(imageRef.current.src);
             const blob = await response.blob();
 
-            const boxes = await detectBubbles(blob);
+            const detectionResult = await detectBubbles(blob, {
+                debug: detectionDebugEnabled,
+                returnDebug: detectionDebugEnabled
+            });
+            const boxes = detectionDebugEnabled
+                ? detectionResult?.boxes || []
+                : detectionResult;
+            if (detectionDebugEnabled) {
+                setDetectionDebugData?.(detectionResult?.debug || null);
+            }
 
             if (boxes.length === 0) {
                 toast.info("Aucune bulle détectée.");
