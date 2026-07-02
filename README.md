@@ -120,7 +120,7 @@ Modèle de pointe pour une précision extrême, déployé en serverless sur **Mo
 - **Poneglyph-BBox** (full-page) : [`LightonOCR-2-1b-poneglyph-bbox`](https://huggingface.co/Remidesbois/LightonOCR-2-1b-poneglyph-bbox) — détecte toutes les bulles d'une page et renvoie texte + bbox.
 - **Poneglyph** (bulle unique) : [`LightonOCR-2-1b-poneglyph`](https://huggingface.co/Remidesbois/LightonOCR-2-1b-poneglyph) — transcription d'une bulle isolée.
 
-- **Précision :** CER < 0.1% - WER < 0.1%
+- **Dernier benchmark H100 (01/07/2026) :** CER **0.424%** - WER **1.405%** - exact-match **92.55%**
 - **Cloud :** GPU NVIDIA L4 via Modal (~0.000222 $/seconde)
 - **Local :** 0$/OCR, 5-15s/page selon GPU
 - **Optimisation :** Post-processing de troncature pour 0% d'hallucination
@@ -133,6 +133,7 @@ Fine-tune du VLM [`datalab-to/surya-ocr-2`](https://huggingface.co/datalab-to/su
 - **Surya** (bulle unique) : [`surya-bubble-ocr-poneglyph`](https://huggingface.co/Remidesbois/surya-bubble-ocr-poneglyph).
 
 - **Local :** 0$/OCR via transformers (`AutoModelForImageTextToText`)
+- **Dernier benchmark H100 (01/07/2026) :** CER **2.028%** - WER **3.078%** - exact-match **90.09%** - hallucination **0%**
 - **Pipeline MLOps :** [`docker_scripts/finetune_surya_ocr_bbox`](docker_scripts/finetune_surya_ocr_bbox) (export Supabase → dataset → LoRA/DoRA → benchmark vs LightOn)
 
 ### YOLO26 Fine-tuned (Détection des Bulles)

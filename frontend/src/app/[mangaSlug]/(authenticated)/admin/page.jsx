@@ -15,7 +15,8 @@ import {
     BookOpen,
     Eye,
     EyeOff,
-    Zap
+    Zap,
+    CloudLightning
 } from "lucide-react";
 
 import { useSearchParams, useParams } from 'next/navigation';
@@ -26,6 +27,7 @@ import { getAllMangas, toggleMangaEnabled } from '@/lib/api';
 const IpBanManager = React.lazy(() => import('@/components/IpBanManager'));
 const CoverManager = React.lazy(() => import('@/components/CoverManager'));
 const AiModelManager = React.lazy(() => import('@/components/AiModelManager'));
+const TrainingJobManager = React.lazy(() => import('@/components/TrainingJobManager'));
 
 function TabSkeleton() {
     return (
@@ -64,7 +66,7 @@ export default function AdminDashboard() {
     };
 
     return (
-        <div className="container mx-auto max-w-5xl space-y-8 px-4 py-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="container mx-auto max-w-7xl space-y-8 px-4 py-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
 
             <div className="flex flex-col space-y-2 border-b border-white/10 pb-8">
                 <h1 className="poneglyph-title text-4xl font-extrabold">
@@ -81,7 +83,7 @@ export default function AdminDashboard() {
                 window.history.pushState(null, '', `?${params.toString()}`);
             }} className="w-full">
                 <div className="sticky top-16 z-20 bg-[#06111e]/86 pb-6 pt-2 backdrop-blur-xl">
-                    <TabsList className="grid h-auto w-full grid-cols-2 border border-white/12 bg-white/8 p-1 lg:grid-cols-6">
+                    <TabsList className="grid h-auto w-full grid-cols-2 border border-white/12 bg-white/8 p-1 lg:grid-cols-7">
                         <TabsTrigger value="content" className="px-4 py-3 text-slate-300 transition-all data-[state=active]:bg-white/12 data-[state=active]:text-white data-[state=active]:shadow-sm focus-visible:ring-0">
                             <Library className="h-4 w-4 mr-2" />
                             <span className="font-medium">Bibliothèque</span>
@@ -97,6 +99,10 @@ export default function AdminDashboard() {
                         <TabsTrigger value="ai" className="px-4 py-3 text-slate-300 transition-all data-[state=active]:bg-white/12 data-[state=active]:text-white data-[state=active]:shadow-sm focus-visible:ring-0">
                             <Cpu className="h-4 w-4 mr-2" />
                             <span className="font-medium">IA</span>
+                        </TabsTrigger>
+                        <TabsTrigger value="training" className="px-4 py-3 text-[#8dbbff] transition-all data-[state=active]:bg-[#3d86ff]/16 data-[state=active]:text-white data-[state=active]:shadow-sm focus-visible:ring-0">
+                            <CloudLightning className="h-4 w-4 mr-2" />
+                            <span className="font-medium">Fine-tuning</span>
                         </TabsTrigger>
                         <TabsTrigger value="security" className="px-4 py-3 text-red-300 transition-all data-[state=active]:bg-red-500/14 data-[state=active]:text-red-100 data-[state=active]:shadow-sm focus-visible:ring-0">
                             <ShieldAlert className="h-4 w-4 mr-2" />
@@ -196,6 +202,12 @@ export default function AdminDashboard() {
                     <TabsContent value="ai" className="m-0 p-8 outline-none">
                         <Suspense fallback={<TabSkeleton />}>
                             <AiModelManager mangaSlug={params.mangaSlug} />
+                        </Suspense>
+                    </TabsContent>
+
+                    <TabsContent value="training" className="m-0 p-8 outline-none">
+                        <Suspense fallback={<TabSkeleton />}>
+                            <TrainingJobManager />
                         </Suspense>
                     </TabsContent>
 

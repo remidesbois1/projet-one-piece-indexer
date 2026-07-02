@@ -15,6 +15,7 @@ const { generateGeminiEmbedding } = require('../utils/geminiClient');
 const { generateVoyageEmbedding } = require('../utils/voyageClient');
 const { generateF2llmEmbedding } = require('../utils/f2llmClient');
 const { buildPageEmbeddingText } = require('../utils/pageEmbeddingText');
+const { cancelModalCall, submitTrainingJob } = require('../utils/modalTrainingLauncher');
 
 // Ensure environment variables are loaded
 if (process.env.NODE_ENV !== 'production') {
@@ -55,6 +56,144 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage: storage });
+
+const TRAINING_JOB_CONFIGS = {
+  surya_bubble_ocr: {
+    label: 'Surya bubble OCR',
+    hfRepo: 'Remidesbois/surya-bubble-ocr-poneglyph',
+  },
+  surya_bbox: {
+    label: 'Surya bbox OCR',
+    hfRepo: 'Remidesbois/surya-ocr-2-poneglyph-bbox',
+  },
+  lighton_ocr: {
+    label: 'LightOn OCR',
+    hfRepo: 'Remidesbois/LightonOCR-2-1b-poneglyph',
+  },
+  ppocrv6_bubble_line: {
+    label: 'YOLO26n + PP-OCRv6 bubble line',
+    hfRepo: 'Remidesbois/pp-ocrv6-one-piece-bubble-line-rec',
+  },
+};
+
+const TRAINING_KIND_ALIASES = {
+  finetune_surya_bubble_ocr: 'surya_bubble_ocr',
+  surya_bbox_ocr: 'surya_bbox',
+  finetune_surya_ocr_bbox: 'surya_bbox',
+  finetune_lighton_ocr: 'lighton_ocr',
+  ppocrv6_line_rec: 'ppocrv6_bubble_line',
+  paddleocr_line_rec: 'ppocrv6_bubble_line',
+};
+
+const ALLOWED_TRAINING_PROVIDERS = new Set(['modal', 'runpod', 'local']);
+const ALLOWED_MODAL_GPUS = new Set(['A100-80GB', 'L40S', 'H100', 'H200', 'B200']);
+
+const GPU_TRAINING_PRESETS = {
+  surya_bubble_ocr: {
+    L40S: { epochs: 6, batch_size: 2, grad_accum: 8, learning_rate: 0.00005, lora_rank: 64, max_eval_samples: 0, gen_eval_samples: 96, eval_steps: 300, eval_batch_size: 1, dataloader_workers: 2, early_stopping_patience: 4, save_total_limit: 4 },
+    'A100-80GB': { epochs: 6, batch_size: 4, grad_accum: 4, learning_rate: 0.00005, lora_rank: 64, max_eval_samples: 0, gen_eval_samples: 128, eval_steps: 300, eval_batch_size: 2, dataloader_workers: 4, early_stopping_patience: 4, save_total_limit: 4 },
+    H100: { epochs: 6, batch_size: 4, grad_accum: 4, learning_rate: 0.00005, lora_rank: 96, max_eval_samples: 0, gen_eval_samples: 160, eval_steps: 300, eval_batch_size: 2, dataloader_workers: 4, early_stopping_patience: 4, save_total_limit: 4 },
+    H200: { epochs: 6, batch_size: 6, grad_accum: 3, learning_rate: 0.00005, lora_rank: 96, max_eval_samples: 0, gen_eval_samples: 192, eval_steps: 300, eval_batch_size: 3, dataloader_workers: 6, early_stopping_patience: 4, save_total_limit: 4 },
+    B200: { epochs: 6, batch_size: 8, grad_accum: 2, learning_rate: 0.00005, lora_rank: 128, max_eval_samples: 0, gen_eval_samples: 224, eval_steps: 300, eval_batch_size: 4, dataloader_workers: 8, early_stopping_patience: 4, save_total_limit: 4 },
+  },
+  surya_bbox: {
+    L40S: { epochs: 6, batch_size: 1, grad_accum: 8, learning_rate: 0.00005, lora_rank: 64, max_eval_samples: 0, gen_eval_samples: 24, eval_steps: 250, eval_batch_size: 1, dataloader_workers: 2, early_stopping_patience: 4, save_total_limit: 4 },
+    'A100-80GB': { epochs: 6, batch_size: 2, grad_accum: 4, learning_rate: 0.00005, lora_rank: 64, max_eval_samples: 0, gen_eval_samples: 32, eval_steps: 250, eval_batch_size: 1, dataloader_workers: 4, early_stopping_patience: 4, save_total_limit: 4 },
+    H100: { epochs: 6, batch_size: 2, grad_accum: 4, learning_rate: 0.00005, lora_rank: 96, max_eval_samples: 0, gen_eval_samples: 40, eval_steps: 250, eval_batch_size: 2, dataloader_workers: 4, early_stopping_patience: 4, save_total_limit: 4 },
+    H200: { epochs: 6, batch_size: 3, grad_accum: 3, learning_rate: 0.00005, lora_rank: 96, max_eval_samples: 0, gen_eval_samples: 48, eval_steps: 250, eval_batch_size: 2, dataloader_workers: 6, early_stopping_patience: 4, save_total_limit: 4 },
+    B200: { epochs: 6, batch_size: 4, grad_accum: 2, learning_rate: 0.00005, lora_rank: 128, max_eval_samples: 0, gen_eval_samples: 64, eval_steps: 250, eval_batch_size: 2, dataloader_workers: 8, early_stopping_patience: 4, save_total_limit: 4 },
+  },
+  lighton_ocr: {
+    L40S: { epochs: 8, batch_size: 2, grad_accum: 8, learning_rate: 0.00005, lora_rank: 64, max_eval_samples: 0, gen_eval_samples: 96, eval_steps: 300, eval_batch_size: 1, dataloader_workers: 2, early_stopping_patience: 4, save_total_limit: 4 },
+    'A100-80GB': { epochs: 8, batch_size: 4, grad_accum: 4, learning_rate: 0.00005, lora_rank: 64, max_eval_samples: 0, gen_eval_samples: 128, eval_steps: 300, eval_batch_size: 2, dataloader_workers: 4, early_stopping_patience: 4, save_total_limit: 4 },
+    H100: { epochs: 8, batch_size: 4, grad_accum: 4, learning_rate: 0.00005, lora_rank: 96, max_eval_samples: 0, gen_eval_samples: 160, eval_steps: 300, eval_batch_size: 2, dataloader_workers: 4, early_stopping_patience: 4, save_total_limit: 4 },
+    H200: { epochs: 8, batch_size: 6, grad_accum: 3, learning_rate: 0.00005, lora_rank: 96, max_eval_samples: 0, gen_eval_samples: 192, eval_steps: 300, eval_batch_size: 3, dataloader_workers: 6, early_stopping_patience: 4, save_total_limit: 4 },
+    B200: { epochs: 8, batch_size: 8, grad_accum: 2, learning_rate: 0.00005, lora_rank: 128, max_eval_samples: 0, gen_eval_samples: 224, eval_steps: 300, eval_batch_size: 4, dataloader_workers: 8, early_stopping_patience: 4, save_total_limit: 4 },
+  },
+  ppocrv6_bubble_line: {
+    L40S: { epochs: 10, batch_size: 2, grad_accum: 8, learning_rate: 0.00002, max_eval_samples: 0, eval_steps: 1, dataloader_workers: 0, early_stopping_patience: 20, save_total_limit: 3, yolo_epochs: 120, yolo_batch_size: 16, yolo_imgsz: 960, yolo_patience: 30, yolo_workers: 2, image_width: 960, train_backbone: true, short_oversample: 3, short_loss_weight: 2.5, backbone_learning_rate: 0.000002, lr_scheduler: 'cosine', warmup_ratio: 0.05 },
+    'A100-80GB': { epochs: 12, batch_size: 4, grad_accum: 4, learning_rate: 0.00002, max_eval_samples: 0, eval_steps: 1, dataloader_workers: 0, early_stopping_patience: 25, save_total_limit: 3, yolo_epochs: 140, yolo_batch_size: 24, yolo_imgsz: 1024, yolo_patience: 35, yolo_workers: 4, image_width: 960, train_backbone: true, short_oversample: 3, short_loss_weight: 2.5, backbone_learning_rate: 0.000002, lr_scheduler: 'cosine', warmup_ratio: 0.05 },
+    H100: { epochs: 14, batch_size: 16, grad_accum: 1, learning_rate: 0.00002, max_eval_samples: 0, eval_steps: 1, dataloader_workers: 8, early_stopping_patience: 30, save_total_limit: 3, yolo_epochs: 160, yolo_batch_size: 96, yolo_imgsz: 1024, yolo_patience: 40, yolo_workers: 8, image_width: 960, train_backbone: true, pin_memory: true, short_oversample: 3, short_loss_weight: 2.5, backbone_learning_rate: 0.000002, lr_scheduler: 'cosine', warmup_ratio: 0.05 },
+    H200: { epochs: 14, batch_size: 6, grad_accum: 3, learning_rate: 0.00002, max_eval_samples: 0, eval_steps: 1, dataloader_workers: 0, early_stopping_patience: 30, save_total_limit: 3, yolo_epochs: 180, yolo_batch_size: 40, yolo_imgsz: 1024, yolo_patience: 45, yolo_workers: 8, image_width: 960, train_backbone: true, short_oversample: 3, short_loss_weight: 2.5, backbone_learning_rate: 0.000002, lr_scheduler: 'cosine', warmup_ratio: 0.05 },
+    B200: { epochs: 16, batch_size: 8, grad_accum: 2, learning_rate: 0.00002, max_eval_samples: 0, eval_steps: 1, dataloader_workers: 0, early_stopping_patience: 30, save_total_limit: 3, yolo_epochs: 200, yolo_batch_size: 48, yolo_imgsz: 1280, yolo_patience: 50, yolo_workers: 8, image_width: 960, train_backbone: true, short_oversample: 3, short_loss_weight: 2.5, backbone_learning_rate: 0.000002, lr_scheduler: 'cosine', warmup_ratio: 0.05 },
+  },
+};
+
+function normalizeTrainingKind(kind) {
+  const normalized = TRAINING_KIND_ALIASES[kind] || kind;
+  if (!TRAINING_JOB_CONFIGS[normalized]) {
+    throw new Error(`Type de fine-tuning non supporté: ${kind}`);
+  }
+  return normalized;
+}
+
+function optionalNumber(value, field, { min = null, max = null } = {}) {
+  if (value === undefined || value === null || value === '') return undefined;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) throw new Error(`${field} doit être un nombre.`);
+  if (min !== null && parsed < min) throw new Error(`${field} doit être >= ${min}.`);
+  if (max !== null && parsed > max) throw new Error(`${field} doit être <= ${max}.`);
+  return parsed;
+}
+
+function buildTrainingParams(body = {}, kind) {
+  const gpu = body.gpu || 'L40S';
+  if (!ALLOWED_MODAL_GPUS.has(gpu)) {
+    throw new Error(`GPU Modal non supporté: ${gpu}`);
+  }
+  const preset = GPU_TRAINING_PRESETS[kind]?.[gpu] || {};
+
+  const params = {
+    gpu,
+    epochs: optionalNumber(body.epochs ?? preset.epochs, 'epochs', { min: 0.1 }),
+    batch_size: optionalNumber(body.batch_size ?? preset.batch_size, 'batch_size', { min: 1 }),
+    grad_accum: optionalNumber(body.grad_accum ?? preset.grad_accum, 'grad_accum', { min: 1 }),
+    learning_rate: optionalNumber(body.learning_rate ?? preset.learning_rate, 'learning_rate', { min: 0 }),
+    lora_rank: optionalNumber(body.lora_rank ?? preset.lora_rank, 'lora_rank', { min: 1 }),
+    max_eval_samples: optionalNumber(body.max_eval_samples ?? preset.max_eval_samples, 'max_eval_samples', { min: 0 }),
+    gen_eval_samples: optionalNumber(body.gen_eval_samples ?? preset.gen_eval_samples, 'gen_eval_samples', { min: 0 }),
+    eval_steps: optionalNumber(body.eval_steps ?? preset.eval_steps, 'eval_steps', { min: 1 }),
+    eval_batch_size: optionalNumber(body.eval_batch_size ?? preset.eval_batch_size, 'eval_batch_size', { min: 1 }),
+    dataloader_workers: optionalNumber(body.dataloader_workers ?? preset.dataloader_workers, 'dataloader_workers', { min: 0 }),
+    early_stopping_patience: optionalNumber(body.early_stopping_patience ?? preset.early_stopping_patience, 'early_stopping_patience', { min: 0 }),
+    save_total_limit: optionalNumber(body.save_total_limit ?? preset.save_total_limit, 'save_total_limit', { min: 1 }),
+    yolo_epochs: optionalNumber(body.yolo_epochs ?? preset.yolo_epochs, 'yolo_epochs', { min: 1 }),
+    yolo_batch_size: optionalNumber(body.yolo_batch_size ?? preset.yolo_batch_size, 'yolo_batch_size', { min: 1 }),
+    yolo_imgsz: optionalNumber(body.yolo_imgsz ?? preset.yolo_imgsz, 'yolo_imgsz', { min: 128 }),
+    yolo_patience: optionalNumber(body.yolo_patience ?? preset.yolo_patience, 'yolo_patience', { min: 1 }),
+    yolo_workers: optionalNumber(body.yolo_workers ?? preset.yolo_workers, 'yolo_workers', { min: 0 }),
+    image_width: optionalNumber(body.image_width ?? preset.image_width, 'image_width', { min: 128 }),
+    short_oversample: optionalNumber(body.short_oversample ?? preset.short_oversample, 'short_oversample', { min: 1 }),
+    short_loss_weight: optionalNumber(body.short_loss_weight ?? preset.short_loss_weight, 'short_loss_weight', { min: 1 }),
+    backbone_learning_rate: optionalNumber(body.backbone_learning_rate ?? preset.backbone_learning_rate, 'backbone_learning_rate', { min: 0 }),
+    warmup_ratio: optionalNumber(body.warmup_ratio ?? preset.warmup_ratio, 'warmup_ratio', { min: 0, max: 1 }),
+    lr_scheduler: body.lr_scheduler ?? preset.lr_scheduler,
+    train_backbone: body.train_backbone ?? preset.train_backbone ?? false,
+    pin_memory: body.pin_memory ?? preset.pin_memory ?? false,
+    hf_repo: typeof body.hf_repo === 'string' && body.hf_repo.trim()
+      ? body.hf_repo.trim()
+      : TRAINING_JOB_CONFIGS[kind].hfRepo,
+    skip_upload: body.skip_upload === true,
+    shard_dataset: body.shard_dataset === true,
+  };
+
+  Object.keys(params).forEach(key => params[key] === undefined && delete params[key]);
+  return params;
+}
+
+function isMissingTrainingSchemaError(error) {
+  return error?.code === 'PGRST205' || /training_jobs|model_versions/i.test(error?.message || '');
+}
+
+function trainingSchemaErrorResponse(res, error) {
+  if (isMissingTrainingSchemaError(error)) {
+    return res.status(503).json({
+      error: "Schéma fine-tuning non installé.",
+      details: "Appliquez backend/sql/2026-07-01_add_training_jobs.sql sur Supabase avant d'utiliser cette page.",
+    });
+  }
+  return null;
+}
 
 router.get('/mangas/all', authMiddleware, roleCheck(['Admin']), async (req, res) => {
   const { data, error } = await supabaseAdmin.from('mangas').select('*').order('titre');
@@ -910,6 +1049,243 @@ router.post('/ai-models/trigger-backfill-f2llm', authMiddleware, roleCheck(['Adm
       console.error("[Backfill F2LLM] Erreur globale:", e);
     }
   })();
+});
+
+router.post('/training-jobs', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+  let createdJob = null;
+  try {
+    const kind = normalizeTrainingKind(req.body.kind);
+    const provider = req.body.provider || 'modal';
+    if (!ALLOWED_TRAINING_PROVIDERS.has(provider)) {
+      return res.status(400).json({ error: `Provider non supporté: ${provider}` });
+    }
+
+    const params = buildTrainingParams(req.body.params || req.body, kind);
+    const insertPayload = {
+      kind,
+      status: 'queued',
+      provider,
+      modal_volume_name: provider === 'modal' ? (process.env.PONEGLYPH_MODAL_VOLUME_NAME || 'poneglyph-datasets') : null,
+      hf_repo: params.hf_repo,
+      params_json: params,
+      created_by: req.user.id,
+    };
+
+    const { data, error } = await supabaseAdmin
+      .from('training_jobs')
+      .insert(insertPayload)
+      .select()
+      .single();
+
+    if (error) throw error;
+    createdJob = data;
+
+    if (provider !== 'modal') {
+      return res.status(201).json(createdJob);
+    }
+
+    const launch = await submitTrainingJob({
+      jobId: createdJob.id,
+      trainingKind: kind,
+      params,
+    });
+
+    const { data: launchedJob, error: updateError } = await supabaseAdmin
+      .from('training_jobs')
+      .update({
+        modal_call_id: launch.modal_call_id,
+        modal_function_name: launch.function_name,
+        summary_json: {
+          launcher: launch,
+          app_name: launch.app_name,
+        },
+      })
+      .eq('id', createdJob.id)
+      .select()
+      .single();
+
+    if (updateError) throw updateError;
+    return res.status(201).json(launchedJob);
+  } catch (error) {
+    console.error("Erreur creation training job:", error);
+    if (createdJob?.id) {
+      await supabaseAdmin
+        .from('training_jobs')
+        .update({ status: 'failed', error_message: error.message })
+        .eq('id', createdJob.id);
+    }
+    if (!createdJob) {
+      const schemaResponse = trainingSchemaErrorResponse(res, error);
+      if (schemaResponse) return schemaResponse;
+    }
+    return res.status(createdJob ? 502 : 400).json({
+      error: "Impossible de lancer le fine-tuning.",
+      details: error.message,
+      job: createdJob,
+    });
+  }
+});
+
+router.get('/training-jobs', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit || '50', 10), 200);
+    let query = supabaseAdmin
+      .from('training_jobs')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .range(0, limit - 1);
+
+    if (req.query.kind) {
+      query = query.eq('kind', normalizeTrainingKind(req.query.kind));
+    }
+    if (req.query.status) {
+      query = query.eq('status', req.query.status);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json(data || []);
+  } catch (error) {
+    console.error("Erreur list training jobs:", error);
+    const schemaResponse = trainingSchemaErrorResponse(res, error);
+    if (schemaResponse) return schemaResponse;
+    res.status(500).json({ error: "Erreur récupération des jobs de fine-tuning.", details: error.message });
+  }
+});
+
+router.get('/training-jobs/:id', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+  try {
+    const { data: job, error } = await supabaseAdmin
+      .from('training_jobs')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+
+    if (error) {
+      const schemaResponse = trainingSchemaErrorResponse(res, error);
+      if (schemaResponse) return schemaResponse;
+      return res.status(404).json({ error: "Job introuvable." });
+    }
+    if (!job) return res.status(404).json({ error: "Job introuvable." });
+
+    const { data: versions, error: versionsError } = await supabaseAdmin
+      .from('model_versions')
+      .select('*')
+      .eq('training_job_id', req.params.id)
+      .order('created_at', { ascending: false });
+
+    if (versionsError) throw versionsError;
+    res.json({ ...job, model_versions: versions || [] });
+  } catch (error) {
+    console.error("Erreur get training job:", error);
+    const schemaResponse = trainingSchemaErrorResponse(res, error);
+    if (schemaResponse) return schemaResponse;
+    res.status(500).json({ error: "Erreur récupération du job.", details: error.message });
+  }
+});
+
+router.post('/training-jobs/:id/cancel', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+  try {
+    const { data: job, error } = await supabaseAdmin
+      .from('training_jobs')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+
+    if (error) {
+      const schemaResponse = trainingSchemaErrorResponse(res, error);
+      if (schemaResponse) return schemaResponse;
+      return res.status(404).json({ error: "Job introuvable." });
+    }
+    if (!job) return res.status(404).json({ error: "Job introuvable." });
+    if (['completed', 'failed', 'cancelled'].includes(job.status)) {
+      return res.status(409).json({ error: `Job déjà terminé avec le statut ${job.status}.` });
+    }
+
+    let cancelResult = null;
+    if (job.provider === 'modal' && job.modal_call_id) {
+      cancelResult = await cancelModalCall({ modalCallId: job.modal_call_id, terminateContainers: true });
+    }
+
+    const { data: updated, error: updateError } = await supabaseAdmin
+      .from('training_jobs')
+      .update({
+        status: 'cancelled',
+        finished_at: new Date().toISOString(),
+        summary_json: {
+          ...(job.summary_json || {}),
+          cancellation: cancelResult || { provider: job.provider, modal_call_id: job.modal_call_id || null },
+        },
+      })
+      .eq('id', req.params.id)
+      .select()
+      .single();
+
+    if (updateError) throw updateError;
+    res.json(updated);
+  } catch (error) {
+    console.error("Erreur cancel training job:", error);
+    const schemaResponse = trainingSchemaErrorResponse(res, error);
+    if (schemaResponse) return schemaResponse;
+    res.status(502).json({ error: "Impossible d'annuler le job.", details: error.message });
+  }
+});
+
+router.post('/model-versions/:id/promote', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+  try {
+    const { data: version, error } = await supabaseAdmin
+      .from('model_versions')
+      .select('*')
+      .eq('id', req.params.id)
+      .single();
+
+    if (error) {
+      const schemaResponse = trainingSchemaErrorResponse(res, error);
+      if (schemaResponse) return schemaResponse;
+      return res.status(404).json({ error: "Version modèle introuvable." });
+    }
+    if (!version) return res.status(404).json({ error: "Version modèle introuvable." });
+
+    await supabaseAdmin
+      .from('model_versions')
+      .update({ is_active: false })
+      .eq('kind', version.kind)
+      .eq('is_active', true);
+
+    const promotedAt = new Date().toISOString();
+    const { data: promoted, error: promoteError } = await supabaseAdmin
+      .from('model_versions')
+      .update({
+        is_candidate: false,
+        is_active: true,
+        promoted_at: promotedAt,
+      })
+      .eq('id', version.id)
+      .select()
+      .single();
+
+    if (promoteError) throw promoteError;
+
+    await supabaseAdmin
+      .from('app_settings')
+      .upsert({
+        key: `active_model_version_${version.kind}`,
+        value: JSON.stringify({
+          model_version_id: promoted.id,
+          kind: promoted.kind,
+          hf_repo: promoted.hf_repo,
+          hf_revision: promoted.hf_revision,
+          promoted_at: promotedAt,
+        }),
+      }, { onConflict: 'key' });
+
+    res.json(promoted);
+  } catch (error) {
+    console.error("Erreur promotion model version:", error);
+    const schemaResponse = trainingSchemaErrorResponse(res, error);
+    if (schemaResponse) return schemaResponse;
+    res.status(500).json({ error: "Erreur promotion du modèle.", details: error.message });
+  }
 });
 
 

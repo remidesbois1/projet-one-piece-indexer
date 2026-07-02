@@ -9,7 +9,8 @@
     "export:f2llm": "python scripts/export_f2llm_onnx.py --model-id ../scripts/embed/f2llm_v2_160m_finetuned_full --output models/f2llm-v2-160m-one-piece-retrieval",
     "export:f2llm:base": "python scripts/export_f2llm_onnx.py",
     "backfill:f2llm": "node scripts/backfill_f2llm_embeddings.js",
-    "backfill:f2llm:force": "node scripts/backfill_f2llm_embeddings.js --force"
+    "backfill:f2llm:force": "node scripts/backfill_f2llm_embeddings.js --force",
+    "training:schema": "node scripts/apply_training_schema.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.958.0",

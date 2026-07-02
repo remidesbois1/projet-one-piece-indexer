@@ -160,3 +160,9 @@ export const uploadPageToR2 = (formData) => apiClient.post('/admin/upload/page',
 export const batchCreatePages = (data) => apiClient.post('/admin/tomes/batch-pages', data);
 export const getAllMangas = () => apiClient.get('/admin/mangas/all');
 export const toggleMangaEnabled = (id) => apiClient.patch(`/admin/mangas/${id}/toggle`);
+
+export const createTrainingJob = (payload) => apiClient.post('/admin/training-jobs', payload);
+export const getTrainingJobs = (params = {}) => apiClient.get('/admin/training-jobs', { params });
+export const getTrainingJob = (id) => apiClient.get(`/admin/training-jobs/${id}`);
+export const cancelTrainingJob = (id) => apiClient.post(`/admin/training-jobs/${id}/cancel`);
+export const promoteModelVersion = (id) => apiClient.post(`/admin/model-versions/${id}/promote`);
