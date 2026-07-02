@@ -12,6 +12,8 @@ from transformers.models.pp_ocrv6_small_rec.modeling_pp_ocrv6_small_rec import (
     PPOCRV6SmallRecForTextRecognition,
 )
 
+from build_ppocrv6_postprocess_rules import build_rules
+
 
 class PPOCRV6RecOnnxWrapper(torch.nn.Module):
     def __init__(self, model):
@@ -142,6 +144,13 @@ def export_model(args):
             "items": parity,
         },
     }
+    if args.postprocess_train_labels:
+        manifest["postprocess"] = build_rules(
+            Path(args.postprocess_train_labels),
+            min_count=args.postprocess_min_count,
+            min_ratio=args.postprocess_min_ratio,
+            max_lower_ratio=args.postprocess_max_lower_ratio,
+        )
     manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
 
     print(json.dumps({
@@ -163,6 +172,10 @@ def parse_args():
     parser.add_argument("--opset", type=int, default=17)
     parser.add_argument("--sample-image", action="append", default=[])
     parser.add_argument("--max-samples", type=int, default=8)
+    parser.add_argument("--postprocess-train-labels", type=Path, default=None)
+    parser.add_argument("--postprocess-min-count", type=int, default=2)
+    parser.add_argument("--postprocess-min-ratio", type=float, default=0.85)
+    parser.add_argument("--postprocess-max-lower-ratio", type=float, default=0.15)
     return parser.parse_args()
 
 

@@ -94,7 +94,22 @@ run_pipeline.bat --skip-dataset --train --auto-resume-best --epochs 6 --batch-si
 ```
 
 Training metrics include global CER plus `val_short_cer`, `val_medium_cer`,
-and `val_dialogue_cer`.
+and `val_dialogue_cer`. Recent runs also write normalized and
+casefold-normalized metrics so exact-match losses caused only by spacing,
+punctuation variants, or casing are visible instead of being mixed with real OCR
+errors.
+
+To focus the remaining short-text and SFX failures, combine the short-text
+weights with single-line weights:
+
+```bat
+run_pipeline.bat --skip-dataset --train --auto-resume-best --epochs 4 --image-width 1024 --train-backbone --learning-rate 6e-6 --backbone-learning-rate 6e-7 --lr-scheduler cosine --warmup-ratio 0.05 --short-oversample 3.5 --short-loss-weight 3 --single-line-oversample 2 --single-line-loss-weight 2
+```
+
+After a prediction CSV exists, hard examples can be mined into the next run with
+`--hard-example-csv ... --hard-example-min-cer 0.5 --hard-example-short-only`.
+Use this only with train-split predictions unless you intentionally want an
+exploratory, non-comparable run.
 
 Analyze validation errors after a run:
 
@@ -107,6 +122,27 @@ docker run --rm --gpus all --shm-size=4g --entrypoint python ^
 This writes `outputs/val_error_analysis/summary.json`,
 `outputs/val_error_analysis/predictions.csv`, and
 `outputs/val_error_analysis/worst.html`.
+
+For richer comparison reports and a leaderboard:
+
+```bat
+python analyze_prediction_report.py --predictions-csv outputs\val_error_analysis\predictions.csv --output-dir outputs\val_prediction_report --run-name my_run --split validation --dataset-dir outputs\bubble_single_line_rec_dataset --training-metrics outputs\training_metrics.json --dataset-stats outputs\bubble_single_line_rec_dataset\dataset_stats.json
+python build_experiment_leaderboard.py --experiments-dir experiments
+```
+
+Build the browser postprocess rules from the train split and evaluate them
+against prediction CSVs:
+
+```bat
+python build_ppocrv6_postprocess_rules.py --train-labels outputs\bubble_single_line_rec_dataset\rec_gt_train.txt --output-rules outputs\onnx_web_release\ppocrv6_postprocess_rules.json --inject-manifest outputs\onnx_web_release\browser_manifest.json --metrics-output outputs\postprocess_official_metrics.json --predictions-csv validation_predictions.csv --predictions-csv test_predictions.csv
+```
+
+On the 2026-06-29 Hugging Face release prediction CSVs, the train-derived
+spacing/case rules improve the official metrics from validation `1.9204% CER /
+71.62% exact` to `1.7155% CER / 75.15% exact`, and test `1.7097% CER /
+71.21% exact` to `1.4505% CER / 75.96% exact`. The ONNX weights are unchanged;
+the browser runtime applies `browser_manifest.json#postprocess` after CTC
+decoding.
 
 ## Training Outputs
 
@@ -129,7 +165,7 @@ Export the best recognizer checkpoint for ONNX Runtime Web:
 docker run --rm --entrypoint bash ^
   -v "%cd%:/app" ^
   paddleocr-line-rec-finetune:latest ^
-  -lc "python /app/export_ppocrv6_onnx.py --model-dir /app/outputs/ppocrv6_medium_rec_line_finetune_best --output-dir /app/outputs/onnx_web_release --sample-image /app/outputs/bubble_single_line_rec_dataset/images/val --max-samples 8"
+  -lc "python /app/export_ppocrv6_onnx.py --model-dir /app/outputs/ppocrv6_medium_rec_line_finetune_best --output-dir /app/outputs/onnx_web_release --sample-image /app/outputs/bubble_single_line_rec_dataset/images/val --max-samples 8 --postprocess-train-labels /app/outputs/bubble_single_line_rec_dataset/rec_gt_train.txt"
 ```
 
 The browser package is published under:
@@ -142,6 +178,7 @@ It contains:
 - `ppocrv6_bubble_line_rec.onnx`
 - `browser_manifest.json`
 - `pipeline_manifest.json`
+- `ppocrv6_postprocess_rules.json`
 
 The frontend model key is `ppocrv6Line`. It runs entirely in the browser with
 ONNX Runtime Web WASM: YOLO detects text lines inside the selected bubble, the

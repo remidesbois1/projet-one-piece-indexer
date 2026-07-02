@@ -51,16 +51,28 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--short-max-len", type=int, default=int(os.getenv("PPOCR_SHORT_MAX_LEN", "12")))
     parser.add_argument("--short-loss-weight", type=float, default=float(os.getenv("PPOCR_SHORT_LOSS_WEIGHT", "2.5")))
     parser.add_argument("--short-oversample", type=float, default=float(os.getenv("PPOCR_SHORT_OVERSAMPLE", "3.0")))
+    parser.add_argument("--single-line-loss-weight", type=float, default=float(os.getenv("PPOCR_SINGLE_LINE_LOSS_WEIGHT", "1.0")))
+    parser.add_argument("--single-line-oversample", type=float, default=float(os.getenv("PPOCR_SINGLE_LINE_OVERSAMPLE", "1.0")))
+    parser.add_argument("--hard-example-csv", type=Path, action="append", default=[])
+    parser.add_argument("--hard-example-min-cer", type=float, default=float(os.getenv("PPOCR_HARD_EXAMPLE_MIN_CER", "0.25")))
+    parser.add_argument("--hard-example-loss-weight", type=float, default=float(os.getenv("PPOCR_HARD_EXAMPLE_LOSS_WEIGHT", "1.0")))
+    parser.add_argument("--hard-example-oversample", type=float, default=float(os.getenv("PPOCR_HARD_EXAMPLE_OVERSAMPLE", "1.0")))
+    parser.add_argument("--hard-example-short-only", action="store_true")
+    parser.add_argument("--hard-example-include-exact-failures", action="store_true")
     parser.add_argument("--blank-penalty", type=float, default=float(os.getenv("PPOCR_BLANK_PENALTY", "0.0")))
     parser.add_argument("--train-backbone", action="store_true", help="Unfreeze the recognition backbone. Uses much more VRAM.")
     parser.add_argument("--no-amp", action="store_true", help="Disable CUDA mixed precision.")
     parser.add_argument("--pin-memory", action="store_true", help="Use pinned host memory for DataLoader batches.")
+    parser.add_argument("--max-train-steps", type=int, default=int(os.getenv("PPOCR_MAX_TRAIN_STEPS", "0")), help="Stop each epoch after this many train batches for smoke/profiling runs.")
+    parser.add_argument("--profile-vram", action="store_true", help="Run a short training loop, record peak CUDA memory, and skip validation/checkpointing.")
     parser.add_argument("--conf", type=float, default=0.25)
     parser.add_argument("--iou", type=float, default=0.45)
     parser.add_argument("--line-nms-iou", type=float, default=float(os.getenv("PPOCR_LINE_NMS_IOU", "0.85")))
     parser.add_argument("--imgsz", type=int, default=800)
     parser.add_argument("--pad", type=int, default=2)
     parser.add_argument("--line-gap", type=int, default=8)
+    parser.add_argument("--retry-conf-when-no-lines", type=float, default=float(os.getenv("PPOCR_RETRY_CONF_WHEN_NO_LINES", "0.0")))
+    parser.add_argument("--fallback-whole-bubble-when-no-lines", action="store_true")
     parser.add_argument("--clean", action="store_true")
     parser.add_argument("--val-size", type=float, default=float(os.getenv("PPOCR_VAL_SIZE", "0.15")))
     parser.add_argument("--test-size", type=float, default=float(os.getenv("PPOCR_TEST_SIZE", "0.15")))
@@ -97,6 +109,8 @@ def main() -> int:
             imgsz=args.imgsz,
             pad=args.pad,
             line_gap=args.line_gap,
+            retry_conf_when_no_lines=args.retry_conf_when_no_lines,
+            fallback_whole_bubble_when_no_lines=args.fallback_whole_bubble_when_no_lines,
             val_ratio=0.1,
             clean=args.clean,
             val_size=args.val_size,
@@ -144,9 +158,27 @@ def main() -> int:
             str(args.short_loss_weight),
             "--short-oversample",
             str(args.short_oversample),
+            "--single-line-loss-weight",
+            str(args.single_line_loss_weight),
+            "--single-line-oversample",
+            str(args.single_line_oversample),
+            "--hard-example-min-cer",
+            str(args.hard_example_min_cer),
+            "--hard-example-loss-weight",
+            str(args.hard_example_loss_weight),
+            "--hard-example-oversample",
+            str(args.hard_example_oversample),
             "--blank-penalty",
             str(args.blank_penalty),
+            "--max-train-steps",
+            str(args.max_train_steps),
         ]
+        for hard_example_csv in args.hard_example_csv:
+            command.extend(["--hard-example-csv", str(hard_example_csv)])
+        if args.hard_example_short_only:
+            command.append("--hard-example-short-only")
+        if args.hard_example_include_exact_failures:
+            command.append("--hard-example-include-exact-failures")
         if args.train_backbone:
             command.append("--train-backbone")
         if args.resume_from:
@@ -157,6 +189,8 @@ def main() -> int:
             command.append("--no-amp")
         if args.pin_memory:
             command.append("--pin-memory")
+        if args.profile_vram:
+            command.append("--profile-vram")
         if args.dry_run_train:
             command.append("--dry-run")
         code = run_command(command, allow_blocked=args.allow_training_blocked)

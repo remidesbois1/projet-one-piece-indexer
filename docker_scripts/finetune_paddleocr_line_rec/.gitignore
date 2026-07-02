@@ -1,0 +1,6 @@
+outputs/
+experiments/
+*.onnx
+*.pt
+*.pth
+*.safetensors

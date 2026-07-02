@@ -30,7 +30,7 @@ const PPOCR_LINE_CONF = 0.25;
 const PPOCR_LINE_NMS_IOU = 0.75;
 const PPOCR_LINE_PAD = 2;
 const PPOCR_LINE_GAP = 8;
-const PPOCR_LINE_FALLBACK_INPUT_SIZE = 1280;
+const PPOCR_LINE_FALLBACK_INPUT_SIZE = 1024;
 const PPOCR_SESSION_PROVIDER_CANDIDATES = self.navigator?.gpu
     ? [['webgpu', 'wasm'], ['wasm']]
     : [['wasm']];
@@ -191,12 +191,17 @@ async function loadPpocrLinePipeline(progressCallback, modelConfig = MODELS.ppoc
 function detectorInputSize(session) {
     try {
         const inputName = session.inputNames?.[0];
-        const dims = session.inputMetadata?.[inputName]?.dims;
+        const metadata = session.inputMetadata;
+        const inputMeta = metadata?.get?.(inputName)
+            || metadata?.[inputName]
+            || session.inputMetadata?.[0]
+            || session.inputMetadata?.get?.(0);
+        const dims = inputMeta?.dims || inputMeta?.dimensions || inputMeta?.shape;
         const height = Number(dims?.[2]);
         const width = Number(dims?.[3]);
         if (height > 0 && width > 0) return { height, width };
     } catch (err) {
-        console.warn("[Worker] Taille YOLO lignes illisible, fallback 1280", err);
+        console.warn("[Worker] Taille YOLO lignes illisible, fallback 1024", err);
     }
     return { height: PPOCR_LINE_FALLBACK_INPUT_SIZE, width: PPOCR_LINE_FALLBACK_INPUT_SIZE };
 }
@@ -373,6 +378,68 @@ function decodePpocrCtc(output) {
     return decoded.join('');
 }
 
+const PPOCR_TOKEN_RE = /[\p{L}]+(?:['\u2019][\p{L}]+)?/gu;
+const PPOCR_LETTER_RE = /\p{L}/u;
+
+function normalizePpocrPostprocessSpacing(text) {
+    return String(text || '')
+        .trim()
+        .replace(/\u2026/g, '...')
+        .replace(/\s+/g, ' ')
+        .replace(/\s*\.\s*\.\s*\./g, '<ELLIPSIS>')
+        .replace(/\s+([,.])/g, '$1')
+        .replace(/([,.])(\S)/g, '$1 $2')
+        .replace(/\s*([!?;:]+)/g, ' $1')
+        .replace(/<ELLIPSIS>/g, '...')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function isPpocrWeirdCase(token) {
+    const letters = [...token].filter(char => PPOCR_LETTER_RE.test(char));
+    if (letters.length < 2) return false;
+    const hasUpper = letters.some(char => char === char.toLocaleUpperCase('fr-FR') && char !== char.toLocaleLowerCase('fr-FR'));
+    const hasLower = letters.some(char => char === char.toLocaleLowerCase('fr-FR') && char !== char.toLocaleUpperCase('fr-FR'));
+    if (!hasUpper || !hasLower) return false;
+    const titleLike = token[0] === token[0].toLocaleUpperCase('fr-FR')
+        && token.slice(1) === token.slice(1).toLocaleLowerCase('fr-FR');
+    return !titleLike;
+}
+
+function postprocessPpocrText(text) {
+    const rules = ppocrManifest?.postprocess;
+    if (!rules?.enabled || !rules.lexicon) return text;
+
+    const lexicon = rules.lexicon || {};
+    const minCount = Number(rules.min_count || 1);
+    const minRatio = Number(rules.min_ratio || 1);
+    const maxLowerRatio = Number(rules.max_lower_ratio || 0);
+    const sentenceStart = Boolean(rules.sentence_start);
+    const spaced = normalizePpocrPostprocessSpacing(text);
+
+    return spaced.replace(PPOCR_TOKEN_RE, (token, offset) => {
+        const key = token.toLocaleLowerCase('fr-FR');
+        const entry = lexicon[key];
+        if (!entry?.best) return token;
+        if (isPpocrWeirdCase(token)) return entry.best;
+
+        const total = Number(entry.total || 0);
+        const bestRatio = Number(entry.best_ratio || 0);
+        const lowerRatio = Number(entry.lower_ratio || 0);
+        const tokenIsLower = token === token.toLocaleLowerCase('fr-FR');
+        if (
+            total >= minCount
+            && bestRatio >= minRatio
+            && lowerRatio <= maxLowerRatio
+            && entry.best !== key
+            && (tokenIsLower || (sentenceStart && offset === 0))
+        ) {
+            return entry.best;
+        }
+        return token;
+    });
+}
+
 async function warmupPpocrLinePipeline() {
     if (ppocrWarmupDone || !ppocrLineDetectorSession || !ppocrRecSession || !ppocrManifest) return;
     const { height, width } = detectorInputSize(ppocrLineDetectorSession);
@@ -411,12 +478,14 @@ async function runPpocrOnBitmap(bitmap, timings, totalStart) {
 
     const decodeTextStart = performance.now();
     const output = result[ppocrRecSession.outputNames[0]].data;
-    const text = decodePpocrCtc(output);
+    const rawText = decodePpocrCtc(output);
+    const text = postprocessPpocrText(rawText);
     timings.decodeTextMs = roundMs(performance.now() - decodeTextStart);
     timings.totalMs = roundMs(performance.now() - totalStart);
 
     return {
         text,
+        rawText,
         lineCount: boxes.length,
         provider: ppocrRuntimeProvider || 'wasm',
         timings,

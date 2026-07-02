@@ -284,9 +284,18 @@ def load_manifest(source_dir: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def strip_env_quotes(value: str | None) -> str | None:
+    if value is None:
+        return None
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
+
+
 def require_supabase_env() -> tuple[str, str]:
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    url = strip_env_quotes(os.getenv("SUPABASE_URL"))
+    key = strip_env_quotes(os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
     missing = [name for name, value in {"SUPABASE_URL": url, "SUPABASE_SERVICE_ROLE_KEY": key}.items() if not value]
     if missing:
         raise RuntimeError(f"Missing required Supabase env: {', '.join(missing)}")
@@ -527,12 +536,15 @@ def export_dataset(args: argparse.Namespace) -> Path:
         "bubbles_without_text": 0,
         "bubbles_without_image": 0,
         "bubbles_without_lines": 0,
+        "bubbles_fallback_whole_crop": 0,
+        "bubbles_retry_low_conf": 0,
         "single_line_images": 0,
         "train_images": 0,
         "val_images": 0,
         "test_images": 0,
         "conversion": "YOLO line boxes stitched left-to-right into one single-line bubble image",
         "yolo_conf": args.conf,
+        "retry_conf_when_no_lines": args.retry_conf_when_no_lines,
         "yolo_iou": args.iou,
         "imgsz": args.imgsz,
     }
@@ -553,9 +565,28 @@ def export_dataset(args: argparse.Namespace) -> Path:
                 continue
 
             boxes = predict_line_boxes(model, image, conf=args.conf, iou=args.iou, imgsz=args.imgsz, line_nms_iou=args.line_nms_iou)
+            used_fallback = False
+            used_low_conf_retry = False
+            if not boxes and args.retry_conf_when_no_lines > 0 and args.retry_conf_when_no_lines < args.conf:
+                boxes = predict_line_boxes(
+                    model,
+                    image,
+                    conf=args.retry_conf_when_no_lines,
+                    iou=args.iou,
+                    imgsz=args.imgsz,
+                    line_nms_iou=args.line_nms_iou,
+                )
+                if boxes:
+                    used_low_conf_retry = True
+                    stats["bubbles_retry_low_conf"] += 1
             if not boxes:
-                stats["bubbles_without_lines"] += 1
-                continue
+                if getattr(args, "fallback_whole_bubble_when_no_lines", False):
+                    boxes = [LineBox(x1=0.0, y1=0.0, x2=float(image.width), y2=float(image.height), conf=0.0)]
+                    used_fallback = True
+                    stats["bubbles_fallback_whole_crop"] += 1
+                else:
+                    stats["bubbles_without_lines"] += 1
+                    continue
 
             single_line = stitch_lines_as_single_image(image, boxes, args.pad, args.line_gap)
             if single_line is None:
@@ -594,6 +625,8 @@ def export_dataset(args: argparse.Namespace) -> Path:
                         "single_line_image": rel_path,
                         "text": text,
                         "detected_lines": detected_lines,
+                        "fallback_whole_bubble": used_fallback,
+                        "low_conf_retry": used_low_conf_retry,
                     },
                     ensure_ascii=False,
                 )
@@ -630,6 +663,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--imgsz", type=int, default=800)
     parser.add_argument("--pad", type=int, default=2)
     parser.add_argument("--line-gap", type=int, default=8)
+    parser.add_argument("--retry-conf-when-no-lines", type=float, default=float(os.getenv("PPOCR_RETRY_CONF_WHEN_NO_LINES", "0.0")))
+    parser.add_argument("--fallback-whole-bubble-when-no-lines", action="store_true")
     parser.add_argument("--val-ratio", type=float, default=0.1)
     parser.add_argument("--limit", type=int, default=0, help="Optional bubble limit for smoke tests.")
     parser.add_argument("--clean", action="store_true")
