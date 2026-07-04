@@ -3,16 +3,14 @@
 import React, { useState, useEffect } from 'react';
 import { useManga } from '@/context/MangaContext';
 import { getCovers, uploadCover } from '@/lib/api';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Loader2, Image as ImageIcon, Upload, CheckCircle2 } from "lucide-react";
-import { Separator } from "@/components/ui/separator";
+import { getProxiedImageUrl } from "@/lib/utils";
 
 const CoverManager = () => {
     const { mangaSlug } = useManga();
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState(null);
-    const [uploading, setUploading] = useState(null); 
+    const [uploading, setUploading] = useState(null);
 
     const fetchCovers = async () => {
         try {
@@ -34,7 +32,6 @@ const CoverManager = () => {
 
     const handleUpload = async (type, id, file) => {
         if (!file) return;
-
         const formData = new FormData();
         formData.append('type', type);
         formData.append('id', id);
@@ -54,8 +51,8 @@ const CoverManager = () => {
 
     if (loading) {
         return (
-            <div className="flex justify-center p-8">
-                <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+            <div className="flex justify-center py-20">
+                <Loader2 className="h-8 w-8 animate-spin text-[#8dbbff]" />
             </div>
         );
     }
@@ -63,113 +60,100 @@ const CoverManager = () => {
     if (!data) return null;
 
     return (
-        <Card className="border-none shadow-none bg-slate-50/50 overflow-hidden">
-            <CardHeader className="bg-transparent border-none">
-                <CardTitle className="flex items-center gap-2 text-2xl font-bold">
-                    <ImageIcon className="h-6 w-6 text-indigo-600" />
-                    Identité Visuelle
-                </CardTitle>
-                <CardDescription className="text-base text-slate-500 mt-2">
-                    Personnalisez les couvertures du manga et de ses différents volumes.
-                </CardDescription>
-            </CardHeader>
+        <div className="space-y-6">
+            {/* Section header */}
+            <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#3d86ff]/25 bg-[#3d86ff]/12">
+                    <ImageIcon className="h-4 w-4 text-[#8dbbff]" />
+                </div>
+                <div>
+                    <h2 className="font-semibold text-white">Identité Visuelle</h2>
+                    <p className="text-xs text-slate-400">Couvertures du manga et des volumes.</p>
+                </div>
+            </div>
 
-            <CardContent className="p-6 space-y-8">
-                
-                <div className="space-y-4">
-                    <h3 className="font-semibold text-slate-900">Couverture du Manga</h3>
-                    <div className="flex items-start gap-6">
-                        <div className="w-32 h-48 bg-slate-100 rounded-lg flex-shrink-0 overflow-hidden border border-slate-200 group relative">
-                            {data.manga.cover_url ? (
-                                <img src={data.manga.cover_url} alt={data.manga.titre} className="w-full h-full object-cover" />
-                            ) : (
-                                <div className="w-full h-full flex items-center justify-center text-slate-400">
-                                    <ImageIcon className="h-8 w-8" />
-                                </div>
-                            )}
+            {/* Manga cover */}
+            <Section title="Couverture du Manga">
+                <div className="flex items-start gap-6">
+                    <CoverTile
+                        src={data.manga.cover_url}
+                        alt={data.manga.titre}
+                        large
+                        onUpload={(file) => handleUpload('manga', data.manga.id, file)}
+                        uploading={uploading === data.manga.id}
+                    />
+                    <div className="flex flex-1 flex-col justify-between">
+                        <div>
+                            <p className="font-medium text-slate-100">{data.manga.titre}</p>
+                            <p className="mt-1 text-xs text-slate-500">Format recommandé : Portrait (2:3)</p>
                         </div>
-                        <div className="space-y-4 flex-1">
-                            <div>
-                                <p className="font-medium text-slate-700">{data.manga.titre}</p>
-                                <p className="text-xs text-slate-500 mt-1">Format recommandé : Portrait (2:3)</p>
-                            </div>
-                            <div className="flex items-center gap-3">
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="relative cursor-pointer"
-                                    disabled={uploading === data.manga.id}
-                                    asChild
-                                >
-                                    <label>
-                                        {uploading === data.manga.id ? (
-                                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                        ) : (
-                                            <Upload className="h-4 w-4 mr-2" />
-                                        )}
-                                        {data.manga.cover_url ? 'Changer' : 'Ajouter'}
-                                        <input
-                                            type="file"
-                                            className="hidden"
-                                            accept="image/*"
-                                            onChange={(e) => handleUpload('manga', data.manga.id, e.target.files[0])}
-                                        />
-                                    </label>
-                                </Button>
-                                {data.manga.cover_url && (
-                                    <span className="text-emerald-600 flex items-center text-xs font-medium">
-                                        <CheckCircle2 className="h-3 w-3 mr-1" /> Configuré
-                                    </span>
-                                )}
-                            </div>
-                        </div>
+                        {data.manga.cover_url && (
+                            <span className="mt-4 flex items-center text-xs font-medium text-emerald-400">
+                                <CheckCircle2 className="mr-1 h-3 w-3" /> Configuré
+                            </span>
+                        )}
                     </div>
                 </div>
+            </Section>
 
-                <Separator className="bg-slate-100" />
-
-                
-                <div className="space-y-4">
-                    <h3 className="font-semibold text-slate-900">Couvertures des Tomes</h3>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                        {data.tomes.map((tome) => (
-                            <div key={tome.id} className="group flex flex-col items-center gap-3 p-3 rounded-xl border border-slate-100 hover:border-slate-200 transition-all bg-white shadow-sm hover:shadow-md">
-                                <div className="w-full aspect-[2/3] bg-slate-50 rounded-lg overflow-hidden border border-slate-100 relative group-hover:bg-slate-100 transition-colors">
-                                    {tome.cover_url ? (
-                                        <img src={tome.cover_url} alt={`Tome ${tome.numero}`} className="w-full h-full object-cover" />
-                                    ) : (
-                                        <div className="w-full h-full flex items-center justify-center text-slate-300">
-                                            <ImageIcon className="h-8 w-8" />
-                                        </div>
-                                    )}
-                                    <label className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer">
-                                        <div className="bg-white p-2 rounded-full text-slate-900 shadow-xl transform scale-90 group-hover:scale-100 transition-transform">
-                                            {uploading === tome.id ? (
-                                                <Loader2 className="h-5 w-5 animate-spin" />
-                                            ) : (
-                                                <Upload className="h-5 w-5" />
-                                            )}
-                                        </div>
-                                        <input
-                                            type="file"
-                                            className="hidden"
-                                            accept="image/*"
-                                            onChange={(e) => handleUpload('tome', tome.id, e.target.files[0])}
-                                            disabled={uploading === tome.id}
-                                        />
-                                    </label>
-                                </div>
-                                <div className="text-center">
-                                    <p className="font-bold text-sm text-slate-800">Tome {tome.numero}</p>
-                                    <p className="text-[10px] text-slate-400 truncate max-w-[120px]">{tome.titre}</p>
-                                </div>
+            {/* Tome covers */}
+            <Section title={`Couvertures des Tomes (${data.tomes.length})`}>
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+                    {data.tomes.map((tome) => (
+                        <div key={tome.id} className="flex flex-col items-center gap-2">
+                            <CoverTile
+                                src={tome.cover_url}
+                                alt={`Tome ${tome.numero}`}
+                                onUpload={(file) => handleUpload('tome', tome.id, file)}
+                                uploading={uploading === tome.id}
+                                label={`Tome ${tome.numero}`}
+                            />
+                            <div className="text-center">
+                                <p className="text-sm font-medium text-slate-200">Tome {tome.numero}</p>
+                                <p className="max-w-[120px] truncate text-[10px] text-slate-500">{tome.titre}</p>
                             </div>
-                        ))}
-                    </div>
+                        </div>
+                    ))}
                 </div>
-            </CardContent>
-        </Card>
+            </Section>
+        </div>
     );
 };
+
+function Section({ title, children }) {
+    return (
+        <div className="rounded-2xl border border-white/10 bg-[#071625]/70 p-5 backdrop-blur-md">
+            <h3 className="mb-4 text-sm font-semibold uppercase tracking-wide text-slate-300">{title}</h3>
+            {children}
+        </div>
+    );
+}
+
+function CoverTile({ src, alt, large, onUpload, uploading }) {
+    const size = large ? "w-32 h-48" : "w-full aspect-[2/3]";
+    return (
+        <div className={`group relative ${size} shrink-0 overflow-hidden rounded-xl border border-white/12 bg-[#040d18]`}>
+            {src ? (
+                <img src={getProxiedImageUrl(src)} alt={alt} className="h-full w-full object-cover" />
+            ) : (
+                <div className="flex h-full w-full items-center justify-center text-slate-600">
+                    <ImageIcon className="h-8 w-8" />
+                </div>
+            )}
+            <label className="absolute inset-0 flex cursor-pointer items-center justify-center bg-black/55 opacity-0 transition-opacity group-hover:opacity-100">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-slate-900 shadow-xl transition-transform group-hover:scale-105">
+                    {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Upload className="h-5 w-5" />}
+                </div>
+                <input
+                    type="file"
+                    className="hidden"
+                    accept="image/*"
+                    onChange={(e) => onUpload(e.target.files[0])}
+                    disabled={uploading}
+                />
+            </label>
+        </div>
+    );
+}
 
 export default CoverManager;

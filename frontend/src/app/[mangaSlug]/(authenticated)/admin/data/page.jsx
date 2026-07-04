@@ -117,7 +117,7 @@ export default function AdminDataPage() {
     };
 
     return (
-        <div className="container max-w-7xl mx-auto py-10 px-4 sm:px-6">
+        <div className="container max-w-7xl mx-auto h-full overflow-y-auto py-10 px-4 sm:px-6">
             {pageTitle && <title>{pageTitle}</title>}
             <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
                 <h1 className="poneglyph-title flex items-center gap-2 text-xl font-bold">
@@ -147,8 +147,8 @@ export default function AdminDataPage() {
                                             className={cn(
                                                 "w-full flex items-center justify-between p-2 rounded-md text-sm transition-colors",
                                                 selectedTome?.id === tome.id
-                                                    ? "bg-blue-100 text-blue-700 font-medium"
-                                                    : "hover:bg-slate-200 text-slate-700"
+                                                    ? "bg-[#3d86ff]/16 text-white font-medium"
+                                                    : "hover:bg-white/8 text-slate-300"
                                             )}
                                         >
                                             <div className="flex items-center gap-2">
@@ -159,7 +159,7 @@ export default function AdminDataPage() {
                                         </button>
 
                                         {selectedTome?.id === tome.id && (
-                                            <div className="ml-4 pl-2 border-l-2 border-slate-200 space-y-1 mt-1">
+                                            <div className="ml-4 pl-2 border-l-2 border-white/12 space-y-1 mt-1">
                                                 {tome.chapitres.map(chap => (
                                                     <button
                                                         key={chap.id}
@@ -167,8 +167,8 @@ export default function AdminDataPage() {
                                                         className={cn(
                                                             "w-full flex items-center justify-between p-2 rounded-md text-sm transition-colors text-left",
                                                             selectedChapter?.id === chap.id
-                                                                ? "bg-white shadow-sm text-blue-600 ring-1 ring-blue-100"
-                                                                : "hover:bg-white/50 text-slate-600"
+                                                                ? "bg-white/10 text-[#8dbbff] ring-1 ring-[#8dbbff]/30"
+                                                                : "hover:bg-white/8 text-slate-300"
                                                         )}
                                                     >
                                                         <span>Chapitre {chap.numero}</span>
@@ -207,11 +207,11 @@ export default function AdminDataPage() {
                                         className={cn(
                                             "flex flex-col items-center p-2 rounded border transition-all relative overflow-hidden group",
                                             selectedPage?.id === page.id
-                                                ? "border-blue-500 bg-blue-50/30 ring-1 ring-blue-500"
-                                                : "border-slate-200 hover:border-blue-300 hover:shadow-sm"
+                                                ? "border-[#3d86ff] bg-[#3d86ff]/12 ring-1 ring-[#8dbbff]/40"
+                                                : "border-white/12 bg-white/[0.055] hover:border-[#8dbbff]/38"
                                         )}
                                     >
-                                        <div className="w-full aspect-[2/3] bg-slate-100 mb-2 rounded overflow-hidden relative">
+                                        <div className="w-full aspect-[2/3] bg-[#040d18] mb-2 rounded overflow-hidden relative">
                                             {page.url_image ? (
                                                 <Image
                                                     src={getProxiedImageUrl(page.url_image)}
@@ -269,27 +269,27 @@ export default function AdminDataPage() {
                                     <div className="space-y-4">
 
                                         <div className="grid grid-cols-4 gap-4 mb-6">
-                                            <div className="bg-white p-3 rounded border shadow-sm flex flex-col items-center">
-                                                <span className="text-xs text-slate-500 uppercase">Total</span>
-                                                <span className="text-xl font-bold">{bubbles.length}</span>
+                                            <div className="bg-white/[0.055] border border-white/12 p-3 rounded flex flex-col items-center">
+                                                <span className="text-xs text-slate-400 uppercase">Total</span>
+                                                <span className="text-xl font-bold text-white">{bubbles.length}</span>
                                             </div>
-                                            <div className="bg-white p-3 rounded border shadow-sm flex flex-col items-center border-green-100 bg-green-50/20">
-                                                <span className="text-xs text-green-600 uppercase">Validées</span>
-                                                <span className="text-xl font-bold text-green-700">{bubbles.filter(b => b.statut === 'Validé').length}</span>
+                                            <div className="bg-white/[0.055] border border-white/12 p-3 rounded flex flex-col items-center">
+                                                <span className="text-xs text-emerald-400 uppercase">Validées</span>
+                                                <span className="text-xl font-bold text-white">{bubbles.filter(b => b.statut === 'Validé').length}</span>
                                             </div>
-                                            <div className="bg-white p-3 rounded border shadow-sm flex flex-col items-center border-blue-100 bg-blue-50/20">
-                                                <span className="text-xs text-blue-600 uppercase">Proposées</span>
-                                                <span className="text-xl font-bold text-blue-700">{bubbles.filter(b => b.statut === 'Proposé').length}</span>
+                                            <div className="bg-white/[0.055] border border-white/12 p-3 rounded flex flex-col items-center">
+                                                <span className="text-xs text-[#8dbbff] uppercase">Proposées</span>
+                                                <span className="text-xl font-bold text-white">{bubbles.filter(b => b.statut === 'Proposé').length}</span>
                                             </div>
-                                            <div className="bg-white p-3 rounded border shadow-sm flex flex-col items-center border-red-100 bg-red-50/20">
-                                                <span className="text-xs text-red-600 uppercase">Rejetées</span>
-                                                <span className="text-xl font-bold text-red-700">{bubbles.filter(b => b.statut === 'Rejeté').length}</span>
+                                            <div className="bg-white/[0.055] border border-white/12 p-3 rounded flex flex-col items-center">
+                                                <span className="text-xs text-red-400 uppercase">Rejetées</span>
+                                                <span className="text-xl font-bold text-white">{bubbles.filter(b => b.statut === 'Rejeté').length}</span>
                                             </div>
                                         </div>
 
 
-                                        <div className="bg-white border rounded-md shadow-sm overflow-hidden">
-                                            <div className="grid grid-cols-12 bg-slate-100 p-2 text-xs font-semibold text-slate-600 border-b">
+                                        <div className="bg-[#040d18]/60 border border-white/12 rounded-md overflow-hidden">
+                                            <div className="grid grid-cols-12 bg-white/[0.06] p-2 text-xs font-semibold text-slate-400 border-b border-white/10">
                                                 <div className="col-span-1 text-center">#</div>
                                                 <div className="col-span-1">Statut</div>
                                                 <div className="col-span-6">Texte</div>
@@ -299,24 +299,24 @@ export default function AdminDataPage() {
                                             {bubbles.map((bubble, idx) => (
                                                 <div
                                                     key={bubble.id}
-                                                    className="grid grid-cols-12 p-3 text-sm border-b last:border-0 hover:bg-slate-50 items-center cursor-pointer transition-colors hover:bg-blue-50/50"
+                                                    className="grid grid-cols-12 p-3 text-sm border-b border-white/8 last:border-0 hover:bg-white/[0.05] items-center cursor-pointer transition-colors"
                                                     onClick={() => setHistoryBubble(bubble)}
                                                 >
                                                     <div className="col-span-1 text-center font-mono text-slate-400">{bubble.order || idx + 1}</div>
                                                     <div className="col-span-1">
                                                         <Badge variant="outline" className={cn(
                                                             "text-[10px] px-1",
-                                                            bubble.statut === 'Validé' ? "border-green-500 text-green-600 bg-green-50" :
-                                                                bubble.statut === 'Rejeté' ? "border-red-500 text-red-600 bg-red-50" :
-                                                                    "border-blue-500 text-blue-600 bg-blue-50"
+                                                            bubble.statut === 'Validé' ? "border-emerald-400/40 bg-emerald-500/12 text-emerald-300" :
+                                                                bubble.statut === 'Rejeté' ? "border-red-400/40 bg-red-500/12 text-red-300" :
+                                                                    "border-[#8dbbff]/40 bg-[#3d86ff]/12 text-[#bcd6ff]"
                                                         )}>
                                                             {bubble.statut}
                                                         </Badge>
                                                     </div>
-                                                    <div className="col-span-6 pr-4 font-medium text-slate-800 line-clamp-2" title={bubble.texte_propose}>
-                                                        {bubble.texte_propose || <span className="text-slate-300 italic">Vide</span>}
+                                                    <div className="col-span-6 pr-4 font-medium text-slate-200 line-clamp-2" title={bubble.texte_propose}>
+                                                        {bubble.texte_propose || <span className="text-slate-500 italic">Vide</span>}
                                                     </div>
-                                                    <div className="col-span-2 text-xs font-mono text-slate-500">
+                                                    <div className="col-span-2 text-xs font-mono text-slate-400">
                                                         {bubble.x}, {bubble.y} <br />
                                                         {bubble.w} x {bubble.h}
                                                     </div>
@@ -357,12 +357,12 @@ export default function AdminDataPage() {
                                 ) : (
                                     <div className="space-y-6">
                                         {history.map((entry) => (
-                                            <div key={entry.id} className="relative pl-6 pb-6 border-l-2 border-slate-200 last:border-0 last:pb-0">
-                                                <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-slate-300 border-4 border-white shadow-sm ring-1 ring-slate-100"></div>
+                                            <div key={entry.id} className="relative pl-6 pb-6 border-l-2 border-white/12 last:border-0 last:pb-0">
+                                                <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-[#8dbbff] border-4 border-[#071625] shadow-sm ring-1 ring-[#8dbbff]/40"></div>
 
                                                 <div className="flex justify-between items-start mb-1">
                                                     <div className="flex flex-col">
-                                                        <span className="font-bold text-slate-700 capitalize text-sm">
+                                                        <span className="font-bold text-slate-200 capitalize text-sm">
                                                             {entry.action === 'create' ? 'Création' :
                                                                 entry.action === 'validate' ? 'Validation' :
                                                                     entry.action === 'reject' ? 'Rejet' :
@@ -371,32 +371,32 @@ export default function AdminDataPage() {
                                                         </span>
                                                         <span className="text-xs text-slate-500">{formatDate(entry.created_at)}</span>
                                                     </div>
-                                                    <Badge variant="outline" className="text-[10px] text-slate-500 bg-slate-50">
+                                                    <Badge variant="outline" className="text-[10px] text-slate-400 bg-white/[0.06] border-white/12">
                                                         {entry.user_id}
                                                     </Badge>
                                                 </div>
 
-                                                <div className="text-sm mt-2 text-slate-600">
+                                                <div className="text-sm mt-2 text-slate-300">
 
                                                     <div className="flex items-center gap-1 text-xs text-slate-400 mb-2">
                                                         <UserIconDisplay email={entry.user?.email} id={entry.user_id} />
                                                     </div>
 
                                                     {entry.comment && (
-                                                        <div className="bg-orange-50 border border-orange-100 text-orange-800 p-2 rounded text-xs italic mb-2">
+                                                        <div className="bg-amber-500/12 border border-amber-400/30 text-amber-100 p-2 rounded text-xs italic mb-2">
                                                             &quot;{entry.comment}&quot;
                                                         </div>
                                                     )}
 
                                                     {entry.action === 'update_text' && entry.old_data?.texte_propose && (
                                                         <div className="grid grid-cols-2 gap-2 mt-2">
-                                                            <div className="bg-red-50 p-2 rounded border border-red-100">
-                                                                <div className="text-[10px] font-bold text-red-400 uppercase mb-1">Avant</div>
-                                                                <div className="text-xs text-slate-600 line-through">{entry.old_data.texte_propose}</div>
+                                                            <div className="bg-red-500/12 p-2 rounded border border-red-400/30">
+                                                                <div className="text-[10px] font-bold text-red-300 uppercase mb-1">Avant</div>
+                                                                <div className="text-xs text-slate-300 line-through">{entry.old_data.texte_propose}</div>
                                                             </div>
-                                                            <div className="bg-green-50 p-2 rounded border border-green-100">
-                                                                <div className="text-[10px] font-bold text-green-400 uppercase mb-1">Après</div>
-                                                                <div className="text-xs text-slate-800">{entry.new_data.texte_propose}</div>
+                                                            <div className="bg-emerald-500/12 p-2 rounded border border-emerald-400/30">
+                                                                <div className="text-[10px] font-bold text-emerald-300 uppercase mb-1">Après</div>
+                                                                <div className="text-xs text-slate-100">{entry.new_data.texte_propose}</div>
                                                             </div>
                                                         </div>
                                                     )}
@@ -418,7 +418,7 @@ function UserIconDisplay({ email, id }) {
 
     return (
         <>
-            <span className="w-4 h-4 bg-slate-200 rounded-full flex items-center justify-center text-[10px] font-bold text-slate-500">
+            <span className="w-4 h-4 bg-white/10 rounded-full flex items-center justify-center text-[10px] font-bold text-slate-300">
                 U
             </span>
             <span>

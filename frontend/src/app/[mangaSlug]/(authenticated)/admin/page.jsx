@@ -1,10 +1,13 @@
 "use client";
 
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect } from 'react';
 import AddTomeForm from '@/components/AddTomeForm';
 import AddChapterForm from '@/components/AddChapterForm';
+import IpBanManager from '@/components/IpBanManager';
+import CoverManager from '@/components/CoverManager';
+import AiModelManager from '@/components/AiModelManager';
+import TrainingJobManager from '@/components/TrainingJobManager';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import {
     Library,
@@ -16,26 +19,24 @@ import {
     Eye,
     EyeOff,
     Zap,
-    CloudLightning
+    CloudLightning,
+    ArrowRight,
 } from "lucide-react";
 
 import { useSearchParams, useParams } from 'next/navigation';
 import Link from 'next/link';
-import { Button } from "@/components/ui/button";
 import { getAllMangas, toggleMangaEnabled } from '@/lib/api';
+import { getProxiedImageUrl } from '@/lib/utils';
 
-const IpBanManager = React.lazy(() => import('@/components/IpBanManager'));
-const CoverManager = React.lazy(() => import('@/components/CoverManager'));
-const AiModelManager = React.lazy(() => import('@/components/AiModelManager'));
-const TrainingJobManager = React.lazy(() => import('@/components/TrainingJobManager'));
-
-function TabSkeleton() {
-    return (
-        <div className="flex items-center justify-center py-16">
-            <div className="h-8 w-8 animate-spin border-2 border-slate-200 border-t-indigo-600 rounded-full" />
-        </div>
-    );
-}
+const TABS = [
+    { value: 'content', label: 'Bibliothèque', icon: Library, tint: 'text-slate-200' },
+    { value: 'mangas', label: 'Mangas', icon: BookOpen, tint: 'text-slate-200' },
+    { value: 'covers', label: 'Apparence', icon: ImageIcon, tint: 'text-slate-200' },
+    { value: 'ai', label: 'IA', icon: Cpu, tint: 'text-slate-200' },
+    { value: 'training', label: 'Fine-tuning', icon: CloudLightning, tint: 'text-[#8dbbff]' },
+    { value: 'security', label: 'Sécurité', icon: ShieldAlert, tint: 'text-rose-300' },
+    { value: 'batch', label: 'Batch OCR', icon: Zap, tint: 'text-[#8dbbff]' },
+];
 
 export default function AdminDashboard() {
     const searchParams = useSearchParams();
@@ -65,180 +66,191 @@ export default function AdminDashboard() {
         }
     };
 
-    return (
-        <div className="container mx-auto max-w-7xl space-y-8 px-4 py-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    const onTabChange = (val) => {
+        const sp = new URLSearchParams(searchParams);
+        sp.set('tab', val);
+        window.history.pushState(null, '', `?${sp.toString()}`);
+    };
 
-            <div className="flex flex-col space-y-2 border-b border-white/10 pb-8">
-                <h1 className="poneglyph-title text-4xl font-extrabold">
-                    Administration
-                </h1>
-                <p className="poneglyph-muted max-w-2xl text-lg">
-                    Gérez votre bibliothèque de mangas, supervisez la sécurité et configurez les outils linguistiques.
-                </p>
+    return (
+        <div className="flex h-full flex-col overflow-hidden">
+            {/* Header */}
+            <div className="shrink-0 border-b border-white/8 px-1 pb-6">
+                <div className="flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04]">
+                        <ShieldAlert className="h-5 w-5 text-[#8dbbff]" />
+                    </div>
+                    <div>
+                        <h1 className="poneglyph-title text-2xl font-bold tracking-tight">
+                            Administration
+                        </h1>
+                        <p className="poneglyph-muted text-sm">
+                            Bibliothèque, sécurité et outils linguistiques.
+                        </p>
+                    </div>
+                </div>
             </div>
 
-            <Tabs value={currentTab} onValueChange={(val) => {
-                const params = new URLSearchParams(searchParams);
-                params.set('tab', val);
-                window.history.pushState(null, '', `?${params.toString()}`);
-            }} className="w-full">
-                <div className="sticky top-16 z-20 bg-[#06111e]/86 pb-6 pt-2 backdrop-blur-xl">
-                    <TabsList className="grid h-auto w-full grid-cols-2 border border-white/12 bg-white/8 p-1 lg:grid-cols-7">
-                        <TabsTrigger value="content" className="px-4 py-3 text-slate-300 transition-all data-[state=active]:bg-white/12 data-[state=active]:text-white data-[state=active]:shadow-sm focus-visible:ring-0">
-                            <Library className="h-4 w-4 mr-2" />
-                            <span className="font-medium">Bibliothèque</span>
-                        </TabsTrigger>
-                        <TabsTrigger value="mangas" className="px-4 py-3 text-slate-300 transition-all data-[state=active]:bg-white/12 data-[state=active]:text-white data-[state=active]:shadow-sm focus-visible:ring-0">
-                            <BookOpen className="h-4 w-4 mr-2" />
-                            <span className="font-medium">Mangas</span>
-                        </TabsTrigger>
-                        <TabsTrigger value="covers" className="px-4 py-3 text-slate-300 transition-all data-[state=active]:bg-white/12 data-[state=active]:text-white data-[state=active]:shadow-sm focus-visible:ring-0">
-                            <ImageIcon className="h-4 w-4 mr-2" />
-                            <span className="font-medium">Apparence</span>
-                        </TabsTrigger>
-                        <TabsTrigger value="ai" className="px-4 py-3 text-slate-300 transition-all data-[state=active]:bg-white/12 data-[state=active]:text-white data-[state=active]:shadow-sm focus-visible:ring-0">
-                            <Cpu className="h-4 w-4 mr-2" />
-                            <span className="font-medium">IA</span>
-                        </TabsTrigger>
-                        <TabsTrigger value="training" className="px-4 py-3 text-[#8dbbff] transition-all data-[state=active]:bg-[#3d86ff]/16 data-[state=active]:text-white data-[state=active]:shadow-sm focus-visible:ring-0">
-                            <CloudLightning className="h-4 w-4 mr-2" />
-                            <span className="font-medium">Fine-tuning</span>
-                        </TabsTrigger>
-                        <TabsTrigger value="security" className="px-4 py-3 text-red-300 transition-all data-[state=active]:bg-red-500/14 data-[state=active]:text-red-100 data-[state=active]:shadow-sm focus-visible:ring-0">
-                            <ShieldAlert className="h-4 w-4 mr-2" />
-                            <span className="font-medium">Sécurité</span>
-                        </TabsTrigger>
-                        <TabsTrigger value="batch" className="px-4 py-3 text-[#8dbbff] transition-all data-[state=active]:bg-[#3d86ff]/16 data-[state=active]:text-white data-[state=active]:shadow-sm focus-visible:ring-0">
-                            <Zap className="h-4 w-4 mr-2" />
-                            <span className="font-medium">Batch OCR</span>
-                        </TabsTrigger>
+            <Tabs value={currentTab} onValueChange={onTabChange} className="mt-6 flex min-h-0 flex-1 flex-col gap-5">
+                {/* Tab bar */}
+                <div className="sticky top-0 z-20 shrink-0">
+                    <TabsList className="grid h-auto w-full grid-cols-3 gap-1 rounded-2xl border border-white/10 bg-[#071625]/70 p-1.5 backdrop-blur-xl sm:grid-cols-4 lg:grid-cols-7">
+                        {TABS.map(t => {
+                            const Icon = t.icon;
+                            return (
+                                <TabsTrigger
+                                    key={t.value}
+                                    value={t.value}
+                                    className="flex-col gap-1 rounded-xl px-2 py-2.5 text-xs font-medium outline-none focus-visible:ring-0"
+                                >
+                                    <Icon className={`h-4 w-4 ${t.tint}`} />
+                                    <span>{t.label}</span>
+                                </TabsTrigger>
+                            );
+                        })}
                     </TabsList>
                 </div>
 
-                <div className="poneglyph-panel mt-2 min-h-[600px] overflow-hidden rounded-3xl">
-                    <TabsContent value="content" className="m-0 p-8 space-y-12 outline-none">
-                        <AddTomeForm />
-                        <div className="mx-4 h-px bg-white/10" />
-                        <AddChapterForm />
-                        <div className="mx-4 h-px bg-white/10" />
-                        <div className="flex items-center justify-between rounded-xl border border-[#8dbbff]/18 bg-[#071625]/78 p-6 shadow-[0_18px_48px_rgba(0,0,0,0.22)]">
-                            <div>
-                                <h3 className="flex items-center gap-2 text-lg font-bold text-white">
-                                    <Upload className="h-5 w-5 text-[#8dbbff]" />
-                                    Upload Tome complet
-                                </h3>
-                                <p className="mt-1 text-sm text-slate-400">
-                                    Importez un CBZ, organisez les pages et assignez-les à des chapitres.
-                                </p>
-                            </div>
-                            <Link href={`/${params.mangaSlug}/admin/upload-tome`}>
-                                <Button className="border border-[#8dbbff]/35 bg-[#3d86ff] text-white shadow-[0_14px_34px_rgba(61,134,255,0.28)] hover:bg-[#2f73dc]">
-                                    <Upload className="h-4 w-4 mr-2" />
-                                    Ouvrir
-                                </Button>
-                            </Link>
+                {/* Scrollable content area */}
+                <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                    <TabsContent value="content" className="mt-0 outline-none">
+                        <div className="grid gap-5 lg:grid-cols-2">
+                            <AddTomeForm />
+                            <AddChapterForm />
                         </div>
+                        <LauncherCard
+                            href={`/${params.mangaSlug}/admin/upload-tome`}
+                            icon={Upload}
+                            tint="#8dbbff"
+                            title="Upload Tome complet"
+                            desc="Importez un CBZ, organisez les pages et assignez-les à des chapitres en flux guidé."
+                            cta="Ouvrir"
+                        />
                     </TabsContent>
 
-                    <TabsContent value="mangas" className="m-0 p-8 outline-none">
-                        <Card className="border-slate-200">
-                            <CardHeader>
-                                <CardTitle className="flex items-center gap-2">
-                                    <BookOpen className="h-5 w-5 text-indigo-600" />
-                                    Visibilité des Mangas
-                                </CardTitle>
-                                <CardDescription>
-                                    Activez ou désactivez les mangas. Un manga désactivé est invisible pour les utilisateurs.
-                                </CardDescription>
-                            </CardHeader>
-                            <CardContent className="space-y-2">
-                                {mangasLoading ? (
-                                    <div className="flex justify-center py-8">
-                                        <div className="h-6 w-6 animate-spin border-2 border-slate-200 border-t-indigo-600 rounded-full" />
-                                    </div>
-                                ) : mangas.length === 0 ? (
-                                    <p className="text-sm text-slate-500 text-center py-4">Aucun manga trouvé.</p>
-                                ) : (
-                                    mangas.map(manga => (
-                                        <div key={manga.id} className={`flex items-center justify-between p-4 rounded-xl border transition-all ${manga.enabled ? 'border-slate-200 bg-white' : 'border-red-100 bg-red-50/50'}`}>
-                                            <div className="flex items-center gap-3">
-                                                {manga.cover_url ? (
-                                                    <img src={manga.cover_url} alt={manga.titre} className="h-12 w-9 object-cover rounded-md border border-slate-200" />
-                                                ) : (
-                                                    <div className="h-12 w-9 rounded-md bg-slate-100 flex items-center justify-center">
-                                                        <BookOpen className="h-4 w-4 text-slate-400" />
-                                                    </div>
-                                                )}
-                                                <div>
-                                                    <p className="font-semibold text-slate-900">{manga.titre}</p>
-                                                    <p className="text-xs text-slate-500">/{manga.slug}</p>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center gap-3">
-                                                <span className={`text-xs font-medium flex items-center gap-1 ${manga.enabled ? 'text-emerald-600' : 'text-red-500'}`}>
-                                                    {manga.enabled ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
-                                                    {manga.enabled ? 'Visible' : 'Masqué'}
-                                                </span>
-                                                <Switch
-                                                    checked={manga.enabled}
-                                                    disabled={togglingId === manga.id}
-                                                    onCheckedChange={() => handleToggle(manga.id)}
-                                                />
-                                            </div>
-                                        </div>
-                                    ))
-                                )}
-                            </CardContent>
-                        </Card>
+                    <TabsContent value="mangas" className="mt-0 outline-none">
+                        <MangaVisibility
+                            mangas={mangas}
+                            loading={mangasLoading}
+                            togglingId={togglingId}
+                            onToggle={handleToggle}
+                        />
                     </TabsContent>
 
-                    <TabsContent value="covers" className="m-0 p-8 outline-none">
-                        <Suspense fallback={<TabSkeleton />}>
-                            <CoverManager />
-                        </Suspense>
+                    <TabsContent value="covers" className="mt-0 outline-none">
+                        <CoverManager />
                     </TabsContent>
 
-
-                    <TabsContent value="ai" className="m-0 p-8 outline-none">
-                        <Suspense fallback={<TabSkeleton />}>
-                            <AiModelManager mangaSlug={params.mangaSlug} />
-                        </Suspense>
+                    <TabsContent value="ai" className="mt-0 outline-none">
+                        <AiModelManager mangaSlug={params.mangaSlug} />
                     </TabsContent>
 
-                    <TabsContent value="training" className="m-0 p-8 outline-none">
-                        <Suspense fallback={<TabSkeleton />}>
-                            <TrainingJobManager />
-                        </Suspense>
+                    <TabsContent value="training" className="mt-0 outline-none">
+                        <TrainingJobManager />
                     </TabsContent>
 
-                    <TabsContent value="security" className="m-0 p-8 outline-none">
-                        <Suspense fallback={<TabSkeleton />}>
-                            <IpBanManager />
-                        </Suspense>
+                    <TabsContent value="security" className="mt-0 outline-none">
+                        <IpBanManager />
                     </TabsContent>
 
-                    <TabsContent value="batch" className="m-0 p-8 outline-none">
-                        <div className="flex items-center justify-between rounded-xl bg-gradient-to-r from-slate-50 to-slate-100 border border-slate-200 p-6">
-                            <div>
-                                <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                                    <Zap className="h-5 w-5 text-indigo-600" />
-                                    Batch OCR
-                                </h3>
-                                <p className="text-sm text-slate-500 mt-1">
-                                    Traitez un chapitre complet automatiquement : détection YOLO, OCR Poneglyph-BBox + Poneglyph, auto-validation des concordances.
-                                </p>
-                            </div>
-                            <Link href={`/${params.mangaSlug}/admin/batch-ocr`}>
-                                <Button className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg">
-                                    <Zap className="h-4 w-4 mr-2" />
-                                    Ouvrir
-                                </Button>
-                            </Link>
-                        </div>
+                    <TabsContent value="batch" className="mt-0 outline-none">
+                        <LauncherCard
+                            href={`/${params.mangaSlug}/admin/batch-ocr`}
+                            icon={Zap}
+                            tint="#8dbbff"
+                            title="Batch OCR"
+                            desc="Traitez un chapitre complet automatiquement : détection YOLO, OCR Poneglyph-BBox + Poneglyph, auto-validation des concordances."
+                            cta="Ouvrir"
+                        />
                     </TabsContent>
                 </div>
             </Tabs>
+        </div>
+    );
+}
 
-        </div >
+function LauncherCard({ href, icon: Icon, tint, title, desc, cta }) {
+    return (
+        <Link href={href} className="group mt-5 flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-[#071625]/70 p-5 backdrop-blur-md transition-all hover:border-[#8dbbff]/40 hover:bg-[#0a1d30]/80">
+            <div className="flex items-start gap-4">
+                <div
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10"
+                    style={{ background: `${tint}1f`, color: tint }}
+                >
+                    <Icon className="h-5 w-5" />
+                </div>
+                <div>
+                    <h3 className="font-semibold text-white">{title}</h3>
+                    <p className="mt-1 max-w-xl text-sm text-slate-400">{desc}</p>
+                </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2 rounded-xl border border-[#3d86ff]/35 bg-[#3d86ff] px-4 py-2 text-sm font-medium text-white shadow-[0_14px_34px_rgba(61,134,255,0.28)] transition-all group-hover:bg-[#2f73dc]">
+                {cta}
+                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+            </div>
+        </Link>
+    );
+}
+
+function MangaVisibility({ mangas, loading, togglingId, onToggle }) {
+    return (
+        <div className="rounded-2xl border border-white/10 bg-[#071625]/70 p-5 backdrop-blur-md">
+            <div className="mb-4">
+                <h2 className="flex items-center gap-2 font-semibold text-white">
+                    <BookOpen className="h-4 w-4 text-[#8dbbff]" />
+                    Visibilité des Mangas
+                </h2>
+                <p className="mt-1 text-sm text-slate-400">
+                    Un manga désactivé est invisible pour les utilisateurs.
+                </p>
+            </div>
+
+            <div className="space-y-2">
+                {loading ? (
+                    <div className="flex justify-center py-10">
+                        <div className="h-7 w-7 animate-spin border-2 border-white/15 border-t-[#8dbbff] rounded-full" />
+                    </div>
+                ) : mangas.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-white/12 py-10 text-center text-sm text-slate-400">
+                        Aucun manga trouvé.
+                    </div>
+                ) : (
+                    mangas.map(manga => (
+                        <div
+                            key={manga.id}
+                            className={`flex items-center justify-between rounded-xl border p-3 transition-all ${manga.enabled
+                                ? 'border-white/10 bg-white/[0.04]'
+                                : 'border-rose-400/25 bg-rose-500/8'
+                                }`}
+                        >
+                            <div className="flex items-center gap-3">
+                                {manga.cover_url ? (
+                                    <img src={getProxiedImageUrl(manga.cover_url)} alt={manga.titre} className="h-12 w-9 rounded-md border border-white/12 object-cover" />
+                                ) : (
+                                    <div className="flex h-12 w-9 items-center justify-center rounded-md border border-white/10 bg-white/[0.04]">
+                                        <BookOpen className="h-4 w-4 text-slate-500" />
+                                    </div>
+                                )}
+                                <div>
+                                    <p className="font-medium text-slate-100">{manga.titre}</p>
+                                    <p className="font-mono text-xs text-slate-500">/{manga.slug}</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <span className={`flex items-center gap-1.5 text-xs font-medium ${manga.enabled ? 'text-emerald-300' : 'text-rose-300'}`}>
+                                    {manga.enabled ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+                                    {manga.enabled ? 'Visible' : 'Masqué'}
+                                </span>
+                                <Switch
+                                    checked={manga.enabled}
+                                    disabled={togglingId === manga.id}
+                                    onCheckedChange={() => onToggle(manga.id)}
+                                />
+                            </div>
+                        </div>
+                    ))
+                )}
+            </div>
+        </div>
     );
 }
