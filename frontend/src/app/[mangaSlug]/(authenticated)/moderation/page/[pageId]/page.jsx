@@ -280,7 +280,7 @@ export default function PageReview() {
     const chapterNumber = page.chapitres?.numero || '?';
 
     return (
-        <div className="flex flex-col h-[calc(100vh-64px)] bg-slate-50">
+        <div className="flex flex-col h-full -mx-4 -my-7 sm:-mx-8 lg:-mx-10 bg-slate-50">
 
 
             <header className="flex-none h-auto min-h-16 border-b border-slate-200 bg-white px-4 sm:px-6 py-3 sm:py-0 flex flex-col lg:flex-row items-center justify-between z-20 shadow-sm gap-3 sm:gap-4 overflow-x-auto no-scrollbar">

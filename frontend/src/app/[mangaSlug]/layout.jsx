@@ -27,9 +27,9 @@ export default function MangaLayout({ children }) {
         <MangaProvider>
             <TauriLocalOcrProvider>
                 <div className="poneglyph-app">
-                    <section className="poneglyph-shell mx-auto min-h-screen max-w-[1600px] overflow-hidden border-x">
+                    <section className="poneglyph-shell mx-auto flex h-screen max-w-[1600px] flex-col overflow-hidden border-x">
                         <Header onOpenApiKeyModal={() => setShowApiKeyModal(true)} />
-                        <main className="page-transition px-4 py-7 sm:px-8 lg:px-10">
+                        <main className="page-transition flex-1 overflow-hidden px-4 py-7 sm:px-8 lg:px-10">
                             {children}
                         </main>
                     </section>

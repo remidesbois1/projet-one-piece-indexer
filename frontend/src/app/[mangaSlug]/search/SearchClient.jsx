@@ -650,7 +650,7 @@ export default function SearchPage() {
     const displayedTotalCount = topOcrResult ? 1 : totalCount;
 
     return (
-        <div className="min-h-screen pb-20">
+        <div className="h-full overflow-y-auto overflow-x-hidden pb-20">
             <div className="relative -mx-4 overflow-hidden border-b border-white/10 bg-[#06111e]/72 px-4 pb-10 pt-12 sm:-mx-8">
                 <PoneglyphHeaderGlyphs color={accentColor} />
 

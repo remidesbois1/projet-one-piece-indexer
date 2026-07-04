@@ -366,7 +366,7 @@ export default function UploadTomePage() {
     const assigningChapterObj = chapters.find(c => c.id === assigningChapter);
 
     return (
-        <div className="container mx-auto max-w-7xl space-y-8 px-4 py-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="container mx-auto h-full max-w-7xl space-y-8 overflow-y-auto px-4 py-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="flex items-center gap-4 border-b border-white/10 pb-6">
                 <Link href={`/${params.mangaSlug}/admin?tab=content`}>
                     <Button variant="ghost" size="icon" className="shrink-0">

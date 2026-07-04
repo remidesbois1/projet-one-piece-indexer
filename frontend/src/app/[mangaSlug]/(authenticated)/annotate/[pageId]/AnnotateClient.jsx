@@ -726,7 +726,7 @@ export default function AnnotatePage() {
     if (!page) return null;
 
     return (
-        <div className="relative -mx-4 -my-6 flex h-[calc(100vh-64px)] flex-col overflow-hidden bg-[#030a13] sm:-mx-8 lg:flex-row">
+        <div className="relative -mx-4 -my-7 flex h-[calc(100%+3.5rem)] flex-col overflow-hidden bg-[#030a13] sm:-mx-8 lg:-mx-10 lg:flex-row">
             <AnnotateLeftSidebar
                 fromSearch={fromSearch}
                 mangaSlug={mangaSlug}
