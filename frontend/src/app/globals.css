@@ -9,6 +9,7 @@
   font-display: swap;
 }
 @custom-variant dark (&:is(.dark *));
+@custom-variant poneglyph-app (&:is(.poneglyph-app *));
 
 :root {
   color: var(--color-text-dark);
