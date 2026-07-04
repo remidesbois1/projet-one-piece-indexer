@@ -13,10 +13,14 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import {
     ArrowLeft, Play, Loader2, CheckCircle2, AlertTriangle,
-    SkipForward, Zap, X, Wand2, Cpu, CloudLightning
+    SkipForward, Zap, X, Wand2, Cpu, CloudLightning,
+    Search, ChevronRight, Check
 } from "lucide-react";
 
 function performRaliement(poneglyphBubbles, yoloBoxes, imgW, imgH) {
@@ -342,6 +346,118 @@ function OcrSourceCard({ source, diffFlags, onChoose, processingReview }) {
             >
                 Utiliser
             </Button>
+        </div>
+    );
+}
+
+function ChapterCombobox({ chapters, value, onChange }) {
+    const [open, setOpen] = useState(false);
+    const selected = chapters.find(c => String(c.id) === String(value)) || null;
+
+    const groupedByTome = chapters.reduce((acc, ch) => {
+        const key = `Tome ${ch.tomeNumero}`;
+        if (!acc[key]) acc[key] = [];
+        acc[key].push(ch);
+        return acc;
+    }, {});
+
+    return (
+        <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger asChild>
+                <Button
+                    type="button"
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={open}
+                    className="poneglyph-input h-10 w-full justify-between border-white/14 bg-[#040d18]/70 px-3 font-normal text-slate-100 hover:bg-[#0c1d2e] hover:text-white"
+                >
+                    <span className="flex items-center gap-2 truncate">
+                        {selected ? (
+                            <>
+                                <Badge variant="outline" className="border-white/15 bg-white/8 text-slate-300">T.{selected.tomeNumero}</Badge>
+                                <span className="truncate">Ch.{selected.numero}{selected.titre ? ` — ${selected.titre}` : ''}</span>
+                                <span className="text-xs text-slate-500">({(selected.pages || []).length}p)</span>
+                            </>
+                        ) : (
+                            <span className="flex items-center gap-2 text-slate-400">
+                                <Search className="h-4 w-4" />
+                                Rechercher un chapitre...
+                            </span>
+                        )}
+                    </span>
+                    <ChevronRight className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${open ? 'rotate-90' : ''}`} />
+                </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[440px] max-w-[calc(100vw-2rem)] border-white/14 bg-[#071625]/96 p-0 backdrop-blur-xl" align="start">
+                <Command className="bg-transparent">
+                    <CommandInput placeholder="Tome, numéro ou titre..." className="text-slate-100" />
+                    <CommandList className="max-h-[340px]">
+                        <CommandEmpty className="py-6 text-center text-sm text-slate-400">Aucun chapitre</CommandEmpty>
+                        {Object.entries(groupedByTome).map(([tomeLabel, tomeChapters]) => (
+                            <CommandGroup key={tomeLabel} heading={tomeLabel} className="[&_[cmdk-group-heading]]:text-slate-400">
+                                {tomeChapters.map(ch => (
+                                    <CommandItem
+                                        key={ch.id}
+                                        value={`T${ch.tomeNumero} Ch${ch.numero} ${ch.titre || ''} ${ch.tomeNumero} ${ch.numero}`}
+                                        onSelect={() => {
+                                            onChange(String(ch.id));
+                                            setOpen(false);
+                                        }}
+                                        className="aria-selected:bg-white/10 aria-selected:text-white"
+                                    >
+                                        <span className="flex w-full items-center gap-2">
+                                            <span className="min-w-[3.5rem] font-mono text-xs text-indigo-300">Ch.{ch.numero}</span>
+                                            <span className="flex-1 truncate text-slate-200">{ch.titre || <em className="text-slate-500">sans titre</em>}</span>
+                                            <span className="text-xs text-slate-500">({(ch.pages || []).length}p)</span>
+                                            {String(ch.id) === String(value) && <Check className="h-3.5 w-3.5 text-emerald-400" />}
+                                        </span>
+                                    </CommandItem>
+                                ))}
+                            </CommandGroup>
+                        ))}
+                    </CommandList>
+                </Command>
+            </PopoverContent>
+        </Popover>
+    );
+}
+
+function PhaseStepper({ phase }) {
+    const steps = [
+        { key: 'idle', label: 'Configurer', order: 1 },
+        { key: 'processing', label: 'Traitement', order: 2 },
+        { key: 'review', label: 'Vérification', order: 3 },
+        { key: 'done', label: 'Terminé', order: 4 },
+    ];
+
+    const phaseOrder = { idle: 1, 'loading-model': 1, processing: 2, review: 3, done: 4 };
+    const currentOrder = phaseOrder[phase] || 1;
+
+    return (
+        <div className="flex items-center gap-1.5 sm:gap-2">
+            {steps.map((step, idx) => {
+                const isDone = currentOrder > step.order;
+                const isActive = currentOrder === step.order;
+                return (
+                    <React.Fragment key={step.key}>
+                        <div className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                            isActive ? 'border-indigo-400/45 bg-indigo-500/20 text-indigo-100 shadow-sm shadow-indigo-950/40'
+                            : isDone ? 'border-emerald-400/35 bg-emerald-500/14 text-emerald-200'
+                            : 'border-white/12 bg-white/[0.04] text-slate-500'
+                        }`}>
+                            <span className={`flex h-4 w-4 items-center justify-center rounded-full text-[10px] ${
+                                isActive ? 'bg-indigo-400 text-indigo-950' : isDone ? 'bg-emerald-400 text-emerald-950' : 'bg-white/10 text-slate-400'
+                            }`}>
+                                {isDone ? <Check className="h-2.5 w-2.5" /> : step.order}
+                            </span>
+                            <span className="hidden sm:inline">{step.label}</span>
+                        </div>
+                        {idx < steps.length - 1 && (
+                            <div className={`h-px w-4 sm:w-8 ${currentOrder > step.order ? 'bg-emerald-400/40' : 'bg-white/10'}`} />
+                        )}
+                    </React.Fragment>
+                );
+            })}
         </div>
     );
 }
@@ -860,301 +976,339 @@ export default function BatchOcrManager() {
     const voterLabel = canUseSuryaBatch ? `${providerLabel} + Surya` : providerLabel;
     const hasSuryaReview = reviewQueue.some(item => item.suryaEnabled && item.suryaText);
 
+    const totalReviewed = stats.totalReview - reviewQueue.length;
+    const currentReviewItem = reviewQueue[0] || null;
+
     return (
-        <div className="poneglyph-app -mx-4 -my-6 min-h-screen px-4 py-10 sm:-mx-8">
-            <div className="poneglyph-panel relative overflow-hidden rounded-3xl p-6">
-                <div className="relative flex items-center gap-3">
-                <Link href={`/${params.mangaSlug}/admin?tab=batch`}>
-                    <Button variant="outline" size="sm" className="border-white/14 bg-white/8 text-slate-200 hover:bg-white/14 hover:text-white">
-                        <ArrowLeft className="h-4 w-4 mr-1" />
-                        Admin
-                    </Button>
-                </Link>
-                <div>
-                    <div className="flex items-center gap-2">
-                        <Wand2 className="h-6 w-6 text-[#8dbbff]" />
-                        <h1 className="poneglyph-title text-3xl font-extrabold">Batch OCR</h1>
+        <div className="poneglyph-app -mx-4 -my-6 min-h-screen px-4 py-8 sm:-mx-8 sm:px-8">
+            <div className="mx-auto max-w-5xl space-y-5">
+                {/* Header */}
+                <div className="poneglyph-panel relative overflow-hidden rounded-2xl p-5 sm:p-6">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="flex items-center gap-3">
+                            <Link href={`/${params.mangaSlug}/admin?tab=batch`}>
+                                <Button variant="outline" size="sm" className="border-white/14 bg-white/8 text-slate-200 hover:bg-white/14 hover:text-white">
+                                    <ArrowLeft className="mr-1 h-4 w-4" />
+                                    Admin
+                                </Button>
+                            </Link>
+                            <div className="h-8 w-px bg-white/10" />
+                            <div className="flex items-center gap-2">
+                                <Wand2 className="h-6 w-6 text-[#8dbbff]" />
+                                <h1 className="poneglyph-title text-2xl font-extrabold sm:text-3xl">Batch OCR</h1>
+                            </div>
+                        </div>
+                        <PhaseStepper phase={phase} />
                     </div>
-                    <p className="poneglyph-muted text-sm">Détection, double OCR, puis validation rapide des bulles ambiguës.</p>
+                    <p className="poneglyph-muted mt-3 text-sm">Détection, double OCR, puis validation rapide des bulles ambiguës.</p>
                 </div>
-                </div>
-            </div>
 
-            {phase === 'idle' && (
-                <Card className="poneglyph-panel rounded-xl">
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2 text-white">
-                            <Zap className="h-5 w-5 text-indigo-600" />
-                            Configuration
-                        </CardTitle>
-                        <CardDescription className="text-slate-400">
-                            Sélectionnez un chapitre. YOLO détecte les bulles, Poneglyph-BBox + Poneglyph font l&apos;OCR, avec Surya en troisième voteur quand il est chargé. Les résultats concordants sont auto-validés.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <div className="grid gap-3 md:grid-cols-[1fr_240px_auto] md:items-end">
-                            <div className="flex-1">
-                                <label className="mb-1.5 block text-sm font-medium text-slate-200">Chapitre</label>
-                                <Select value={selectedChapterId} onValueChange={setSelectedChapterId}>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Sélectionner un chapitre..." />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {chapters.map(ch => (
-                                            <SelectItem key={ch.id} value={String(ch.id)}>
-                                                T.{ch.tomeNumero} - Ch.{ch.numero}{ch.titre ? ` : ${ch.titre}` : ''} ({(ch.pages || []).length}p)
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <div>
-                                <label className="mb-1.5 block text-sm font-medium text-slate-200">OCR</label>
-                                <Select value={ocrProvider} onValueChange={handleProviderChange}>
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Source OCR" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="modal">
-                                            <span className="inline-flex items-center gap-2"><CloudLightning className="h-3.5 w-3.5" /> Modal</span>
-                                        </SelectItem>
-                                        <SelectItem value="local" disabled={!canUseLocalBatch}>
-                                            <span className="inline-flex items-center gap-2"><Cpu className="h-3.5 w-3.5" /> Local</span>
-                                        </SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                            <Button onClick={handleStart} disabled={!selectedChapterId || (ocrProvider === 'local' && !canUseLocalBatch)} className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg">
-                                <Play className="h-4 w-4 mr-2" />
-                                Lancer le batch
-                            </Button>
-                        </div>
-                        <div className="rounded-xl border border-white/12 bg-white/[0.06] p-3 text-xs font-semibold text-slate-300">
-                            <div className="flex flex-wrap items-center gap-2">
-                                <Badge variant="outline" className="border-white/12 bg-white/8 text-slate-200">Provider: {voterLabel}</Badge>
-                                {tauriLocalOcr.isTauri && <Badge variant="outline" className={tauriLocalOcr.localSuryaModelStatus?.ready ? "border-emerald-400/35 bg-emerald-500/14 text-emerald-200" : "border-white/12 bg-white/8 text-slate-300"}>Surya {tauriLocalOcr.localSuryaModelStatus?.ready ? "charge" : "non charge"}</Badge>}
-                                {tauriLocalOcr.isTauri && <Badge variant="outline" className={tauriLocalOcr.localModelStatus?.ready ? "border-emerald-400/35 bg-emerald-500/14 text-emerald-200" : "border-white/12 bg-white/8 text-slate-300"}>Poneglyph-BBox {tauriLocalOcr.localModelStatus?.ready ? "chargé" : "non chargé"}</Badge>}
-                                {tauriLocalOcr.isTauri && <Badge variant="outline" className={tauriLocalOcr.localTextModelStatus?.ready ? "border-emerald-400/35 bg-emerald-500/14 text-emerald-200" : "border-white/12 bg-white/8 text-slate-300"}>Poneglyph {tauriLocalOcr.localTextModelStatus?.ready ? "chargé" : "non chargé"}</Badge>}
-                            </div>
-                            {tauriLocalOcr.isTauri && !canUseLocalBatch && (
-                                <p className="mt-2 text-[11px] text-slate-400">Mode local disponible quand Poneglyph-BBox et Poneglyph sont tous les deux chargés.</p>
-                            )}
-                        </div>
-                    </CardContent>
-                </Card>
-            )}
-
-            {phase === 'loading-model' && (
-                <Card className="poneglyph-panel rounded-xl">
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2 text-white">
-                            <Loader2 className="h-5 w-5 animate-spin text-indigo-600" />
-                            Chargement du modèle YOLO...
-                        </CardTitle>
-                        <CardDescription className="text-slate-400">Téléchargement des modèles de détection de bulles</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-3">
-                        <Progress value={downloadProgress} />
-                        <p className="text-sm text-slate-400">{downloadProgress}%</p>
-                        <Button variant="ghost" onClick={handleCancel}>Annuler</Button>
-                    </CardContent>
-                </Card>
-            )}
-
-            {phase === 'processing' && (
-                <Card className="poneglyph-panel rounded-xl">
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2 text-white">
-                            <Loader2 className="h-5 w-5 animate-spin text-indigo-600" />
-                            Traitement en cours...
-                        </CardTitle>
-                        <CardDescription className="text-slate-400">Page {progress.current} / {progress.total} - {voterLabel}</CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <Progress value={(progress.current / progress.total) * 100} />
-                        <div className="flex flex-wrap gap-2">
-                            {pageStatuses.map(ps => (
-                                <div key={ps.id} className={`text-xs px-2.5 py-1.5 rounded-lg border font-medium ${
-                                    ps.status === 'done' ? 'border-emerald-400/35 bg-emerald-500/14 text-emerald-200' :
-                                    ps.status === 'processing' ? 'border-indigo-400/35 bg-indigo-500/14 text-indigo-200 animate-pulse' :
-                                    ps.status === 'error' ? 'border-red-400/35 bg-red-500/14 text-red-200' :
-                                    'border-white/12 bg-white/8 text-slate-400'
-                                }`}>
-                                    P.{ps.numero}
-                                    {ps.status === 'done' && ` ✅${ps.bubbleCount || ''}`}
-                                    {ps.status === 'processing' && ' ⏳'}
-                                    {ps.status === 'error' && ' ❌'}
+                {/* Phase: Configure */}
+                {(phase === 'idle' || phase === 'loading-model') && (
+                    <Card className="poneglyph-panel overflow-hidden rounded-2xl">
+                        <CardHeader className="border-b border-white/8 pb-4">
+                            <CardTitle className="flex items-center gap-2 text-lg text-white">
+                                <Zap className="h-5 w-5 text-indigo-400" />
+                                Configuration
+                            </CardTitle>
+                            <CardDescription className="text-slate-400">
+                                Sélectionnez un chapitre. YOLO détecte les bulles, Poneglyph-BBox + Poneglyph font l&apos;OCR, avec Surya en troisième voteur quand il est chargé. Les résultats concordants sont auto-validés.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4 p-5">
+                            <div className="grid gap-4 md:grid-cols-[1fr_180px] md:items-end">
+                                <div>
+                                    <label className="mb-1.5 block text-sm font-medium text-slate-200">Chapitre</label>
+                                    <ChapterCombobox chapters={chapters} value={selectedChapterId} onChange={setSelectedChapterId} />
                                 </div>
-                            ))}
-                        </div>
-                        <Button variant="ghost" onClick={handleCancel} className="text-red-600 hover:text-red-700">
-                            Annuler le traitement
-                        </Button>
-                    </CardContent>
-                </Card>
-            )}
+                                <div>
+                                    <label className="mb-1.5 block text-sm font-medium text-slate-200">OCR</label>
+                                    <Select value={ocrProvider} onValueChange={handleProviderChange}>
+                                        <SelectTrigger className="poneglyph-input h-10 border-white/14 bg-[#040d18]/70">
+                                            <SelectValue placeholder="Source OCR" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="modal">
+                                                <span className="inline-flex items-center gap-2"><CloudLightning className="h-3.5 w-3.5" /> Modal</span>
+                                            </SelectItem>
+                                            <SelectItem value="local" disabled={!canUseLocalBatch}>
+                                                <span className="inline-flex items-center gap-2"><Cpu className="h-3.5 w-3.5" /> Local</span>
+                                            </SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            </div>
 
-            {phase === 'review' && (
-                <>
-                    <Card className="poneglyph-panel rounded-xl">
-                        <CardContent className="py-4">
-                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                                <div className="flex flex-wrap gap-4">
+                            <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
+                                <div className="flex flex-wrap items-center gap-2 text-xs">
+                                    <span className="font-semibold text-slate-400">État des modèles :</span>
+                                    <Badge variant="outline" className="border-white/12 bg-white/8 text-slate-200">Provider : {voterLabel}</Badge>
+                                    {tauriLocalOcr.isTauri && <Badge variant="outline" className={tauriLocalOcr.localSuryaModelStatus?.ready ? "border-emerald-400/35 bg-emerald-500/14 text-emerald-200" : "border-white/12 bg-white/8 text-slate-300"}>Surya {tauriLocalOcr.localSuryaModelStatus?.ready ? "chargé" : "non chargé"}</Badge>}
+                                    {tauriLocalOcr.isTauri && <Badge variant="outline" className={tauriLocalOcr.localModelStatus?.ready ? "border-emerald-400/35 bg-emerald-500/14 text-emerald-200" : "border-white/12 bg-white/8 text-slate-300"}>Poneglyph-BBox {tauriLocalOcr.localModelStatus?.ready ? "chargé" : "non chargé"}</Badge>}
+                                    {tauriLocalOcr.isTauri && <Badge variant="outline" className={tauriLocalOcr.localTextModelStatus?.ready ? "border-emerald-400/35 bg-emerald-500/14 text-emerald-200" : "border-white/12 bg-white/8 text-slate-300"}>Poneglyph {tauriLocalOcr.localTextModelStatus?.ready ? "chargé" : "non chargé"}</Badge>}
+                                </div>
+                                {tauriLocalOcr.isTauri && !canUseLocalBatch && (
+                                    <p className="mt-2 text-[11px] text-slate-400">Mode local disponible quand Poneglyph-BBox et Poneglyph sont tous les deux chargés.</p>
+                                )}
+                            </div>
+
+                            {phase === 'loading-model' ? (
+                                <div className="space-y-3 rounded-xl border border-indigo-400/25 bg-indigo-500/8 p-4">
+                                    <div className="flex items-center gap-2">
+                                        <Loader2 className="h-4 w-4 animate-spin text-indigo-300" />
+                                        <p className="text-sm font-medium text-indigo-100">Chargement du modèle YOLO...</p>
+                                    </div>
+                                    <Progress value={downloadProgress} />
+                                    <div className="flex items-center justify-between">
+                                        <p className="text-xs text-slate-400">{downloadProgress}% — téléchargement des modèles de détection</p>
+                                        <Button variant="ghost" size="sm" onClick={handleCancel} className="text-slate-400">Annuler</Button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <Button
+                                    onClick={handleStart}
+                                    disabled={!selectedChapterId || (ocrProvider === 'local' && !canUseLocalBatch)}
+                                    className="w-full bg-indigo-600 text-white shadow-lg hover:bg-indigo-700 sm:w-auto"
+                                >
+                                    <Play className="mr-2 h-4 w-4" />
+                                    Lancer le batch
+                                </Button>
+                            )}
+                        </CardContent>
+                    </Card>
+                )}
+
+                {/* Phase: Processing */}
+                {phase === 'processing' && (
+                    <Card className="poneglyph-panel rounded-2xl">
+                        <CardHeader className="border-b border-white/8 pb-4">
+                            <CardTitle className="flex items-center gap-2 text-lg text-white">
+                                <Loader2 className="h-5 w-5 animate-spin text-indigo-400" />
+                                Traitement en cours
+                            </CardTitle>
+                            <CardDescription className="text-slate-400">Page {progress.current} / {progress.total} · {voterLabel}</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-4 p-5">
+                            <Progress value={(progress.current / progress.total) * 100} />
+                            <div className="flex flex-wrap gap-1.5">
+                                {pageStatuses.map(ps => (
+                                    <div key={ps.id} className={`text-xs px-2.5 py-1.5 rounded-lg border font-medium ${
+                                        ps.status === 'done' ? 'border-emerald-400/35 bg-emerald-500/14 text-emerald-200' :
+                                        ps.status === 'processing' ? 'border-indigo-400/35 bg-indigo-500/14 text-indigo-200 animate-pulse' :
+                                        ps.status === 'error' ? 'border-red-400/35 bg-red-500/14 text-red-200' :
+                                        'border-white/12 bg-white/8 text-slate-400'
+                                    }`}>
+                                        P.{ps.numero}
+                                        {ps.status === 'done' && ` ✅${ps.bubbleCount || ''}`}
+                                        {ps.status === 'processing' && ' ⏳'}
+                                        {ps.status === 'error' && ' ❌'}
+                                    </div>
+                                ))}
+                            </div>
+                            <Button variant="ghost" onClick={handleCancel} className="text-red-400 hover:text-red-600">
+                                Annuler le traitement
+                            </Button>
+                        </CardContent>
+                    </Card>
+                )}
+
+                {/* Phase: Review (focus mode) */}
+                {phase === 'review' && currentReviewItem && (
+                    <div className="space-y-4">
+                        {/* Stats + bulk actions */}
+                        <Card className="poneglyph-panel rounded-2xl">
+                            <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="flex flex-wrap items-center gap-4">
                                     <div className="flex items-center gap-1.5">
-                                        <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                                        <span className="text-sm font-medium">{stats.autoValidated} auto-validées</span>
+                                        <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                                        <span className="text-sm font-medium text-slate-200">{stats.autoValidated} auto-validées</span>
                                     </div>
                                     <div className="flex items-center gap-1.5">
-                                        <AlertTriangle className="h-4 w-4 text-amber-600" />
-                                        <span className="text-sm font-medium">{reviewQueue.length} à vérifier</span>
+                                        <AlertTriangle className="h-4 w-4 text-amber-400" />
+                                        <span className="text-sm font-medium text-slate-200">{reviewQueue.length} à vérifier</span>
                                     </div>
                                     {stats.errors > 0 && (
                                         <div className="flex items-center gap-1.5">
-                                            <X className="h-4 w-4 text-red-600" />
-                                            <span className="text-sm font-medium">{stats.errors} erreurs</span>
+                                            <X className="h-4 w-4 text-red-400" />
+                                            <span className="text-sm font-medium text-slate-200">{stats.errors} erreurs</span>
                                         </div>
                                     )}
                                 </div>
-                                <div className="flex flex-wrap gap-2">
-                                    <Button size="sm" variant="outline" onClick={() => handleAcceptAll('lighton')} disabled={processingReview}>
+                                <div className="flex flex-wrap gap-1.5">
+                                    <Button size="sm" variant="outline" onClick={() => handleAcceptAll('lighton')} disabled={processingReview} className="border-white/12 bg-white/8 text-slate-200 hover:bg-white/14">
                                         Tout Poneglyph
                                     </Button>
-                                    <Button size="sm" variant="outline" onClick={() => handleAcceptAll('poneglyph')} disabled={processingReview}>
+                                    <Button size="sm" variant="outline" onClick={() => handleAcceptAll('poneglyph')} disabled={processingReview} className="border-white/12 bg-white/8 text-slate-200 hover:bg-white/14">
                                         Tout Poneglyph-BBox
                                     </Button>
                                     {hasSuryaReview && (
-                                        <Button size="sm" variant="outline" onClick={() => handleAcceptAll('surya')} disabled={processingReview}>
+                                        <Button size="sm" variant="outline" onClick={() => handleAcceptAll('surya')} disabled={processingReview} className="border-white/12 bg-white/8 text-slate-200 hover:bg-white/14">
                                             Tout Surya
                                         </Button>
                                     )}
-                                    <Button size="sm" variant="ghost" onClick={handleSkipAll} className="text-red-600">
+                                    <Button size="sm" variant="ghost" onClick={handleSkipAll} className="text-red-400 hover:text-red-600">
                                         Tout ignorer
                                     </Button>
                                 </div>
-                            </div>
-                        </CardContent>
-                    </Card>
+                            </CardContent>
+                        </Card>
 
-                    <div className="grid gap-3">
-                        {reviewQueue.map((item, idx) => {
+                        {/* Thumbnail rail */}
+                        <div className="flex items-center gap-3">
+                            <span className="shrink-0 text-sm font-semibold text-slate-300">{stats.totalReview - reviewQueue.length + 1} / {stats.totalReview}</span>
+                            <ScrollArea className="flex-1 whitespace-nowrap">
+                                <div className="flex gap-2 pb-1">
+                                    {reviewQueue.map((item, idx) => {
+                                        const itemKey = getReviewItemKey(item);
+                                        const isCurrent = idx === 0;
+                                        return (
+                                            <button
+                                                key={itemKey}
+                                                type="button"
+                                                onClick={() => {
+                                                    setReviewQueue(prev => {
+                                                        const target = prev[idx];
+                                                        const rest = prev.filter((_, i) => i !== idx);
+                                                        return [target, ...rest];
+                                                    });
+                                                }}
+                                                className={`relative h-14 w-14 shrink-0 overflow-hidden rounded-md border bg-[#040d18] transition-all ${
+                                                    isCurrent ? 'border-indigo-400 ring-2 ring-indigo-400/40' : 'border-white/12 opacity-60 hover:opacity-100'
+                                                }`}
+                                                title={`Page ${item.pageNumber} · #${idx + 1}`}
+                                            >
+                                                <img src={item.cropUrl} alt={`Bulle ${item.pageNumber}`} className="h-full w-full object-contain" />
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                <ScrollBar orientation="horizontal" />
+                            </ScrollArea>
+                        </div>
+
+                        {/* Focused review card */}
+                        {(() => {
+                            const item = currentReviewItem;
                             const itemKey = getReviewItemKey(item);
                             const customText = customReviewTexts[itemKey] ?? getSuggestedReviewText(item);
                             const reviewSources = getReviewSources(item, providerLabel);
                             const diffModel = buildDiffModel(reviewSources);
 
                             return (
-                            <Card key={itemKey} className="overflow-hidden rounded-xl border-white/12 bg-[#071625]/88 shadow-sm">
-                                <div className="grid gap-0 md:grid-cols-[160px_1fr_52px]">
-                                    <div className="flex min-h-40 items-center justify-center border-white/12 bg-[#040d18]/82 p-3 md:border-r">
-                                        <img
-                                            src={item.cropUrl}
-                                            alt={`Bulle page ${item.pageNumber}`}
-                                            className="max-w-full max-h-full object-contain"
-                                        />
-                                    </div>
-
-                                    <div className="space-y-3 bg-[#071625]/88 p-4">
-                                        <div className="flex flex-wrap items-center gap-2">
-                                            <Badge variant="outline">Page {item.pageNumber}</Badge>
-                                            <Badge variant="outline">Ordre {item.order}</Badge>
-                                            {item.rallied ? (
-                                                <Badge className="border-emerald-400/35 bg-emerald-500/14 text-emerald-200">Rallié</Badge>
-                                            ) : (
-                                                <Badge className="border-amber-400/35 bg-amber-500/14 text-amber-200">YOLO seul</Badge>
-                                            )}
-                                            <span className="text-xs text-slate-400">#{idx + 1} / {reviewQueue.length}</span>
-                                            <Badge className={diffModel.allIdentical ? "border-emerald-400/35 bg-emerald-500/14 text-emerald-200" : "border-amber-400/35 bg-amber-500/14 text-amber-200"}>
-                                                {diffModel.label}
-                                            </Badge>
-                                            {!diffModel.allIdentical && diffModel.changedTokenCount > 0 && (
-                                                <span className="text-xs font-medium text-amber-700">{diffModel.changedTokenCount} token{diffModel.changedTokenCount > 1 ? 's' : ''}</span>
-                                            )}
-                                        </div>
-
-                                        <div className={`grid gap-2 ${getSourceGridClass(reviewSources.length)}`}>
-                                            {reviewSources.map((source, sourceIndex) => (
-                                                <OcrSourceCard
-                                                    key={source.key}
-                                                    source={source}
-                                                    diffFlags={diffModel.flags[sourceIndex]}
-                                                    onChoose={(text) => handleChoose(item, text)}
-                                                    processingReview={processingReview}
-                                                />
-                                            ))}
-                                        </div>
-
-                                        <div className="rounded-lg border border-white/12 bg-white/[0.06] p-3">
-                                            <p className="mb-2 text-xs font-semibold text-slate-300">Texte à enregistrer</p>
-                                            <Textarea
-                                                value={customText}
-                                                onChange={(event) => handleCustomTextChange(item, event.target.value)}
-                                                className="min-h-16 resize-y bg-[#040d18]/86 text-slate-100"
-                                                placeholder="Modifier ou saisir le texte..."
+                                <Card key={itemKey} className="overflow-hidden rounded-2xl border-white/12 bg-[#071625]/88 shadow-lg">
+                                    <div className="grid gap-0 md:grid-cols-[220px_1fr]">
+                                        <div className="flex min-h-52 items-center justify-center border-white/10 bg-[#040d18]/82 p-4 md:border-r">
+                                            <img
+                                                src={item.cropUrl}
+                                                alt={`Bulle page ${item.pageNumber}`}
+                                                className="max-h-64 max-w-full object-contain"
                                             />
-                                            <Button
-                                                size="sm"
-                                                className="mt-2 bg-indigo-600 text-white hover:bg-indigo-700"
-                                                onClick={() => handleChooseCustom(item)}
-                                                disabled={!customText.trim() || processingReview}
-                                            >
-                                                Valider
-                                            </Button>
+                                        </div>
+
+                                        <div className="space-y-3 p-5">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <Badge variant="outline" className="border-white/12 bg-white/8 text-slate-200">Page {item.pageNumber}</Badge>
+                                                <Badge variant="outline" className="border-white/12 bg-white/8 text-slate-200">Ordre {item.order}</Badge>
+                                                {item.rallied ? (
+                                                    <Badge className="border-emerald-400/35 bg-emerald-500/14 text-emerald-200">Rallié</Badge>
+                                                ) : (
+                                                    <Badge className="border-amber-400/35 bg-amber-500/14 text-amber-200">YOLO seul</Badge>
+                                                )}
+                                                <Badge className={diffModel.allIdentical ? "border-emerald-400/35 bg-emerald-500/14 text-emerald-200" : "border-amber-400/35 bg-amber-500/14 text-amber-200"}>
+                                                    {diffModel.label}
+                                                </Badge>
+                                                {!diffModel.allIdentical && diffModel.changedTokenCount > 0 && (
+                                                    <span className="text-xs font-medium text-amber-400/80">{diffModel.changedTokenCount} token{diffModel.changedTokenCount > 1 ? 's' : ''} différent{diffModel.changedTokenCount > 1 ? 's' : ''}</span>
+                                                )}
+                                            </div>
+
+                                            <div className={`grid gap-2 ${getSourceGridClass(reviewSources.length)}`}>
+                                                {reviewSources.map((source, sourceIndex) => (
+                                                    <OcrSourceCard
+                                                        key={source.key}
+                                                        source={source}
+                                                        diffFlags={diffModel.flags[sourceIndex]}
+                                                        onChoose={(text) => handleChoose(item, text)}
+                                                        processingReview={processingReview}
+                                                    />
+                                                ))}
+                                            </div>
+
+                                            <div className="rounded-lg border border-white/10 bg-white/[0.04] p-3">
+                                                <p className="mb-2 text-xs font-semibold text-slate-300">Texte à enregistrer</p>
+                                                <Textarea
+                                                    value={customText}
+                                                    onChange={(event) => handleCustomTextChange(item, event.target.value)}
+                                                    className="min-h-16 resize-y bg-[#040d18]/86 text-slate-100"
+                                                    placeholder="Modifier ou saisir le texte..."
+                                                />
+                                                <div className="mt-2 flex gap-2">
+                                                    <Button
+                                                        size="sm"
+                                                        className="bg-indigo-600 text-white hover:bg-indigo-700"
+                                                        onClick={() => handleChooseCustom(item)}
+                                                        disabled={!customText.trim() || processingReview}
+                                                    >
+                                                        <Check className="mr-1 h-3.5 w-3.5" />
+                                                        Valider
+                                                    </Button>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        onClick={() => handleSkip(item)}
+                                                        disabled={processingReview}
+                                                        className="border-white/12 bg-white/8 text-red-300 hover:bg-white/14 hover:text-red-200"
+                                                    >
+                                                        <SkipForward className="mr-1 h-3.5 w-3.5" />
+                                                        Ignorer
+                                                    </Button>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
-
-                                    <div className="flex items-center justify-center border-t border-white/12 bg-[#040d18]/82 md:border-l md:border-t-0">
-                                        <Button
-                                            size="sm"
-                                            variant="ghost"
-                                            onClick={() => handleSkip(item)}
-                                            className="text-red-400 hover:text-red-600"
-                                        >
-                                            <SkipForward className="h-5 w-5" />
-                                        </Button>
-                                    </div>
-                                </div>
-                            </Card>
+                                </Card>
                             );
-                        })}
+                        })()}
                     </div>
-                </>
-            )}
+                )}
 
-            {phase === 'done' && (
-                <Card className="poneglyph-panel rounded-xl">
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2 text-emerald-700">
-                            <CheckCircle2 className="h-6 w-6" />
-                            Batch terminé !
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <div className="grid grid-cols-3 gap-4">
-                            <div className="rounded-xl border border-emerald-400/35 bg-emerald-500/14 p-4 text-center">
-                                <p className="text-2xl font-bold text-emerald-700">{stats.autoValidated}</p>
-                                <p className="text-xs text-emerald-600">Auto-validées</p>
+                {/* Phase: Done */}
+                {phase === 'done' && (
+                    <Card className="poneglyph-panel rounded-2xl">
+                        <CardHeader className="border-b border-white/8 pb-4">
+                            <CardTitle className="flex items-center gap-2 text-lg text-emerald-300">
+                                <CheckCircle2 className="h-6 w-6" />
+                                Batch terminé !
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4 p-5">
+                            <div className="grid grid-cols-3 gap-3">
+                                <div className="rounded-xl border border-emerald-400/35 bg-emerald-500/14 p-4 text-center">
+                                    <p className="text-2xl font-bold text-emerald-300">{stats.autoValidated}</p>
+                                    <p className="text-xs text-emerald-400/80">Auto-validées</p>
+                                </div>
+                                <div className="rounded-xl border border-indigo-400/35 bg-indigo-500/14 p-4 text-center">
+                                    <p className="text-2xl font-bold text-indigo-300">{totalReviewed}</p>
+                                    <p className="text-xs text-indigo-400/80">Manuellement validées</p>
+                                </div>
+                                <div className="rounded-xl border border-white/12 bg-white/[0.06] p-4 text-center">
+                                    <p className="text-2xl font-bold text-slate-300">{reviewQueue.length}</p>
+                                    <p className="text-xs text-slate-400">Ignorées</p>
+                                </div>
                             </div>
-                            <div className="rounded-xl border border-blue-400/35 bg-blue-500/14 p-4 text-center">
-                                <p className="text-2xl font-bold text-blue-700">{stats.totalReview - reviewQueue.length}</p>
-                                <p className="text-xs text-blue-600">Manuellement validées</p>
-                            </div>
-                            <div className="rounded-xl border border-white/12 bg-white/[0.06] p-4 text-center">
-                                <p className="text-2xl font-bold text-slate-300">{reviewQueue.length}</p>
-                                <p className="text-xs text-slate-400">Ignorées</p>
-                            </div>
-                        </div>
-                        {stats.errors > 0 && (
-                            <p className="text-sm text-red-600 flex items-center gap-1">
-                                <X className="h-3.5 w-3.5" />
-                                {stats.errors} page(s) en erreur
-                            </p>
-                        )}
-                        <Button onClick={handleReset} className="bg-indigo-600 hover:bg-indigo-700 text-white">
-                            Nouveau batch
-                        </Button>
-                    </CardContent>
-                </Card>
-            )}
+                            {stats.errors > 0 && (
+                                <p className="flex items-center gap-1 text-sm text-red-400">
+                                    <X className="h-3.5 w-3.5" />
+                                    {stats.errors} page(s) en erreur
+                                </p>
+                            )}
+                            <Button onClick={handleReset} className="bg-indigo-600 text-white hover:bg-indigo-700">
+                                Nouveau batch
+                            </Button>
+                        </CardContent>
+                    </Card>
+                )}
+            </div>
         </div>
     );
 }
