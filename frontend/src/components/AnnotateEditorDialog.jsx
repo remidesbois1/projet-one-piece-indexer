@@ -88,6 +88,7 @@ export default function AnnotateEditorDialog({
                     onClose={closeEditor}
                     className="w-full"
                     tone="dark"
+                    storageKey="annotate-editor-dialog-pos"
                 >
                     <div className="p-6">
                         <ValidationForm

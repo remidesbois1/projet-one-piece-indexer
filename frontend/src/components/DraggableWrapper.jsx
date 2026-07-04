@@ -2,23 +2,50 @@ import React, { useState, useRef, useEffect } from 'react';
 import { GripHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const DraggableWrapper = ({ children, title, onClose, className, tone = 'light' }) => {
+const DraggableWrapper = ({ children, title, onClose, className, tone = 'light', storageKey }) => {
     const [isDragging, setIsDragging] = useState(false);
-    
-    
-    const [translate, setTranslate] = useState({ x: 0, y: 0 });
-    
-    
+
+
+    const loadInitialTranslate = () => {
+        if (!storageKey) return { x: 0, y: 0 };
+        try {
+            const saved = localStorage.getItem(storageKey);
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                if (typeof parsed.x === 'number' && typeof parsed.y === 'number') {
+                    return parsed;
+                }
+            }
+        } catch (e) {
+            console.warn('DraggableWrapper: impossible de lire la position sauvegardée', e);
+        }
+        return { x: 0, y: 0 };
+    };
+
+    const [translate, setTranslate] = useState(loadInitialTranslate);
+
+
     const dragStartPos = useRef({ x: 0, y: 0 });
-    
+
     const translateStart = useRef({ x: 0, y: 0 });
+
+    const persistTranslate = (next) => {
+        setTranslate(next);
+        if (storageKey) {
+            try {
+                localStorage.setItem(storageKey, JSON.stringify(next));
+            } catch (e) {
+                console.warn('DraggableWrapper: impossible de sauvegarder la position', e);
+            }
+        }
+    };
 
     const handleMouseDown = (e) => {
         if (!e.target.closest('.drag-handle')) return;
         e.preventDefault();
 
         setIsDragging(true);
-        
+
         dragStartPos.current = { x: e.clientX, y: e.clientY };
         translateStart.current = { ...translate };
     };
@@ -32,7 +59,7 @@ const DraggableWrapper = ({ children, title, onClose, className, tone = 'light' 
             const dy = e.clientY - dragStartPos.current.y;
 
             
-            setTranslate({
+            persistTranslate({
                 x: translateStart.current.x + dx,
                 y: translateStart.current.y + dy
             });
