@@ -334,8 +334,11 @@ impl LocalBackendState {
     }
 
     fn request_error(&self, err: reqwest::Error) -> String {
-        self.shutdown();
-        format!("Backend OCR local perdu, redemarrage au prochain diagnostic: {err}")
+        // Keep the backend alive across transient HTTP failures. Killing the
+        // child here would destroy every loaded model and force a full reload
+        // on the next call. If the process actually died, prune_dead_child
+        // (called by ensure_started) will detect it and respawn on next use.
+        format!("Backend OCR local injoignable sur cette requete (conservé en mémoire): {err}")
     }
 
     async fn wait_until_reachable(&self, port: u16) -> Result<(), String> {
