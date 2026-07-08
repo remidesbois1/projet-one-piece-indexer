@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, updatePageStatus, reorderBubbles, savePageDescription, getMetadataSuggestions, getPages } from '@/lib/api';
 import { analyzeBubble, generatePageDescription, generateGeminiEmbedding, generateOneShotBubbles } from '@/lib/geminiClient';
@@ -34,6 +34,48 @@ const PAGE_STATUSES = [
     { value: 'completed', label: 'Validée' },
 ];
 
+const PREFETCH_BEHIND_COUNT = 1;
+const PREFETCH_AHEAD_COUNT = 2;
+
+function normalizePageId(id) {
+    return id == null ? null : String(id);
+}
+
+function sortBubblesForAnnotation(bubbles = []) {
+    return [...bubbles].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+}
+
+function unwrapApiData(value) {
+    return value?.data ?? value;
+}
+
+function getNearbyChapterPages(
+    chapterPages,
+    currentPageId,
+    behindCount = PREFETCH_BEHIND_COUNT,
+    aheadCount = PREFETCH_AHEAD_COUNT
+) {
+    const currentIndex = chapterPages.findIndex(p => normalizePageId(p.id) === normalizePageId(currentPageId));
+    if (currentIndex === -1) return [];
+    return chapterPages.slice(
+        Math.max(0, currentIndex - behindCount),
+        currentIndex + aheadCount + 1
+    ).filter(p => normalizePageId(p.id) !== normalizePageId(currentPageId));
+}
+
+function warmBrowserImageCache(imageUrl) {
+    if (!imageUrl || typeof window === 'undefined') return Promise.resolve();
+
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.decoding = 'async';
+        img.onload = () => resolve();
+        img.onerror = reject;
+        img.src = imageUrl;
+    });
+}
+
 function imageElementToJpegBlob(img) {
     return new Promise((resolve) => {
         const canvas = document.createElement('canvas');
@@ -58,6 +100,7 @@ async function runModalPoneglyph(imageBlob) {
 export default function AnnotatePage() {
     const { user, session, isGuest, role } = useAuth();
     const params = useParams();
+    const router = useRouter();
     const searchParams = useSearchParams();
     const fromSearch = searchParams.get('from') === 'search';
     const detectionDebugEnabled = searchParams.get('debug') === '1';
@@ -100,6 +143,9 @@ export default function AnnotatePage() {
     pageIdRef.current = pageId;
 
     const navGenerationRef = useRef(0);
+    const pageCacheRef = useRef(new Map());
+    const bubbleCacheRef = useRef(new Map());
+    const imagePrefetchRef = useRef(new Map());
 
     useEffect(() => {
         if (paramsPageId && String(paramsPageId) !== String(pageIdRef.current)) {
@@ -151,6 +197,62 @@ export default function AnnotatePage() {
             });
         }
     }, [mangaSlug]);
+
+    const cacheBubblesForPage = useCallback((targetPageId, bubbles) => {
+        const cacheKey = normalizePageId(targetPageId);
+        if (!cacheKey) return;
+        bubbleCacheRef.current.set(cacheKey, sortBubblesForAnnotation(bubbles));
+    }, []);
+
+    const prefetchAnnotatePage = useCallback((targetPage) => {
+        const targetPageId = normalizePageId(targetPage?.id);
+        if (!targetPageId || !session?.access_token) return;
+
+        if (mangaSlug) {
+            router.prefetch(`/${mangaSlug}/annotate/${targetPageId}`);
+        }
+
+        if (!pageCacheRef.current.has(targetPageId)) {
+            const pagePromise = getPageById(targetPageId)
+                .then(response => {
+                    pageCacheRef.current.set(targetPageId, response.data);
+                    return response.data;
+                })
+                .catch(error => {
+                    pageCacheRef.current.delete(targetPageId);
+                    throw error;
+                });
+            pageCacheRef.current.set(targetPageId, pagePromise);
+            pagePromise.catch(() => {});
+        }
+
+        if (!bubbleCacheRef.current.has(targetPageId)) {
+            const bubblesPromise = getBubblesForPage(targetPageId)
+                .then(response => {
+                    const sortedBubbles = sortBubblesForAnnotation(response.data);
+                    bubbleCacheRef.current.set(targetPageId, sortedBubbles);
+                    return sortedBubbles;
+                })
+                .catch(error => {
+                    bubbleCacheRef.current.delete(targetPageId);
+                    throw error;
+                });
+            bubbleCacheRef.current.set(targetPageId, bubblesPromise);
+            bubblesPromise.catch(() => {});
+        }
+
+        const imageUrl = getProxiedImageUrl(targetPage?.url_image, targetPageId, session?.access_token);
+        const imageCacheKey = `${targetPageId}:${session?.access_token || 'public'}`;
+        if (!imagePrefetchRef.current.has(imageCacheKey)) {
+            const imagePromise = warmBrowserImageCache(imageUrl)
+                .catch(error => {
+                    imagePrefetchRef.current.delete(imageCacheKey);
+                    throw error;
+                });
+            imagePrefetchRef.current.set(imageCacheKey, imagePromise);
+            imagePromise.catch(() => {});
+        }
+    }, [mangaSlug, router, session?.access_token]);
 
     useEffect(() => {
         const checkMobile = () => setIsMobile(window.innerWidth < 1024);
@@ -215,12 +317,22 @@ export default function AnnotatePage() {
         return result?.boxes || [];
     }, [detectBubbles, detectionDebugEnabled]);
 
+    const setExistingBubblesAndCache = useCallback((updater) => {
+        setExistingBubbles(prev => {
+            const nextBubbles = typeof updater === 'function' ? updater(prev) : updater;
+            if (Array.isArray(nextBubbles)) {
+                cacheBubblesForPage(pageIdRef.current, nextBubbles);
+            }
+            return nextBubbles;
+        });
+    }, [cacheBubblesForPage]);
+
     const {
         isDrawing, startPoint, endPoint, mousePos, isShiftPressed,
         hoveredBubble, setHoveredBubble, handleMouseDown, handleMouseMove,
         handleMouseUp, handleInteractionStart
     } = useAnnotationInteractions({
-        containerRef, imageRef, imageDimensions, existingBubbles, setExistingBubbles,
+        containerRef, imageRef, imageDimensions, existingBubbles, setExistingBubbles: setExistingBubblesAndCache,
         pendingAnnotation, setPendingAnnotation, setRectangle, canEdit, isMobile,
         pageStatus: page?.statut, isSubmitting, showApiKeyModal, showDescModal
     });
@@ -228,25 +340,47 @@ export default function AnnotatePage() {
     const fetchBubbles = useCallback(() => {
         if (pageId && (session?.access_token || isGuest)) {
             const gen = navGenerationRef.current;
-            getBubblesForPage(pageId)
+            const cacheKey = normalizePageId(pageId);
+            const cachedBubbles = cacheKey ? bubbleCacheRef.current.get(cacheKey) : null;
+            const bubblesRequest = cachedBubbles
+                ? Promise.resolve(cachedBubbles).catch(() => {
+                    bubbleCacheRef.current.delete(cacheKey);
+                    return getBubblesForPage(pageId).then(response => response.data);
+                })
+                : getBubblesForPage(pageId).then(response => response.data);
+
+            bubblesRequest
                 .then(response => {
                     if (gen !== navGenerationRef.current) return;
-                    const sortedBubbles = response.data.sort((a, b) => a.order - b.order);
+                    const sortedBubbles = sortBubblesForAnnotation(unwrapApiData(response));
+                    cacheBubblesForPage(pageId, sortedBubbles);
                     setExistingBubbles(sortedBubbles);
                 })
                 .catch(error => console.error(error));
         }
-    }, [pageId, session, isGuest]);
+    }, [cacheBubblesForPage, pageId, session?.access_token, isGuest]);
 
     useEffect(() => {
         if (pageId && (session?.access_token || isGuest)) {
             const gen = navGenerationRef.current;
-            getPageById(pageId)
+            const cacheKey = normalizePageId(pageId);
+            const cachedPage = cacheKey ? pageCacheRef.current.get(cacheKey) : null;
+            const pageRequest = cachedPage
+                ? Promise.resolve(cachedPage).catch(() => {
+                    pageCacheRef.current.delete(cacheKey);
+                    return getPageById(pageId).then(response => response.data);
+                })
+                : getPageById(pageId).then(response => response.data);
+
+            pageRequest
                 .then(response => {
                     if (gen !== navGenerationRef.current) return;
-                    setPage(response.data);
-                    if (response.data.id_chapitre) {
-                        getPages(response.data.id_chapitre)
+                    const pageData = unwrapApiData(response);
+                    if (!pageData) throw new Error("Page non trouvée");
+                    pageCacheRef.current.set(cacheKey, pageData);
+                    setPage(pageData);
+                    if (pageData.id_chapitre) {
+                        getPages(pageData.id_chapitre)
                             .then(pagesRes => {
                                 if (gen !== navGenerationRef.current) return;
                                 const pages = pagesRes.data;
@@ -265,6 +399,11 @@ export default function AnnotatePage() {
             fetchBubbles();
         }
     }, [pageId, session?.access_token, isGuest, fetchBubbles]);
+
+    useEffect(() => {
+        if (!pageId || chapterPages.length === 0 || !session?.access_token) return;
+        getNearbyChapterPages(chapterPages, pageId).forEach(prefetchAnnotatePage);
+    }, [chapterPages, pageId, prefetchAnnotatePage, session?.access_token]);
 
     useEffect(() => {
         if (detectionStatus === 'idle') {
@@ -334,12 +473,12 @@ export default function AnnotatePage() {
         if (isGuest || (isMobile && role !== 'Admin')) return;
         if (window.confirm("Supprimer cette annotation ?")) {
             const previousBubbles = [...existingBubbles];
-            setExistingBubbles(prev => prev.filter(b => b.id !== bubbleId));
+            setExistingBubblesAndCache(prev => prev.filter(b => b.id !== bubbleId));
             try {
                 await deleteBubble(bubbleId);
                 toast.success("Annotation supprimée.");
             } catch (error) {
-                setExistingBubbles(previousBubbles);
+                setExistingBubblesAndCache(previousBubbles);
                 toast.error("Erreur lors de la suppression.");
             }
         }
@@ -361,7 +500,7 @@ export default function AnnotatePage() {
         }
 
         if (newData) {
-            setExistingBubbles(prev => {
+            setExistingBubblesAndCache(prev => {
                 const results = [...prev];
                 const idx = results.findIndex(b => b.id === newData.id || (tempId && b.id === tempId));
 
@@ -382,6 +521,7 @@ export default function AnnotatePage() {
         if (window.confirm("Envoyer pour validation ?")) {
             try {
                 const response = await submitPageForReview(pageId);
+                pageCacheRef.current.set(normalizePageId(pageId), response.data);
                 setPage(response.data);
                 toast.success("Page soumise pour validation !");
             } catch (error) { toast.error("Erreur soumission."); }
@@ -394,6 +534,7 @@ export default function AnnotatePage() {
         setIsUpdatingPageStatus(true);
         try {
             const response = await updatePageStatus(pageId, statut);
+            pageCacheRef.current.set(normalizePageId(pageId), response.data);
             setPage(response.data);
             toast.success("Statut de la page mis à jour.");
             window.location.reload();
@@ -408,7 +549,7 @@ export default function AnnotatePage() {
         if (isGuest) return;
         const { active, over } = event;
         if (active && over && active.id !== over.id) {
-            setExistingBubbles((bubbles) => {
+            setExistingBubblesAndCache((bubbles) => {
                 const oldIndex = bubbles.findIndex(b => b.id === active.id);
                 const newIndex = bubbles.findIndex(b => b.id === over.id);
                 const newOrder = arrayMove(bubbles, oldIndex, newIndex);
@@ -523,7 +664,7 @@ export default function AnnotatePage() {
             }
             
             if (createdBubbles.length > 0) {
-                setExistingBubbles(prev => {
+                setExistingBubblesAndCache(prev => {
                     const combined = [...prev, ...createdBubbles];
                     return combined.sort((a, b) => a.order - b.order);
                 });
@@ -664,7 +805,7 @@ export default function AnnotatePage() {
             }
 
             if (createdBubbles.length > 0) {
-                setExistingBubbles(prev => {
+                setExistingBubblesAndCache(prev => {
                     const combined = [...prev, ...createdBubbles];
                     return combined.sort((a, b) => a.order - b.order);
                 });
