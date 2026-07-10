@@ -47,8 +47,8 @@ export const OCR_MODELS = {
     },
     lighton: {
         key: 'lighton',
-        label: 'Poneglyph',
-        description: 'Inference Modal GPU',
+        label: 'LightOn OCR',
+        description: 'Inference OCR Modal GPU',
         cer: '< 0.1%',
         size: 'API Cloud',
         type: 'api'
@@ -108,7 +108,7 @@ export const WorkerProvider = ({ children }) => {
             return;
         }
 
-        if (workerRef.current && (modelStatus === 'idle' || modelStatus === 'error')) {
+        if (workerRef.current && (modelStatus === 'idle' || modelStatus === 'error' || key !== activeModelKey)) {
             setModelStatus('loading');
             setDownloadProgress(0);
             workerRef.current.postMessage({ type: 'init', modelKey: key });

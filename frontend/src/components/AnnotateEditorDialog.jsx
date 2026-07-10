@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect } from 'react';
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Cpu, CloudLightning, Sparkles, RotateCcw } from "lucide-react";
+import { Cpu, CloudLightning, RotateCcw } from "lucide-react";
 import DraggableWrapper from '@/components/DraggableWrapper';
 import ValidationForm from '@/components/ValidationForm';
 
@@ -20,8 +20,7 @@ export default function AnnotateEditorDialog({
     processNextBubble,
     debugImageUrl,
     runLocalOcr,
-    activeModelKey,
-    OCR_MODELS,
+    selectedOcrModelKeys = [],
     isSandbox = false
 }) {
     const closeEditor = useCallback(() => {
@@ -128,11 +127,7 @@ export default function AnnotateEditorDialog({
                                     className="text-xs text-slate-500 hover:text-slate-900"
                                     onClick={() => runLocalOcr()}
                                 >
-                                    {OCR_MODELS[activeModelKey]?.type === 'local' ? (
-                                        <><Sparkles className="h-3 w-3 mr-1 text-indigo-500" /> Essayer un modele Cloud</>
-                                    ) : (
-                                        <><RotateCcw className="h-3 w-3 mr-1" /> {"Relancer l'analyse"} {OCR_MODELS[activeModelKey]?.label}</>
-                                    )}
+                                    <><RotateCcw className="h-3 w-3 mr-1" /> Relancer les modèles OCR ({selectedOcrModelKeys.length})</>
                                 </Button>
                             </div>
                         )}

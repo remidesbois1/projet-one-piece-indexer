@@ -3,7 +3,6 @@
 import React from 'react';
 import {
     Activity,
-    AlertTriangle,
     Bot,
     CheckCircle2,
     Cpu,
@@ -182,7 +181,6 @@ export default function LocalOcrStatusIndicator() {
         isLoadingLocalTextModel,
         isLoadingLocalSuryaModel,
         isLoadingLocalSuryaBBoxModel,
-        localError,
         downloadLocalModel,
         downloadLocalTextModel,
         downloadLocalSuryaModel,
@@ -384,13 +382,6 @@ export default function LocalOcrStatusIndicator() {
                             <ProgressLine label="Téléchargement Surya" active={suryaDownloadActive} state={localSuryaDownloadState} percent={suryaDownloadPercent} />
                             <ProgressLine label="Téléchargement Surya-BBox" active={suryaBBoxDownloadActive} state={localSuryaBBoxDownloadState} percent={suryaBBoxDownloadPercent} />
                         </div>
-
-                        {localError && (
-                            <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-2.5 py-2 text-[11px] font-semibold leading-snug text-amber-300">
-                                <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-                                <span className="break-words">{localError}</span>
-                            </div>
-                        )}
 
                         <div className="space-y-2 border-t border-slate-800 pt-3">
                             <SectionLabel>Actions</SectionLabel>

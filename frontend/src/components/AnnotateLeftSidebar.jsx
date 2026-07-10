@@ -49,6 +49,8 @@ export default function AnnotateLeftSidebar({
     loadModel,
     downloadProgress,
     geminiKey,
+    selectedOcrModelKeys,
+    toggleOcrModel,
     detectionStatus,
     loadDetectionModel,
     detectionProgress,
@@ -243,6 +245,8 @@ export default function AnnotateLeftSidebar({
                             loadModel={loadModel}
                             downloadProgress={downloadProgress}
                             geminiKey={geminiKey}
+                            selectedOcrModelKeys={selectedOcrModelKeys}
+                            toggleOcrModel={toggleOcrModel}
                             isSandbox={isSandbox}
                             isTauri={isTauri}
                             localTextModelStatus={localTextModelStatus}

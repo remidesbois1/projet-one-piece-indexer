@@ -7,7 +7,6 @@ import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, upda
 import { analyzeBubble, generatePageDescription, generateGeminiEmbedding, generateOneShotBubbles } from '@/lib/geminiClient';
 import ApiKeyForm from '@/components/ApiKeyForm';
 import { useAuth } from '@/context/AuthContext';
-import { OCR_MODELS } from '@/context/WorkerContext';
 import { useManga } from '@/context/MangaContext';
 import { arrayMove } from '@dnd-kit/sortable';
 import { useAnnotationInteractions } from '@/hooks/useAnnotationInteractions';
@@ -290,7 +289,8 @@ export default function AnnotatePage() {
     const {
         preferLocalOCR, toggleOcrPreference, geminiKey, activeModelKey,
         modelStatus, loadModel, switchModel, downloadProgress, runLocalOcr,
-        runBackgroundOcr, ocrResults, handleRetryWithCloud
+        runBackgroundOcr, ocrResults, handleRetryWithCloud,
+        selectedOcrModelKeys, toggleOcrModel
     } = useAnnotationOCR({
         imageRef, pageId, rectangle, pendingAnnotation, setPendingAnnotation,
         setIsSubmitting, setLoadingText, setIsModalOpen, setOcrSource,
@@ -886,6 +886,8 @@ export default function AnnotatePage() {
                 loadModel={loadModel}
                 downloadProgress={downloadProgress}
                 geminiKey={geminiKey}
+                selectedOcrModelKeys={selectedOcrModelKeys}
+                toggleOcrModel={toggleOcrModel}
                 detectionStatus={detectionStatus}
                 loadDetectionModel={loadDetectionModel}
                 detectionProgress={detectionProgress}
@@ -1071,8 +1073,7 @@ export default function AnnotatePage() {
                 processNextBubble={processNextBubble}
                 debugImageUrl={debugImageUrl}
                 runLocalOcr={runLocalOcr}
-                activeModelKey={activeModelKey}
-                OCR_MODELS={OCR_MODELS}
+                selectedOcrModelKeys={selectedOcrModelKeys}
             />
 
             <Dialog open={showApiKeyModal} onOpenChange={setShowApiKeyModal}>

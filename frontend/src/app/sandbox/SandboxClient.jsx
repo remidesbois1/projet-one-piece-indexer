@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { OCR_MODELS } from '@/context/WorkerContext';
 import { arrayMove } from '@dnd-kit/sortable';
 import { useAnnotationInteractions } from '@/hooks/useAnnotationInteractions';
 import { useAnnotationOCR } from '@/hooks/useAnnotationOCR';
@@ -207,7 +206,7 @@ export default function SandboxClient() {
     const {
         preferLocalOCR, toggleOcrPreference, activeModelKey,
         modelStatus, loadModel, switchModel, downloadProgress, runLocalOcr,
-        runBackgroundOcr, handleRetryWithCloud
+        runBackgroundOcr, handleRetryWithCloud, selectedOcrModelKeys, toggleOcrModel
     } = useAnnotationOCR({
         imageRef, pageId: 'sandbox', rectangle, pendingAnnotation, setPendingAnnotation,
         setIsSubmitting, setLoadingText, setIsModalOpen, setOcrSource,
@@ -557,6 +556,8 @@ export default function SandboxClient() {
                 loadModel={loadModel}
                 downloadProgress={downloadProgress}
                 geminiKey={null}
+                selectedOcrModelKeys={selectedOcrModelKeys}
+                toggleOcrModel={toggleOcrModel}
                 detectionStatus={detectionStatus}
                 loadDetectionModel={loadDetectionModel}
                 detectionProgress={detectionProgress}
@@ -668,8 +669,7 @@ export default function SandboxClient() {
                 processNextBubble={processNextBubble}
                 debugImageUrl={debugImageUrl}
                 runLocalOcr={runLocalOcr}
-                activeModelKey={activeModelKey}
-                OCR_MODELS={OCR_MODELS}
+                selectedOcrModelKeys={selectedOcrModelKeys}
                 isSandbox={true}
             />
 

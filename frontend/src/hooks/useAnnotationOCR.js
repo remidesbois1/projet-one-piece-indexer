@@ -7,9 +7,12 @@ import { analyzeBubble } from '@/lib/geminiClient';
 import { cropImage, cropImageBitmap } from '@/lib/utils';
 import { toast } from 'sonner';
 
+const SELECTABLE_OCR_MODEL_KEYS = Object.values(OCR_MODELS)
+    .filter(model => model.key !== 'gemini')
+    .map(model => model.key);
+
 export function useAnnotationOCR({
     imageRef,
-    pageId,
     rectangle,
     pendingAnnotation,
     setPendingAnnotation,
@@ -26,26 +29,44 @@ export function useAnnotationOCR({
     const [preferLocalOCR, setPreferLocalOCR] = useState(isSandbox);
     const [geminiKey, setGeminiKey] = useState(null);
     const [ocrResults, setOcrResults] = useState({});
-    const lastRequestId = useRef(0);
-    const activeRequests = useRef(new Set());
-    const apiTaskQueue = useRef([]);
-    const isProcessingApi = useRef(false);
+    const [selectedOcrModelKeys, setSelectedOcrModelKeys] = useState(() => {
+        if (typeof window === 'undefined') return ['ppocrv6Line'];
+        try {
+            const saved = JSON.parse(localStorage.getItem('selectedOcrModelKeys'));
+            const valid = Array.isArray(saved) ? saved.filter(key => SELECTABLE_OCR_MODEL_KEYS.includes(key)) : [];
+            return valid.length ? valid : ['ppocrv6Line'];
+        } catch {
+            return ['ppocrv6Line'];
+        }
+    });
+    const inFlightRequests = useRef(new Map());
+    const workerWaiters = useRef(new Map());
 
     useEffect(() => {
-        if (typeof window !== 'undefined') {
-            setPreferLocalOCR(isSandbox || localStorage.getItem('preferLocalOCR') !== 'false');
-            const loadKey = () => setGeminiKey(localStorage.getItem('google_api_key'));
-            loadKey();
-            window.addEventListener('storage', loadKey);
-            return () => window.removeEventListener('storage', loadKey);
-        }
-    }, []);
+        if (typeof window === 'undefined') return;
+        setPreferLocalOCR(isSandbox || localStorage.getItem('preferLocalOCR') !== 'false');
+        const loadKey = () => setGeminiKey(localStorage.getItem('google_api_key'));
+        loadKey();
+        window.addEventListener('storage', loadKey);
+        return () => window.removeEventListener('storage', loadKey);
+    }, [isSandbox]);
 
-    const toggleOcrPreference = () => {
+    const toggleOcrPreference = useCallback(() => {
         const newValue = !preferLocalOCR;
         setPreferLocalOCR(newValue);
         localStorage.setItem('preferLocalOCR', JSON.stringify(newValue));
-    };
+    }, [preferLocalOCR]);
+
+    const toggleOcrModel = useCallback((modelKey) => {
+        if (!SELECTABLE_OCR_MODEL_KEYS.includes(modelKey)) return;
+        setSelectedOcrModelKeys(previous => {
+            const next = previous.includes(modelKey)
+                ? previous.filter(key => key !== modelKey)
+                : [...previous, modelKey];
+            localStorage.setItem('selectedOcrModelKeys', JSON.stringify(next));
+            return next;
+        });
+    }, []);
 
     const getTauriTextRuntime = useCallback((modelData) => {
         const isSurya = modelData?.localModelKey === 'surya';
@@ -54,261 +75,178 @@ export function useAnnotationOCR({
             status: isSurya ? tauriLocalOcr.localSuryaModelStatus : tauriLocalOcr.localTextModelStatus,
             isDownloading: isSurya ? tauriLocalOcr.isDownloadingLocalSuryaModel : tauriLocalOcr.isDownloadingLocalTextModel,
             runBlob: isSurya ? tauriLocalOcr.runLocalSuryaOcrBlob : tauriLocalOcr.runLocalTextOcrBlob,
-            label: modelData?.label || (isSurya ? "Surya" : "Poneglyph"),
+            label: modelData?.label || (isSurya ? 'Surya' : 'Poneglyph'),
         };
     }, [tauriLocalOcr]);
 
-    const handleOcrCompletion = useCallback((requestId, text, source) => {
-        setOcrResults(prev => ({ ...prev, [requestId]: text }));
-        activeRequests.current.delete(requestId);
+    const waitForWorkerResult = useCallback((workerRequestId) => new Promise((resolve, reject) => {
+        workerWaiters.current.set(workerRequestId, { resolve, reject });
+    }), []);
 
-        if (requestId === lastRequestId.current) {
-            setOcrSource(source);
-            setPendingAnnotation(prev => {
-                if (!prev) return null;
-                return { ...prev, texte_propose: text };
-            });
-            setIsSubmitting(false);
-            setIsModalOpen(true);
-        }
-    }, [setOcrResults, setOcrSource, setPendingAnnotation, setIsSubmitting, setIsModalOpen]);
+    useEffect(() => {
+        if (!worker) return;
+        const handleMessage = (event) => {
+            const { status, text, error, url, requestId } = event.data;
+            if (status === 'debug_image') setDebugImageUrl(url);
+            if (!requestId) return;
 
-    const processNextApiTask = useCallback(async () => {
-        if (isProcessingApi.current || apiTaskQueue.current.length === 0) return;
+            const waiter = workerWaiters.current.get(requestId);
+            if (!waiter) return;
+            if (status === 'complete') {
+                workerWaiters.current.delete(requestId);
+                waiter.resolve(text || '');
+            }
+            if (status === 'error') {
+                workerWaiters.current.delete(requestId);
+                waiter.reject(new Error(error || 'Erreur OCR locale'));
+            }
+        };
+        worker.addEventListener('message', handleMessage);
+        return () => worker.removeEventListener('message', handleMessage);
+    }, [worker, setDebugImageUrl]);
 
-        isProcessingApi.current = true;
-
-        let taskIndex = apiTaskQueue.current.findIndex(t => t.requestId === lastRequestId.current);
-        if (taskIndex === -1) taskIndex = 0;
-
-        const { areaToCrop, requestId, modelKey } = apiTaskQueue.current.splice(taskIndex, 1)[0];
-        try {
+    const runModel = useCallback(async (modelData, areaToCrop, requestId) => {
+        if (modelData.key === 'lighton') {
             const blob = await cropImage(imageRef.current, areaToCrop);
-            const endpoint = '/api/local_lighton';
-            const response = await fetch(endpoint, {
-                method: 'POST',
-                body: blob
-            });
-
-            if (response.ok) {
-                const result = await response.json();
-                handleOcrCompletion(requestId, result.text, modelKey);
-            } else {
-                throw new Error("Erreur API Modal Poneglyph");
-            }
-        } catch (err) {
-            console.error("API Task Error:", err);
-            activeRequests.current.delete(requestId);
-            if (requestId === lastRequestId.current) {
-                setIsSubmitting(false);
-                setIsModalOpen(true);
-                toast.error("Erreur OCR Poneglyph");
-            }
-        } finally {
-            isProcessingApi.current = false;
-            setTimeout(() => processNextApiTask(), 50);
+            const response = await fetch('/api/local_lighton', { method: 'POST', body: blob });
+            if (!response.ok) throw new Error(`Erreur OCR ${modelData.label}`);
+            const result = await response.json();
+            return result.text || '';
         }
-    }, [imageRef, handleOcrCompletion, setIsSubmitting, setIsModalOpen]);
+
+        if (modelData.runtime === 'tauri') {
+            const runtime = getTauriTextRuntime(modelData);
+            if (!runtime.canRun) {
+                throw new Error(`${runtime.label} n'est pas chargé et prêt.`);
+            }
+            const blob = await cropImage(imageRef.current, areaToCrop);
+            const result = await runtime.runBlob(blob);
+            return result?.text || '';
+        }
+
+        if (modelData.runtime === 'onnx') {
+            if (activeModelKey !== modelData.key || modelStatus !== 'ready') {
+                throw new Error(`${modelData.label} n'est pas chargé.`);
+            }
+            const workerRequestId = `${requestId}:${modelData.key}:${Date.now()}`;
+            const result = waitForWorkerResult(workerRequestId);
+            const bitmap = await cropImageBitmap(imageRef.current, areaToCrop);
+            await runOcr(bitmap, workerRequestId);
+            return result;
+        }
+
+        throw new Error(`Le moteur ${modelData.label} n'est pas compatible avec la comparaison OCR.`);
+    }, [activeModelKey, getTauriTextRuntime, imageRef, modelStatus, runOcr, waitForWorkerResult]);
+
+    const executeSelectedOcr = useCallback((areaToCrop, requestId) => {
+        if (inFlightRequests.current.has(requestId)) return inFlightRequests.current.get(requestId);
+
+        const models = selectedOcrModelKeys
+            .map(key => OCR_MODELS[key])
+            .filter(Boolean);
+        const job = Promise.allSettled(models.map(async model => ({
+            modelKey: model.key,
+            label: model.label,
+            text: await runModel(model, areaToCrop, requestId)
+        }))).then(settled => {
+            const candidates = settled
+                .filter(result => result.status === 'fulfilled')
+                .map(result => result.value);
+            const failures = settled.flatMap((result, index) => result.status === 'rejected'
+                ? [`${models[index]?.label || 'OCR'} : ${result.reason?.message || 'indisponible'}`]
+                : []);
+
+            setOcrResults(previous => ({ ...previous, [requestId]: candidates }));
+            return { candidates, failures };
+        }).finally(() => inFlightRequests.current.delete(requestId));
+
+        inFlightRequests.current.set(requestId, job);
+        return job;
+    }, [runModel, selectedOcrModelKeys]);
+
+    const applyCandidatesToModal = useCallback((candidates) => {
+        const firstText = candidates[0]?.text || '';
+        setOcrSource(candidates.length > 1 ? 'multiple' : candidates[0]?.modelKey || null);
+        setPendingAnnotation(previous => previous ? {
+            ...previous,
+            texte_propose: firstText,
+            ocr_candidates: candidates
+        } : previous);
+        setIsModalOpen(true);
+    }, [setIsModalOpen, setOcrSource, setPendingAnnotation]);
+
+    const runBackgroundOcr = useCallback(async (areaToCrop, requestId) => {
+        try {
+            await executeSelectedOcr(areaToCrop, requestId);
+        } catch (error) {
+            console.error('Background OCR error:', error);
+        }
+    }, [executeSelectedOcr]);
+
+    const runLocalOcr = useCallback(async (cropData = null, customRequestId = null) => {
+        const areaToCrop = cropData || rectangle || (pendingAnnotation ? {
+            x: pendingAnnotation.x,
+            y: pendingAnnotation.y,
+            w: pendingAnnotation.w,
+            h: pendingAnnotation.h
+        } : null);
+        if (!areaToCrop) {
+            setIsModalOpen(true);
+            return;
+        }
+
+        const requestId = customRequestId || Date.now();
+        setLoadingText(selectedOcrModelKeys.length > 1
+            ? `Analyse de ${selectedOcrModelKeys.length} modèles OCR...`
+            : 'Analyse OCR...');
+        setIsSubmitting(true);
+        setDebugImageUrl(null);
+
+        try {
+            const { candidates, failures } = await executeSelectedOcr(areaToCrop, requestId);
+            if (failures.length) {
+                toast.warning(`${failures.length} modèle${failures.length > 1 ? 's' : ''} OCR indisponible${failures.length > 1 ? 's' : ''}.`, {
+                    description: failures.join(' · ')
+                });
+            }
+            if (!candidates.length) {
+                toast.error('Aucun modèle OCR sélectionné n’a pu traiter cette bulle.');
+            }
+            applyCandidatesToModal(candidates);
+        } catch (error) {
+            console.error('OCR error:', error);
+            toast.error(`Erreur OCR : ${error.message}`);
+            setIsModalOpen(true);
+        } finally {
+            setIsSubmitting(false);
+        }
+    }, [applyCandidatesToModal, executeSelectedOcr, pendingAnnotation, rectangle, selectedOcrModelKeys.length, setDebugImageUrl, setIsModalOpen, setIsSubmitting, setLoadingText]);
 
     const handleRetryWithCloud = useCallback((dataOverride = null) => {
         const dataToUse = dataOverride || pendingAnnotation;
         if (!dataToUse) return;
-
         const storedKey = localStorage.getItem('google_api_key');
         if (!storedKey) {
             if (!pendingAnnotation) setPendingAnnotation(dataToUse);
             setShowApiKeyModal(true);
             return;
         }
-
-        setLoadingText("Analyse Cloud (Google)...");
+        setLoadingText('Analyse Cloud (Google)...');
         setIsSubmitting(true);
         setDebugImageUrl(null);
-
         analyzeBubble(imageRef.current, dataToUse, storedKey)
             .then(response => {
-                setPendingAnnotation(prev => ({ ...prev, texte_propose: response.data.texte_propose }));
+                setPendingAnnotation(previous => ({ ...previous, texte_propose: response.data.texte_propose, ocr_candidates: [] }));
                 setOcrSource('cloud');
                 setIsModalOpen(true);
             })
             .catch(error => {
-                if (error.message === "QUOTA_EXCEEDED") {
-                    toast.error("Quota API Gemini dépassé !", {
-                        description: "Votre clé a atteint sa limite gratuite (RPM/TPM). Réessayez dans une minute ou changez de clé."
-                    });
-                } else {
-                    console.error("Cloud OCR Error:", error);
-                    if (error.message?.includes('API key') || error.toString().includes('400')) {
-                        localStorage.removeItem('google_api_key');
-                        setShowApiKeyModal(true);
-                    }
-                }
+                console.error('Cloud OCR error:', error);
+                if (error.message === 'QUOTA_EXCEEDED') toast.error('Quota API Gemini dépassé.');
                 setIsModalOpen(true);
             })
             .finally(() => setIsSubmitting(false));
-    }, [imageRef, pendingAnnotation, setPendingAnnotation, setLoadingText, setIsSubmitting, setDebugImageUrl, setOcrSource, setIsModalOpen, setShowApiKeyModal]);
-
-    const runBackgroundOcr = useCallback(async (areaToCrop, requestId) => {
-        try {
-            const modelData = OCR_MODELS[activeModelKey];
-            if (!modelData || modelData.key === 'gemini') return;
-            if (activeRequests.current.has(requestId)) return;
-
-            activeRequests.current.add(requestId);
-
-            if (modelData.key === 'lighton') {
-                apiTaskQueue.current.push({ areaToCrop, requestId, modelKey: modelData.key });
-                processNextApiTask();
-                return;
-            }
-
-            if (modelData.runtime === 'tauri') {
-                const tauriRuntime = getTauriTextRuntime(modelData);
-                if (!tauriRuntime.canRun) {
-                    activeRequests.current.delete(requestId);
-                    return;
-                }
-                const blob = await cropImage(imageRef.current, areaToCrop);
-                const result = await tauriRuntime.runBlob(blob);
-                handleOcrCompletion(requestId, result?.text || '', 'local');
-                return;
-            }
-
-            if (modelData.type === 'local' && modelStatus === 'ready') {
-                const imageInput = await cropImageBitmap(imageRef.current, areaToCrop);
-                runOcr(imageInput, requestId);
-            } else {
-                activeRequests.current.delete(requestId);
-            }
-        } catch (err) {
-            activeRequests.current.delete(requestId);
-            console.error("Background OCR Error:", err);
-        }
-    }, [activeModelKey, modelStatus, imageRef, runOcr, processNextApiTask, getTauriTextRuntime, handleOcrCompletion]);
-
-    const runLocalOcr = useCallback(async (cropData = null, customRequestId = null) => {
-        try {
-            const modelData = OCR_MODELS[activeModelKey];
-            const areaToCrop = cropData || rectangle || (pendingAnnotation ? { x: pendingAnnotation.x, y: pendingAnnotation.y, w: pendingAnnotation.w, h: pendingAnnotation.h } : null);
-
-            if (!areaToCrop) {
-                setIsModalOpen(true);
-                return;
-            }
-
-            const requestId = customRequestId || Date.now();
-            lastRequestId.current = requestId;
-
-            if (ocrResults[requestId] !== undefined) {
-                setOcrSource((modelData?.key === 'lighton') ? modelData?.key : 'local');
-                setPendingAnnotation(prev => ({ ...prev, texte_propose: ocrResults[requestId] }));
-                setIsModalOpen(true);
-                return;
-            }
-
-            if (activeRequests.current.has(requestId)) {
-                setIsSubmitting(true);
-                setLoadingText((modelData?.key === 'lighton') ? `Analyse ${modelData.label} - Modal...` : "Analyse en local...");
-                if (modelData?.key === 'lighton') processNextApiTask();
-                return;
-            }
-
-            if (!modelData || (modelData.type === 'local' && modelData.runtime !== 'tauri' && modelStatus !== 'ready')) {
-                setIsModalOpen(true);
-                return;
-            }
-
-            if (preferLocalOCR && modelData.type !== 'local') {
-                setIsModalOpen(true);
-                return;
-            }
-            if (!preferLocalOCR && modelData.type !== 'api') {
-                setIsModalOpen(true);
-                return;
-            }
-
-            if (modelData?.key === 'gemini') {
-                handleRetryWithCloud({ id_page: parseInt(pageId, 10), ...areaToCrop, texte_propose: '' });
-                return;
-            }
-
-            if (modelData?.key === 'poneglyph' || modelData?.key === 'lighton') {
-                activeRequests.current.add(requestId);
-                apiTaskQueue.current.push({ areaToCrop, requestId, modelKey: modelData.key });
-                setIsSubmitting(true);
-                setLoadingText(`Analyse ${modelData.label} - Modal...`);
-                processNextApiTask();
-                return;
-            }
-
-            if (modelData?.runtime === 'tauri') {
-                const tauriRuntime = getTauriTextRuntime(modelData);
-                if (!tauriRuntime.canRun) {
-                    const reason = !tauriLocalOcr.isTauri
-                        ? "App desktop non detectee."
-                        : tauriRuntime.isDownloading
-                            ? `Telechargement du modele ${tauriRuntime.label} en cours.`
-                            : !tauriRuntime.status?.installed
-                                ? `Telechargez le modele ${tauriRuntime.label} d'abord.`
-                                : !tauriRuntime.status?.ready
-                                    ? `Chargez le modele ${tauriRuntime.label} en VRAM d'abord.`
-                                    : `OCR ${tauriRuntime.label} indisponible.`;
-                    toast.error(reason);
-                    setIsModalOpen(true);
-                    return;
-                }
-
-                setLoadingText(`Analyse ${modelData.label} - Local...`);
-                setIsSubmitting(true);
-                activeRequests.current.add(requestId);
-                const blob = await cropImage(imageRef.current, areaToCrop);
-                const result = await tauriRuntime.runBlob(blob);
-                handleOcrCompletion(requestId, result?.text || '', 'local');
-                return;
-            }
-
-            setLoadingText("Analyse en local...");
-            setIsSubmitting(true);
-            activeRequests.current.add(requestId);
-
-            const imageInput = await cropImageBitmap(imageRef.current, areaToCrop);
-            runOcr(imageInput, requestId);
-        } catch (err) {
-            console.error(err);
-            activeRequests.current.delete(lastRequestId.current);
-            toast.error("Erreur OCR: " + err.message);
-            setIsSubmitting(false);
-            setIsModalOpen(true);
-        }
-    }, [activeModelKey, modelStatus, preferLocalOCR, rectangle, pendingAnnotation, pageId, imageRef, handleRetryWithCloud, handleOcrCompletion, setLoadingText, setIsSubmitting, setOcrSource, setPendingAnnotation, setIsModalOpen, runOcr, ocrResults, processNextApiTask, tauriLocalOcr, getTauriTextRuntime]);
-
-    useEffect(() => {
-        if (!worker) return;
-
-        const handleMessage = async (e) => {
-            const { status, text, error, url, requestId } = e.data;
-
-            if (status === 'debug_image') setDebugImageUrl(url);
-
-            if (status === 'complete') {
-                if (requestId) {
-                    handleOcrCompletion(requestId, text, 'local');
-                }
-            }
-
-            if (status === 'error' && modelStatus === 'ready') {
-                console.error("Erreur OCR:", error);
-                if (requestId) activeRequests.current.delete(requestId);
-                if (requestId === lastRequestId.current) {
-                    setIsSubmitting(false);
-                    setIsModalOpen(true);
-                }
-            }
-        };
-
-        worker.addEventListener('message', handleMessage);
-        return () => worker.removeEventListener('message', handleMessage);
-    }, [worker, modelStatus, setDebugImageUrl, handleOcrCompletion]);
+    }, [imageRef, pendingAnnotation, setDebugImageUrl, setIsModalOpen, setIsSubmitting, setLoadingText, setOcrSource, setPendingAnnotation, setShowApiKeyModal]);
 
     return {
         preferLocalOCR,
@@ -319,6 +257,8 @@ export function useAnnotationOCR({
         loadModel,
         switchModel,
         downloadProgress,
+        selectedOcrModelKeys,
+        toggleOcrModel,
         runLocalOcr,
         runBackgroundOcr,
         ocrResults,
