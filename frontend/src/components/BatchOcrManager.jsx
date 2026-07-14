@@ -7,6 +7,7 @@ import { useDetection } from '@/context/DetectionContext';
 import { useTauriLocalOcrContext } from '@/context/TauriLocalOcrContext';
 import { getAdminHierarchy, getBubblesForPage, createBubble, validateBubble } from '@/lib/api';
 import { getProxiedImageUrl, cropImage } from '@/lib/utils';
+import { capitalizeOcrSentenceStarts } from '@/lib/ocr-utils';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -124,7 +125,7 @@ async function runLightOnClassic(img, rect, provider, tauriLocalOcr) {
     const blob = await cropImage(img, rect);
     if (provider === 'local') {
         const data = await tauriLocalOcr.runLocalTextOcrBlob(blob);
-        return data?.text || '';
+        return capitalizeOcrSentenceStarts(data?.text);
     }
 
     const response = await fetch('/api/local_lighton', {
@@ -133,13 +134,13 @@ async function runLightOnClassic(img, rect, provider, tauriLocalOcr) {
     });
     if (!response.ok) throw new Error("Erreur Poneglyph");
     const data = await response.json();
-    return data.text || '';
+    return capitalizeOcrSentenceStarts(data.text);
 }
 
 async function runSuryaClassic(img, rect, tauriLocalOcr) {
     const blob = await cropImage(img, rect);
     const data = await tauriLocalOcr.runLocalSuryaOcrBlob(blob);
-    return data?.text || '';
+    return capitalizeOcrSentenceStarts(data?.text);
 }
 
 async function runPoneglyphBBox(jpegBlob, provider, tauriLocalOcr) {
@@ -658,7 +659,10 @@ export default function BatchOcrManager() {
             })
         ]);
 
-        const poneglyphBubbles = poneglyphResponse.bubbles || [];
+        const poneglyphBubbles = (poneglyphResponse.bubbles || []).map(bubble => ({
+            ...bubble,
+            content: capitalizeOcrSentenceStarts(bubble.content)
+        }));
         const useSuryaBatch = Boolean(ocrProvider === 'local' && tauriLocalOcr.localSuryaModelStatus?.ready);
 
         console.log(`[Batch] Page ${page.numero_page}: YOLO=${yoloBoxes.length} bubbles, Poneglyph=${poneglyphBubbles.length} bubbles`);

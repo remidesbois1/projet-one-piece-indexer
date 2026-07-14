@@ -1,5 +1,5 @@
 import * as ort from 'onnxruntime-web';
-import { fixFrenchPunctuation } from '../lib/ocr-utils.js';
+import { capitalizeOcrSentenceStarts, fixFrenchPunctuation } from '../lib/ocr-utils.js';
 
 ort.env.wasm.wasmPaths = new URL('/onnx/', self.location.origin).href;
 ort.env.wasm.proxy = false;
@@ -408,7 +408,7 @@ function isPpocrWeirdCase(token) {
 
 function postprocessPpocrText(text) {
     const rules = ppocrManifest?.postprocess;
-    if (!rules?.enabled || !rules.lexicon) return text;
+    if (!rules?.enabled || !rules.lexicon) return capitalizeOcrSentenceStarts(text);
 
     const lexicon = rules.lexicon || {};
     const minCount = Number(rules.min_count || 1);
@@ -417,7 +417,7 @@ function postprocessPpocrText(text) {
     const sentenceStart = Boolean(rules.sentence_start);
     const spaced = normalizePpocrPostprocessSpacing(text);
 
-    return spaced.replace(PPOCR_TOKEN_RE, (token, offset) => {
+    const lexiconCorrected = spaced.replace(PPOCR_TOKEN_RE, (token, offset) => {
         const key = token.toLocaleLowerCase('fr-FR');
         const entry = lexicon[key];
         if (!entry?.best) return token;
@@ -438,6 +438,7 @@ function postprocessPpocrText(text) {
         }
         return token;
     });
+    return capitalizeOcrSentenceStarts(lexiconCorrected);
 }
 
 async function warmupPpocrLinePipeline() {

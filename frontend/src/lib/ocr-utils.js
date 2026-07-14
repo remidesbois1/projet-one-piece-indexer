@@ -1,3 +1,21 @@
+const OCR_LETTER_RE = /\p{L}/u;
+
+export function capitalizeOcrSentenceStarts(text) {
+    let capitalizeNextLetter = false;
+
+    return [...String(text || '')].map(char => {
+        if (capitalizeNextLetter && OCR_LETTER_RE.test(char)) {
+            capitalizeNextLetter = false;
+            return char.toLocaleUpperCase('fr-FR');
+        }
+
+        if (char === '?' || char === '!' || char === '.' || char === '\u2026') {
+            capitalizeNextLetter = true;
+        }
+        return char;
+    }).join('');
+}
+
 export function fixFrenchPunctuation(text) {
     if (!text) return "";
 

@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useWorker, OCR_MODELS } from '@/context/WorkerContext';
 import { useTauriLocalOcrContext } from '@/context/TauriLocalOcrContext';
 import { analyzeBubble } from '@/lib/geminiClient';
+import { capitalizeOcrSentenceStarts } from '@/lib/ocr-utils';
 import { cropImage, cropImageBitmap } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -147,7 +148,7 @@ export function useAnnotationOCR({
         const job = Promise.allSettled(models.map(async model => ({
             modelKey: model.key,
             label: model.label,
-            text: await runModel(model, areaToCrop, requestId)
+            text: capitalizeOcrSentenceStarts(await runModel(model, areaToCrop, requestId))
         }))).then(settled => {
             const candidates = settled
                 .filter(result => result.status === 'fulfilled')
@@ -236,7 +237,11 @@ export function useAnnotationOCR({
         setDebugImageUrl(null);
         analyzeBubble(imageRef.current, dataToUse, storedKey)
             .then(response => {
-                setPendingAnnotation(previous => ({ ...previous, texte_propose: response.data.texte_propose, ocr_candidates: [] }));
+                setPendingAnnotation(previous => ({
+                    ...previous,
+                    texte_propose: capitalizeOcrSentenceStarts(response.data.texte_propose),
+                    ocr_candidates: []
+                }));
                 setOcrSource('cloud');
                 setIsModalOpen(true);
             })

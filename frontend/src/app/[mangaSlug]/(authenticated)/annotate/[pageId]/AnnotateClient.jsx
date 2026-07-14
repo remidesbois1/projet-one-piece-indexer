@@ -15,6 +15,7 @@ import { useAnnotationDetection } from '@/hooks/useAnnotationDetection';
 import { useAnnotationMetadata } from '@/hooks/useAnnotationMetadata';
 import { useTauriLocalOcrContext } from '@/context/TauriLocalOcrContext';
 import { getProxiedImageUrl } from '@/lib/utils';
+import { capitalizeOcrSentenceStarts } from '@/lib/ocr-utils';
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -750,7 +751,7 @@ export default function AnnotatePage() {
                     y: Math.round((y1 / 1000) * h),
                     w: Math.round(((x2 - x1) / 1000) * w),
                     h: Math.round(((y2 - y1) / 1000) * h),
-                    texte_propose: bubble.content
+                    texte_propose: capitalizeOcrSentenceStarts(bubble.content)
                 };
 
                 if (detectionStatus === 'ready' && yoloBoxes) {

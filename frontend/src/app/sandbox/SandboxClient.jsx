@@ -8,6 +8,7 @@ import { useAnnotationOCR } from '@/hooks/useAnnotationOCR';
 import { useAnnotationDetection } from '@/hooks/useAnnotationDetection';
 import { useAnnotationMetadata } from '@/hooks/useAnnotationMetadata';
 import { useTauriLocalOcrContext } from '@/context/TauriLocalOcrContext';
+import { capitalizeOcrSentenceStarts } from '@/lib/ocr-utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { ArrowLeft, Upload } from "lucide-react";
 import { toast } from "sonner";
@@ -379,7 +380,7 @@ export default function SandboxClient() {
                     y: Math.round((y1 / 1000) * h),
                     w: Math.round(((x2 - x1) / 1000) * w),
                     h: Math.round(((y2 - y1) / 1000) * h),
-                    texte_propose: bubble.content || '',
+                    texte_propose: capitalizeOcrSentenceStarts(bubble.content),
                     statut: 'Proposé',
                     id_user_createur: 'sandbox-user',
                     order: existingBubbles.length + index + 1

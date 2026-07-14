@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { cropImage } from "./utils";
+import { capitalizeOcrSentenceStarts } from './ocr-utils';
 
 const ANALYSIS_PROMPT = "Tu es un expert en numérisation de manga. Ta tâche est de transcrire le texte présent dans cette bulle de dialogue.  Règles strictes : 1. Transcris EXACTEMENT le texte visible (OCR). 2. Corrige automatiquement les erreurs mineures d'OCR. 3. Rétablis la casse naturelle. 4. Ne traduis pas. Reste en Français. 5. Renvoie UNIQUEMENT le texte final.";
 
@@ -93,7 +94,7 @@ function normalizeGeneratedBubbles(data) {
 
     return rawBubbles
         .map((bubble) => {
-            const content = String(bubble?.content || bubble?.text || bubble?.texte || '').trim();
+            const content = capitalizeOcrSentenceStarts(bubble?.content || bubble?.text || bubble?.texte).trim();
             const rawBox = bubble?.bbox || bubble?.pos || bubble?.box;
             let bbox = null;
 
