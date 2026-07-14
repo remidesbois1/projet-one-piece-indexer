@@ -1,10 +1,11 @@
 @echo off
+chcp 65001 >nul
 echo ==========================================================
 echo 🛠️  Building Docker Image (lighton-ocr-finetune)...
 echo ==========================================================
 echo.
 
-docker build -t lighton-ocr-finetune .
+docker build -f "%~dp0Dockerfile" -t lighton-ocr-finetune "%~dp0.."
 
 if %ERRORLEVEL% NEQ 0 (
     echo.

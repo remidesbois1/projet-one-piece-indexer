@@ -8,14 +8,15 @@ from pathlib import Path
 from PIL import Image
 from supabase import create_client, Client
 from tqdm import tqdm
-from sklearn.model_selection import train_test_split
 from dotenv import load_dotenv
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
 import threading
+import hashlib
+import random
 
 try:
-    import pillow_avif
+    import pillow_avif as _pillow_avif  # noqa: F401 - registers the Pillow codec
 
     print("✅ AVIF support enabled via pillow-avif-plugin")
 except ImportError:
@@ -23,7 +24,7 @@ except ImportError:
     pass
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = SCRIPT_DIR.parent
+PROJECT_ROOT = SCRIPT_DIR.parent.parent
 load_dotenv(SCRIPT_DIR / ".env")
 load_dotenv(PROJECT_ROOT / ".env")
 
@@ -37,10 +38,13 @@ if not SUPABASE_URL or not SUPABASE_KEY:
         print("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY")
         sys.exit(1)
 
-OUTPUT_DIR = SCRIPT_DIR / "lighton_bbox_dataset"
-TARGET_LONGEST_SIDE = 1540
+OUTPUT_DIR = Path(
+    os.getenv("LIGHTON_BBOX_DATASET_DIR", SCRIPT_DIR / "lighton_bbox_dataset")
+)
+TARGET_LONGEST_SIDE = 1500
 BBOX_NORM_SCALE = 1000
 TEST_SIZE = 0.2
+VAL_SIZE = 0.1
 RANDOM_SEED = 42
 JPEG_QUALITY = 95
 MIN_BUBBLES_PER_PAGE = 1
@@ -94,9 +98,103 @@ def convert_bbox_to_normalized(x, y, w, h, orig_w, orig_h, new_w, new_h):
 
 
 def sort_bubbles_manga_order(bubbles):
-    if any(b.get("order") is None for b in bubbles):
-        return None
-    return sorted(bubbles, key=lambda b: b["order"])
+    return sorted(
+        bubbles,
+        key=lambda b: (
+            b.get("order") is None,
+            b.get("order") if b.get("order") is not None else 10**9,
+            b.get("y", 0),
+            -b.get("x", 0),
+            b.get("id", 0),
+        ),
+    )
+
+
+def image_sha256(image):
+    digest = hashlib.sha256()
+    digest.update(f"{image.mode}:{image.size[0]}x{image.size[1]}".encode("ascii"))
+    digest.update(image.tobytes())
+    return digest.hexdigest()
+
+
+def build_frozen_splits(page_hashes, manifest_path, force_new=False):
+    existing = None
+    if manifest_path.exists() and not force_new:
+        existing = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    groups = defaultdict(list)
+    for page_id, digest in page_hashes.items():
+        groups[digest].append(page_id)
+
+    assignments = {}
+    hash_assignments = {}
+    if existing:
+        existing_hashes = existing.get("page_hashes", {})
+        for split in ("train", "val", "test"):
+            for page_id in existing.get("splits", {}).get(split, []):
+                page_id = int(page_id)
+                if page_id not in page_hashes:
+                    continue
+                assignments[page_id] = split
+                digest = existing_hashes.get(str(page_id)) or page_hashes[page_id]
+                hash_assignments[digest] = split
+
+    unassigned_groups = []
+    for digest, page_ids in groups.items():
+        known = {assignments[page_id] for page_id in page_ids if page_id in assignments}
+        if len(known) > 1:
+            chosen = "test" if "test" in known else "val" if "val" in known else "train"
+        else:
+            chosen = next(iter(known), hash_assignments.get(digest))
+        if chosen:
+            for page_id in page_ids:
+                assignments[page_id] = chosen
+            hash_assignments[digest] = chosen
+        else:
+            unassigned_groups.append((digest, page_ids))
+
+    rng = random.Random(RANDOM_SEED)
+    rng.shuffle(unassigned_groups)
+    total = len(page_hashes)
+    target_test = round(total * TEST_SIZE)
+    target_val = round(total * VAL_SIZE)
+    counts = {
+        split: sum(value == split for value in assignments.values())
+        for split in ("train", "val", "test")
+    }
+    for digest, page_ids in unassigned_groups:
+        if not existing and counts["test"] < target_test:
+            split = "test"
+        elif counts["val"] < target_val:
+            split = "val"
+        else:
+            split = "train"
+        for page_id in page_ids:
+            assignments[page_id] = split
+        counts[split] += len(page_ids)
+        hash_assignments[digest] = split
+
+    splits = {
+        split: sorted(page_id for page_id, value in assignments.items() if value == split)
+        for split in ("train", "val", "test")
+    }
+    assert not (set(splits["train"]) & set(splits["val"]))
+    assert not (set(splits["train"]) & set(splits["test"]))
+    assert not (set(splits["val"]) & set(splits["test"]))
+    manifest = {
+        "version": 2,
+        "random_seed": RANDOM_SEED,
+        "image_longest_edge": TARGET_LONGEST_SIDE,
+        "bbox_normalization_scale": BBOX_NORM_SCALE,
+        "splits": splits,
+        "page_hashes": {str(page_id): digest for page_id, digest in page_hashes.items()},
+        "duplicate_groups": [sorted(page_ids) for page_ids in groups.values() if len(page_ids) > 1],
+    }
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return splits, manifest
 
 
 def format_assistant_response(bubbles_with_bbox):
@@ -116,7 +214,7 @@ def fetch_all_bubbles(supabase: Client):
         response = (
             supabase.table("bulles")
             .select("id, x, y, w, h, texte_propose, order, id_page, pages(url_image)")
-            .eq("statut", "Validé")
+            .eq("statut", os.getenv("LIGHTON_STATUS_VALUE", "Validé"))
             .range(offset, offset + page_size - 1)
             .execute()
         )
@@ -177,15 +275,6 @@ def main():
         print("Nothing to export.")
         return
 
-    page_ids = list(pages_dict.keys())
-    train_ids, test_ids = train_test_split(
-        page_ids, test_size=TEST_SIZE, random_state=RANDOM_SEED
-    )
-
-    print(
-        f"\nSplit: {len(train_ids)} train pages, {len(test_ids)} test pages", flush=True
-    )
-
     print(f"\nDownloading {len(pages_dict)} unique pages in parallel...", flush=True)
     page_images = {}
     page_images_lock = threading.Lock()
@@ -213,9 +302,29 @@ def main():
 
     print(f"  -> {len(page_images)} pages downloaded.", flush=True)
 
-    stats = {"train": {"pages": 0, "bubbles": 0}, "test": {"pages": 0, "bubbles": 0}}
+    page_hashes = {
+        page_id: image_sha256(image) for page_id, image in page_images.items()
+    }
+    splits, manifest = build_frozen_splits(
+        page_hashes,
+        OUTPUT_DIR / "split_manifest.json",
+        force_new=os.getenv("LIGHTON_RESET_SPLIT", "0").lower()
+        in {"1", "true", "yes"},
+    )
+    print(
+        f"Frozen split: {len(splits['train'])} train, {len(splits['val'])} val, "
+        f"{len(splits['test'])} test pages; "
+        f"{len(manifest['duplicate_groups'])} duplicate groups.",
+        flush=True,
+    )
 
-    for split_name, split_ids in [("train", train_ids), ("test", test_ids)]:
+    stats = {
+        split: {"pages": 0, "bubbles": 0}
+        for split in ("train", "val", "test")
+    }
+
+    for split_name in ("train", "val", "test"):
+        split_ids = splits[split_name]
         split_dir = OUTPUT_DIR / split_name
         img_dir = split_dir / "images"
         img_dir.mkdir(parents=True, exist_ok=True)
@@ -259,7 +368,9 @@ def main():
             assistant_text = format_assistant_response(bubbles_with_bbox)
 
             entry = {
+                "id": page_id,
                 "page_id": page_id,
+                "split": split_name,
                 "image_file": f"images/{file_name}",
                 "original_size": [orig_w, orig_h],
                 "resized_size": [new_w, new_h],
@@ -291,7 +402,7 @@ def main():
     print("\n" + "=" * 60, flush=True)
     print(" DATASET EXPORT SUMMARY", flush=True)
     print("-" * 60, flush=True)
-    for split_name in ["train", "test"]:
+    for split_name in ["train", "val", "test"]:
         s = stats[split_name]
         print(f"  {split_name}: {s['pages']} pages, {s['bubbles']} bubbles", flush=True)
     print(f"  Image target: {TARGET_LONGEST_SIDE}px longest side", flush=True)
@@ -307,7 +418,7 @@ def verify_dataset(output_dir):
     print("\n🔍 Running dataset verification...", flush=True)
     errors = 0
 
-    for split in ["train", "test"]:
+    for split in ["train", "val", "test"]:
         jsonl_path = output_dir / split / "metadata.jsonl"
         if not jsonl_path.exists():
             print(f"  ❌ Missing {jsonl_path}")
@@ -317,7 +428,7 @@ def verify_dataset(output_dir):
         with open(jsonl_path, "r", encoding="utf-8") as f:
             lines = f.readlines()
 
-        for i, line in enumerate(lines[:5]):
+        for i, line in enumerate(lines):
             entry = json.loads(line)
             img_rel = entry["messages"][0]["content"][0]["image"]
             img_path = output_dir / split / img_rel

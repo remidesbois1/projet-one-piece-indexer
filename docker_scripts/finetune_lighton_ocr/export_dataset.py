@@ -1,10 +1,12 @@
 import io
+import hashlib
 import json
 import os
 import re
 import shutil
 import sys
 import threading
+import urllib.request
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -35,10 +37,6 @@ load_dotenv(PROJECT_ROOT / ".env")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
-if not SUPABASE_URL or not SUPABASE_KEY:
-    print("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.", flush=True)
-    sys.exit(1)
-
 OUTPUT_DIR = Path(os.getenv("LIGHTON_DATASET_DIR", str(SCRIPT_DIR / "lighton_dataset")))
 STATUS_VALUE = os.getenv("LIGHTON_STATUS_VALUE", "Valid\u00e9")
 VAL_SIZE = float(os.getenv("LIGHTON_VAL_SIZE", "0.15"))
@@ -55,12 +53,83 @@ CLEAN_DATASET = os.getenv("LIGHTON_CLEAN_DATASET", "0").lower() not in {
     "off",
     "",
 }
+SPLIT_MANIFEST = OUTPUT_DIR / "split_manifest.json"
+BASELINE_BENCHMARK = os.getenv(
+    "LIGHTON_BASELINE_BENCHMARK",
+    "https://huggingface.co/Remidesbois/LightonOCR-2-1b-poneglyph/resolve/main/benchmark_test.json",
+)
+NEAR_DUPLICATE_DISTANCE = int(os.getenv("LIGHTON_NEAR_DUPLICATE_DISTANCE", "4"))
 
 
 def normalize_text(text):
     if not text:
         return ""
     return re.sub(r"\s+", " ", text).strip()
+
+
+def image_hashes(image):
+    rgb = image.convert("RGB")
+    exact = hashlib.sha256(rgb.tobytes() + str(rgb.size).encode("ascii")).hexdigest()
+    gray = rgb.resize((9, 8), Image.Resampling.LANCZOS).convert("L")
+    pixel_source = (
+        gray.get_flattened_data()
+        if hasattr(gray, "get_flattened_data")
+        else gray.getdata()
+    )
+    pixels = list(pixel_source)
+    bits = 0
+    for y in range(8):
+        for x in range(8):
+            bits = (bits << 1) | int(pixels[y * 9 + x] > pixels[y * 9 + x + 1])
+    return exact, bits
+
+
+class DuplicateIndex:
+    """Small BK-tree-like index suitable for a few thousand bubble crops."""
+
+    def __init__(self, max_distance=4):
+        self.max_distance = max_distance
+        self.exact = {}
+        self.hashes = []
+
+    def find(self, exact_hash, perceptual_hash):
+        if exact_hash in self.exact:
+            return self.exact[exact_hash], "exact"
+        for previous_hash, payload in self.hashes:
+            if (previous_hash ^ perceptual_hash).bit_count() <= self.max_distance:
+                return payload, "near"
+        return None, None
+
+    def add(self, exact_hash, perceptual_hash, payload):
+        self.exact[exact_hash] = payload
+        self.hashes.append((perceptual_hash, payload))
+
+
+def stable_bucket(value):
+    digest = hashlib.sha256(f"{RANDOM_SEED}:{value}".encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], "big") / 2**64
+
+
+def baseline_split_ids():
+    try:
+        path = Path(BASELINE_BENCHMARK)
+        if path.exists():
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        else:
+            with urllib.request.urlopen(BASELINE_BENCHMARK, timeout=60) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        samples = payload.get("samples", [])
+        return {
+            "page_ids": sorted(
+                {str(sample["page_id"]) for sample in samples if sample.get("page_id")}
+            ),
+            "sample_ids": sorted(
+                {str(sample["id"]) for sample in samples if sample.get("id")}
+            ),
+        }
+    except Exception as exc:
+        print(f"Could not load published benchmark split: {exc}", flush=True)
+        return {"page_ids": [], "sample_ids": []}
 
 
 def process_bubble_image(page_image, x, y, w, h):
@@ -147,27 +216,79 @@ def split_pages(page_ids):
     if VAL_SIZE <= 0 or TEST_SIZE <= 0 or VAL_SIZE + TEST_SIZE >= 1:
         raise ValueError("LIGHTON_VAL_SIZE and LIGHTON_TEST_SIZE must be > 0 and sum to < 1.")
 
-    train_ids, holdout_ids = train_test_split(
-        page_ids,
-        test_size=VAL_SIZE + TEST_SIZE,
-        random_state=RANDOM_SEED,
-        shuffle=True,
-    )
+    by_string = {str(page_id): page_id for page_id in page_ids}
+    existing = None
+    if SPLIT_MANIFEST.exists():
+        existing = json.loads(SPLIT_MANIFEST.read_text(encoding="utf-8"))
+        print(f"Reusing frozen split manifest: {SPLIT_MANIFEST}", flush=True)
 
-    relative_test_size = TEST_SIZE / (VAL_SIZE + TEST_SIZE)
-    val_ids, test_ids = train_test_split(
-        holdout_ids,
-        test_size=relative_test_size,
-        random_state=RANDOM_SEED,
-        shuffle=True,
-    )
+    assigned = {}
+    published = {"page_ids": [], "sample_ids": []}
+    if existing:
+        for split_name in ("train", "val", "test"):
+            for page_id in existing.get("splits", {}).get(split_name, []):
+                if str(page_id) in by_string:
+                    assigned[str(page_id)] = split_name
+        if not existing.get("test_sample_ids"):
+            published = baseline_split_ids()
+    else:
+        published = baseline_split_ids()
+        published_test = set(published["page_ids"])
+        matched_test = published_test & set(by_string)
+        if matched_test:
+            print(
+                f"Freezing {len(matched_test)} published benchmark pages as test.",
+                flush=True,
+            )
+            assigned.update({page_id: "test" for page_id in matched_test})
+        else:
+            train_ids, holdout_ids = train_test_split(
+                list(by_string),
+                test_size=VAL_SIZE + TEST_SIZE,
+                random_state=RANDOM_SEED,
+                shuffle=True,
+            )
+            relative_test_size = TEST_SIZE / (VAL_SIZE + TEST_SIZE)
+            val_ids, test_ids = train_test_split(
+                holdout_ids,
+                test_size=relative_test_size,
+                random_state=RANDOM_SEED,
+                shuffle=True,
+            )
+            assigned.update({page_id: "train" for page_id in train_ids})
+            assigned.update({page_id: "val" for page_id in val_ids})
+            assigned.update({page_id: "test" for page_id in test_ids})
+
+    # New pages never alter or contaminate the frozen test. Their assignment is
+    # deterministic, so incremental exports keep identical train/val membership.
+    val_share = VAL_SIZE / max(1.0 - TEST_SIZE, 1e-9)
+    for page_id in sorted(set(by_string) - set(assigned)):
+        assigned[page_id] = "val" if stable_bucket(page_id) < val_share else "train"
 
     splits = {
-        "train": sorted(train_ids),
-        "val": sorted(val_ids),
-        "test": sorted(test_ids),
+        split_name: sorted(
+            [by_string[page_id] for page_id, assigned_split in assigned.items() if assigned_split == split_name],
+            key=str,
+        )
+        for split_name in ("train", "val", "test")
     }
     verify_split_integrity(splits)
+    manifest = {
+        "version": 1,
+        "random_seed": RANDOM_SEED,
+        "baseline_benchmark": BASELINE_BENCHMARK,
+        "test_sample_ids": (
+            existing.get("test_sample_ids") or published.get("sample_ids", [])
+            if existing
+            else published.get("sample_ids", [])
+        ),
+        "splits": {
+            split_name: [str(page_id) for page_id in split_ids]
+            for split_name, split_ids in splits.items()
+        },
+    }
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    SPLIT_MANIFEST.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     return splits
 
 
@@ -213,13 +334,21 @@ def download_pages(pages):
     return page_cache
 
 
-def write_split(split_name, page_ids, pages, page_cache):
+def write_split(
+    split_name,
+    page_ids,
+    pages,
+    page_cache,
+    duplicate_index=None,
+    allowed_test_sample_ids=None,
+):
     split_dir = OUTPUT_DIR / split_name
     img_dir = split_dir / "images"
     img_dir.mkdir(parents=True, exist_ok=True)
 
     jsonl_entries = []
     skipped = 0
+    duplicate_stats = defaultdict(int)
 
     split_bubbles = []
     for page_id in page_ids:
@@ -232,6 +361,14 @@ def write_split(split_name, page_ids, pages, page_cache):
 
     for bubble in tqdm(split_bubbles, desc=split_name):
         try:
+            if (
+                split_name == "test"
+                and allowed_test_sample_ids
+                and str(bubble["id"]) not in allowed_test_sample_ids
+            ):
+                skipped += 1
+                duplicate_stats["not_in_frozen_test"] += 1
+                continue
             page_img = page_cache.get(bubble["id_page"])
             if page_img is None:
                 skipped += 1
@@ -251,7 +388,61 @@ def write_split(split_name, page_ids, pages, page_cache):
                 if processed is None:
                     skipped += 1
                     continue
+                exact_hash, perceptual_hash = image_hashes(processed)
+                duplicate, duplicate_kind = (
+                    duplicate_index.find(exact_hash, perceptual_hash)
+                    if duplicate_index is not None
+                    else (None, None)
+                )
+                same_label = duplicate is not None and normalize_text(
+                    duplicate.get("text")
+                ) == normalize_text(bubble["text"])
+                if duplicate is not None and duplicate.get("split") != split_name:
+                    if duplicate_kind == "exact" or same_label:
+                        skipped += 1
+                        duplicate_stats[duplicate_kind] += 1
+                        if not same_label:
+                            duplicate_stats["label_conflict"] += 1
+                        continue
+                    duplicate_stats["near_hash_label_mismatch_kept"] += 1
                 processed.save(img_path, "PNG")
+                if duplicate_index is not None and (duplicate is None or not same_label):
+                    duplicate_index.add(
+                        exact_hash,
+                        perceptual_hash,
+                        {
+                            "id": bubble["id"],
+                            "page_id": bubble["id_page"],
+                            "split": split_name,
+                            "text": bubble["text"],
+                        },
+                    )
+            elif duplicate_index is not None:
+                with Image.open(img_path) as existing_image:
+                    exact_hash, perceptual_hash = image_hashes(existing_image)
+                duplicate, duplicate_kind = duplicate_index.find(exact_hash, perceptual_hash)
+                same_label = duplicate is not None and normalize_text(
+                    duplicate.get("text")
+                ) == normalize_text(bubble["text"])
+                if duplicate is not None and duplicate.get("split") != split_name:
+                    if duplicate_kind == "exact" or same_label:
+                        skipped += 1
+                        duplicate_stats[duplicate_kind] += 1
+                        if not same_label:
+                            duplicate_stats["label_conflict"] += 1
+                        continue
+                    duplicate_stats["near_hash_label_mismatch_kept"] += 1
+                if duplicate is None or not same_label:
+                    duplicate_index.add(
+                        exact_hash,
+                        perceptual_hash,
+                        {
+                            "id": bubble["id"],
+                            "page_id": bubble["id_page"],
+                            "split": split_name,
+                            "text": bubble["text"],
+                        },
+                    )
 
             rel_img_path = f"images/{file_name}"
             jsonl_entries.append(
@@ -288,7 +479,9 @@ def write_split(split_name, page_ids, pages, page_cache):
         f"({skipped} skipped)",
         flush=True,
     )
-    return len(jsonl_entries), skipped
+    if duplicate_stats:
+        print(f"  -> Duplicate filtering: {dict(duplicate_stats)}", flush=True)
+    return len(jsonl_entries), skipped, dict(duplicate_stats)
 
 
 def verify_dataset(splits):
@@ -336,10 +529,16 @@ def verify_dataset(splits):
 
 
 def main():
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        print("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.", flush=True)
+        sys.exit(1)
+    frozen_manifest = SPLIT_MANIFEST.read_text(encoding="utf-8") if SPLIT_MANIFEST.exists() else None
     if CLEAN_DATASET and OUTPUT_DIR.exists():
         print(f"Cleaning existing dataset directory: {OUTPUT_DIR}", flush=True)
         shutil.rmtree(OUTPUT_DIR)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    if frozen_manifest:
+        SPLIT_MANIFEST.write_text(frozen_manifest, encoding="utf-8")
 
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
     bubbles = fetch_all_bubbles(supabase)
@@ -358,9 +557,26 @@ def main():
     page_cache = download_pages(pages)
 
     stats = {}
-    for split_name, page_ids in splits.items():
-        saved, skipped = write_split(split_name, page_ids, pages, page_cache)
-        stats[split_name] = {"saved": saved, "skipped": skipped}
+    duplicate_index = DuplicateIndex(NEAR_DUPLICATE_DISTANCE)
+    manifest_payload = json.loads(SPLIT_MANIFEST.read_text(encoding="utf-8"))
+    allowed_test_sample_ids = set(manifest_payload.get("test_sample_ids") or [])
+    # Protect held-out data first. Any duplicate found later in val/train is
+    # discarded instead of leaking a test crop into training.
+    for split_name in ("test", "val", "train"):
+        page_ids = splits[split_name]
+        saved, skipped, duplicates = write_split(
+            split_name,
+            page_ids,
+            pages,
+            page_cache,
+            duplicate_index,
+            allowed_test_sample_ids=allowed_test_sample_ids,
+        )
+        stats[split_name] = {
+            "saved": saved,
+            "skipped": skipped,
+            "duplicates": duplicates,
+        }
 
     verify_dataset(splits)
 
@@ -380,7 +596,10 @@ def main():
             "bubbles": stats[split_name]["saved"],
             "metadata": str(OUTPUT_DIR / split_name / "metadata.jsonl"),
             "skipped": stats[split_name]["skipped"],
+            "duplicates": stats[split_name]["duplicates"],
         }
+    report["split_manifest"] = str(SPLIT_MANIFEST)
+    report["near_duplicate_distance"] = NEAR_DUPLICATE_DISTANCE
     report_path = OUTPUT_DIR / "dataset_report.json"
     with open(report_path, "w", encoding="utf-8") as f:
         json.dump(report, f, ensure_ascii=False, indent=2)

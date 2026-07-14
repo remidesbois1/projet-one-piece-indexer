@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul
 set DOCKER_USER=remidesbois
 set IMAGE_NAME=lighton-ocr-finetune
 set TAG=latest
@@ -8,7 +9,7 @@ echo 🛠️  Building and Pushing %DOCKER_USER%/%IMAGE_NAME%:%TAG%
 echo ==========================================================
 echo.
 
-docker build -t %DOCKER_USER%/%IMAGE_NAME%:%TAG% .
+docker build -f "%~dp0Dockerfile" -t %DOCKER_USER%/%IMAGE_NAME%:%TAG% "%~dp0.."
 
 if %ERRORLEVEL% NEQ 0 (
     echo.

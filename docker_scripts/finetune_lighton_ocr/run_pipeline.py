@@ -23,9 +23,9 @@ load_dotenv(SCRIPT_DIR / ".env")
 load_dotenv(DOCKER_SCRIPTS_DIR / ".env")
 load_dotenv(PROJECT_ROOT / ".env")
 
-from common_training.artifacts import standard_pipeline_summary, write_json
-from common_training.env import env_bool, training_job_id, training_provider
-from common_training.provider import provider_from_env
+from common_training.artifacts import standard_pipeline_summary, write_json  # noqa: E402
+from common_training.env import env_bool, training_job_id, training_provider  # noqa: E402
+from common_training.provider import provider_from_env  # noqa: E402
 
 
 DEFAULT_HF_REPO = "Remidesbois/LightonOCR-2-1b-poneglyph"
@@ -63,7 +63,10 @@ def final_model_dir():
 
 
 def dataset_is_ready(path: Path):
-    return all((path / split / "metadata.jsonl").exists() for split in ("train", "val", "test"))
+    return (path / "split_manifest.json").exists() and all(
+        (path / split / "metadata.jsonl").exists()
+        for split in ("train", "val", "test")
+    )
 
 
 def final_model_is_ready(path: Path):
@@ -72,6 +75,28 @@ def final_model_is_ready(path: Path):
 
 def benchmark_is_ready(path: Path):
     return (path / "benchmark_test.json").exists()
+
+
+def release_gate_is_ready(path: Path):
+    gate_path = path / "quality_gate.json"
+    if not gate_path.exists():
+        return False
+    try:
+        with open(gate_path, "r", encoding="utf-8") as handle:
+            return bool(json.load(handle).get("release_ready"))
+    except Exception:
+        return False
+
+
+def current_run_gate_is_ready():
+    gate_path = output_dir() / "last_quality_gate.json"
+    if not gate_path.exists():
+        return False
+    try:
+        with open(gate_path, "r", encoding="utf-8") as handle:
+            return bool(json.load(handle).get("release_ready"))
+    except Exception:
+        return False
 
 
 def missing_required_env():
@@ -123,6 +148,11 @@ def print_env_presence():
         "HF_REPO",
         "LIGHTON_REQUIRE_UPLOAD",
         "LIGHTON_SKIP_UPLOAD",
+        "LIGHTON_AUTO_BATCH",
+        "LIGHTON_IMAGE_LONGEST_EDGE",
+        "LIGHTON_HARD_EXAMPLE_SFT",
+        "LIGHTON_BASELINE_BENCHMARK",
+        "LIGHTON_BASELINE_TRAIN_SECONDS",
         "RUNPOD_API_KEY",
         "RUNPOD_POD_ID",
         "RUNPOD_TERMINATE_ON_EXIT",
@@ -229,6 +259,11 @@ def write_pipeline_summary(status: str, error_message: str | None = None):
             "final_model_dir": str(final_model_dir()),
             "benchmark_path": str(final_model_dir() / "benchmark_test.json"),
             "hf_repo": hf_repo_id(),
+            "candidate_model_dir": str(output_dir() / "candidate_lora_merged"),
+            "candidate_benchmark_path": str(
+                output_dir() / "candidate_lora_merged" / "benchmark_test.json"
+            ),
+            "release_gate_passed": current_run_gate_is_ready(),
         }
     )
     summary_path = output_dir() / "pipeline_summary.json"
@@ -237,9 +272,25 @@ def write_pipeline_summary(status: str, error_message: str | None = None):
     return summary
 
 
-def maybe_upload_to_hf():
+def maybe_upload_to_hf(require_current_gate=False):
     if env_bool("LIGHTON_SKIP_UPLOAD", False):
         print("Skipping Hugging Face upload because LIGHTON_SKIP_UPLOAD=1.", flush=True)
+        return
+    if require_current_gate and not current_run_gate_is_ready():
+        print(
+            "Skipping Hugging Face upload: the candidate evaluated in this run did not pass.",
+            flush=True,
+        )
+        return
+
+    if not release_gate_is_ready(final_model_dir()) and not env_bool(
+        "LIGHTON_ALLOW_FAILED_GATE_UPLOAD", False
+    ):
+        print(
+            "Skipping Hugging Face upload: quality_gate.json did not pass. "
+            "Set LIGHTON_ALLOW_FAILED_GATE_UPLOAD=1 only for an intentional experimental upload.",
+            flush=True,
+        )
         return
 
     token = os.getenv("HF_TOKEN")
@@ -283,28 +334,45 @@ def main():
         print(f"Output directory:  {output_dir()}", flush=True)
         print(f"Hugging Face repo: {hf_repo_id()}", flush=True)
 
+        dataset_rebuilt = False
         if dataset_is_ready(dataset_dir()) and not env_bool("LIGHTON_FORCE_EXPORT", False):
             print("Dataset already exists. Skipping export.", flush=True)
         else:
             hooks.set_status("preparing_dataset")
             run_step("Step 1: exporting Supabase bubble dataset", "export_dataset.py")
             hooks.set_status("dataset_ready")
+            dataset_rebuilt = True
 
         model_ready = final_model_is_ready(final_model_dir())
         benchmark_ready = benchmark_is_ready(final_model_dir())
+        gate_ready = release_gate_is_ready(final_model_dir())
 
         hooks.set_status("running")
-        if model_ready and benchmark_ready and not env_bool("LIGHTON_FORCE_TRAIN", False):
-            print("Final model and benchmark already exist. Skipping training.", flush=True)
-        elif model_ready and not env_bool("LIGHTON_FORCE_TRAIN", False):
+        evaluated_candidate = False
+        if (
+            model_ready
+            and benchmark_ready
+            and gate_ready
+            and not dataset_rebuilt
+            and not env_bool("LIGHTON_FORCE_TRAIN", False)
+        ):
+            print("Final model passed its release gate. Skipping training.", flush=True)
+        elif (
+            model_ready
+            and not benchmark_ready
+            and not dataset_rebuilt
+            and not env_bool("LIGHTON_FORCE_TRAIN", False)
+        ):
             print("Final model exists but benchmark is missing.", flush=True)
             hooks.set_status("benchmarking")
             run_step("Step 2: benchmarking existing final model", "train_lighton_ocr.py", "--benchmark-only")
+            evaluated_candidate = True
         else:
             run_step("Step 2: fine-tuning LightOnOCR", "train_lighton_ocr.py")
+            evaluated_candidate = True
 
         hooks.set_status("uploading")
-        maybe_upload_to_hf()
+        maybe_upload_to_hf(require_current_gate=evaluated_candidate)
     except Exception as exc:
         print(f"LightOnOCR pipeline failed: {exc}", flush=True)
         write_pipeline_summary("failed", error_message=str(exc))

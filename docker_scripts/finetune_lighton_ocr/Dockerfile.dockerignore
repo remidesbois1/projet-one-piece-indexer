@@ -1,0 +1,12 @@
+**
+!finetune_lighton_ocr
+!finetune_lighton_ocr/**
+!common_training
+!common_training/**
+
+**/__pycache__
+**/*.pyc
+**/.env
+**/lighton_dataset
+**/outputs_lighton_manga
+**/logs

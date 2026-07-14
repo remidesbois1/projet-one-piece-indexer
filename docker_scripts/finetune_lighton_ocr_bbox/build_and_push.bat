@@ -1,34 +1,14 @@
 @echo off
+chcp 65001 >nul
 set DOCKER_USER=remidesbois
 set IMAGE_NAME=lighton-ocr-bbox-finetune
 set TAG=latest
 
-echo ==========================================================
-echo    Building and Pushing %DOCKER_USER%/%IMAGE_NAME%:%TAG%
-echo ==========================================================
-echo.
+docker build -f "%~dp0Dockerfile" -t %DOCKER_USER%/%IMAGE_NAME%:%TAG% "%~dp0.."
+if %ERRORLEVEL% NEQ 0 exit /b %ERRORLEVEL%
 
-docker build -t %DOCKER_USER%/%IMAGE_NAME%:%TAG% .
-
-if %ERRORLEVEL% NEQ 0 (
-    echo.
-    echo    Build failed!
-    pause
-    exit /b %ERRORLEVEL%
-)
-
-echo.
-echo    Pushing to Docker Hub...
 docker push %DOCKER_USER%/%IMAGE_NAME%:%TAG%
+if %ERRORLEVEL% NEQ 0 exit /b %ERRORLEVEL%
 
-if %ERRORLEVEL% NEQ 0 (
-    echo.
-    echo    Push failed!
-    pause
-    exit /b %ERRORLEVEL%
-)
-
-echo.
-echo    Image pushed successfully!
-echo.
+echo Image pushed successfully.
 pause

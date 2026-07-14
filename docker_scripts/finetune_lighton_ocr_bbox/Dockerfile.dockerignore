@@ -1,0 +1,13 @@
+**
+!finetune_lighton_ocr_bbox
+!finetune_lighton_ocr_bbox/**
+!finetune_lighton_ocr/train_lighton_ocr.py
+!common_training
+!common_training/**
+
+**/__pycache__
+**/*.pyc
+**/.env
+**/lighton_bbox_dataset
+**/outputs_lighton_bbox
+**/logs

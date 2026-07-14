@@ -1,4 +1,4 @@
-# 1. Base Image - PyTorch 2.7.0 + CUDA 12.8 for RTX 5090 (sm_120 / Blackwell)
+# 1. Reproducible Ampere image for RTX 3090 (24 GB, BF16/TF32)
 FROM pytorch/pytorch:2.7.0-cuda12.8-cudnn9-devel
 
 # 2. Stable environment setup
@@ -8,6 +8,8 @@ ENV LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
 ENV PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cu128
 # Force unbuffered Python output for real-time RunPod logs
 ENV PYTHONUNBUFFERED=1
+ENV LIGHTON_IMAGE_LONGEST_EDGE=700
+ENV LIGHTON_AUTO_BATCH=1
 
 # 3. System dependencies (Stable layer)
 RUN apt-get update && apt-get install -y \
@@ -20,10 +22,11 @@ WORKDIR /app
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 
 # 5. Dependency management (Cached layer)
-COPY requirements.txt .
+COPY finetune_lighton_ocr/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 6. Final application code (Fastest changing layer)
-COPY . .
+COPY finetune_lighton_ocr/ /app/
+COPY common_training/ /app/common_training/
 
 CMD ["python", "run_pipeline.py"]
