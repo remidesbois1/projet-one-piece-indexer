@@ -4,6 +4,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useManga } from '@/context/MangaContext';
 import { getTomes, uploadPageToR2, batchCreatePages } from '@/lib/api';
+import { analyzeVolumeSummary } from '@/lib/geminiClient';
+import { buildPageTypeImportPlan } from '@/lib/pageTypeSlicing';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,20 +20,17 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import {
-    BookOpen,
     Trash2,
     Plus,
     Upload,
     CheckCircle2,
     AlertCircle,
     ArrowLeft,
-    ArrowRight,
     Loader2,
     X,
     FileArchive,
     Layers,
-    MousePointerClick,
-    GripVertical
+    MousePointerClick
 } from "lucide-react";
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
@@ -49,8 +48,7 @@ const CHAPTER_COLORS = [
 
 export default function UploadTomePage() {
     const { session } = useAuth();
-    const { currentManga, mangaSlug } = useManga();
-    const pageTitle = currentManga ? `Upload : ${currentManga.titre}` : "Upload de Tome";
+    const { mangaSlug } = useManga();
     const params = useParams();
 
     const [step, setStep] = useState(1);
@@ -62,6 +60,16 @@ export default function UploadTomePage() {
     const [lastClickedIndex, setLastClickedIndex] = useState(null);
     const [extracting, setExtracting] = useState(false);
     const [extractProgress, setExtractProgress] = useState(0);
+    const [analyzingPageTypes, setAnalyzingPageTypes] = useState(false);
+    const [pageTypeProgress, setPageTypeProgress] = useState(0);
+    const [analysisStage, setAnalysisStage] = useState('page-type');
+    const [pageTypeRuntime, setPageTypeRuntime] = useState(null);
+    const [pageTypeError, setPageTypeError] = useState('');
+    const [autoRemovedAnnexes, setAutoRemovedAnnexes] = useState([]);
+    const [autoChapterCount, setAutoChapterCount] = useState(0);
+    const [detectedSummaryPage, setDetectedSummaryPage] = useState(null);
+    const pageTypeWorkerRef = useRef(null);
+    const pageTypeJobRef = useRef(null);
 
     const [chapters, setChapters] = useState([]);
     const [assigningChapter, setAssigningChapter] = useState(null);
@@ -80,6 +88,74 @@ export default function UploadTomePage() {
             }).catch(() => { });
         }
     }, [session, mangaSlug]);
+
+    useEffect(() => {
+        const worker = new Worker(
+            new URL('../../../../../workers/pageType.worker.js', import.meta.url),
+        );
+        pageTypeWorkerRef.current = worker;
+
+        worker.onmessage = ({ data }) => {
+            const job = pageTypeJobRef.current;
+            if (!job || data.jobId !== job.id) return;
+
+            if (data.type === 'progress') {
+                job.predictions.set(data.pageId, data.prediction);
+                setPageTypeProgress(Math.round((data.completed / data.total) * 50));
+                setPageTypeRuntime(data.runtime);
+                setPages((currentPages) => currentPages.map((page) => (
+                    page.id === data.pageId ? { ...page, pageType: data.prediction } : page
+                )));
+                return;
+            }
+
+            pageTypeJobRef.current = null;
+            if (data.type === 'completed') {
+                setPageTypeRuntime(data.runtime);
+                job.resolve(job.pages.map((page) => ({
+                    ...page,
+                    pageType: job.predictions.get(page.id),
+                })));
+            } else if (data.type === 'error') {
+                job.reject(new Error(data.message));
+            }
+        };
+
+        worker.onerror = (workerError) => {
+            const job = pageTypeJobRef.current;
+            if (!job) return;
+            pageTypeJobRef.current = null;
+            job.reject(workerError.error || new Error('Le worker de classification a échoué.'));
+        };
+
+        return () => {
+            worker.terminate();
+            pageTypeWorkerRef.current = null;
+            pageTypeJobRef.current?.reject(new Error('Analyse de type de page annulée.'));
+            pageTypeJobRef.current = null;
+        };
+    }, []);
+
+    const classifyExtractedPages = useCallback((extractedPages) => new Promise((resolve, reject) => {
+        const worker = pageTypeWorkerRef.current;
+        if (!worker) {
+            reject(new Error('Le worker de classification est indisponible.'));
+            return;
+        }
+        const id = crypto.randomUUID();
+        pageTypeJobRef.current = {
+            id,
+            pages: extractedPages,
+            predictions: new Map(),
+            resolve,
+            reject,
+        };
+        worker.postMessage({
+            type: 'classify',
+            jobId: id,
+            pages: extractedPages.map(({ id: pageId, blob }) => ({ id: pageId, blob })),
+        });
+    }), []);
 
     const createThumbnail = (blob) => new Promise((resolve, reject) => {
         const img = new Image();
@@ -108,6 +184,13 @@ export default function UploadTomePage() {
         setExtracting(true);
         setExtractProgress(0);
         setError('');
+        setPageTypeError('');
+        setPageTypeProgress(0);
+        setAnalysisStage('page-type');
+        setPageTypeRuntime(null);
+        setAutoRemovedAnnexes([]);
+        setAutoChapterCount(0);
+        setDetectedSummaryPage(null);
 
         try {
             const { default: JSZip } = await import('jszip');
@@ -140,7 +223,78 @@ export default function UploadTomePage() {
 
             setPages(extracted);
             setStep(2);
-        } catch (err) {
+            setAnalyzingPageTypes(true);
+
+            try {
+                const classifiedPages = await classifyExtractedPages(extracted);
+                const initialPlan = buildPageTypeImportPlan(classifiedPages);
+                setAutoRemovedAnnexes(initialPlan.autoDeletedPages);
+                setDetectedSummaryPage(initialPlan.summaryPage);
+
+                if (!initialPlan.summaryPage) {
+                    setPages(initialPlan.retainedPages);
+                    setPageTypeError(
+                        "Aucun sommaire n'a été détecté avec assez de confiance. Les annexes ont été retirées ; définissez les chapitres manuellement.",
+                    );
+                    return;
+                }
+
+                const apiKey = localStorage.getItem('google_api_key');
+                if (!apiKey) {
+                    setPages(initialPlan.retainedPages);
+                    setPageTypeError(
+                        "Sommaire détecté, mais la clé API Gemini manque. Configurez-la dans votre profil puis relancez l'import.",
+                    );
+                    return;
+                }
+
+                setAnalysisStage('summary');
+                setPageTypeProgress(60);
+                const summaryResult = await analyzeVolumeSummary(
+                    initialPlan.summaryPage.blob,
+                    {
+                        pageCount: classifiedPages.length,
+                        summaryPage: initialPlan.summaryPage.index + 1,
+                    },
+                    apiKey,
+                );
+                setPageTypeProgress(90);
+                const plan = buildPageTypeImportPlan(classifiedPages, summaryResult.chapters);
+                const assignments = new Map();
+                const proposedChapters = plan.chapters.map((proposal, chapterIndex) => {
+                    const id = crypto.randomUUID();
+                    proposal.pageIds.forEach((pageId) => assignments.set(pageId, id));
+                    return {
+                        id,
+                        numero: proposal.chapterNumber,
+                        titre: proposal.title,
+                        colorIndex: chapterIndex % CHAPTER_COLORS.length,
+                        startPage: proposal.startPage,
+                    };
+                });
+                const chapterStartIds = new Set(proposedChapters.map((chapter) => {
+                    const matchingPage = plan.retainedPages.find((page) => page.index === chapter.startPage - 1);
+                    return matchingPage?.id;
+                }).filter(Boolean));
+
+                setPages(plan.retainedPages.map((page) => ({
+                    ...page,
+                    chapterId: assignments.get(page.id) || null,
+                    suggestedChapterStart: chapterStartIds.has(page.id),
+                })));
+                setChapters(proposedChapters);
+                setAutoRemovedAnnexes(plan.autoDeletedPages);
+                setAutoChapterCount(proposedChapters.length);
+                setPageTypeProgress(100);
+            } catch (analysisError) {
+                console.error('Page type analysis error:', analysisError);
+                setPageTypeError(
+                    "L'analyse du sommaire a échoué. Les annexes détectées ont été retirées ; définissez les chapitres manuellement.",
+                );
+            } finally {
+                setAnalyzingPageTypes(false);
+            }
+        } catch {
             setError("Erreur lors de l'extraction du fichier. Vérifiez que c'est un CBZ/ZIP valide.");
         } finally {
             setExtracting(false);
@@ -148,6 +302,7 @@ export default function UploadTomePage() {
     };
 
     const handlePageClick = useCallback((pageIndex, e) => {
+        if (analyzingPageTypes) return;
         if (assigningChapter !== null) {
             if (rangeStart === null) {
                 setRangeStart(pageIndex);
@@ -180,9 +335,10 @@ export default function UploadTomePage() {
             return next;
         });
         setLastClickedIndex(pageIndex);
-    }, [assigningChapter, rangeStart, lastClickedIndex]);
+    }, [analyzingPageTypes, assigningChapter, rangeStart, lastClickedIndex]);
 
     const handleDeleteSelected = () => {
+        if (analyzingPageTypes) return;
         if (selectedPages.size === 0) return;
         setPages(prev => prev.filter((_, i) => !selectedPages.has(i)));
         setSelectedPages(new Set());
@@ -201,6 +357,7 @@ export default function UploadTomePage() {
     }, [selectedPages, step]);
 
     const addChapter = () => {
+        if (analyzingPageTypes) return;
         const maxNum = chapters.reduce((max, c) => Math.max(max, c.numero), 0);
         setChapters(prev => [...prev, {
             id: crypto.randomUUID(),
@@ -211,6 +368,7 @@ export default function UploadTomePage() {
     };
 
     const removeChapter = (chapterId) => {
+        if (analyzingPageTypes) return;
         setChapters(prev => prev.filter(c => c.id !== chapterId));
         setPages(prev => prev.map(p => p.chapterId === chapterId ? { ...p, chapterId: null } : p));
         if (assigningChapter === chapterId) {
@@ -220,10 +378,12 @@ export default function UploadTomePage() {
     };
 
     const updateChapter = (chapterId, field, value) => {
+        if (analyzingPageTypes) return;
         setChapters(prev => prev.map(c => c.id === chapterId ? { ...c, [field]: value } : c));
     };
 
     const startAssigning = (chapterId) => {
+        if (analyzingPageTypes) return;
         if (assigningChapter === chapterId) {
             setAssigningChapter(null);
             setRangeStart(null);
@@ -444,7 +604,7 @@ export default function UploadTomePage() {
                                     type="file"
                                     accept=".cbz,.zip"
                                     onChange={handleFileSelect}
-                                    disabled={extracting || !selectedTome}
+                                    disabled={extracting || analyzingPageTypes || !selectedTome}
                                     className="cursor-pointer file:mr-4 file:rounded-full file:border-0 file:bg-[#3d86ff]/18 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-[#bdd6ff] hover:file:bg-[#3d86ff]/28"
                                 />
                             </div>
@@ -491,6 +651,45 @@ export default function UploadTomePage() {
                                 )}
                             </div>
                         </div>
+
+                        {analyzingPageTypes && (
+                            <Alert className="border-[#3d86ff]/35 bg-[#3d86ff]/10 text-slate-100">
+                                <Loader2 className="h-4 w-4 animate-spin text-[#8dbbff]" />
+                                <AlertDescription className="space-y-2">
+                                    <div className="flex items-center justify-between gap-3 text-sm">
+                                        <span>{analysisStage === 'summary'
+                                            ? 'Lecture du sommaire par Gemini…'
+                                            : 'Analyse locale des pages…'}</span>
+                                        <span>{pageTypeProgress}%</span>
+                                    </div>
+                                    <Progress value={pageTypeProgress} className="h-1.5" />
+                                </AlertDescription>
+                            </Alert>
+                        )}
+
+                        {!analyzingPageTypes && (autoRemovedAnnexes.length > 0 || detectedSummaryPage || autoChapterCount > 0) && (
+                            <Alert className="border-emerald-400/35 bg-emerald-500/10 text-slate-100">
+                                <CheckCircle2 className="h-4 w-4 text-emerald-300" />
+                                <AlertDescription className="text-sm text-slate-200">
+                                    {autoRemovedAnnexes.length > 0 && (
+                                        <span>{autoRemovedAnnexes.length} annexe(s) supprimée(s) automatiquement (confiance &gt; 90 %). </span>
+                                    )}
+                                    {detectedSummaryPage && (
+                                        <span>Sommaire détecté à la page {detectedSummaryPage.index + 1}, envoyé à Gemini. </span>
+                                    )}
+                                    {autoChapterCount > 0 && (
+                                        <span>{autoChapterCount} chapitre(s) pré-assigné(s) depuis le sommaire{pageTypeRuntime ? ` (${pageTypeRuntime.toUpperCase()})` : ''}.</span>
+                                    )}
+                                </AlertDescription>
+                            </Alert>
+                        )}
+
+                        {pageTypeError && (
+                            <Alert className="border-amber-400/35 bg-amber-500/10 text-amber-100">
+                                <AlertCircle className="h-4 w-4" />
+                                <AlertDescription>{pageTypeError}</AlertDescription>
+                            </Alert>
+                        )}
 
                         {assigningChapter && (
                             <div className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 border-dashed ${CHAPTER_COLORS[assigningChapterObj?.colorIndex || 0].border
@@ -540,6 +739,11 @@ export default function UploadTomePage() {
                                                 loading="lazy"
                                             />
                                             <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                                            {page.suggestedChapterStart && (
+                                                <span className="absolute left-1.5 top-1.5 rounded bg-[#3d86ff] px-1.5 py-0.5 text-[10px] font-bold text-white shadow">
+                                                    Début du sommaire
+                                                </span>
+                                            )}
                                         </div>
 
                                         <div className="border-t border-white/10 bg-[#071625]/92 px-2 py-1.5 backdrop-blur-sm">
@@ -657,7 +861,7 @@ export default function UploadTomePage() {
                                     <Button
                                         className="w-full bg-slate-900 hover:bg-slate-800 text-white shadow-lg"
                                         size="lg"
-                                        disabled={uploading || chapters.length === 0 || assignedCount < pages.length}
+                                        disabled={uploading || analyzingPageTypes || chapters.length === 0 || assignedCount < pages.length}
                                         onClick={processAndUpload}
                                     >
                                         {uploading ? (

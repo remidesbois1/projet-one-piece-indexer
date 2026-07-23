@@ -24,6 +24,32 @@ Regles:
 - Ignore les bulles vides ou illisibles.
 - N'ajoute aucun texte hors JSON.`;
 
+const VOLUME_SUMMARY_PROMPT = `Tu lis le sommaire d'un tome de manga afin de préparer son import.
+Extrais tous les chapitres présents dans ce sommaire, dans leur ordre.
+
+Le CBZ contient {pageCount} images. L'image fournie est l'image {summaryPage} (numérotation CBZ à partir de 1).
+Pour chaque chapitre, renvoie sa position de début dans le CBZ dans "start_page" (numérotation à partir de 1), pas seulement le numéro imprimé dans le sommaire. Déduis le décalage entre les numéros imprimés et le CBZ : le premier chapitre suit normalement le sommaire. Garde le numéro imprimé observé dans "printed_page" pour contrôle.
+
+Réponse JSON stricte :
+{
+  "chapters": [
+    {
+      "number": 1,
+      "title": "Titre exact du chapitre",
+      "start_page": 9,
+      "printed_page": 7
+    }
+  ]
+}
+
+Règles :
+- Corrige la casse des titres : un titre entièrement en majuscules devient une casse titre naturelle (ex. "PEARL" -> "Pearl", "JUNGLE BLOOD" -> "Jungle Blood", "MÊME PAS EN RÊVE !" -> "Même pas en rêve !").
+- Garde les sigles et codes alphanumériques intacts (ex. "MH5"). Ne traduis pas les titres.
+- "number" et "start_page" sont des entiers.
+- N'invente aucun chapitre, titre ou numéro.
+- Les "start_page" doivent être strictement croissants et compris entre 1 et {pageCount}.
+- Réponds uniquement avec le JSON.`;
+
 const COOKIE_NAME = 'ai_models';
 const COOKIE_TTL = 5 * 60 * 1000;
 
@@ -134,9 +160,39 @@ function parseModelJson(text, context = "Gemini") {
     const fencedJson = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
     const candidate = fencedJson ? fencedJson[1].trim() : trimmed;
 
+    const repairMissingClosers = (value) => {
+        if (!value.startsWith('{') && !value.startsWith('[')) return null;
+        const stack = [];
+        let inString = false;
+        let escaped = false;
+        for (const character of value) {
+            if (inString) {
+                if (escaped) escaped = false;
+                else if (character === '\\') escaped = true;
+                else if (character === '"') inString = false;
+                continue;
+            }
+            if (character === '"') inString = true;
+            else if (character === '{') stack.push('}');
+            else if (character === '[') stack.push(']');
+            else if (character === '}' || character === ']') {
+                if (stack.pop() !== character) return null;
+            }
+        }
+        return inString || !stack.length ? null : `${value}${stack.reverse().join('')}`;
+    };
+
     try {
         return JSON.parse(candidate);
     } catch (directError) {
+        const repaired = repairMissingClosers(candidate);
+        if (repaired) {
+            try {
+                return JSON.parse(repaired);
+            } catch {
+                // Continue with the existing extraction paths for non-trivial malformed output.
+            }
+        }
         const firstObject = candidate.indexOf('{');
         const lastObject = candidate.lastIndexOf('}');
         const firstArray = candidate.indexOf('[');
@@ -160,6 +216,85 @@ function parseModelJson(text, context = "Gemini") {
 
         const preview = trimmed.replace(/\s+/g, ' ').slice(0, 140);
         throw new Error(`${context}: reponse non JSON (${directError.message}). Apercu: ${preview}`);
+    }
+}
+
+function unwrapGeminiEnvelope(data) {
+    if (Array.isArray(data?.chapters)) return data;
+    const parts = data?.candidates?.flatMap((candidate) => candidate?.content?.parts || []) || [];
+    const text = parts.find((part) => typeof part?.text === 'string' && part.text.trim())?.text;
+    return text ? parseModelJson(text, 'Sommaire Gemini') : data;
+}
+
+export function normalizeVolumeSummaryChapters(data, pageCount) {
+    const chapters = Array.isArray(data?.chapters) ? data.chapters : [];
+    const normalized = chapters
+        .map((chapter) => {
+            const number = Number.parseInt(chapter?.number, 10);
+            const startPage = Number.parseInt(chapter?.start_page ?? chapter?.startPage, 10);
+            const title = typeof chapter?.title === 'string' ? chapter.title.trim() : '';
+            const printedPage = Number.parseInt(chapter?.printed_page ?? chapter?.printedPage, 10);
+            if (!Number.isInteger(number) || number < 1) return null;
+            if (!Number.isInteger(startPage) || startPage < 1 || startPage > pageCount) return null;
+            return {
+                number,
+                title: title || `Chapitre ${number}`,
+                startPage,
+                printedPage: Number.isInteger(printedPage) && printedPage > 0 ? printedPage : null,
+            };
+        })
+        .filter(Boolean)
+        .sort((left, right) => left.startPage - right.startPage || left.number - right.number);
+
+    const hasDuplicateOrReverseStart = normalized.some(
+        (chapter, index) => index > 0 && chapter.startPage <= normalized[index - 1].startPage,
+    );
+    if (!normalized.length || hasDuplicateOrReverseStart) {
+        throw new Error('Sommaire Gemini invalide : aucune liste de débuts de chapitres exploitable.');
+    }
+    return normalized;
+}
+
+export function parseVolumeSummaryResponse(responseText, pageCount) {
+    const raw = unwrapGeminiEnvelope(parseModelJson(responseText, 'Sommaire Gemini'));
+    return {
+        chapters: normalizeVolumeSummaryChapters(raw, pageCount),
+        raw,
+    };
+}
+
+export async function analyzeVolumeSummary(imageBlob, { pageCount, summaryPage }, apiKey) {
+    if (!apiKey) throw new Error("Clé API Gemini manquante.");
+    if (!imageBlob) throw new Error("Image du sommaire manquante.");
+    if (!Number.isInteger(pageCount) || pageCount < 1 || !Number.isInteger(summaryPage) || summaryPage < 1) {
+        throw new Error('Contexte de pagination du sommaire invalide.');
+    }
+
+    const config = await getAiModelConfig();
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({
+        model: config.model_ocr,
+        generationConfig: { responseMimeType: "application/json" },
+    });
+    const base64Data = await blobToBase64(imageBlob);
+    const imagePart = {
+        inlineData: {
+            data: base64Data,
+            mimeType: imageBlob.type || "image/jpeg",
+        },
+    };
+
+    try {
+        const prompt = VOLUME_SUMMARY_PROMPT
+            .replaceAll('{pageCount}', String(pageCount))
+            .replaceAll('{summaryPage}', String(summaryPage));
+        const result = await model.generateContent([prompt, imagePart]);
+        const response = await result.response;
+        return parseVolumeSummaryResponse(response.text(), pageCount);
+    } catch (error) {
+        handleGeminiError(error);
+        console.error('Gemini summary analysis error:', error);
+        throw error;
     }
 }
 

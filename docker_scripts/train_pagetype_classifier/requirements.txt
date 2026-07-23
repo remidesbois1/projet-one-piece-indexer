@@ -1,0 +1,5 @@
+# Install a CUDA build of torch/torchvision appropriate for the training host first.
+Pillow>=10.0
+numpy>=1.26
+onnx>=1.16
+onnxruntime>=1.18
