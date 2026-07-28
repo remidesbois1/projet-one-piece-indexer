@@ -1,0 +1,7 @@
+data/
+cache/
+results/*
+!results/REPORT.md
+!results/metrics.json
+!results/performance_profile.json
+!results/lighton_confidence_*.png
