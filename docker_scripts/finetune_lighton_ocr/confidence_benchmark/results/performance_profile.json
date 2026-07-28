@@ -1,0 +1,48 @@
+{
+  "created_at": "2026-07-28T17:05:36.661105+00:00",
+  "model_id": "Remidesbois/LightonOCR-2-1b-poneglyph",
+  "model_revision": "43075526e81640bf2b18ec8f35a45f7dfb1ddfec",
+  "device": "cuda:0",
+  "dtype": "torch.bfloat16",
+  "sample_count": 128,
+  "batch_size": 16,
+  "repeats": 3,
+  "timings_raw": {
+    "baseline_generation_seconds": [
+      5.959551699999793,
+      6.0010157000006075,
+      5.993554499999846
+    ],
+    "scored_generation_seconds": [
+      6.413090300000931,
+      6.001703800000541,
+      6.02974039999981
+    ],
+    "score_extraction_seconds": [
+      0.15905000000020664,
+      0.1481974999992417,
+      0.14958789999991495
+    ]
+  },
+  "median": {
+    "baseline_generation_seconds": 5.993554499999846,
+    "scored_generation_seconds": 6.02974039999981,
+    "score_extraction_seconds": 0.14958789999991495,
+    "scored_total_seconds": 6.1793282999997245,
+    "baseline_samples_per_second": 21.35627531208789,
+    "scored_samples_per_second": 20.714225525127983,
+    "incremental_seconds": 0.18577379999987897,
+    "relative_time_overhead": 0.03099559702007948
+  },
+  "cuda_memory": {
+    "baseline_peak_bytes": 2302318592,
+    "scored_peak_bytes": 3833416704,
+    "incremental_peak_bytes": 1531098112,
+    "relative_peak_overhead": 0.665024431162653
+  },
+  "sequence_equivalence": {
+    "compared": 128,
+    "mismatch_count": 0
+  },
+  "scope": "output_scores=True plus compute_transition_scores for chosen tokens; top-k alternatives intentionally excluded"
+}
