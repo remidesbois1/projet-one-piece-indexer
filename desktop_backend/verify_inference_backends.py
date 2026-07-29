@@ -142,6 +142,10 @@ def verify_fake_surya_backend(server, model_key: str, model_dir: Path):
         status = server.model_status_payload(model_key)
         require(status["ready"] is True, "fake surya model should be ready")
         require(status["active_backend"] == server.BACKEND_TRANSFORMERS, "fake surya backend")
+        require(
+            status["generation_engine"] == server.GENERATION_ENGINE_TRANSFORMERS,
+            "fake surya should keep standard generation",
+        )
         output = server.generate_with_model(
             model_key,
             object(),
@@ -177,6 +181,9 @@ def main():
             require("active_backend" in status, "status should expose active_backend")
             require("backend_fallback_reason" in status, "status should expose fallback reason")
             require("perf_options" in status, "status should expose perf_options")
+            require("generation_engine" in status, "status should expose generation engine")
+            require("optimized_engine_error" in status, "status should expose fast-path error")
+            require("warmup_timings_ms" in status, "status should expose warmup timings")
             surya_status = server.model_status_payload(server.SURYA_MODEL_KEY)
             require(surya_status["installed"] is False, "surya status should not require a model")
             require(surya_status["model_dir"].endswith("surya"), "surya model dir env")
@@ -204,6 +211,48 @@ def main():
             require(perf_options["bbox_max_new_tokens"] == 333, "perf bbox max tokens")
             require(perf_options["surya_max_new_tokens"] == 55, "perf surya max tokens")
             require(perf_options["surya_bbox_max_new_tokens"] == 444, "perf surya bbox max tokens")
+            require(perf_options["lighton_fast_decode"] is True, "fast LightOn decode default")
+            require(
+                perf_options["lighton_fast_compile_mode"] == "autotune",
+                "fast LightOn compile mode default",
+            )
+            require(
+                perf_options["surya_text_fast_cache_length"] == 768,
+                "fast Surya text cache default",
+            )
+            require(
+                perf_options["lighton_text_fast_cache_length"] == 512,
+                "fast LightOn text cache default",
+            )
+            require(
+                perf_options["lighton_text_fast_eos_interval"] == 1,
+                "fast LightOn text EOS interval",
+            )
+            require(
+                perf_options["surya_text_fast_eos_interval"] == 1,
+                "fast Surya text EOS interval",
+            )
+            fake_gpu_torch = FakeTorch()
+            for model_key in (server.TEXT_MODEL_KEY, server.BBOX_MODEL_KEY):
+                require(
+                    server.lighton_fast_decode_requested(
+                        model_key,
+                        fake_gpu_torch,
+                        "cuda",
+                        fake_gpu_torch.bfloat16,
+                    ),
+                    f"fast LightOn should support {model_key}",
+                )
+            for model_key in (server.SURYA_MODEL_KEY, server.SURYA_BBOX_MODEL_KEY):
+                require(
+                    server.surya_fast_decode_requested(
+                        model_key,
+                        fake_gpu_torch,
+                        "cuda",
+                        fake_gpu_torch.bfloat16,
+                    ),
+                    f"fast Surya should support {model_key}",
+                )
             print("env vars ok")
 
             route_paths = {route.path for route in server.app.routes}

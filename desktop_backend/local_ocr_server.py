@@ -27,7 +27,7 @@ MODEL_CONFIGS = {
         "id": "Remidesbois/LightonOCR-2-1b-poneglyph-bbox",
         "dir_name": "lighton-ocr-poneglyph-bbox",
         "label": "Poneglyph-BBox",
-        "max_new_tokens": 2048,
+        "max_new_tokens": 768,
         "family": "lighton_bbox",
         "model_dir_envs": ("PONEGLYPH_BBOX_MODEL_DIR", "PONEGLYPH_MODEL_DIR"),
         "max_new_tokens_envs": ("PONEGLYPH_BBOX_MAX_NEW_TOKENS",),
@@ -91,6 +91,9 @@ SURYA_BBOX_USER_PROMPT = os.getenv(
 MAX_IMAGE_SIZE = (1540, 1540)
 BACKEND_TRANSFORMERS = "transformers"
 BACKEND_NOT_LOADED = "not_loaded"
+GENERATION_ENGINE_TRANSFORMERS = "transformers_generate"
+GENERATION_ENGINE_LIGHTON_FLASH_KV = "lighton_flash_kvcache"
+GENERATION_ENGINE_SURYA_HYBRID_FLASH = "surya_hybrid_flash_kvcache"
 
 
 def env_bool(name: str, default: bool) -> bool:
@@ -113,6 +116,11 @@ def env_int(name: str, default: int, minimum: Optional[int] = None) -> int:
     return value
 
 
+def env_choice(name: str, default: str, choices: set[str]) -> str:
+    value = os.environ.get(name, default).strip().lower()
+    return value if value in choices else default
+
+
 def get_requested_backend() -> str:
     return BACKEND_TRANSFORMERS
 
@@ -132,6 +140,83 @@ def perf_options_payload():
         "flash_attn": env_bool("PONEGLYPH_FLASH_ATTN", True),
         "tf32": env_bool("PONEGLYPH_TF32", True),
         "warmup": env_bool("PONEGLYPH_WARMUP", True),
+        "lighton_fast_decode": env_bool("PONEGLYPH_LIGHTON_FAST_DECODE", True),
+        "lighton_fast_compile_mode": env_choice(
+            "PONEGLYPH_LIGHTON_FAST_COMPILE_MODE",
+            "autotune",
+            {"safe", "autotune"},
+        ),
+        "lighton_fast_eos_interval": env_int(
+            "PONEGLYPH_LIGHTON_FAST_EOS_INTERVAL",
+            8,
+            minimum=1,
+        ),
+        "lighton_text_fast_eos_interval": env_int(
+            "PONEGLYPH_LIGHTON_TEXT_FAST_EOS_INTERVAL",
+            1,
+            minimum=1,
+        ),
+        "lighton_text_fast_cache_length": env_int(
+            "PONEGLYPH_LIGHTON_TEXT_FAST_CACHE_LENGTH",
+            512,
+            minimum=1,
+        ),
+        "lighton_fast_num_splits": env_int(
+            "PONEGLYPH_LIGHTON_FAST_NUM_SPLITS",
+            4,
+            minimum=1,
+        ),
+        "lighton_fast_prefill_num_splits": env_int(
+            "PONEGLYPH_LIGHTON_FAST_PREFILL_NUM_SPLITS",
+            1,
+            minimum=1,
+        ),
+        "surya_fast_decode": env_bool(
+            "PONEGLYPH_SURYA_FAST_DECODE",
+            True,
+        ),
+        "surya_fast_compile": env_bool(
+            "PONEGLYPH_SURYA_FAST_COMPILE",
+            True,
+        ),
+        "surya_fast_fused_mlp": env_bool(
+            "PONEGLYPH_SURYA_FAST_FUSED_MLP",
+            True,
+        ),
+        "surya_fast_dynamic_prefill": env_bool(
+            "PONEGLYPH_SURYA_FAST_DYNAMIC_PREFILL",
+            True,
+        ),
+        "surya_fast_eos_interval": env_int(
+            "PONEGLYPH_SURYA_FAST_EOS_INTERVAL",
+            8,
+            minimum=1,
+        ),
+        "surya_text_fast_eos_interval": env_int(
+            "PONEGLYPH_SURYA_TEXT_FAST_EOS_INTERVAL",
+            1,
+            minimum=1,
+        ),
+        "surya_fast_num_splits": env_int(
+            "PONEGLYPH_SURYA_FAST_NUM_SPLITS",
+            4,
+            minimum=1,
+        ),
+        "surya_fast_prefill_num_splits": env_int(
+            "PONEGLYPH_SURYA_FAST_PREFILL_NUM_SPLITS",
+            1,
+            minimum=1,
+        ),
+        "surya_fast_cache_length": env_int(
+            "PONEGLYPH_SURYA_FAST_CACHE_LENGTH",
+            4608,
+            minimum=1,
+        ),
+        "surya_text_fast_cache_length": env_int(
+            "PONEGLYPH_SURYA_TEXT_FAST_CACHE_LENGTH",
+            768,
+            minimum=1,
+        ),
         "text_max_new_tokens": get_max_new_tokens(TEXT_MODEL_KEY),
         "bbox_max_new_tokens": get_max_new_tokens(BBOX_MODEL_KEY),
         "surya_max_new_tokens": get_max_new_tokens(SURYA_MODEL_KEY),
@@ -165,6 +250,11 @@ model_states = {
         "compiled": False,
         "compile_error": None,
         "warmup_error": None,
+        "warmup_timings_ms": [],
+        "optimized_engine": None,
+        "optimized_engine_error": None,
+        "generation_engine": GENERATION_ENGINE_TRANSFORMERS,
+        "last_generation_profile": None,
         "loading": False,
         "last_error": None,
         "download": make_download_state(),
@@ -489,6 +579,12 @@ def model_is_loaded(model_key: str) -> bool:
 
 
 def clear_loaded_model_state(state) -> None:
+    optimized_engine = state.get("optimized_engine")
+    if optimized_engine is not None:
+        try:
+            optimized_engine.restore_model()
+        except Exception:
+            pass
     state["processor"] = None
     state["model"] = None
     state["device"] = None
@@ -501,6 +597,11 @@ def clear_loaded_model_state(state) -> None:
     state["compiled"] = False
     state["compile_error"] = None
     state["warmup_error"] = None
+    state["warmup_timings_ms"] = []
+    state["optimized_engine"] = None
+    state["optimized_engine_error"] = None
+    state["generation_engine"] = GENERATION_ENGINE_TRANSFORMERS
+    state["last_generation_profile"] = None
 
 
 def configure_processor(model_key: str, loaded_processor):
@@ -640,6 +741,201 @@ def maybe_compile_transformers_model(torch_module, model, selected_device: str):
         return model, False, f"torch.compile a echoue, modele non compile: {exc}"
 
 
+def lighton_fast_decode_requested(
+    model_key: str,
+    torch_module,
+    selected_device: str,
+    selected_dtype,
+) -> bool:
+    return (
+        model_key in {BBOX_MODEL_KEY, TEXT_MODEL_KEY}
+        and selected_device == "cuda"
+        and selected_dtype == torch_module.bfloat16
+        and env_bool("PONEGLYPH_LIGHTON_FAST_DECODE", True)
+    )
+
+
+def disable_optimized_engine(model_key: str, reason: str) -> None:
+    state = get_model_state(model_key)
+    engine = state.get("optimized_engine")
+    if engine is not None:
+        try:
+            engine.restore_model()
+        except Exception as restore_exc:
+            reason = f"{reason} | restauration: {restore_exc}"
+    state["optimized_engine"] = None
+    state["optimized_engine_error"] = reason
+    state["generation_engine"] = GENERATION_ENGINE_TRANSFORMERS
+    try:
+        clear_torch_cache(get_torch())
+    except Exception:
+        pass
+
+
+def maybe_enable_lighton_fast_engine(
+    model_key: str,
+    torch_module,
+    selected_device: str,
+    selected_dtype,
+) -> bool:
+    state = get_model_state(model_key)
+    state["optimized_engine"] = None
+    state["optimized_engine_error"] = None
+    state["generation_engine"] = GENERATION_ENGINE_TRANSFORMERS
+    if not lighton_fast_decode_requested(
+        model_key,
+        torch_module,
+        selected_device,
+        selected_dtype,
+    ):
+        return False
+
+    try:
+        from lighton_flash_kvcache import FlashKVGreedyEngine
+
+        state["optimized_engine"] = FlashKVGreedyEngine(
+            state["model"],
+            max_new_tokens=get_max_new_tokens(model_key),
+            compile_mode=env_choice(
+                "PONEGLYPH_LIGHTON_FAST_COMPILE_MODE",
+                "autotune",
+                {"safe", "autotune"},
+            ),
+            eos_check_interval=env_int(
+                (
+                    "PONEGLYPH_LIGHTON_FAST_EOS_INTERVAL"
+                    if model_key == BBOX_MODEL_KEY
+                    else "PONEGLYPH_LIGHTON_TEXT_FAST_EOS_INTERVAL"
+                ),
+                8 if model_key == BBOX_MODEL_KEY else 1,
+                minimum=1,
+            ),
+            num_splits=env_int(
+                "PONEGLYPH_LIGHTON_FAST_NUM_SPLITS",
+                4,
+                minimum=1,
+            ),
+            prefill_num_splits=env_int(
+                "PONEGLYPH_LIGHTON_FAST_PREFILL_NUM_SPLITS",
+                1,
+                minimum=1,
+            ),
+            minimum_cache_len=(
+                0
+                if model_key == BBOX_MODEL_KEY
+                else env_int(
+                    "PONEGLYPH_LIGHTON_TEXT_FAST_CACHE_LENGTH",
+                    512,
+                    minimum=1,
+                )
+            ),
+        )
+        state["generation_engine"] = GENERATION_ENGINE_LIGHTON_FLASH_KV
+        return True
+    except Exception as exc:
+        disable_optimized_engine(
+            model_key,
+            f"Optimisation Flash KV indisponible, fallback Transformers: {exc}",
+        )
+        return False
+
+
+def surya_fast_decode_requested(
+    model_key: str,
+    torch_module,
+    selected_device: str,
+    selected_dtype,
+) -> bool:
+    return (
+        model_key in SURYA_MODEL_KEYS
+        and selected_device == "cuda"
+        and selected_dtype == torch_module.bfloat16
+        and env_bool("PONEGLYPH_SURYA_FAST_DECODE", True)
+    )
+
+
+def maybe_enable_surya_fast_engine(
+    model_key: str,
+    torch_module,
+    selected_device: str,
+    selected_dtype,
+) -> bool:
+    state = get_model_state(model_key)
+    state["optimized_engine"] = None
+    state["optimized_engine_error"] = None
+    state["generation_engine"] = GENERATION_ENGINE_TRANSFORMERS
+    if not surya_fast_decode_requested(
+        model_key,
+        torch_module,
+        selected_device,
+        selected_dtype,
+    ):
+        return False
+
+    try:
+        from surya_hybrid_flash_kvcache import HybridFlashGreedyEngine
+
+        state["optimized_engine"] = HybridFlashGreedyEngine(
+            state["model"],
+            max_new_tokens=get_max_new_tokens(model_key),
+            eos_check_interval=env_int(
+                (
+                    "PONEGLYPH_SURYA_FAST_EOS_INTERVAL"
+                    if model_key == SURYA_BBOX_MODEL_KEY
+                    else "PONEGLYPH_SURYA_TEXT_FAST_EOS_INTERVAL"
+                ),
+                8 if model_key == SURYA_BBOX_MODEL_KEY else 1,
+                minimum=1,
+            ),
+            num_splits=env_int(
+                "PONEGLYPH_SURYA_FAST_NUM_SPLITS",
+                4,
+                minimum=1,
+            ),
+            prefill_num_splits=env_int(
+                "PONEGLYPH_SURYA_FAST_PREFILL_NUM_SPLITS",
+                1,
+                minimum=1,
+            ),
+            use_delta_kernels=False,
+            use_fused_mlp=env_bool(
+                "PONEGLYPH_SURYA_FAST_FUSED_MLP",
+                True,
+            ),
+            use_cuda_graph=True,
+            compile_decode=env_bool(
+                "PONEGLYPH_SURYA_FAST_COMPILE",
+                True,
+            ),
+            minimum_cache_len=(
+                env_int(
+                    "PONEGLYPH_SURYA_FAST_CACHE_LENGTH",
+                    4608,
+                    minimum=1,
+                )
+                if model_key == SURYA_BBOX_MODEL_KEY
+                else env_int(
+                    "PONEGLYPH_SURYA_TEXT_FAST_CACHE_LENGTH",
+                    768,
+                    minimum=1,
+                )
+            ),
+            use_dynamic_prefill=env_bool(
+                "PONEGLYPH_SURYA_FAST_DYNAMIC_PREFILL",
+                True,
+            ),
+        )
+        state["generation_engine"] = GENERATION_ENGINE_SURYA_HYBRID_FLASH
+        return True
+    except Exception as exc:
+        disable_optimized_engine(
+            model_key,
+            "Optimisation hybride Surya indisponible, fallback "
+            f"Transformers: {exc}",
+        )
+        return False
+
+
 def load_transformers_backend(
     model_key: str,
     loaded_processor,
@@ -656,11 +952,6 @@ def load_transformers_backend(
         selected_dtype,
     )
     loaded_model.to(device=selected_device, dtype=selected_dtype)
-    loaded_model, compiled, compile_error = maybe_compile_transformers_model(
-        torch,
-        loaded_model,
-        selected_device,
-    )
 
     state["processor"] = loaded_processor
     state["model"] = loaded_model
@@ -671,9 +962,32 @@ def load_transformers_backend(
     state["backend_fallback_reason"] = None
     state["backend_error"] = None
     state["attention_implementation"] = attention_implementation
-    state["compiled"] = compiled
-    state["compile_error"] = compile_error
+    state["compiled"] = False
+    state["compile_error"] = None
     state["last_error"] = None
+
+    optimized = maybe_enable_lighton_fast_engine(
+        model_key,
+        torch,
+        selected_device,
+        selected_dtype,
+    )
+    if not optimized:
+        optimized = maybe_enable_surya_fast_engine(
+            model_key,
+            torch,
+            selected_device,
+            selected_dtype,
+        )
+    if not optimized:
+        loaded_model, compiled, compile_error = maybe_compile_transformers_model(
+            torch,
+            loaded_model,
+            selected_device,
+        )
+        state["model"] = loaded_model
+        state["compiled"] = compiled
+        state["compile_error"] = compile_error
 
 
 def messages_for_model(model_key: str):
@@ -713,19 +1027,74 @@ def messages_for_model(model_key: str):
 def maybe_warmup_model(model_key: str) -> None:
     state = get_model_state(model_key)
     state["warmup_error"] = None
+    state["warmup_timings_ms"] = []
     if state["device"] != "cuda" or not env_bool("PONEGLYPH_WARMUP", True):
         return
 
     try:
         from PIL import Image
 
-        warmup_image = Image.new("RGB", (64, 64), (240, 240, 240))
-        generate_with_model(
-            model_key,
-            warmup_image,
-            messages_for_model(model_key),
-            max_new_tokens_override=1,
+        optimized = state.get("optimized_engine") is not None
+        if optimized and model_key in SURYA_MODEL_KEYS:
+            warmup_image_size = (
+                (958, 1500)
+                if model_key == SURYA_BBOX_MODEL_KEY
+                else (320, 640)
+            )
+            repeat_count = env_int(
+                "PONEGLYPH_SURYA_FAST_WARMUP_REPEATS",
+                2,
+                minimum=1,
+            )
+            warmup_tokens = min(
+                get_max_new_tokens(model_key),
+                env_int(
+                    "PONEGLYPH_SURYA_FAST_WARMUP_TOKENS",
+                    32,
+                    minimum=2,
+                ),
+            )
+        elif optimized:
+            warmup_image_size = (
+                (958, 1500)
+                if model_key == BBOX_MODEL_KEY
+                else (320, 640)
+            )
+            repeat_count = env_int(
+                "PONEGLYPH_LIGHTON_FAST_WARMUP_REPEATS",
+                3,
+                minimum=1,
+            )
+            warmup_tokens = min(
+                get_max_new_tokens(model_key),
+                env_int(
+                    "PONEGLYPH_LIGHTON_FAST_WARMUP_TOKENS",
+                    32,
+                    minimum=2,
+                ),
+            )
+        else:
+            warmup_image_size = (64, 64)
+            repeat_count = 1
+            warmup_tokens = 1
+        warmup_image = Image.new(
+            "RGB",
+            warmup_image_size,
+            (240, 240, 240),
         )
+        for _ in range(repeat_count):
+            started = time.perf_counter()
+            generate_with_model(
+                model_key,
+                warmup_image,
+                messages_for_model(model_key),
+                max_new_tokens_override=warmup_tokens,
+            )
+            state["warmup_timings_ms"].append(
+                round((time.perf_counter() - started) * 1000, 1)
+            )
+            if optimized and state.get("optimized_engine") is None:
+                break
     except Exception as exc:
         state["warmup_error"] = f"Warmup ignore: {exc}"
 
@@ -812,7 +1181,11 @@ def model_status_payload(model_key: str = DEFAULT_MODEL_KEY):
         "attention_implementation": state["attention_implementation"],
         "compiled": state["compiled"],
         "compile_error": state["compile_error"],
+        "generation_engine": state["generation_engine"],
+        "optimized_engine_error": state["optimized_engine_error"],
+        "last_generation_profile": state["last_generation_profile"],
         "warmup_error": state["warmup_error"],
+        "warmup_timings_ms": state["warmup_timings_ms"],
         "error": state["last_error"],
         "download": download_status_snapshot(model_key),
     }
@@ -848,6 +1221,9 @@ def runtime_metadata_payload(model_key: str):
         "active_backend": state["active_backend"] or BACKEND_NOT_LOADED,
         "requested_backend": get_requested_backend(),
         "backend_fallback_reason": state["backend_fallback_reason"],
+        "generation_engine": state["generation_engine"],
+        "optimized_engine_error": state["optimized_engine_error"],
+        "generation_profile": state["last_generation_profile"],
     }
 
 
@@ -907,6 +1283,34 @@ def transformers_generate(model_key: str, image, messages, max_new_tokens_overri
     )
     inputs = move_inputs_to_device(inputs, selected_device, selected_dtype)
 
+    optimized_engine = state.get("optimized_engine")
+    if optimized_engine is not None:
+        try:
+            active_generation_engine = state["generation_engine"]
+            optimized = optimized_engine.generate(
+                inputs,
+                max_new_tokens=max_new_tokens_override,
+            )
+            state["last_generation_profile"] = {
+                "engine": active_generation_engine,
+                "prefill_ms": round(optimized.prefill_ms, 2),
+                "decode_ms": round(optimized.decode_ms, 2),
+                "generated_tokens": optimized.generated_tokens,
+                "decode_steps": optimized.decode_steps,
+            }
+            return decode_generated_tokens(
+                loaded_processor,
+                optimized.token_ids[0],
+            ).strip()
+        except Exception as exc:
+            disable_optimized_engine(
+                model_key,
+                "Erreur moteur optimise pendant l'inference, fallback "
+                f"Transformers: {exc}",
+            )
+            loaded_model = state["model"]
+
+    generation_started = time.perf_counter()
     with torch.inference_mode(), generation_autocast_context(torch, selected_device, selected_dtype):
         output_ids = loaded_model.generate(
             **inputs,
@@ -915,6 +1319,11 @@ def transformers_generate(model_key: str, image, messages, max_new_tokens_overri
         )
 
     gen_ids = output_ids[0, inputs["input_ids"].shape[1] :]
+    state["last_generation_profile"] = {
+        "engine": GENERATION_ENGINE_TRANSFORMERS,
+        "generate_ms": round((time.perf_counter() - generation_started) * 1000, 2),
+        "generated_tokens": len(gen_ids),
+    }
     return decode_generated_tokens(loaded_processor, gen_ids).strip()
 
 

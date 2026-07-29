@@ -7,3 +7,6 @@ huggingface_hub
 Pillow
 pydantic
 git+https://github.com/huggingface/transformers.git
+kernels>=0.12,<0.13
+triton-windows==3.6.0.post26; sys_platform == "win32"
+triton>=3.6,<3.7; sys_platform != "win32"
