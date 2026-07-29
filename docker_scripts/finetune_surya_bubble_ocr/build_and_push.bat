@@ -12,7 +12,7 @@ echo Building and pushing %FULL_IMAGE%
 echo ==========================================================
 echo.
 
-docker build --pull -t %FULL_IMAGE% .
+docker build --pull -f Dockerfile -t %FULL_IMAGE% ..
 
 if %ERRORLEVEL% NEQ 0 (
     echo.

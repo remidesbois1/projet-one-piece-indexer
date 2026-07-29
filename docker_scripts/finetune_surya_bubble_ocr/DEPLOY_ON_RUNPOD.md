@@ -15,9 +15,15 @@ This folder is designed to run as a one-shot RunPod training container:
 From `docker_scripts/finetune_surya_bubble_ocr`:
 
 ```bash
-docker build --pull -t remidesbois/surya-bubble-ocr-finetune:latest .
+docker build --pull \
+  -f Dockerfile \
+  -t remidesbois/surya-bubble-ocr-finetune:latest \
+  ..
 docker push remidesbois/surya-bubble-ocr-finetune:latest
 ```
+
+Le contexte parent est volontaire : l'image copie à la fois ce package et
+`docker_scripts/common_training`.
 
 On Windows:
 
@@ -31,7 +37,7 @@ Set `DOCKER_USER`, `IMAGE_NAME`, or `TAG` before running the batch file if you n
 
 Recommended pod:
 
-- GPU: RTX 5090, L40S, A100, H100, or equivalent 32 GB+ VRAM.
+- GPU: RTX 3090 24 GB for the default local Ampere profile.
 - Container image: `remidesbois/surya-bubble-ocr-finetune:latest`.
 - Container disk: 80 GB minimum.
 - Volume disk: 100 GB+ recommended, mounted at `/workspace`.
@@ -43,7 +49,9 @@ Optional preflight before launching a paid pod:
 docker run --rm remidesbois/surya-bubble-ocr-finetune:latest python smoke_check.py
 ```
 
-This does not download full model weights. It verifies the Surya AutoModel mapping, processor batch path, and `eval_cer` checkpoint-selection setting.
+This does not download full model weights. It verifies the processor batch path,
+assistant-token boundary, `eval_cer` selection, and the Qwen3.5 fast
+linear-attention dependencies.
 
 After wiring env vars and volume mounts, run the container entrypoint in dry-run mode once:
 
@@ -80,6 +88,31 @@ The Dockerfile defaults keep data and outputs under `/workspace`:
 SURYA_DATASET_DIR=/workspace/surya_bubble_dataset
 SURYA_OUTPUT_DIR=/workspace/outputs_surya_bubble_ocr
 HF_HOME=/workspace/hf-cache
+```
+
+The image is based on PyTorch 2.8.0 + CUDA 12.8 and sets
+`SURYA_REQUIRE_FAST_LINEAR_ATTENTION=1`. It fails early instead of silently
+training through the slow Qwen3.5 reference implementation. CUDA 12.8 is used
+deliberately for compatibility with the local RTX 3090 and current NVIDIA
+drivers.
+
+After the dataset export, the full setup can be validated without taking an
+optimizer step:
+
+```bash
+python train_surya_bubble_ocr.py --validate-setup
+```
+
+Default RTX 3090 training profile:
+
+```text
+SURYA_TRAIN_MODE=hybrid
+SURYA_TRAIN_BATCH=16
+SURYA_EVAL_BATCH=16
+SURYA_GRAD_ACCUM=2
+SURYA_GEN_EVAL_BATCH=8
+SURYA_GRADIENT_CHECKPOINTING=0
+SURYA_VISION_TRAIN_LAST_BLOCKS=4
 ```
 
 ## Resume and rerun controls

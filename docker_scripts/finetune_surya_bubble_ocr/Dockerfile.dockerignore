@@ -1,0 +1,15 @@
+*
+!common_training/
+!common_training/**
+!finetune_surya_bubble_ocr/
+!finetune_surya_bubble_ocr/**
+finetune_surya_bubble_ocr/.env
+finetune_surya_bubble_ocr/__pycache__/
+finetune_surya_bubble_ocr/**/*.pyc
+finetune_surya_bubble_ocr/surya_bubble_dataset/
+finetune_surya_bubble_ocr/hf-cache/
+finetune_surya_bubble_ocr/outputs_surya_bubble_ocr/
+finetune_surya_bubble_ocr/confidence_benchmark/data/
+finetune_surya_bubble_ocr/confidence_benchmark/results/
+finetune_surya_bubble_ocr/**/*.log
+finetune_surya_bubble_ocr/**/*.zip

@@ -16,7 +16,7 @@ echo.
 docker run --gpus all --ipc=host --shm-size 32g --env-file %ENV_FILE% ^
     -v "%cd%\surya_bubble_dataset:/workspace/surya_bubble_dataset" ^
     -v "%cd%\outputs_surya_bubble_ocr:/workspace/outputs_surya_bubble_ocr" ^
-    -v "%USERPROFILE%\.cache\huggingface:/root/.cache/huggingface" ^
+    -v "%USERPROFILE%\.cache\huggingface:/workspace/hf-cache" ^
     %IMAGE_NAME%:%TAG%
 
 if %ERRORLEVEL% NEQ 0 (

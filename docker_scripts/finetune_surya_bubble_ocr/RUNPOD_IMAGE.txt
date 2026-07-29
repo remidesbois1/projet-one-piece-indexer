@@ -1,2 +1,2 @@
 remidesbois/surya-bubble-ocr-finetune:latest
-remidesbois/surya-bubble-ocr-finetune@sha256:482b3a3a7e8c4e321e4731bf0b57045cff894c27ed8814ce70f980a6e47ccc91
+# Rebuild and push the RTX 3090 image before adding its new immutable digest.

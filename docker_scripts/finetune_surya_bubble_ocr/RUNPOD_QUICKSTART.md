@@ -6,7 +6,8 @@ Use this image in RunPod:
 remidesbois/surya-bubble-ocr-finetune:latest
 ```
 
-For a pinned digest, use the value in `RUNPOD_IMAGE.txt`.
+`RUNPOD_IMAGE.txt` intentionally has no pinned digest until this rewritten
+CUDA 12.8 / RTX 3090 image is rebuilt and pushed.
 
 ## Required env
 
@@ -35,10 +36,12 @@ Remidesbois/surya-bubble-ocr-poneglyph
 ## Recommended RunPod settings
 
 ```text
-GPU: RTX 5090 or 32 GB+ VRAM GPU
+GPU: RTX 3090 24 GB
 Container disk: 80 GB minimum
 Volume: 100 GB+ mounted at /workspace
 Docker args: --ipc=host --shm-size 32g
+Runtime: PyTorch 2.8.0, CUDA 12.8, Qwen3.5 fast DeltaNet required
+Kernel target: Ampere SM 8.6
 ```
 
 The image defaults to:
@@ -58,6 +61,12 @@ python run_pipeline.py --dry-run --check-remote
 ```
 
 This validates env presence, writable `/workspace` mounts, the Surya model/processor API, the Supabase query shape, and the HF token. It does not export images, train, create repos, or upload weights.
+
+After export, validate the real dataset/collator/model contract:
+
+```bash
+python train_surya_bubble_ocr.py --validate-setup
+```
 
 ## Full run
 
