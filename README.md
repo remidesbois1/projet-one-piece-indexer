@@ -133,8 +133,9 @@ Fine-tune du VLM [`datalab-to/surya-ocr-2`](https://huggingface.co/datalab-to/su
 - **Surya** (bulle unique) : [`surya-bubble-ocr-poneglyph`](https://huggingface.co/Remidesbois/surya-bubble-ocr-poneglyph).
 
 - **Local :** 0$/OCR via transformers (`AutoModelForImageTextToText`)
-- **Dernier benchmark H100 (01/07/2026) :** CER **2.028%** - WER **3.078%** - exact-match **90.09%** - hallucination **0%**
-- **Pipeline MLOps :** [`docker_scripts/finetune_surya_ocr_bbox`](docker_scripts/finetune_surya_ocr_bbox) (export Supabase → dataset → LoRA/DoRA → benchmark vs LightOn)
+- **Benchmark RTX 3090 (30/07/2026, test held-out de 1 423 bulles) :** CER **0.451%** - WER **1.656%** - exact-match **90.65%** - sorties vides **0%** - limite de génération atteinte **0%**
+- **Pipeline crop reproductible :** [`docker_scripts/finetune_surya_bubble_ocr`](docker_scripts/finetune_surya_bubble_ocr) (split strict par page → fine-tuning hybride → benchmark exhaustif → publication Hugging Face)
+- **Pipeline BBox :** [`docker_scripts/finetune_surya_ocr_bbox`](docker_scripts/finetune_surya_ocr_bbox)
 
 ### YOLO26 Fine-tuned (Détection des Bulles)
 

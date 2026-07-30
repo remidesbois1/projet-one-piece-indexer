@@ -233,8 +233,8 @@ const features = [
         icon: Zap,
         title: "OCR Poneglyph & Surya + Modèle Local",
         badge: "Multi-Desktop",
-        description: "Deux familles de modèles bbox full-page tournent sur Modal GPU L4 ou en local via l'application desktop.",
-        details: ["CER < 0.1%", "GPU L4", "95% OCR local", "5-15s / page"],
+        description: "Modèles spécialisés pour les pages complètes et les bulles isolées, disponibles sur Modal GPU ou en local via l'application desktop.",
+        details: ["Surya CER 0.451%", "1 423 bulles test", "GPU local / Modal", "0% de troncature"],
     },
     {
         icon: Cpu,

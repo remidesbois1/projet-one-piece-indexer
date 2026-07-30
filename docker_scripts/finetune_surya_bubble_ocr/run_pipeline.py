@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
-from huggingface_hub import HfApi, login
+from huggingface_hub import HfApi
 
 
 os.environ["PYTHONUNBUFFERED"] = "1"
@@ -246,15 +246,20 @@ def maybe_upload_to_hf():
         print(message, flush=True)
         return
 
-    login(token=token)
-    api = HfApi()
+    api = HfApi(token=token)
     api.create_repo(repo_id=repo_id, exist_ok=True, private=env_bool("HF_PRIVATE", False))
-    print(f"Uploading final model to Hugging Face: {repo_id}", flush=True)
-    api.upload_folder(
+    upload_workers = int(os.getenv("SURYA_HF_UPLOAD_WORKERS", "4"))
+    print(
+        f"Uploading final model to Hugging Face with the resumable large-folder "
+        f"uploader: {repo_id} ({upload_workers} workers)",
+        flush=True,
+    )
+    api.upload_large_folder(
         folder_path=str(final_model_dir()),
         repo_id=repo_id,
         repo_type="model",
-        commit_message="Upload Surya bubble OCR fine-tuned model",
+        num_workers=upload_workers,
+        print_report=True,
     )
     print("Hugging Face upload complete.", flush=True)
 

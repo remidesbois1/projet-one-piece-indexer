@@ -1,116 +1,202 @@
-# Surya Bubble OCR ONNX Integration
+# Fine-tuning Surya OCR 2 classique — profil RTX 3090
 
-This folder contains the FP32-first Surya OCR 2 export, validation, upload, and
-browser integration path for Projet Poneglyph.
+Ce package entraîne `datalab-to/surya-ocr-2` sur des crops de bulles validées.
+Il ne concerne pas le modèle BBox pleine page.
 
-Source model:
+Le pipeline complet conserve le contrat existant :
 
-- `Remidesbois/surya-bubble-ocr-poneglyph`
+1. export Supabase avec split strict par page ;
+2. fine-tuning Surya ;
+3. benchmark génération sur le test held-out ;
+4. fusion éventuelle de l'adapter ;
+5. upload Hugging Face et artefacts fournisseur.
 
-Intended ONNX package repository:
+## Profil 3090 par défaut
 
-- `Remidesbois/surya-bubble-ocr-poneglyph-onnx`
+Le profil par défaut est un fine-tuning hybride :
 
-## Why This Uses A Dedicated Runtime
+- backbone langage complet entraînable ;
+- merger multimodal entraînable ;
+- 4 derniers blocs vision entraînables ;
+- reste du backbone vision gelé ;
+- BF16, TF32 et `adamw_torch_fused` ;
+- batch physique 16, accumulation 2, soit le même batch effectif de 32 ;
+- gradient checkpointing désactivé pour privilégier le débit ;
+- LR langage `1.2e-5`, LR merger `0.5x`, LR vision `0.25x` ;
+- 5 époques, cosine avec plancher à 10 %, early stopping de patience 2 ;
+- évaluation CER générative à chaque époque, avec baseline initiale optionnelle ;
 
-Surya OCR 2 is a Qwen3.5 VLM-style model. Its processor emits patch tensors,
-`image_grid_thw`, image token spans, and M-RoPE metadata, so it needs its own
-export and browser runtime assumptions.
+Le modèle fait environ 666 M de paramètres. Le profil conserve le fine-tuning
+hybride complet sur les 24 Go de la RTX 3090, sans quantification.
 
-## Working FP32 Export
+## Résultat publié — 30 juillet 2026
 
-The working exporter is the forked static split exporter:
+Le run final RTX 3090 a évalué les 1 423 bulles du test held-out :
+
+| Métrique | Résultat |
+| --- | ---: |
+| CER | **0,451 %** |
+| WER | **1,656 %** |
+| Exact match | **90,65 %** |
+| Levenshtein moyen | **0,1595** |
+| Sorties vides | **0 %** |
+| Limite de génération atteinte | **0 / 1 423** |
+
+Modèle : [`Remidesbois/surya-bubble-ocr-poneglyph`](https://huggingface.co/Remidesbois/surya-bubble-ocr-poneglyph).
+Le benchmark détaillé est publié avec le modèle dans `benchmark_test.json`.
+
+## Optimisations spécifiques
+
+- Un seul passage multimodal du processor par batch, contre un passage groupé
+  plus deux passages supplémentaires par image auparavant.
+- La tête de vocabulaire ne calcule les logits que sur le suffixe OCR supervisé,
+  pas sur les tokens de l'image et du prompt.
+- Regroupement des exemples par coût token estimé pour réduire le padding.
+- Cache LRU des crops dans le processus principal et mémoire épinglée ; les
+  workers DataLoader sont désactivés pour éviter le verrou CUDA/Triton observé.
+- Fast Gated DeltaNet via `flash-linear-attention` et `causal-conv1d`.
+  L'image Docker refuse de démarrer l'entraînement si ce chemin manque.
+- Le wheel `causal-conv1d` est compilé uniquement pour SM 8.6 afin d'éviter
+  neuf architectures inutiles dans une image dédiée à la RTX 3090.
+- SDPA PyTorch pour les 6 couches d'attention complète. FlashAttention 2 n'est
+  pas imposé : il reste sélectionnable avec `SURYA_ATTN_IMPLEMENTATION`.
+- Évaluation génération batchée et échantillon de validation stratifié.
+
+Les kernels d'inférence locaux `surya_hybrid_flash_kvcache.py` et
+`surya_mlp_kernels.py` ne sont pas réutilisés directement : ils sont conçus
+pour le décodage mono-token et n'ont pas de backward. Les principes transférables
+(BF16, kernels fusionnés, formes regroupées et travail limité aux logits utiles)
+sont appliqués ici.
+
+## Améliorations qualité
+
+- Loss moyenne par bulle plutôt que moyenne globale par token : les longs
+  dialogues ne dominent plus les textes très courts.
+- Pondération légère des textes de 1–8 caractères et des onomatopées.
+- Augmentations manga conservatrices : contraste, luminosité, netteté, léger
+  flou et rotation maximale de 1 degré.
+- Budget image borné entre 65 536 et 1 048 576 pixels pour conserver les détails
+  sans laisser un crop aberrant provoquer un OOM.
+- Sélection du meilleur checkpoint sur le CER et test final complet.
+- Le benchmark initial reste disponible avec `SURYA_EVAL_ON_START=1`, mais il
+  est désactivé par défaut : il ne change pas l'entraînement et gardait la barre
+  principale à 0 % pendant toute la génération de référence.
+
+## Lancement
+
+Validation rapide du contrat :
 
 ```bash
-python export_onnx_static_fp32.py \
-  --model-id Remidesbois/surya-bubble-ocr-poneglyph \
-  --output-dir ./exported/surya-bubble-ocr-poneglyph-fp32 \
-  --sample-image ./test_images/square.png \
-  --device cuda \
-  --opset 17 \
-  --max-context-tokens 1536
+python run_pipeline.py --dry-run --check-remote
+python train_surya_bubble_ocr.py --validate-setup
+python train_surya_bubble_ocr.py --train-smoke-steps 1
 ```
 
-It writes:
-
-- `onnx/vision_encoder.onnx`
-- `onnx/decoder_model.onnx`
-- tokenizer, processor, config, and `preprocessor_config.json`
-- `surya_runtime_manifest.json`
-
-Runtime contract:
-
-- vision graph: dynamic patch count from `pixel_values`
-- decoder graph: fixed right-padded 1536-token no-cache context
-- decoder output: `next_logits` for the supplied `logit_index`
-- generation: greedy loop reruns the padded decoder context each token
-
-The original `export_onnx_fp32.py` is kept as a diagnostic top-level exporter.
-It currently records the upstream-style blockers in `export_error.json` and is
-not the accepted runtime package path.
-
-## Validation
-
-Create references:
+Pipeline complet :
 
 ```bash
-python create_reference_outputs.py \
-  --model-id Remidesbois/surya-bubble-ocr-poneglyph \
-  --images ./test_images \
-  --out ./reference_outputs \
-  --device cuda
+python run_pipeline.py
 ```
 
-Validate the exported split graphs:
+Dans le conteneur RunPod, les chemins par défaut sont :
+
+```text
+/workspace/surya_bubble_dataset
+/workspace/outputs_surya_bubble_ocr
+/workspace/hf-cache
+```
+
+## Réglages principaux
 
 ```bash
-python validate_static_onnx.py \
-  --model-id Remidesbois/surya-bubble-ocr-poneglyph \
-  --onnx-dir ./exported/surya-bubble-ocr-poneglyph-fp32/onnx \
-  --images ./test_images \
-  --out ./reference_outputs/static_onnx_validation.json \
-  --device cuda \
-  --max-context-tokens 1536
+SURYA_TRAIN_MODE=hybrid          # hybrid, full ou lora
+SURYA_TRAIN_BATCH=16
+SURYA_EVAL_BATCH=16
+SURYA_GRAD_ACCUM=2
+SURYA_LR=1.2e-5
+SURYA_EPOCHS=5
+SURYA_VISION_TRAIN_LAST_BLOCKS=4
+SURYA_VISION_LR_MULTIPLIER=0.25
+SURYA_MERGER_LR_MULTIPLIER=0.50
+SURYA_GRADIENT_CHECKPOINTING=0
+SURYA_TORCH_COMPILE=0
+SURYA_DATALOADER_WORKERS=0
+SURYA_EVAL_ON_START=0
+SURYA_GEN_EVAL_BATCH=8
+SURYA_GEN_EVAL_MAX_SAMPLES=256
+SURYA_MAX_NEW_TOKENS=256
+SURYA_RESUME_FROM_CHECKPOINT=auto
+SURYA_HF_UPLOAD_WORKERS=4
 ```
 
-Current validation evidence: 12 image cases pass with the same ONNX sessions,
-including 256x256, 320x768, 768x320, a high-resolution crop, and a page-style
-crop. All next-token argmax values match PyTorch.
+`SURYA_TORCH_COMPILE=1` reste expérimental avec les kernels Triton DeltaNet.
+Il faut le comparer localement après le premier epoch chaud avant de le garder.
 
-## Upload
+Le collator peut être rebenchmarké sur le dataset exporté :
 
 ```bash
-HF_TOKEN=... python upload_to_hf.py \
-  --source-dir ./exported/surya-bubble-ocr-poneglyph-fp32 \
-  --repo-id Remidesbois/surya-bubble-ocr-poneglyph-onnx \
-  --commit-message "Add Surya OCR 2 FP32 ONNX export"
+python benchmark_training_hotpath.py \
+  --metadata /workspace/surya_bubble_dataset/train/metadata.jsonl \
+  --output /workspace/outputs_surya_bubble_ocr/collator_benchmark.json
 ```
 
-The upload script validates required package files and every external-data shard
-listed in `surya_runtime_manifest.json` before uploading.
+Sur la validation locale RTX 3090, batch 16 sur des crops réels, la médiane est
+passée de 167,7 ms à 18,3 ms, soit 9,18x, avec égalité exacte de tous les tokens
+supervisés. Ce nombre mesure le pipeline CPU/processor, pas le débit final GPU.
+À ce coût-là, des workers DataLoader n'apportent pas de débit utile face à un
+pas GPU de 1,111 s. Ils sont donc désactivés : après l'initialisation CUDA/Triton,
+leur création par `fork` peut hériter d'un verrou et bloquer avant le premier
+batch. `--validate-setup` consomme maintenant un vrai batch via le DataLoader
+configuré afin de détecter cette régression avant un entraînement complet.
 
-## Browser Integration
+Le premier pas `Trainer` compile les kernels CUDA/Triton et prend environ
+60 secondes avec un cache vide sur la 3090. La barre reste à 0 % pendant ce seul
+pas, mais la GPU travaille. Les pas suivants prennent environ 2,5 secondes avec
+l'accumulation 2×16 (cohérent avec ~1,11 s par micro-batch). Les caches
+TorchInductor et Triton sont persistés dans le volume Hugging Face : un nouveau
+conteneur a validé le même premier pas en 5,25 secondes une fois le cache chaud.
 
-The frontend exposes `Surya OCR 2 FP32` as its own local OCR backend. The worker uses:
+La génération réserve jusqu'à 256 nouveaux tokens. Le tokenizer Surya OCR 2
+utilisé ici est presque caractère par caractère : sur les 9 527 bulles validées,
+le p99 est à environ 115 tokens et le maximum à 186 tokens avec le suffixe de
+conversation. L'ancienne limite
+de 96 tronquait 244 références valides. Le chargement du dataset refuse
+maintenant de démarrer si une cible dépasse le budget, et le benchmark publie
+`token_limit_rate` pour rendre toute sortie arrêtée par la limite visible.
 
-- Transformers.js `AutoProcessor` and `AutoTokenizer`
-- `onnxruntime-web` for `vision_encoder.onnx` and `decoder_model.onnx`
-- project runtime glue in `frontend/src/lib/ocr/surya/`
+Un lancement interrompu reprend automatiquement le dernier `checkpoint-*`
+présent dans le dossier d'outputs. Utiliser
+`SURYA_RESUME_FROM_CHECKPOINT=0` pour repartir volontairement de zéro.
 
-Native Transformers.js model loading is not assumed. The package is
-Transformers.js-compatible for tokenizer/processor loading, while model
-execution uses the project wrapper because the exported graph layout is custom.
+L'early stopping est calculé après le benchmark génératif, directement sur son
+CER. Cela évite l'ordre d'appel de `EarlyStoppingCallback`, qui recevait
+`eval_loss` avant la disponibilité de `eval_cer` et se désactivait.
 
-Runtime notes:
+La publication utilise l'uploader Hugging Face `upload_large_folder`, résumable
+et adapté au fichier `model.safetensors` d'environ 1,33 Go.
 
-- WebGPU is the intended browser backend for FP32.
-- Browser/WASM is not the default; the FP32 decoder package is too large for the
-  practical WASM path in local testing.
-- The decoder context is fixed-padded rather than truly dynamic because the
-  Qwen3.5 GatedDeltaNet PyTorch fallback unrolls 64-token chunks during tracing.
+Le benchmark complet forward + backward + AdamW sur le groupe de crops le plus
+coûteux confirme le batch physique 16 : 18,00 Gio alloués, 18,45 Gio réservés
+et 1,111 s par pas chaud. Le batch 8 atteint 10,77 Gio et 0,653 s, soit environ
+18 % de débit par bulle en moins. Le batch 32 provoque un OOM dans DeltaNet.
 
-## Optimization
+Repli si d'autres applications occupent la VRAM :
 
-Do not add FP16, INT8, Q8, or Q4 variants until this FP32 package is uploaded
-and tested from the webapp. Quantized variants must be benchmarked against the
-FP32 validation set before becoming default.
+```bash
+SURYA_TRAIN_BATCH=8
+SURYA_EVAL_BATCH=8
+SURYA_GRAD_ACCUM=4
+SURYA_GEN_EVAL_BATCH=4
+```
+
+Mode rsLoRA de secours :
+
+```bash
+SURYA_TRAIN_MODE=lora
+SURYA_LORA_R=64
+SURYA_USE_RSLORA=1
+SURYA_USE_DORA=0
+```
+
+Ce mode cible également `in_proj_qkv`, `in_proj_z`, `in_proj_a`,
+`in_proj_b` et `out_proj`, absents de l'ancienne configuration LoRA.
