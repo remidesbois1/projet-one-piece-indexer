@@ -15,11 +15,13 @@ import { useAnnotationDetection } from '@/hooks/useAnnotationDetection';
 import { useAnnotationMetadata } from '@/hooks/useAnnotationMetadata';
 import { useTauriLocalOcrContext } from '@/context/TauriLocalOcrContext';
 import { getProxiedImageUrl } from '@/lib/utils';
+import { fetchOriginalPageImage } from '@/lib/pageImageClient';
 import { capitalizeOcrSentenceStarts } from '@/lib/ocr-utils';
+import { postOcrImage } from '@/lib/ocrProxyClient';
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { ArrowLeft, Send, X, Shield, FileText } from "lucide-react";
+import { ArrowLeft, Send, X, Shield, FileText, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import AnnotateLeftSidebar from '@/components/AnnotateLeftSidebar';
 import AnnotateCanvas from '@/components/AnnotateCanvas';
@@ -63,19 +65,6 @@ function getNearbyChapterPages(
     ).filter(p => normalizePageId(p.id) !== normalizePageId(currentPageId));
 }
 
-function warmBrowserImageCache(imageUrl) {
-    if (!imageUrl || typeof window === 'undefined') return Promise.resolve();
-
-    return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.decoding = 'async';
-        img.onload = () => resolve();
-        img.onerror = reject;
-        img.src = imageUrl;
-    });
-}
-
 function imageElementToJpegBlob(img) {
     return new Promise((resolve) => {
         const canvas = document.createElement('canvas');
@@ -88,10 +77,7 @@ function imageElementToJpegBlob(img) {
 }
 
 async function runModalPoneglyph(imageBlob) {
-    const response = await fetch('/api/poneglyph_one_shot', {
-        method: 'POST',
-        body: imageBlob
-    });
+    const response = await postOcrImage('/api/poneglyph_one_shot', imageBlob);
 
     if (!response.ok) throw new Error("Erreur API Poneglyph-BBox");
     return response.json();
@@ -122,6 +108,7 @@ export default function AnnotatePage() {
     const [imageDimensions, setImageDimensions] = useState(null);
     const [ocrSource, setOcrSource] = useState(null);
     const [debugImageUrl, setDebugImageUrl] = useState(null);
+    const [originalImageUrl, setOriginalImageUrl] = useState(null);
     const [detectionDebugData, setDetectionDebugData] = useState(null);
     const [showApiKeyModal, setShowApiKeyModal] = useState(false);
     const [showDescModal, setShowDescModal] = useState(false);
@@ -145,7 +132,11 @@ export default function AnnotatePage() {
     const navGenerationRef = useRef(0);
     const pageCacheRef = useRef(new Map());
     const bubbleCacheRef = useRef(new Map());
-    const imagePrefetchRef = useRef(new Map());
+    const imageBlobCacheRef = useRef(new Map());
+
+    useEffect(() => {
+        imageBlobCacheRef.current.clear();
+    }, [session?.access_token]);
 
     useEffect(() => {
         if (paramsPageId && String(paramsPageId) !== String(pageIdRef.current)) {
@@ -166,6 +157,7 @@ export default function AnnotatePage() {
             if (urlPageId && String(urlPageId) !== String(pageIdRef.current)) {
                 navGenerationRef.current += 1;
                 setPageId(urlPageId);
+                setImageDimensions(null);
                 setPendingAnnotation(null);
                 setRectangle(null);
                 setIsModalOpen(false);
@@ -181,6 +173,7 @@ export default function AnnotatePage() {
     const navigateToPage = useCallback((newPageId) => {
         navGenerationRef.current += 1;
         setPageId(newPageId);
+        setImageDimensions(null);
         window.history.pushState({}, '', `/${mangaSlug}/annotate/${newPageId}`);
         setPendingAnnotation(null);
         setRectangle(null);
@@ -203,6 +196,52 @@ export default function AnnotatePage() {
         if (!cacheKey) return;
         bubbleCacheRef.current.set(cacheKey, sortBubblesForAnnotation(bubbles));
     }, []);
+
+    const getOriginalPageBlob = useCallback((targetPageId) => {
+        const token = session?.access_token;
+        const cacheKey = `${normalizePageId(targetPageId)}:${token || 'none'}`;
+        if (!token) return Promise.reject(new Error('Session manquante'));
+
+        const cached = imageBlobCacheRef.current.get(cacheKey);
+        if (cached instanceof Blob) return Promise.resolve(cached);
+        if (cached) return cached;
+
+        const request = fetchOriginalPageImage(targetPageId, token)
+            .then((blob) => {
+                imageBlobCacheRef.current.set(cacheKey, blob);
+                return blob;
+            })
+            .catch((error) => {
+                imageBlobCacheRef.current.delete(cacheKey);
+                throw error;
+            });
+        imageBlobCacheRef.current.set(cacheKey, request);
+        return request;
+    }, [session?.access_token]);
+
+    useEffect(() => {
+        let active = true;
+        let objectUrl = null;
+        setOriginalImageUrl(null);
+        setImageDimensions(null);
+
+        if (!pageId || !session?.access_token) return undefined;
+
+        getOriginalPageBlob(pageId)
+            .then((blob) => {
+                if (!active) return;
+                objectUrl = URL.createObjectURL(blob);
+                setOriginalImageUrl(objectUrl);
+            })
+            .catch((imageError) => {
+                if (active) setError(imageError.message || "Impossible de charger l'image originale.");
+            });
+
+        return () => {
+            active = false;
+            if (objectUrl) URL.revokeObjectURL(objectUrl);
+        };
+    }, [getOriginalPageBlob, pageId, session?.access_token]);
 
     const prefetchAnnotatePage = useCallback((targetPage) => {
         const targetPageId = normalizePageId(targetPage?.id);
@@ -241,18 +280,8 @@ export default function AnnotatePage() {
             bubblesPromise.catch(() => {});
         }
 
-        const imageUrl = getProxiedImageUrl(targetPage?.url_image, targetPageId, session?.access_token);
-        const imageCacheKey = `${targetPageId}:${session?.access_token || 'public'}`;
-        if (!imagePrefetchRef.current.has(imageCacheKey)) {
-            const imagePromise = warmBrowserImageCache(imageUrl)
-                .catch(error => {
-                    imagePrefetchRef.current.delete(imageCacheKey);
-                    throw error;
-                });
-            imagePrefetchRef.current.set(imageCacheKey, imagePromise);
-            imagePromise.catch(() => {});
-        }
-    }, [mangaSlug, router, session?.access_token]);
+        getOriginalPageBlob(targetPageId).catch(() => {});
+    }, [getOriginalPageBlob, mangaSlug, router, session?.access_token]);
 
     useEffect(() => {
         const checkMobile = () => setIsMobile(window.innerWidth < 1024);
@@ -260,23 +289,6 @@ export default function AnnotatePage() {
         window.addEventListener('resize', checkMobile);
         return () => window.removeEventListener('resize', checkMobile);
     }, []);
-
-    useEffect(() => {
-        const imgEl = imageRef.current;
-        if (!imgEl) return;
-        const observer = new ResizeObserver((entries) => {
-            const entry = entries[0];
-            if (entry && imgEl.naturalWidth) {
-                setImageDimensions({
-                    width: imgEl.offsetWidth,
-                    naturalWidth: imgEl.naturalWidth,
-                    naturalHeight: imgEl.naturalHeight
-                });
-            }
-        });
-        observer.observe(imgEl);
-        return () => observer.disconnect();
-    }, [pageId, page]);
 
     const {
         formData, setFormData, suggestions, charInput, setCharInput,
@@ -851,10 +863,10 @@ export default function AnnotatePage() {
                         ? "Serveur OCR local hors ligne."
                         : tauriLocalOcr.isDownloadingLocalSuryaBBoxModel
                             ? "Telechargement du modele Surya-BBox en cours."
-                            : tauriLocalOcr.localSuryaBBoxModelStatus?.error
-                                ? tauriLocalOcr.localSuryaBBoxModelStatus.error
-                                : !tauriLocalOcr.localSuryaBBoxModelStatus?.installed
-                                    ? "Telechargez le modele Surya-BBox d'abord."
+                            : !tauriLocalOcr.localSuryaBBoxModelStatus?.installed
+                                ? "Telechargez le modele Surya-BBox d'abord."
+                                : tauriLocalOcr.localSuryaBBoxModelStatus?.error
+                                    ? tauriLocalOcr.localSuryaBBoxModelStatus.error
                                     : !tauriLocalOcr.localSuryaBBoxModelStatus?.ready
                                         ? "Chargez le modele Surya-BBox en VRAM d'abord."
                                         : "Surya-BBox indisponible.";
@@ -866,6 +878,14 @@ export default function AnnotatePage() {
 
     if (error) return <div className="p-8 text-red-500">{error}</div>;
     if (!page) return null;
+    if (session?.access_token && !originalImageUrl) {
+        return (
+            <div className="flex min-h-[60vh] items-center justify-center gap-3 text-slate-300">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Chargement sécurisé de la page...
+            </div>
+        );
+    }
 
     return (
         <div className="relative -mx-4 -my-7 flex h-[calc(100%+3.5rem)] flex-col overflow-hidden bg-[#030a13] sm:-mx-8 lg:-mx-10 lg:flex-row">
@@ -1026,7 +1046,9 @@ export default function AnnotatePage() {
                         handleMouseDown={handleMouseDown}
                         handleMouseMove={handleMouseMove}
                         handleMouseUp={handleMouseUp}
-                        imageUrl={getProxiedImageUrl(page.url_image, pageId, session?.access_token)}
+                        imageUrl={session?.access_token
+                            ? originalImageUrl
+                            : getProxiedImageUrl(page.url_image, pageId)}
                         isSubmitting={isSubmitting}
                         loadingText={loadingText}
                         rectangle={rectangle}

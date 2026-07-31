@@ -49,10 +49,36 @@ On the RTX 3090 cropped-bubble benchmark, the text engines measured 3.877x for
 LightOn and 4.305x for Surya over 24 samples, with 24/24 outputs identical to
 standard Transformers.
 
+## Model integrity
+
+Desktop downloads are pinned by full Hugging Face commit SHA in
+`model_registry.json`. Only the runtime files listed in that registry are
+downloaded. Every file is checked for its exact size and SHA256 in a staging
+directory before the verified snapshot replaces the active model directory.
+Model loading is offline-only, uses safetensors, and never enables Transformers
+remote code.
+
+The backend embeds the canonical SHA256 of the registry itself and refuses a
+modified external registry before reading any repository or revision from it.
+
+The optional FlashAttention CUDA kernel is loaded only from the local Hub cache
+at one embedded commit SHA. If that exact build is absent, inference falls back
+to standard SDPA without downloading executable code during model loading.
+
+All direct Python runtime dependencies in `requirements.txt` are pinned to the
+versions used by the integrity and backend verification suite.
+
+The normal application model directories remain under the platform data
+directory. A custom `PONEGLYPH_*_MODEL_DIR` is accepted only when
+`PONEGLYPH_ALLOW_UNVERIFIED_MODEL_DIRS=1` is explicitly set. This escape hatch
+is for local development only: Hub downloads are disabled while such an
+override is active.
+
 ## Configuration
 
 | Variable | Default | Purpose |
 | --- | ---: | --- |
+| `PONEGLYPH_ALLOW_UNVERIFIED_MODEL_DIRS` | `0` | Development-only opt-in for custom local model directories; disables Hub downloads |
 | `PONEGLYPH_LIGHTON_FAST_DECODE` | `1` | Enable the optimized Poneglyph-BBox path |
 | `PONEGLYPH_LIGHTON_FAST_COMPILE_MODE` | `autotune` | `autotune` or faster-compiling `safe` mode |
 | `PONEGLYPH_LIGHTON_FAST_EOS_INTERVAL` | `8` | Dependent decode steps per CUDA Graph replay |

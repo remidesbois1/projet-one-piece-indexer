@@ -9,6 +9,7 @@ from dataclasses import dataclass
 import torch
 from transformers.cache_utils import Cache, DynamicLayer, LinearAttentionLayer
 
+from pinned_dependencies import load_pinned_flash_attention_kernel
 from surya_mlp_kernels import fused_swiglu
 
 
@@ -226,12 +227,11 @@ def patch_qwen35_flash_kvcache(
     num_splits: int,
     prefill_num_splits: int,
 ):
-    import kernels
     from transformers.models.qwen3_5.modeling_qwen3_5 import (
         apply_rotary_pos_emb,
     )
 
-    flash_kernel_module = kernels.get_kernel("kernels-community/flash-attn2")
+    flash_kernel_module = load_pinned_flash_attention_kernel()
     flash_attn_with_kvcache = flash_kernel_module.flash_attn_with_kvcache
     patched_attentions = []
     original_forwards = {}

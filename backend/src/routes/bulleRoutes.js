@@ -3,8 +3,8 @@ const router = express.Router();
 const { supabaseAdmin } = require('../config/supabaseClient');
 const { authMiddleware, roleCheck } = require('../middleware/auth');
 const sharp = require('sharp');
-const axios = require('axios');
 const { logBubbleHistory } = require('../utils/auditLogger');
+const { readPageImage } = require('../utils/pageStorage');
 
 router.post('/', authMiddleware, async (req, res) => {
   const { id: userId } = req.user;
@@ -173,25 +173,7 @@ router.get('/:id/crop', authMiddleware, async (req, res) => {
     if (!bubble || !bubble.pages?.url_image) {
       return res.status(404).json({ error: "Bulle ou image de la page non trouvée." });
     }
-    const imageUrl = bubble.pages.url_image;
-
-    const parsedUrl = new URL(imageUrl);
-    const allowedHosts = [];
-    if (process.env.SUPABASE_URL) allowedHosts.push(new URL(process.env.SUPABASE_URL).hostname);
-    if (process.env.R2_PUBLIC_URL) {
-      try { allowedHosts.push(new URL(process.env.R2_PUBLIC_URL).hostname); } catch (e) { }
-    }
-
-    if (!allowedHosts.some(host => parsedUrl.hostname.endsWith(host))) {
-      console.error("SSRF Blocked:", parsedUrl.hostname, "Allowed:", allowedHosts);
-      throw new Error("Sécurité : Tentative de téléchargement hors du domaine autorisé (SSRF protection).");
-    }
-
-    const imageResponse = await axios({
-      url: imageUrl,
-      responseType: 'arraybuffer'
-    });
-    const imageBuffer = Buffer.from(imageResponse.data, 'binary');
+    const { buffer: imageBuffer } = await readPageImage(bubble.pages.url_image);
     const croppedImageBuffer = await sharp(imageBuffer)
       .extract({ left: bubble.x, top: bubble.y, width: bubble.w, height: bubble.h })
       .avif({ quality: 20, effort: 2 })

@@ -53,16 +53,24 @@ class FakeProcessor:
     image_processor = types.SimpleNamespace(default_to_square=True)
 
     @classmethod
-    def from_pretrained(cls, model_dir, trust_remote_code=False):
-        require(trust_remote_code is True, "surya processor should trust remote code")
-        require(Path(model_dir).joinpath("config.json").exists(), "surya processor model dir")
+    def from_pretrained(
+        cls,
+        model_dir,
+        trust_remote_code=True,
+        local_files_only=False,
+    ):
+        require(trust_remote_code is False, "processor must reject remote code")
+        require(local_files_only is True, "processor must stay offline")
+        require(Path(model_dir).joinpath("config.json").exists(), "processor model dir")
         return cls()
 
     def apply_chat_template(self, messages, add_generation_prompt, tokenize):
         require(add_generation_prompt is True, "surya prompt should request generation prompt")
         require(tokenize is False, "surya prompt should render text")
-        require(messages[0]["content"][0]["type"] == "image", "surya prompt should include image")
-        require(messages[0]["content"][1]["type"] == "text", "surya prompt should include text")
+        content = messages[0]["content"]
+        require(content[0]["type"] == "image", "prompt should include image")
+        if len(content) > 1:
+            require(content[1]["type"] == "text", "prompt text entry")
         return "SURYA_PROMPT"
 
     def __call__(self, text, images, return_tensors):
@@ -91,9 +99,11 @@ class FakeSuryaModel:
 
     @classmethod
     def from_pretrained(cls, model_dir, **kwargs):
-        require(Path(model_dir).joinpath("config.json").exists(), "surya model dir")
-        require(kwargs.get("trust_remote_code") is True, "surya model should trust remote code")
-        require(kwargs.get("low_cpu_mem_usage") is True, "surya model should use low CPU memory")
+        require(Path(model_dir).joinpath("config.json").exists(), "model dir")
+        require(kwargs.get("trust_remote_code") is False, "model must reject remote code")
+        require(kwargs.get("local_files_only") is True, "model must stay offline")
+        require(kwargs.get("use_safetensors") is True, "model must use safetensors")
+        require(kwargs.get("low_cpu_mem_usage") is True, "model should use low CPU memory")
         return cls()
 
     def eval(self):
@@ -125,13 +135,16 @@ class FakeTorch:
             return False
 
 
-def verify_fake_surya_backend(server, model_key: str, model_dir: Path):
+def verify_fake_model_backend(server, model_key: str, model_dir: Path):
     model_dir.mkdir(parents=True, exist_ok=True)
     model_dir.joinpath("config.json").write_text("{}", encoding="utf-8")
+    model_dir.joinpath("model.safetensors").write_bytes(b"test")
 
     fake_transformers = types.SimpleNamespace(
         AutoProcessor=FakeProcessor,
         AutoModelForImageTextToText=FakeSuryaModel,
+        LightOnOcrProcessor=FakeProcessor,
+        LightOnOcrForConditionalGeneration=FakeSuryaModel,
     )
     original_transformers = sys.modules.get("transformers")
     original_get_torch = server.get_torch
@@ -140,18 +153,18 @@ def verify_fake_surya_backend(server, model_key: str, model_dir: Path):
         server.get_torch = lambda: FakeTorch()
         server.load_model(model_key)
         status = server.model_status_payload(model_key)
-        require(status["ready"] is True, "fake surya model should be ready")
-        require(status["active_backend"] == server.BACKEND_TRANSFORMERS, "fake surya backend")
+        require(status["ready"] is True, f"fake {model_key} model should be ready")
+        require(status["active_backend"] == server.BACKEND_TRANSFORMERS, "fake backend")
         require(
             status["generation_engine"] == server.GENERATION_ENGINE_TRANSFORMERS,
-            "fake surya should keep standard generation",
+            "fake model should keep standard generation",
         )
         output = server.generate_with_model(
             model_key,
             object(),
             server.messages_for_model(model_key),
         )
-        require(output == "SURYA_OK", "fake surya generation output")
+        require(output == "SURYA_OK", "fake generation output")
         print(f"fake {model_key} load/generate ok")
     finally:
         server.clear_loaded_model_state(server.get_model_state(model_key))
@@ -171,12 +184,14 @@ def main():
             os.environ["PONEGLYPH_BASE_MODEL_DIR"] = str(tmp_path / "base")
             os.environ["PONEGLYPH_SURYA_MODEL_DIR"] = str(tmp_path / "surya")
             os.environ["PONEGLYPH_SURYA_BBOX_MODEL_DIR"] = str(tmp_path / "surya_bbox")
+            os.environ["PONEGLYPH_ALLOW_UNVERIFIED_MODEL_DIRS"] = "1"
 
             import local_ocr_server as server
 
             status = server.model_status_payload(server.BBOX_MODEL_KEY)
             require(status["installed"] is False, "status should not require an installed model")
             require(status["loaded"] is False, "status should not load a model")
+            require(server.model_uses_unsafe_dir_override(server.BBOX_MODEL_KEY), "test override must be unsafe")
             require("requested_backend" in status, "status should expose requested_backend")
             require("active_backend" in status, "status should expose active_backend")
             require("backend_fallback_reason" in status, "status should expose fallback reason")
@@ -265,8 +280,10 @@ def main():
             require("active_backend" in health, "health should expose active_backend")
             require("perf_options" in health, "health should expose perf_options")
 
-            verify_fake_surya_backend(server, server.SURYA_MODEL_KEY, tmp_path / "surya")
-            verify_fake_surya_backend(server, server.SURYA_BBOX_MODEL_KEY, tmp_path / "surya_bbox")
+            verify_fake_model_backend(server, server.BBOX_MODEL_KEY, tmp_path / "bbox")
+            verify_fake_model_backend(server, server.TEXT_MODEL_KEY, tmp_path / "base")
+            verify_fake_model_backend(server, server.SURYA_MODEL_KEY, tmp_path / "surya")
+            verify_fake_model_backend(server, server.SURYA_BBOX_MODEL_KEY, tmp_path / "surya_bbox")
 
         print("verify_inference_backends.py: all checks passed")
         return 0

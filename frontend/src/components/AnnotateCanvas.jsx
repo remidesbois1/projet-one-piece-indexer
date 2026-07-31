@@ -3,6 +3,20 @@ import { cn } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
+export function measureRenderedImage(imageElement) {
+    if (!imageElement?.naturalWidth || !imageElement?.naturalHeight) return null;
+    const bounds = imageElement.getBoundingClientRect?.();
+    const width = bounds?.width || imageElement.offsetWidth;
+    const height = bounds?.height || imageElement.offsetHeight;
+    if (!width || !height) return null;
+    return {
+        width,
+        height,
+        naturalWidth: imageElement.naturalWidth,
+        naturalHeight: imageElement.naturalHeight,
+    };
+}
+
 export default function AnnotateCanvas({
     canEdit,
     imageDimensions,
@@ -32,6 +46,27 @@ export default function AnnotateCanvas({
     detectionDebugEnabled = false,
     detectionDebugData = null
 }) {
+    React.useEffect(() => {
+        const imageElement = imageRef.current;
+        if (!imageElement) return undefined;
+
+        const updateDimensions = () => {
+            const dimensions = measureRenderedImage(imageElement);
+            if (dimensions) setImageDimensions(dimensions);
+        };
+        const observer = typeof ResizeObserver === 'function'
+            ? new ResizeObserver(updateDimensions)
+            : null;
+        observer?.observe(imageElement);
+        imageElement.addEventListener('load', updateDimensions);
+        if (imageElement.complete) updateDimensions();
+
+        return () => {
+            observer?.disconnect();
+            imageElement.removeEventListener('load', updateDimensions);
+        };
+    }, [imageRef, imageUrl, setImageDimensions]);
+
     const debugScale = imageDimensions?.width && imageDimensions?.naturalWidth
         ? imageDimensions.width / imageDimensions.naturalWidth
         : 0;
@@ -67,11 +102,10 @@ export default function AnnotateCanvas({
                     crossOrigin="anonymous"
                     alt="Manga Page"
                     className="block w-full h-full object-contain pointer-events-none"
-                    onLoad={(e) => setImageDimensions({
-                        width: e.currentTarget.offsetWidth,
-                        naturalWidth: e.currentTarget.naturalWidth,
-                        naturalHeight: e.currentTarget.naturalHeight
-                    })}
+                    onLoad={(event) => {
+                        const dimensions = measureRenderedImage(event.currentTarget);
+                        if (dimensions) setImageDimensions(dimensions);
+                    }}
                 />
 
                 {isSubmitting && (

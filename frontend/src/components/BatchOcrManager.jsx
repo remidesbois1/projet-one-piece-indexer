@@ -8,6 +8,7 @@ import { useTauriLocalOcrContext } from '@/context/TauriLocalOcrContext';
 import { getAdminHierarchy, getBubblesForPage, createBubble, validateBubble } from '@/lib/api';
 import { getProxiedImageUrl, cropImage } from '@/lib/utils';
 import { capitalizeOcrSentenceStarts } from '@/lib/ocr-utils';
+import { postOcrImage } from '@/lib/ocrProxyClient';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -128,10 +129,7 @@ async function runLightOnClassic(img, rect, provider, tauriLocalOcr) {
         return capitalizeOcrSentenceStarts(data?.text);
     }
 
-    const response = await fetch('/api/local_lighton', {
-        method: 'POST',
-        body: blob
-    });
+    const response = await postOcrImage('/api/local_lighton', blob);
     if (!response.ok) throw new Error("Erreur Poneglyph");
     const data = await response.json();
     return capitalizeOcrSentenceStarts(data.text);
@@ -148,10 +146,7 @@ async function runPoneglyphBBox(jpegBlob, provider, tauriLocalOcr) {
         return tauriLocalOcr.runLocalOcrBlob(jpegBlob);
     }
 
-    return fetch('/api/poneglyph_one_shot', {
-        method: 'POST',
-        body: jpegBlob
-    }).then(r => {
+    return postOcrImage('/api/poneglyph_one_shot', jpegBlob).then(r => {
         if (!r.ok) throw new Error("Erreur API Poneglyph");
         return r.json();
     }).then(data => {

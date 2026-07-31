@@ -1,8 +1,8 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import AdminLayout from './layout';
 import { useUserProfile } from '@/hooks/useUserProfile';
-import { useAuth } from '@/context/AuthContext';
+import { AUTH_STATUS, useAuth } from '@/context/AuthContext';
 import { useRouter, useParams } from 'next/navigation';
 
 
@@ -24,7 +24,7 @@ describe('AdminLayout Access', () => {
     });
 
     it('renders children when user is Admin', () => {
-        useAuth.mockReturnValue({ isGuest: false });
+        useAuth.mockReturnValue({ authStatus: AUTH_STATUS.AUTHENTICATED, isGuest: false });
         useUserProfile.mockReturnValue({ profile: { role: 'Admin' }, loading: false });
 
         render(
@@ -38,7 +38,7 @@ describe('AdminLayout Access', () => {
     });
 
     it('redirects to dashboard when user is Modo', () => {
-        useAuth.mockReturnValue({ isGuest: false });
+        useAuth.mockReturnValue({ authStatus: AUTH_STATUS.AUTHENTICATED, isGuest: false });
         useUserProfile.mockReturnValue({ profile: { role: 'Modo' }, loading: false });
 
         render(
@@ -52,7 +52,7 @@ describe('AdminLayout Access', () => {
     });
 
     it('redirects to dashboard when user is regular user', () => {
-        useAuth.mockReturnValue({ isGuest: false });
+        useAuth.mockReturnValue({ authStatus: AUTH_STATUS.AUTHENTICATED, isGuest: false });
         useUserProfile.mockReturnValue({ profile: { role: 'User' }, loading: false });
 
         render(
@@ -66,7 +66,7 @@ describe('AdminLayout Access', () => {
     });
 
     it('redirects to dashboard when user is guest', () => {
-        useAuth.mockReturnValue({ isGuest: true });
+        useAuth.mockReturnValue({ authStatus: AUTH_STATUS.GUEST, isGuest: true });
         useUserProfile.mockReturnValue({ profile: null, loading: false });
 
         render(
@@ -79,8 +79,8 @@ describe('AdminLayout Access', () => {
         expect(mockPush).toHaveBeenCalledWith('/test-manga/dashboard');
     });
 
-    it('shows loading spinner while loading profile', () => {
-        useAuth.mockReturnValue({ isGuest: false });
+    it('waits for a late role without redirecting', () => {
+        useAuth.mockReturnValue({ authStatus: AUTH_STATUS.AUTHENTICATED, isGuest: false });
         useUserProfile.mockReturnValue({ profile: null, loading: true });
 
         const { container } = render(
@@ -90,6 +90,42 @@ describe('AdminLayout Access', () => {
         );
 
         expect(container.querySelector('.animate-spin')).toBeInTheDocument();
+        expect(screen.queryByTestId('admin-content')).not.toBeInTheDocument();
+        expect(mockPush).not.toHaveBeenCalled();
+    });
+
+    it('shows a retry action instead of redirecting when role loading fails', () => {
+        const retry = vi.fn();
+        useAuth.mockReturnValue({ authStatus: AUTH_STATUS.AUTHENTICATED, isGuest: false });
+        useUserProfile.mockReturnValue({
+            profile: null,
+            loading: false,
+            error: new Error('Permissions indisponibles'),
+            retry,
+        });
+
+        render(
+            <AdminLayout>
+                <div data-testid="admin-content">Admin Content</div>
+            </AdminLayout>
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Réessayer' }));
+
+        expect(screen.getByRole('alert')).toHaveTextContent('Permissions indisponibles');
+        expect(retry).toHaveBeenCalledTimes(1);
+        expect(mockPush).not.toHaveBeenCalled();
+    });
+
+    it('lets the parent layout handle unauthenticated redirects', () => {
+        useAuth.mockReturnValue({ authStatus: AUTH_STATUS.UNAUTHENTICATED, isGuest: false });
+        useUserProfile.mockReturnValue({ profile: null, loading: false });
+
+        render(
+            <AdminLayout>
+                <div data-testid="admin-content">Admin Content</div>
+            </AdminLayout>
+        );
+
         expect(screen.queryByTestId('admin-content')).not.toBeInTheDocument();
         expect(mockPush).not.toHaveBeenCalled();
     });

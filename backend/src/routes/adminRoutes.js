@@ -16,6 +16,8 @@ const { generateVoyageEmbedding } = require('../utils/voyageClient');
 const { generateF2llmEmbedding } = require('../utils/f2llmClient');
 const { buildPageEmbeddingText } = require('../utils/pageEmbeddingText');
 const { cancelModalCall, submitTrainingJob } = require('../utils/modalTrainingLauncher');
+const { createPageStorageRef, getPrivatePagesBucketName } = require('../utils/pageStorage');
+const { getPageImagePath } = require('../utils/publicMedia');
 
 // Ensure environment variables are loaded
 if (process.env.NODE_ENV !== 'production') {
@@ -291,15 +293,16 @@ router.post('/chapitres/upload', authMiddleware, roleCheck(['Admin']), upload.si
 
           const storagePath = `tome-${tome_id}/chapitre-${numero}/${pageCounter}-${safeFileName}`;
 
+          const pagesBucketName = getPrivatePagesBucketName();
           await s3Client.send(new PutObjectCommand({
-            Bucket: BUCKET_NAME,
+            Bucket: pagesBucketName,
             Key: storagePath,
             Body: fileBuffer,
             ContentType: contentType,
-            CacheControl: 'public, max-age=31536000',
+            CacheControl: 'private, no-store',
           }));
 
-          const publicUrl = `${PUBLIC_URL_BASE}/${storagePath}`;
+          const pageStorageRef = createPageStorageRef(pagesBucketName, storagePath);
 
           // Insertion de la page en BDD Supabase
           const { error: pageError } = await supabaseAdmin
@@ -307,7 +310,7 @@ router.post('/chapitres/upload', authMiddleware, roleCheck(['Admin']), upload.si
             .insert({
               id_chapitre: newChapitre.id,
               numero_page: pageCounter,
-              url_image: publicUrl,
+              url_image: pageStorageRef,
               statut: 'not_started'
             });
 
@@ -372,6 +375,9 @@ router.get('/hierarchy', authMiddleware, roleCheck(['Admin', 'Modo']), async (re
       tome.chapitres.sort((a, b) => a.numero - b.numero);
       tome.chapitres.forEach(chap => {
         chap.pages.sort((a, b) => a.numero_page - b.numero_page);
+        chap.pages.forEach(page => {
+          page.url_image = getPageImagePath(page.id);
+        });
       });
     });
 
@@ -666,16 +672,17 @@ router.post('/upload/page', authMiddleware, roleCheck(['Admin']), upload.single(
     const fileBuffer = fs.readFileSync(file.path);
     const contentType = file.mimetype || 'image/avif';
 
+    const pagesBucketName = getPrivatePagesBucketName();
     await s3Client.send(new PutObjectCommand({
-      Bucket: BUCKET_NAME,
+      Bucket: pagesBucketName,
       Key: key,
       Body: fileBuffer,
       ContentType: contentType,
-      CacheControl: 'public, max-age=31536000',
+      CacheControl: 'private, no-store',
     }));
 
-    const publicUrl = `${PUBLIC_URL_BASE}/${key}`;
-    res.json({ url: publicUrl });
+    const pageStorageRef = createPageStorageRef(pagesBucketName, key);
+    res.json({ url: pageStorageRef });
   } catch (error) {
     console.error("Erreur upload page:", error);
     res.status(500).json({ error: "Erreur upload vers R2." });
@@ -762,7 +769,7 @@ router.get('/ai-models/embedding-stats', authMiddleware, roleCheck(['Admin']), a
       chapitre_numero: page.chapitres?.numero,
       tome_numero: page.chapitres?.tomes?.numero,
       numero: page.numero_page,
-      url_image: page.url_image,
+      url_image: getPageImagePath(page.id),
       has_voyage: page.embedding_voyage !== null,
       has_gemini: page.embedding_gemini !== null,
       has_f2llm: page.embedding_f2llm !== null,

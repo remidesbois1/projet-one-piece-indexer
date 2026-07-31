@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "default",
-  "description": "Default desktop capability - grants core permissions, local OCR commands, and frontend switching to the main window.",
+  "identifier": "local-privileged",
+  "description": "Privileged desktop capability for bundled code and the local development server only.",
   "windows": ["main"],
   "permissions": [
     "core:default",
@@ -22,13 +22,10 @@
     "allow-run-local-surya-ocr",
     "allow-run-local-surya-bbox-ocr",
     "allow-healthcheck-local-backend",
-    "allow-switch-frontend-origin",
     "allow-get-app-version"
   ],
   "remote": {
     "urls": [
-      "https://poneglyph.fr/**",
-      "https://www.poneglyph.fr/**",
       "http://localhost:3000/**",
       "http://127.0.0.1:3000/**"
     ]

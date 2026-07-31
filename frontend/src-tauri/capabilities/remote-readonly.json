@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "remote-readonly",
+  "description": "Remote Poneglyph pages may render in the desktop shell but receive no Tauri IPC permissions.",
+  "windows": ["main"],
+  "permissions": [],
+  "remote": {
+    "urls": [
+      "https://poneglyph.fr/**",
+      "https://www.poneglyph.fr/**"
+    ]
+  }
+}

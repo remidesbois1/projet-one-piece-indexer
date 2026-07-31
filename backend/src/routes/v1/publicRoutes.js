@@ -1,6 +1,11 @@
 const express = require('express');
 const router = express.Router();
-const { supabase } = require('../../config/supabaseClient');
+const { supabaseAdmin } = require('../../config/supabaseClient');
+const {
+    VALIDATED_BUBBLE_STATUS,
+    getPageImagePath,
+    keepValidatedBubbleRows,
+} = require('../../utils/publicMedia');
 
 let cachedBannedIps = new Set();
 let lastInfoFetch = 0;
@@ -11,7 +16,7 @@ async function refreshBannedIps() {
     if (now - lastInfoFetch < CACHE_TTL && cachedBannedIps.size > 0) return;
 
     try {
-        const { data, error } = await supabase.from('banned_ips').select('ip');
+        const { data, error } = await supabaseAdmin.from('banned_ips').select('ip');
         if (!error && data) {
             cachedBannedIps = new Set(data.map(r => r.ip));
             lastInfoFetch = now;
@@ -63,7 +68,7 @@ router.get('/status', (req, res) => {
  */
 router.get('/tomes', async (req, res) => {
     try {
-        const { data, error } = await supabase
+        const { data, error } = await supabaseAdmin
             .from('tomes')
             .select('id, numero, titre, cover_url')
             .order('numero', { ascending: true });
@@ -88,7 +93,7 @@ router.get('/tomes/:tomeNumero/chapters', async (req, res) => {
     const { tomeNumero } = req.params;
 
     try {
-        const { data: tome, error: tomeError } = await supabase
+        const { data: tome, error: tomeError } = await supabaseAdmin
             .from('tomes')
             .select('id')
             .eq('numero', tomeNumero)
@@ -98,7 +103,7 @@ router.get('/tomes/:tomeNumero/chapters', async (req, res) => {
             return res.status(404).json({ error: "Tome not found" });
         }
 
-        const { data: chapters, error } = await supabase
+        const { data: chapters, error } = await supabaseAdmin
             .from('chapitres')
             .select('id, numero, titre')
             .eq('id_tome', tome.id)
@@ -134,7 +139,7 @@ router.get('/search', async (req, res) => {
     const safeLimit = Math.min(Math.max(parseInt(limit) || 20, 1), 50);
 
     try {
-        const { data, error } = await supabase.rpc('search_bulles', {
+        const { data, error } = await supabaseAdmin.rpc('search_bulles', {
             search_term: q,
             page_limit: safeLimit,
             page_offset: 0
@@ -142,11 +147,12 @@ router.get('/search', async (req, res) => {
 
         if (error) throw error;
 
-        const results = (data || []).map(b => ({
+        const validatedRows = await keepValidatedBubbleRows(supabaseAdmin, data || []);
+        const results = validatedRows.map(b => ({
             id: b.id,
             type: 'bubble',
             content: b.texte_propose,
-            url: b.url_image,
+            url: getPageImagePath(b.page_id),
             context: {
                 tome: b.tome_numero,
                 chapter: b.chapitre_numero,
@@ -175,10 +181,10 @@ router.get('/search', async (req, res) => {
 router.get('/stats', async (req, res) => {
     try {
         const [tomes, chapters, pages, bubbles] = await Promise.all([
-            supabase.from('tomes').select('*', { count: 'exact', head: true }),
-            supabase.from('chapitres').select('*', { count: 'exact', head: true }),
-            supabase.from('pages').select('*', { count: 'exact', head: true }),
-            supabase.from('bulles').select('*', { count: 'exact', head: true }).not('texte_propose', 'is', null).neq('texte_propose', '')
+            supabaseAdmin.from('tomes').select('*', { count: 'exact', head: true }),
+            supabaseAdmin.from('chapitres').select('*', { count: 'exact', head: true }),
+            supabaseAdmin.from('pages').select('*', { count: 'exact', head: true }),
+            supabaseAdmin.from('bulles').select('*', { count: 'exact', head: true }).eq('statut', VALIDATED_BUBBLE_STATUS).not('texte_propose', 'is', null).neq('texte_propose', '')
         ]);
 
         res.json({
@@ -204,10 +210,10 @@ router.get('/quotes/random', async (req, res) => {
     const minLength = parseInt(req.query.min_length) || 15;
 
     try {
-        const { count, error: countError } = await supabase
+        const { count, error: countError } = await supabaseAdmin
             .from('bulles')
             .select('*', { count: 'exact', head: true })
-            .eq('statut', 'Validé')
+            .eq('statut', VALIDATED_BUBBLE_STATUS)
             .not('texte_propose', 'is', null)
             .neq('texte_propose', '');
 
@@ -217,7 +223,7 @@ router.get('/quotes/random', async (req, res) => {
 
         const randomOffset = Math.floor(Math.random() * count);
 
-        const { data, error } = await supabase
+        const { data, error } = await supabaseAdmin
             .from('bulles')
             .select(`
                 id, 
@@ -233,7 +239,7 @@ router.get('/quotes/random', async (req, res) => {
                 )
             `)
 
-            .eq('statut', 'Validé')
+            .eq('statut', VALIDATED_BUBBLE_STATUS)
             .not('texte_propose', 'is', null)
             .neq('texte_propose', '')
             .range(randomOffset, randomOffset)
@@ -243,9 +249,10 @@ router.get('/quotes/random', async (req, res) => {
         if (error) throw error;
         if (data.texte_propose.length < minLength) {
             const retryOffset = Math.floor(Math.random() * count);
-            const { data: retryData } = await supabase
+            const { data: retryData } = await supabaseAdmin
                 .from('bulles')
                 .select(`id, texte_propose, pages (numero_page, chapitres(numero, tomes(numero)))`)
+                .eq('statut', VALIDATED_BUBBLE_STATUS)
                 .not('texte_propose', 'is', null)
                 .range(retryOffset, retryOffset)
                 .single();
@@ -271,7 +278,7 @@ router.get('/chapters/:numero', async (req, res) => {
     const { numero } = req.params;
 
     try {
-        const { data, error } = await supabase
+        const { data, error } = await supabaseAdmin
             .from('chapitres')
             .select(`
                 id,
@@ -324,7 +331,7 @@ router.get('/chapters/:chapterNo/pages/:pageNo', async (req, res) => {
     try {
 
 
-        const { data: correctPage, error } = await supabase
+        const { data: correctPage, error } = await supabaseAdmin
             .from('pages')
             .select(`
                 id,
@@ -356,11 +363,11 @@ router.get('/chapters/:chapterNo/pages/:pageNo', async (req, res) => {
             } catch (e) { }
         }
 
-        const { data: bubbles, error: bubblesError } = await supabase
+        const { data: bubbles, error: bubblesError } = await supabaseAdmin
             .from('bulles')
             .select('id, texte_propose, order')
             .eq('id_page', correctPage.id)
-            .eq('statut', 'Validé')
+            .eq('statut', VALIDATED_BUBBLE_STATUS)
             .order('order', { ascending: true })
             .order('id', { ascending: true });
 

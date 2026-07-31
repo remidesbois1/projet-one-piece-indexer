@@ -59,10 +59,10 @@ Le **Projet Poneglyph** est une plateforme de haute performance dédiée à la n
 │                                                  │
 │  ┌────────────────────────────────────────────┐  │
 │  │  Tauri v2 (Rust)                           │  │
-│  │  - Charge [https://poneglyph.fr](https://poneglyph.fr)             │  │
-│  │  - IPC: invoke() <-> Commandes Rust        │  │
-│  │  - Démarre le backend Python en background │  │
-│  │  - Arrête le process Python à la fermeture │  │
+│  │  - Shell local embarqué + CSP stricte      │  │
+│  │  - Site distant sandboxé, sans IPC Tauri   │  │
+│  │  - IPC local: invoke() <-> commandes Rust  │  │
+│  │  - Backend Python géré en arrière-plan     │  │
 │  └──────────────┬─────────────────────────────┘  │
 │                 │ HTTP (127.0.0.1:random)        │
 │  ┌──────────────▼─────────────────────────────┐  │
@@ -220,20 +220,52 @@ SUPABASE_SERVICE_ROLE_KEY=...
 R2_ACCESS_KEY_ID=...
 R2_SECRET_ACCESS_KEY=...
 R2_BUCKET_NAME=...
+R2_PAGES_BUCKET_NAME=... # bucket privé, sans domaine public
+R2_ENDPOINT=...
+R2_PUBLIC_URL=... # réservé aux couvertures publiques
 GOOGLE_API_KEY=...
 VOYAGE_API_KEY=...
 ```
+
+Les planches sont enregistrées sous forme de références `r2://` dans le bucket
+privé `R2_PAGES_BUCKET_NAME`. Ce bucket ne doit exposer ni domaine public ni
+accès anonyme ; seules les couvertures peuvent utiliser `R2_PUBLIC_URL`.
+Pour migrer les planches historiques, vérifier d'abord le plan avec
+`npm run migrate:private-pages`, puis lancer depuis `backend/`
+`npm run migrate:private-pages -- --apply --delete-source` après sauvegarde.
 
 **Frontend (`frontend/.env`)**
 ```env
 NEXT_PUBLIC_SUPABASE_URL=...
 NEXT_PUBLIC_SUPABASE_ANON_KEY=...
 NEXT_PUBLIC_BACKEND_URL=http://localhost:3001/api
+SUPABASE_SERVICE_ROLE_KEY=... # serveur Next.js uniquement, jamais NEXT_PUBLIC_*
+MODAL_OCR_ENABLED=true
 MODAL_OCR_API_KEY=...
-MODAL_OCR_URL=[https://remisemenzin--ocr-poneglyph.modal.run](https://remisemenzin--ocr-poneglyph.modal.run)
-MODAL_LIGHTON_URL=[https://remisemenzin--ocr-lighton.modal.run](https://remisemenzin--ocr-lighton.modal.run)
-MODAL_PONEGLYPH_BBOX_URL=[https://remisemenzin--poneglyph-bbox.modal.run](https://remisemenzin--poneglyph-bbox.modal.run)
+MODAL_OCR_URL=https://votre-endpoint-ocr.modal.run
+MODAL_LIGHTON_URL=https://votre-endpoint-lighton.modal.run
+MODAL_PONEGLYPH_BBOX_URL=https://votre-endpoint-bbox.modal.run
+MODAL_OCR_QUOTA_HMAC_SECRET=... # secret aléatoire d'au moins 32 caractères
+# Limites optionnelles, exprimées en unités OCR
+MODAL_OCR_USER_MINUTE_UNITS=60
+MODAL_OCR_USER_DAILY_UNITS=1000
+MODAL_OCR_IP_MINUTE_UNITS=120
+MODAL_OCR_DEVICE_MINUTE_UNITS=60
+MODAL_OCR_GLOBAL_DAILY_UNITS=10000
+# Sandbox publique BBox : coût fixe de 5 unités par appel
+MODAL_OCR_ANONYMOUS_MINUTE_UNITS=5
+MODAL_OCR_ANONYMOUS_DAILY_UNITS=15
+MODAL_OCR_ANONYMOUS_IP_MINUTE_UNITS=5
+MODAL_OCR_ANONYMOUS_DEVICE_MINUTE_UNITS=5
+MODAL_OCR_ANONYMOUS_GLOBAL_MINUTE_UNITS=5
+MODAL_OCR_ANONYMOUS_GLOBAL_DAILY_UNITS=100
 ```
+
+Avant d'activer les proxies Modal, appliquer la migration
+`backend/sql/2026-07-31_add_modal_ocr_quotas.sql` à Supabase. Les proxies se
+ferment par défaut si la migration, les secrets serveur ou les quotas persistants
+ne sont pas disponibles. Seule la route BBox de la sandbox accepte une requête
+sans session ; les autres routes exigent toujours un jeton Supabase valide.
 
 ### Démarrage
 
@@ -278,7 +310,8 @@ L'installer NSIS est généré dans `frontend\src-tauri\target\release\bundle\ns
 1. Installe l'application dans `%LOCALAPPDATA%\Poneglyph\`
 2. Crée un raccourci dans le menu Démarrer
 3. Au lancement, l'application :
-   - Ouvre une fenêtre chargeant `https://poneglyph.fr`
+   - Ouvre le shell privilégié embarqué avec une CSP stricte
+   - Affiche `https://poneglyph.fr` dans une zone sandboxée sans permission Tauri
    - Démarre le backend Python en arrière-plan (port aléatoire sur 127.0.0.1)
    - À la fermeture, tue proprement le process Python
 
@@ -340,6 +373,16 @@ projet-one-piece-indexer/
 > Ce projet est une démonstration technique à but éducatif et de recherche sur l'indexation sémantique et l'IA déportée.
 >
 > Les images accessibles publiquement sont **systématiquement floutées hors des zones de texte**. Cette dégradation volontaire garantit que l'expérience ne peut se substituer à l'achat de l'œuvre originale. Toutes les images restent la propriété de leurs ayants droit.
+
+---
+
+## Licence
+
+Le code source original du projet est publié sous [licence MIT](LICENSE). Cette
+licence ne couvre pas les scans, jeux de données dérivés, modèles ou poids
+tiers, polices, marques et autres contenus dont les droits appartiennent à
+leurs propriétaires respectifs. Consultez les
+[notices tierces](THIRD_PARTY_NOTICES.md) avant toute redistribution.
 
 ---
 

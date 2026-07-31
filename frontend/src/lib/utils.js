@@ -4,17 +4,20 @@ import { twMerge } from "tailwind-merge"
 export function cn(...inputs) {
     return twMerge(clsx(inputs))
 }
-export function getProxiedImageUrl(url, pageId = null, token = null) {
+export function getProxiedImageUrl(url, pageId = null) {
+    const backendUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001/api').replace(/\/$/, '');
     if (pageId) {
-        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001/api';
-        let imageUrl = `${backendUrl}/pages/${pageId}/image`;
-        if (token) imageUrl += `?token=${token}`;
-        return imageUrl;
+        return `${backendUrl}/pages/${pageId}/image`;
     }
 
     if (!url) return url;
+    if (url.startsWith('/api/pages/')) {
+        return `${backendUrl}${url.slice('/api'.length)}`;
+    }
     if (url.includes('s3.onepiece-index.com')) {
-        return url.replace(/^https?:\/\/s3\.onepiece-index\.com/, '/s3-proxy');
+        const storageUrl = new URL(url);
+        if (!storageUrl.pathname.startsWith('/covers/')) return null;
+        return `/s3-proxy${storageUrl.pathname}`;
     }
     return url;
 }

@@ -1,50 +1,95 @@
 const express = require('express');
-const router = express.Router();
-const { supabase, supabaseAdmin } = require('../config/supabaseClient');
-const { authMiddleware, roleCheck } = require('../middleware/auth');
+const { Readable } = require('node:stream');
+const { pipeline } = require('node:stream/promises');
+const { supabaseAdmin } = require('../config/supabaseClient');
+const { authMiddleware, optionalAuthMiddleware, roleCheck } = require('../middleware/auth');
 const { createPublicPreviewImage } = require('../utils/protectedImage');
-const axios = require('axios');
+const {
+    VALIDATED_BUBBLE_STATUS,
+    toPageDto,
+    toPublicBubbleDto,
+} = require('../utils/publicMedia');
+const { openPageImage, readPageImage } = require('../utils/pageStorage');
 
-router.get('/', async (req, res) => {
+async function streamImageBody(body, response) {
+    if (!body) throw new Error('R2 returned an empty page object');
+    if (Buffer.isBuffer(body) || body instanceof Uint8Array) {
+        response.end(body);
+        return;
+    }
+
+    let readable = body;
+    if (typeof body.pipe !== 'function') {
+        if (typeof body.getReader === 'function') readable = Readable.fromWeb(body);
+        else if (body[Symbol.asyncIterator]) readable = Readable.from(body);
+        else if (typeof body.transformToByteArray === 'function') {
+            response.end(Buffer.from(await body.transformToByteArray()));
+            return;
+        } else {
+            throw new Error('R2 returned an unsupported page stream');
+        }
+    }
+
+    await pipeline(readable, response);
+}
+
+function createPageRouter({
+    supabaseClient = supabaseAdmin,
+    supabaseAdminClient = supabaseAdmin,
+    requireAuth = authMiddleware,
+    optionalAuth = optionalAuthMiddleware,
+    requireRole = roleCheck,
+    openImage = openPageImage,
+    readImage = readPageImage,
+    previewImage = createPublicPreviewImage,
+} = {}) {
+const router = express.Router();
+
+router.get('/', optionalAuth, async (req, res) => {
     console.log('GET pages', req.query);
     const { id_chapitre } = req.query;
     if (!id_chapitre) return res.status(400).json({ error: "id_chapitre manquant" });
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseClient
         .from('pages')
-        .select('id, numero_page, url_image, statut')
+        .select('id, id_chapitre, numero_page, statut')
         .eq('id_chapitre', id_chapitre)
         .order('numero_page', { ascending: true });
 
     if (error) return res.status(500).json({ error: "Erreur serveur" });
-    res.json(data);
+    res.json((data || []).map((page) => toPageDto(page, { authenticated: Boolean(req.user) })));
 });
 
-router.get('/:id', async (req, res) => {
-    const { data, error } = await supabase
+router.get('/:id', optionalAuth, async (req, res) => {
+    const { data, error } = await supabaseClient
         .from('pages')
-        .select('*, chapitres(numero, tomes(numero))')
+        .select('id, id_chapitre, numero_page, statut, description, commentaire_moderation, chapitres(numero, tomes(numero))')
         .eq('id', req.params.id)
         .single();
 
     if (error) return res.status(500).json({ error: "Erreur serveur" });
     if (!data) return res.status(404).json({ error: "Page non trouvée" });
-    res.json(data);
+    res.json(toPageDto(data, { authenticated: Boolean(req.user) }));
 });
 
-router.get('/:id/bulles', async (req, res) => {
-    const { data, error } = await supabase
+router.get('/:id/bulles', optionalAuth, async (req, res) => {
+    let query = supabaseClient
         .from('bulles')
         .select('id, x, y, w, h, texte_propose, statut, id_user_createur, order')
-        .eq('id_page', req.params.id)
-        .neq('statut', 'Rejeté');
+        .eq('id_page', req.params.id);
+
+    query = req.user
+        ? query.neq('statut', 'Rejeté')
+        : query.eq('statut', VALIDATED_BUBBLE_STATUS);
+
+    const { data, error } = await query;
 
     if (error) return res.status(500).json({ error: "Erreur fetch bulles" });
-    res.json(data);
+    res.json(req.user ? (data || []) : (data || []).map(toPublicBubbleDto));
 });
 
-router.put('/:id/submit-review', authMiddleware, async (req, res) => {
-    const { data, error } = await supabaseAdmin
+router.put('/:id/submit-review', requireAuth, async (req, res) => {
+    const { data, error } = await supabaseAdminClient
         .from('pages')
         .update({ statut: 'pending_review' })
         .eq('id', req.params.id)
@@ -55,7 +100,7 @@ router.put('/:id/submit-review', authMiddleware, async (req, res) => {
     res.json(data);
 });
 
-router.put('/:id/status', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+router.put('/:id/status', requireAuth, requireRole(['Admin']), async (req, res) => {
     const { statut } = req.body;
     const allowedStatuses = ['not_started', 'in_progress', 'pending_review', 'completed'];
 
@@ -66,7 +111,7 @@ router.put('/:id/status', authMiddleware, roleCheck(['Admin']), async (req, res)
     const updatePayload = { statut };
     if (statut !== 'in_progress') updatePayload.commentaire_moderation = null;
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await supabaseAdminClient
         .from('pages')
         .update(updatePayload)
         .eq('id', req.params.id)
@@ -79,10 +124,9 @@ router.put('/:id/status', authMiddleware, roleCheck(['Admin']), async (req, res)
 
 router.get('/:id/image', async (req, res) => {
     const { id } = req.params;
-    const token = req.query.token;
 
     try {
-        const { data: page, error } = await supabase
+        const { data: page, error } = await supabaseClient
             .from('pages')
             .select('url_image')
             .eq('id', id)
@@ -90,36 +134,21 @@ router.get('/:id/image', async (req, res) => {
 
         if (error || !page) return res.status(404).json({ error: "Page non trouvée" });
 
-        let isAuthenticated = false;
-        if (token) {
-            const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-            if (!authError && user) isAuthenticated = true;
-        }
+        const { buffer: imageBuffer } = await readImage(page.url_image);
 
-        const imageResponse = await axios({
-            url: page.url_image,
-            responseType: 'arraybuffer'
-        });
-        const imageBuffer = Buffer.from(imageResponse.data, 'binary');
-
-        if (isAuthenticated) {
-            res.set('Content-Type', 'image/avif');
-            res.set('Cache-Control', 'public, max-age=3600');
-            return res.send(imageBuffer);
-        }
-
-        const { data: bubbles, error: bubblesError } = await supabase
+        const { data: bubbles, error: bubblesError } = await supabaseClient
             .from('bulles')
             .select('x, y, w, h')
             .eq('id_page', id)
-            .neq('statut', 'Rejeté');
+            .eq('statut', VALIDATED_BUBBLE_STATUS);
 
         if (bubblesError) throw bubblesError;
 
-        const protectedImageBuffer = await createPublicPreviewImage(imageBuffer, bubbles);
+        const protectedImageBuffer = await previewImage(imageBuffer, bubbles);
 
         res.set('Content-Type', 'image/avif');
         res.set('Cache-Control', 'public, max-age=86400');
+        res.set('Cross-Origin-Resource-Policy', 'cross-origin');
         res.send(protectedImageBuffer);
 
     } catch (err) {
@@ -128,4 +157,40 @@ router.get('/:id/image', async (req, res) => {
     }
 });
 
+router.get('/:id/image/original', requireAuth, async (req, res) => {
+    try {
+        const { data: page, error } = await supabaseClient
+            .from('pages')
+            .select('url_image')
+            .eq('id', req.params.id)
+            .single();
+
+        if (error || !page) return res.status(404).json({ error: "Page non trouvée" });
+
+        const { body, contentType, contentLength } = await openImage(page.url_image);
+        res.set('Content-Type', contentType);
+        if (Number.isSafeInteger(contentLength) && contentLength >= 0) {
+            res.set('Content-Length', String(contentLength));
+        }
+        res.set('Cache-Control', 'private, no-store');
+        res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+        res.set('Vary', 'Authorization');
+        await streamImageBody(body, res);
+        return undefined;
+    } catch (error) {
+        console.error("Erreur service image originale:", error);
+        if (res.headersSent) {
+            res.destroy(error);
+            return undefined;
+        }
+        return res.status(500).json({ error: "Erreur lors du chargement de l'image" });
+    }
+});
+
+return router;
+}
+
+const router = createPageRouter();
+
 module.exports = router;
+module.exports.createPageRouter = createPageRouter;

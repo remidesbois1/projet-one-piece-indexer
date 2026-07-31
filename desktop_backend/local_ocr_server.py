@@ -3,13 +3,17 @@ import base64
 import binascii
 import contextlib
 import gc
+import hashlib
 import io
+import json
 import os
 import platform
 import re
+import shutil
+import tempfile
 import threading
 import time
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Optional
 
 from fastapi import FastAPI
@@ -22,10 +26,118 @@ TEXT_MODEL_KEY = "base"
 SURYA_MODEL_KEY = "surya"
 SURYA_BBOX_MODEL_KEY = "surya_bbox"
 DEFAULT_MODEL_KEY = BBOX_MODEL_KEY
-MODEL_CONFIGS = {
+MODEL_REGISTRY_PATH = Path(__file__).with_name("model_registry.json")
+MODEL_REGISTRY_SHA256 = "af553149bde39a0600da38a63c859eb535d0b1a0e2134f1ccab8bbb41acfa8b0"
+UNSAFE_MODEL_DIR_OVERRIDE_ENV = "PONEGLYPH_ALLOW_UNVERIFIED_MODEL_DIRS"
+MODEL_INSTALL_METADATA_FILENAME = ".poneglyph-model.json"
+RUNTIME_MODEL_FILES = frozenset(
+    {
+        "chat_template.jinja",
+        "config.json",
+        "generation_config.json",
+        "model.safetensors",
+        "processor_config.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+    }
+)
+FORBIDDEN_UNMANIFESTED_SUFFIXES = frozenset(
+    {".bat", ".cmd", ".dll", ".dylib", ".exe", ".pyd", ".py", ".ps1", ".sh", ".so"}
+)
+
+
+class ModelIntegrityError(RuntimeError):
+    pass
+
+
+def load_model_registry(path: Path = MODEL_REGISTRY_PATH):
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Registre de modeles illisible: {exc}") from exc
+
+    canonical_payload = json.dumps(
+        payload,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    if hashlib.sha256(canonical_payload).hexdigest() != MODEL_REGISTRY_SHA256:
+        raise RuntimeError("Le registre de modeles ne correspond pas a l'ancre integree.")
+
+    if payload.get("schema_version") != 1:
+        raise RuntimeError("Version de registre de modeles non prise en charge.")
+
+    models = payload.get("models")
+    expected_keys = {
+        BBOX_MODEL_KEY,
+        TEXT_MODEL_KEY,
+        SURYA_MODEL_KEY,
+        SURYA_BBOX_MODEL_KEY,
+    }
+    if not isinstance(models, dict) or set(models) != expected_keys:
+        raise RuntimeError("Le registre doit definir exactement les quatre modeles locaux.")
+
+    sha_pattern = re.compile(r"^[0-9a-f]{64}$")
+    revision_pattern = re.compile(r"^[0-9a-f]{40}$")
+    for model_key, entry in models.items():
+        if not isinstance(entry, dict):
+            raise RuntimeError(f"Entree de registre invalide pour {model_key}.")
+        if not isinstance(entry.get("repo_id"), str) or entry["repo_id"].count("/") != 1:
+            raise RuntimeError(f"Depot Hugging Face invalide pour {model_key}.")
+        if not revision_pattern.fullmatch(str(entry.get("revision", ""))):
+            raise RuntimeError(f"Revision immuable invalide pour {model_key}.")
+        dir_name = entry.get("dir_name")
+        if (
+            not isinstance(dir_name, str)
+            or not dir_name.strip()
+            or PurePosixPath(dir_name).name != dir_name
+            or PureWindowsPath(dir_name).name != dir_name
+        ):
+            raise RuntimeError(f"Dossier de modele invalide pour {model_key}.")
+        if entry.get("trust_remote_code") is not False:
+            raise RuntimeError(f"Le code distant doit rester desactive pour {model_key}.")
+
+        files = entry.get("files")
+        if not isinstance(files, list) or not files:
+            raise RuntimeError(f"Manifeste de fichiers absent pour {model_key}.")
+
+        seen_paths = set()
+        for file_entry in files:
+            if not isinstance(file_entry, dict):
+                raise RuntimeError(f"Fichier de registre invalide pour {model_key}.")
+            raw_path = file_entry.get("path")
+            relative_path = PurePosixPath(str(raw_path))
+            if (
+                not isinstance(raw_path, str)
+                or raw_path != relative_path.as_posix()
+                or relative_path.is_absolute()
+                or ".." in relative_path.parts
+                or PureWindowsPath(raw_path).is_absolute()
+                or PureWindowsPath(raw_path).drive
+                or ".." in PureWindowsPath(raw_path).parts
+                or "\\" in raw_path
+                or raw_path in seen_paths
+            ):
+                raise RuntimeError(f"Chemin de fichier non sur pour {model_key}: {raw_path}")
+            if not isinstance(file_entry.get("size"), int) or file_entry["size"] <= 0:
+                raise RuntimeError(f"Taille de fichier invalide pour {model_key}: {raw_path}")
+            if not sha_pattern.fullmatch(str(file_entry.get("sha256", ""))):
+                raise RuntimeError(f"SHA256 invalide pour {model_key}: {raw_path}")
+            seen_paths.add(raw_path)
+
+        if seen_paths != RUNTIME_MODEL_FILES:
+            raise RuntimeError(
+                f"Le manifeste runtime de {model_key} doit contenir exactement "
+                f"{sorted(RUNTIME_MODEL_FILES)}."
+            )
+
+    return models
+
+
+MODEL_REGISTRY = load_model_registry()
+MODEL_RUNTIME_CONFIGS = {
     BBOX_MODEL_KEY: {
-        "id": "Remidesbois/LightonOCR-2-1b-poneglyph-bbox",
-        "dir_name": "lighton-ocr-poneglyph-bbox",
         "label": "Poneglyph-BBox",
         "max_new_tokens": 768,
         "family": "lighton_bbox",
@@ -33,8 +145,6 @@ MODEL_CONFIGS = {
         "max_new_tokens_envs": ("PONEGLYPH_BBOX_MAX_NEW_TOKENS",),
     },
     TEXT_MODEL_KEY: {
-        "id": "Remidesbois/LightonOCR-2-1b-poneglyph",
-        "dir_name": "lighton-ocr-poneglyph",
         "label": "Poneglyph",
         "max_new_tokens": 128,
         "family": "lighton_text",
@@ -42,11 +152,6 @@ MODEL_CONFIGS = {
         "max_new_tokens_envs": ("PONEGLYPH_TEXT_MAX_NEW_TOKENS",),
     },
     SURYA_MODEL_KEY: {
-        "id": os.getenv(
-            "PONEGLYPH_SURYA_MODEL_ID",
-            os.getenv("SURYA_HF_REPO", "Remidesbois/surya-bubble-ocr-poneglyph"),
-        ),
-        "dir_name": "surya-bubble-ocr-poneglyph",
         "label": "Surya OCR",
         "max_new_tokens": 256,
         "family": "surya_text",
@@ -54,17 +159,21 @@ MODEL_CONFIGS = {
         "max_new_tokens_envs": ("PONEGLYPH_SURYA_MAX_NEW_TOKENS", "SURYA_MAX_NEW_TOKENS"),
     },
     SURYA_BBOX_MODEL_KEY: {
-        "id": os.getenv(
-            "PONEGLYPH_SURYA_BBOX_MODEL_ID",
-            os.getenv("SURYA_BBOX_HF_REPO", "Remidesbois/surya-ocr-2-poneglyph-bbox"),
-        ),
-        "dir_name": "surya-ocr-2-poneglyph-bbox",
         "label": "Surya-BBox",
         "max_new_tokens": 2048,
         "family": "surya_bbox",
         "model_dir_envs": ("PONEGLYPH_SURYA_BBOX_MODEL_DIR", "SURYA_BBOX_MODEL_DIR"),
         "max_new_tokens_envs": ("PONEGLYPH_SURYA_BBOX_MAX_NEW_TOKENS", "SURYA_BBOX_MAX_NEW_TOKENS"),
     },
+}
+MODEL_CONFIGS = {
+    model_key: {
+        **runtime_config,
+        "id": MODEL_REGISTRY[model_key]["repo_id"],
+        "revision": MODEL_REGISTRY[model_key]["revision"],
+        "dir_name": MODEL_REGISTRY[model_key]["dir_name"],
+    }
+    for model_key, runtime_config in MODEL_RUNTIME_CONFIGS.items()
 }
 TEXT_OCR_MODEL_KEYS = {TEXT_MODEL_KEY, SURYA_MODEL_KEY}
 BBOX_OCR_MODEL_KEYS = {BBOX_MODEL_KEY, SURYA_BBOX_MODEL_KEY}
@@ -257,8 +366,10 @@ model_states = {
         "last_generation_profile": None,
         "loading": False,
         "last_error": None,
+        "integrity_error": None,
         "download": make_download_state(),
-        "model_lock": threading.Lock(),
+        "download_staging_dir": None,
+        "model_lock": threading.RLock(),
         "download_lock": threading.Lock(),
     }
     for model_key in MODEL_CONFIGS
@@ -316,17 +427,187 @@ def default_app_model_dir(model_key: str = DEFAULT_MODEL_KEY) -> str:
     return str(base_dir / "models" / MODEL_CONFIGS[model_key]["dir_name"])
 
 
-def get_model_dir(model_key: str = DEFAULT_MODEL_KEY) -> str:
+def normalized_absolute_path(path_value: str) -> str:
+    return os.path.normcase(os.path.abspath(os.path.expanduser(path_value)))
+
+
+def configured_model_dir_override(model_key: str):
     model_key = normalize_model_key(model_key)
+    default_dir = default_app_model_dir(model_key)
     for env_name in MODEL_CONFIGS[model_key].get("model_dir_envs", ()):
         env_value = os.environ.get(env_name)
-        if env_value:
-            return env_value
-    return default_app_model_dir(model_key)
+        if not env_value:
+            continue
+        if normalized_absolute_path(env_value) == normalized_absolute_path(default_dir):
+            return env_value, False
+        if not env_bool(UNSAFE_MODEL_DIR_OVERRIDE_ENV, False):
+            raise RuntimeError(
+                f"Le chemin {env_name} est un override local non verifie. "
+                f"Reserve au developpement: activez explicitement "
+                f"{UNSAFE_MODEL_DIR_OVERRIDE_ENV}=1."
+            )
+        return env_value, True
+    return None, False
 
 
-def model_is_installed(model_key: str = DEFAULT_MODEL_KEY) -> bool:
-    return os.path.exists(os.path.join(get_model_dir(model_key), "config.json"))
+def get_model_dir(model_key: str = DEFAULT_MODEL_KEY) -> str:
+    model_key = normalize_model_key(model_key)
+    override_dir, _unsafe = configured_model_dir_override(model_key)
+    return override_dir or default_app_model_dir(model_key)
+
+
+def model_uses_unsafe_dir_override(model_key: str = DEFAULT_MODEL_KEY) -> bool:
+    _override_dir, unsafe = configured_model_dir_override(model_key)
+    return unsafe
+
+
+def model_registry_entry(model_key: str = DEFAULT_MODEL_KEY):
+    return MODEL_REGISTRY[normalize_model_key(model_key)]
+
+
+def registry_file_paths(model_key: str = DEFAULT_MODEL_KEY):
+    return [entry["path"] for entry in model_registry_entry(model_key)["files"]]
+
+
+def registry_total_bytes(model_key: str = DEFAULT_MODEL_KEY) -> int:
+    return sum(entry["size"] for entry in model_registry_entry(model_key)["files"])
+
+
+def sha256_file(path: Path, chunk_size: int = 8 * 1024 * 1024) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(chunk_size)
+            if not chunk:
+                break
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def verify_snapshot_against_manifest(
+    model_dir,
+    manifest_entry,
+    *,
+    verify_hashes: bool = True,
+    reject_unexpected: bool = False,
+) -> None:
+    root = Path(model_dir)
+    if not root.is_dir():
+        raise ModelIntegrityError(f"Dossier de modele absent: {root}")
+
+    expected_paths = set()
+    for file_entry in manifest_entry["files"]:
+        relative_path = file_entry["path"]
+        expected_paths.add(relative_path)
+        file_path = root.joinpath(*PurePosixPath(relative_path).parts)
+        if file_path.is_symlink() or not file_path.is_file():
+            raise ModelIntegrityError(f"Fichier de modele absent ou non regulier: {relative_path}")
+        actual_size = file_path.stat().st_size
+        if actual_size != file_entry["size"]:
+            raise ModelIntegrityError(
+                f"Taille invalide pour {relative_path}: {actual_size} au lieu de {file_entry['size']}."
+            )
+        if verify_hashes:
+            actual_hash = sha256_file(file_path)
+            if actual_hash != file_entry["sha256"]:
+                raise ModelIntegrityError(f"SHA256 invalide pour {relative_path}.")
+
+    actual_files = [
+        file_path
+        for file_path in root.rglob("*")
+        if file_path.is_file() or file_path.is_symlink()
+    ]
+    unexpected_files = [
+        file_path
+        for file_path in actual_files
+        if file_path.relative_to(root).as_posix()
+        not in expected_paths | {MODEL_INSTALL_METADATA_FILENAME}
+    ]
+    forbidden_paths = sorted(
+        file_path.relative_to(root).as_posix()
+        for file_path in unexpected_files
+        if file_path.is_symlink() or file_path.suffix.lower() in FORBIDDEN_UNMANIFESTED_SUFFIXES
+    )
+    if forbidden_paths:
+        raise ModelIntegrityError(
+            "Fichiers executables non manifestes interdits: " + ", ".join(forbidden_paths)
+        )
+
+    if reject_unexpected:
+        actual_paths = {file_path.relative_to(root).as_posix() for file_path in actual_files}
+        allowed_paths = expected_paths | {MODEL_INSTALL_METADATA_FILENAME}
+        unexpected_paths = sorted(actual_paths - allowed_paths)
+        if unexpected_paths:
+            raise ModelIntegrityError(
+                "Fichiers inattendus dans le snapshot: " + ", ".join(unexpected_paths)
+            )
+
+
+def verify_unsafe_local_model_dir(model_key: str, model_dir) -> None:
+    required_files = ("config.json", "model.safetensors")
+    missing = [name for name in required_files if not Path(model_dir, name).is_file()]
+    if missing:
+        raise ModelIntegrityError(
+            f"Override local incomplet pour {model_key}: {', '.join(missing)}."
+        )
+
+
+def recover_interrupted_model_promotion(model_key: str = DEFAULT_MODEL_KEY) -> bool:
+    model_key = normalize_model_key(model_key)
+    if model_uses_unsafe_dir_override(model_key):
+        return False
+
+    model_dir = Path(default_app_model_dir(model_key))
+    state = get_model_state(model_key)
+    with state["model_lock"]:
+        if model_dir.exists():
+            return False
+
+        candidates = sorted(
+            model_dir.parent.glob(f".{model_dir.name}.backup-*"),
+            key=lambda path: path.stat().st_mtime_ns,
+            reverse=True,
+        )
+        for backup_dir in candidates:
+            try:
+                verify_snapshot_against_manifest(
+                    backup_dir,
+                    model_registry_entry(model_key),
+                    verify_hashes=True,
+                    # Legacy installs can contain documentation or benchmark files.
+                    # Restoring them only recovers the pre-promotion state; normal
+                    # integrity checks will still require a minimal exact snapshot.
+                    reject_unexpected=False,
+                )
+            except (ModelIntegrityError, OSError):
+                continue
+            os.replace(backup_dir, model_dir)
+            return True
+    return False
+
+
+def ensure_model_integrity(model_key: str = DEFAULT_MODEL_KEY, *, verify_hashes: bool = True) -> None:
+    model_key = normalize_model_key(model_key)
+    model_dir = get_model_dir(model_key)
+    if model_uses_unsafe_dir_override(model_key):
+        verify_unsafe_local_model_dir(model_key, model_dir)
+        return
+    if not Path(model_dir).exists():
+        recover_interrupted_model_promotion(model_key)
+    verify_snapshot_against_manifest(
+        model_dir,
+        model_registry_entry(model_key),
+        verify_hashes=verify_hashes,
+        reject_unexpected=True,
+    )
+
+
+def model_is_installed(model_key: str = DEFAULT_MODEL_KEY, *, verify_hashes: bool = False) -> bool:
+    try:
+        ensure_model_integrity(model_key, verify_hashes=verify_hashes)
+        return True
+    except (ModelIntegrityError, OSError):
+        return False
 
 
 def configure_torch_runtime(torch_module) -> None:
@@ -429,8 +710,7 @@ def generation_autocast_context(torch_module, selected_device: str, selected_dty
     return contextlib.nullcontext()
 
 
-def model_dir_size_bytes(model_key: str = DEFAULT_MODEL_KEY) -> int:
-    model_dir = get_model_dir(model_key)
+def directory_size_bytes(model_dir) -> int:
     total = 0
     if not os.path.exists(model_dir):
         return total
@@ -448,18 +728,12 @@ def model_dir_size_bytes(model_key: str = DEFAULT_MODEL_KEY) -> int:
     return total
 
 
-def get_model_total_bytes(model_key: str = DEFAULT_MODEL_KEY) -> Optional[int]:
-    try:
-        from huggingface_hub import HfApi
+def model_dir_size_bytes(model_key: str = DEFAULT_MODEL_KEY) -> int:
+    return directory_size_bytes(get_model_dir(model_key))
 
-        info = HfApi().model_info(
-            MODEL_CONFIGS[normalize_model_key(model_key)]["id"],
-            files_metadata=True,
-            token=os.environ.get("HF_TOKEN"),
-        )
-        return int(sum(sibling.size or 0 for sibling in info.siblings))
-    except Exception:
-        return None
+
+def get_model_total_bytes(model_key: str = DEFAULT_MODEL_KEY) -> int:
+    return registry_total_bytes(model_key)
 
 
 def update_download_state(model_key: str, **updates) -> None:
@@ -472,8 +746,13 @@ def download_status_snapshot(model_key: str = DEFAULT_MODEL_KEY):
     model_state = get_model_state(model_key)
     with model_state["download_lock"]:
         state = dict(model_state["download"])
+        staging_dir = model_state.get("download_staging_dir")
 
-    downloaded_bytes = model_dir_size_bytes(model_key)
+    downloaded_bytes = (
+        directory_size_bytes(staging_dir)
+        if state.get("active") and staging_dir
+        else model_dir_size_bytes(model_key)
+    )
     total_bytes = state.get("total_bytes")
     if total_bytes:
         downloaded_bytes = min(downloaded_bytes, total_bytes)
@@ -493,18 +772,97 @@ def cuda_memory_mb(torch_module, device_index: int, value_name: str) -> Optional
         return None
 
 
+def write_model_install_metadata(model_key: str, model_dir: Path) -> None:
+    entry = model_registry_entry(model_key)
+    metadata = {
+        "schema_version": 1,
+        "model_key": model_key,
+        "repo_id": entry["repo_id"],
+        "revision": entry["revision"],
+        "verified_files": len(entry["files"]),
+    }
+    model_dir.joinpath(MODEL_INSTALL_METADATA_FILENAME).write_text(
+        json.dumps(metadata, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def promote_staged_model(staging_dir: Path, model_dir: Path) -> None:
+    model_dir.parent.mkdir(parents=True, exist_ok=True)
+    backup_dir = None
+    if model_dir.exists():
+        backup_dir = model_dir.with_name(f".{model_dir.name}.backup-{time.time_ns()}")
+        os.replace(model_dir, backup_dir)
+
+    try:
+        os.replace(staging_dir, model_dir)
+    except Exception:
+        if backup_dir is not None and backup_dir.exists() and not model_dir.exists():
+            os.replace(backup_dir, model_dir)
+        raise
+
+    if backup_dir is not None and backup_dir.exists():
+        try:
+            shutil.rmtree(backup_dir)
+        except OSError:
+            pass
+
+
 def download_model(model_key: str = DEFAULT_MODEL_KEY) -> None:
+    model_key = normalize_model_key(model_key)
+    if model_uses_unsafe_dir_override(model_key):
+        raise RuntimeError(
+            "Le telechargement Hub est desactive pour un override local non verifie. "
+            "Installez manuellement le modele de developpement dans ce dossier."
+        )
+
     from huggingface_hub import snapshot_download
 
-    model_key = normalize_model_key(model_key)
-    model_dir = get_model_dir(model_key)
-    os.makedirs(model_dir, exist_ok=True)
-    snapshot_download(
-        repo_id=MODEL_CONFIGS[model_key]["id"],
-        local_dir=model_dir,
-        token=os.environ.get("HF_TOKEN"),
-        local_dir_use_symlinks=False,
+    entry = model_registry_entry(model_key)
+    model_dir = Path(default_app_model_dir(model_key))
+    model_dir.parent.mkdir(parents=True, exist_ok=True)
+    staging_dir = Path(
+        tempfile.mkdtemp(
+            prefix=f".{model_dir.name}.staging-",
+            dir=model_dir.parent,
+        )
     )
+    state = get_model_state(model_key)
+    with state["download_lock"]:
+        state["download_staging_dir"] = str(staging_dir)
+
+    try:
+        snapshot_download(
+            repo_id=entry["repo_id"],
+            revision=entry["revision"],
+            local_dir=str(staging_dir),
+            allow_patterns=registry_file_paths(model_key),
+            token=os.environ.get("HF_TOKEN"),
+        )
+        download_cache_dir = staging_dir / ".cache"
+        if download_cache_dir.exists():
+            shutil.rmtree(download_cache_dir)
+        verify_snapshot_against_manifest(
+            staging_dir,
+            entry,
+            verify_hashes=True,
+            reject_unexpected=False,
+        )
+        write_model_install_metadata(model_key, staging_dir)
+        verify_snapshot_against_manifest(
+            staging_dir,
+            entry,
+            verify_hashes=False,
+            reject_unexpected=True,
+        )
+        with state["model_lock"]:
+            promote_staged_model(staging_dir, model_dir)
+            state["integrity_error"] = None
+    finally:
+        with state["download_lock"]:
+            state["download_staging_dir"] = None
+        if staging_dir.exists():
+            shutil.rmtree(staging_dir, ignore_errors=True)
 
 
 def download_model_worker(model_key: str) -> None:
@@ -517,9 +875,7 @@ def download_model_worker(model_key: str) -> None:
             downloaded_bytes=model_dir_size_bytes(model_key),
         )
         download_model(model_key)
-        downloaded_bytes = model_dir_size_bytes(model_key)
-        if total_bytes:
-            downloaded_bytes = min(downloaded_bytes, total_bytes)
+        downloaded_bytes = total_bytes or model_dir_size_bytes(model_key)
         update_download_state(
             model_key,
             active=False,
@@ -529,6 +885,7 @@ def download_model_worker(model_key: str) -> None:
             finished_at=time.time(),
         )
         state["last_error"] = None
+        state["integrity_error"] = None
     except Exception as exc:
         message = str(exc)
         update_download_state(
@@ -543,12 +900,18 @@ def download_model_worker(model_key: str) -> None:
 
 
 def start_model_download(model_key: str = DEFAULT_MODEL_KEY) -> bool:
+    model_key = normalize_model_key(model_key)
+    if model_uses_unsafe_dir_override(model_key):
+        raise RuntimeError(
+            "Le telechargement Hub est desactive pour un override local non verifie."
+        )
     state = get_model_state(model_key)
     with state["download_lock"]:
         if state["download"]["active"]:
             return False
 
-        if model_is_installed(model_key):
+        if model_is_installed(model_key, verify_hashes=True):
+            state["integrity_error"] = None
             state["download"].update(
                 active=False,
                 ok=True,
@@ -562,7 +925,7 @@ def start_model_download(model_key: str = DEFAULT_MODEL_KEY) -> bool:
             active=True,
             ok=None,
             error=None,
-            total_bytes=None,
+            total_bytes=get_model_total_bytes(model_key),
             downloaded_bytes=model_dir_size_bytes(model_key),
             started_at=time.time(),
             finished_at=None,
@@ -623,11 +986,19 @@ def load_processor(model_key: str):
     if model_key in SURYA_MODEL_KEYS:
         from transformers import AutoProcessor
 
-        loaded_processor = AutoProcessor.from_pretrained(model_dir, trust_remote_code=True)
+        loaded_processor = AutoProcessor.from_pretrained(
+            model_dir,
+            trust_remote_code=False,
+            local_files_only=True,
+        )
     else:
         from transformers import LightOnOcrProcessor
 
-        loaded_processor = LightOnOcrProcessor.from_pretrained(model_dir)
+        loaded_processor = LightOnOcrProcessor.from_pretrained(
+            model_dir,
+            trust_remote_code=False,
+            local_files_only=True,
+        )
     return configure_processor(model_key, loaded_processor)
 
 
@@ -675,8 +1046,6 @@ def configure_model_generation(model_key: str, model, loaded_processor) -> None:
 
 def transformer_attention_attempts(selected_device: str):
     attempts = []
-    if selected_device == "cuda" and env_bool("PONEGLYPH_FLASH_ATTN", True):
-        attempts.append(("flash_attention_2", {"attn_implementation": "flash_attention_2"}))
     attempts.append(("sdpa", {"attn_implementation": "sdpa"}))
     attempts.append(("default", {}))
     return attempts
@@ -698,8 +1067,10 @@ def load_transformers_model(
                 model = AutoModelForImageTextToText.from_pretrained(
                     model_dir,
                     torch_dtype=selected_dtype,
-                    trust_remote_code=True,
+                    trust_remote_code=False,
+                    local_files_only=True,
                     low_cpu_mem_usage=True,
+                    use_safetensors=True,
                     **attention_kwargs,
                 ).eval()
             else:
@@ -708,6 +1079,8 @@ def load_transformers_model(
                 model = LightOnOcrForConditionalGeneration.from_pretrained(
                     model_dir,
                     torch_dtype=selected_dtype,
+                    trust_remote_code=False,
+                    local_files_only=True,
                     low_cpu_mem_usage=True,
                     use_safetensors=True,
                     **attention_kwargs,
@@ -751,6 +1124,7 @@ def lighton_fast_decode_requested(
         model_key in {BBOX_MODEL_KEY, TEXT_MODEL_KEY}
         and selected_device == "cuda"
         and selected_dtype == torch_module.bfloat16
+        and env_bool("PONEGLYPH_FLASH_ATTN", True)
         and env_bool("PONEGLYPH_LIGHTON_FAST_DECODE", True)
     )
 
@@ -850,6 +1224,7 @@ def surya_fast_decode_requested(
         model_key in SURYA_MODEL_KEYS
         and selected_device == "cuda"
         and selected_dtype == torch_module.bfloat16
+        and env_bool("PONEGLYPH_FLASH_ATTN", True)
         and env_bool("PONEGLYPH_SURYA_FAST_DECODE", True)
     )
 
@@ -1116,6 +1491,19 @@ def load_model(model_key: str = DEFAULT_MODEL_KEY) -> None:
                 f"Le modele {model_label} n'est pas installe. Lancez d'abord le telechargement."
             )
 
+        try:
+            ensure_model_integrity(model_key, verify_hashes=True)
+        except ModelIntegrityError as exc:
+            message = (
+                f"Le modele {MODEL_CONFIGS[model_key]['label']} a echoue au controle "
+                f"d'integrite: {exc} Relancez son telechargement."
+            )
+            state["integrity_error"] = str(exc)
+            state["last_error"] = message
+            raise RuntimeError(message) from exc
+
+        state["integrity_error"] = None
+
         state["loading"] = True
         clear_loaded_model_state(state)
         torch = None
@@ -1162,14 +1550,26 @@ def parse_bubbles(output_text: str):
 def model_status_payload(model_key: str = DEFAULT_MODEL_KEY):
     model_key = normalize_model_key(model_key)
     state = get_model_state(model_key)
-    installed = model_is_installed(model_key)
+    configuration_error = None
+    try:
+        model_dir = get_model_dir(model_key)
+    except RuntimeError as exc:
+        model_dir = ""
+        configuration_error = str(exc)
+
+    installed = (
+        configuration_error is None
+        and state["integrity_error"] is None
+        and model_is_installed(model_key)
+    )
     loaded = state["processor"] is not None and state["model"] is not None
+    status_error = configuration_error or state["last_error"]
     return {
         "installed": installed,
         "loaded": loaded,
         "loading": state["loading"],
-        "ready": installed and loaded and not state["loading"] and state["last_error"] is None,
-        "model_dir": get_model_dir(model_key),
+        "ready": installed and loaded and not state["loading"] and status_error is None,
+        "model_dir": model_dir,
         "device": state["device"],
         "dtype": dtype_name(state["dtype"]) if state["dtype"] is not None else None,
         "requested_backend": get_requested_backend(),
@@ -1186,8 +1586,13 @@ def model_status_payload(model_key: str = DEFAULT_MODEL_KEY):
         "last_generation_profile": state["last_generation_profile"],
         "warmup_error": state["warmup_error"],
         "warmup_timings_ms": state["warmup_timings_ms"],
-        "error": state["last_error"],
-        "download": download_status_snapshot(model_key),
+        "error": status_error,
+        "integrity_error": state["integrity_error"],
+        "download": (
+            download_status_snapshot(model_key)
+            if configuration_error is None
+            else dict(state["download"])
+        ),
     }
 
 
@@ -1458,13 +1863,16 @@ def model_download(model_key: str = DEFAULT_MODEL_KEY):
             "download": download_status_snapshot(model_key),
         }
     except Exception as exc:
+        failed_status = (
+            model_status_payload(model_key) if model_key in MODEL_CONFIGS else None
+        )
         return JSONResponse(
             status_code=500,
             content={
                 "ok": False,
-                "model_dir": get_model_dir(model_key) if model_key in MODEL_CONFIGS else "",
+                "model_dir": failed_status["model_dir"] if failed_status else "",
                 "error": str(exc),
-                "download": download_status_snapshot(model_key) if model_key in MODEL_CONFIGS else None,
+                "download": failed_status["download"] if failed_status else None,
             },
         )
 

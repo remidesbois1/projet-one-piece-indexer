@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "models": {
+    "bbox": {
+      "repo_id": "Remidesbois/LightonOCR-2-1b-poneglyph-bbox",
+      "revision": "8bdf97f30cb8006d17624407a847b6766fa2374b",
+      "dir_name": "lighton-ocr-poneglyph-bbox",
+      "trust_remote_code": false,
+      "files": [
+        { "path": "chat_template.jinja", "size": 720, "sha256": "0942a43ee0ba48a608814e0b40ac9cb70bcc29ea72f19c84b1bf2597f05aa2bd" },
+        { "path": "config.json", "size": 2401, "sha256": "a0476f8c6b4a44a3bc328fdc2545de2d1163b42714d194d57ce5bb7a2d473046" },
+        { "path": "generation_config.json", "size": 191, "sha256": "32af74762ec53e57eddc986849dc20db0dd2b065c17bfe2dc3feaf90abe4a5dd" },
+        { "path": "model.safetensors", "size": 2011367496, "sha256": "a981e7e51584cd86b1f4e7bec2e786f4e28661003c3a5f9f6bfe6c6a00bd05c0" },
+        { "path": "processor_config.json", "size": 634, "sha256": "64158527ef62bcfeeb6d74cf27a2c6d436bb178a377292fa8c61e231fbcb4550" },
+        { "path": "tokenizer.json", "size": 11422822, "sha256": "f54b55fa0c3aba0c91ce09ea79ae4e62da24e2a1a630f96c4bae34aba25e234a" },
+        { "path": "tokenizer_config.json", "size": 804, "sha256": "3a1dc56aa8c503d70db223dc97dce8d6b855493b36c7942afa8035517932db46" }
+      ]
+    },
+    "base": {
+      "repo_id": "Remidesbois/LightonOCR-2-1b-poneglyph",
+      "revision": "3d5181ce138e7d92132a741f1e54c3a9e602e129",
+      "dir_name": "lighton-ocr-poneglyph",
+      "trust_remote_code": false,
+      "files": [
+        { "path": "chat_template.jinja", "size": 720, "sha256": "0942a43ee0ba48a608814e0b40ac9cb70bcc29ea72f19c84b1bf2597f05aa2bd" },
+        { "path": "config.json", "size": 2397, "sha256": "4c7a71d8f4c6b4f2461ef45d44156183c91bd5c0511e62930b5a5f678144fa38" },
+        { "path": "generation_config.json", "size": 186, "sha256": "43c83c5a858d463f73fcb2e09e1592a39cb4617f4027ebdc63efc602b0fe75d6" },
+        { "path": "model.safetensors", "size": 2011367496, "sha256": "941647735280ef32d60fd575ddf8103e5526ff36edb8d1778ca953e2f5b16153" },
+        { "path": "processor_config.json", "size": 633, "sha256": "83eb7d99924477228c8b2269021199623303ef91b4e16c0b1e39264b19fe54ea" },
+        { "path": "tokenizer.json", "size": 11422822, "sha256": "f54b55fa0c3aba0c91ce09ea79ae4e62da24e2a1a630f96c4bae34aba25e234a" },
+        { "path": "tokenizer_config.json", "size": 833, "sha256": "0fc93de325cd062b5f2480af428d5d09d7f483a3fc21637875c0877b0600c182" }
+      ]
+    },
+    "surya": {
+      "repo_id": "Remidesbois/surya-bubble-ocr-poneglyph",
+      "revision": "7d7b358c545cfe757329f780da6ed4100bb5909f",
+      "dir_name": "surya-bubble-ocr-poneglyph",
+      "trust_remote_code": false,
+      "files": [
+        { "path": "chat_template.jinja", "size": 2872, "sha256": "86f17a85672e7f367b5e6c6de6f67f53ede0fba4abb3d67c583a6ef647c1aa85" },
+        { "path": "config.json", "size": 2659, "sha256": "7a74ef4665f9270b6013208eb07a34d31dd2368d94ca7f676590b2941bef7412" },
+        { "path": "generation_config.json", "size": 179, "sha256": "433bc8a012e4f05e87bff9fc398f717dc21746bddf3d2cbd922e4a500838dfc1" },
+        { "path": "model.safetensors", "size": 1331461328, "sha256": "9d3554f1487caa1fd33c30e6a397d306b0d71fe041639f8668482ad3b02a223d" },
+        { "path": "processor_config.json", "size": 1328, "sha256": "056f03f359fafe65702b63464a8e26e03dff40fda13f1941952ea02b2a20263a" },
+        { "path": "tokenizer.json", "size": 1656850, "sha256": "3d7807f0cbdb7175b0e210111a241b3979799a17e920f924b078449401aa4911" },
+        { "path": "tokenizer_config.json", "size": 600, "sha256": "04d915a4f5fdc4abdd448e41729e7fcd06a4975335f6469e92277e29afa07b91" }
+      ]
+    },
+    "surya_bbox": {
+      "repo_id": "Remidesbois/surya-ocr-2-poneglyph-bbox",
+      "revision": "95e841b7dfcfa3cd7ea18f4d87a1c112490c909c",
+      "dir_name": "surya-ocr-2-poneglyph-bbox",
+      "trust_remote_code": false,
+      "files": [
+        { "path": "chat_template.jinja", "size": 2872, "sha256": "86f17a85672e7f367b5e6c6de6f67f53ede0fba4abb3d67c583a6ef647c1aa85" },
+        { "path": "config.json", "size": 2664, "sha256": "9d6f8f0288236ed7caee28a0c6194256ace0897934bdb7ec110ecbb7f23eaa0e" },
+        { "path": "generation_config.json", "size": 185, "sha256": "1bc71a4ce5922f1fb2347757de5ec373022cf0b8b6df26d54de214eb45bfc223" },
+        { "path": "model.safetensors", "size": 1331461328, "sha256": "20bd380b1029b9b706fb32d0ef72e6c989de87669a21a1cfd6c31bc242a17b00" },
+        { "path": "processor_config.json", "size": 1329, "sha256": "d3ad0f73641ab7f77382725cad6828ea86917a7d0a2a81925d3ba6fa22b15e0c" },
+        { "path": "tokenizer.json", "size": 1656690, "sha256": "7ecfe936390e39869c683e451974eb11d8c2d9057c42e68cd715098884809c05" },
+        { "path": "tokenizer_config.json", "size": 600, "sha256": "04d915a4f5fdc4abdd448e41729e7fcd06a4975335f6469e92277e29afa07b91" }
+      ]
+    }
+  }
+}

@@ -15,6 +15,7 @@ from dataclasses import dataclass
 import torch
 
 from lighton_gemv_kernels import bf16_gemv
+from pinned_dependencies import load_pinned_flash_attention_kernel
 
 
 @dataclass
@@ -90,10 +91,9 @@ def patch_qwen3_flash_kvcache(
     num_splits: int,
     prefill_num_splits: int,
 ):
-    import kernels
     from transformers.models.qwen3.modeling_qwen3 import apply_rotary_pos_emb
 
-    flash_kernel_module = kernels.get_kernel("kernels-community/flash-attn2")
+    flash_kernel_module = load_pinned_flash_attention_kernel()
     flash_attn_with_kvcache = flash_kernel_module.flash_attn_with_kvcache
     patched_attentions = []
 

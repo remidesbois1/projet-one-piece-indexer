@@ -29,8 +29,12 @@ describe('Utils', () => {
             expect(getProxiedImageUrl('https://example.com/image.jpg')).toBe('https://example.com/image.jpg');
         });
 
-        it('replaces s3.onepiece-index.com with /s3-proxy', () => {
-            expect(getProxiedImageUrl('https://s3.onepiece-index.com/bucket/image.jpg')).toBe('/s3-proxy/bucket/image.jpg');
+        it('proxies public covers through the restricted cover path', () => {
+            expect(getProxiedImageUrl('https://s3.onepiece-index.com/covers/image.jpg')).toBe('/s3-proxy/covers/image.jpg');
+        });
+
+        it('refuses direct page-storage URLs without a page endpoint', () => {
+            expect(getProxiedImageUrl('https://s3.onepiece-index.com/tome-1/page.jpg')).toBeNull();
         });
 
         it('formats URL using pageId correctly without token', () => {
@@ -38,9 +42,14 @@ describe('Utils', () => {
             expect(getProxiedImageUrl(null, 'page123')).toBe('http://api.test/pages/page123/image');
         });
 
-        it('formats URL using pageId and token correctly', () => {
+        it('resolves application page image paths against the backend API', () => {
+            process.env.NEXT_PUBLIC_BACKEND_URL = 'https://api.test/api/';
+            expect(getProxiedImageUrl('/api/pages/page123/image')).toBe('https://api.test/api/pages/page123/image');
+        });
+
+        it('never serializes a token into a page image URL', () => {
             process.env.NEXT_PUBLIC_BACKEND_URL = 'http://api.test';
-            expect(getProxiedImageUrl(null, 'page123', 'tok456')).toBe('http://api.test/pages/page123/image?token=tok456');
+            expect(getProxiedImageUrl(null, 'page123', 'tok456')).toBe('http://api.test/pages/page123/image');
         });
 
         it('returns falsy if url is falsy and no pageId is provided', () => {

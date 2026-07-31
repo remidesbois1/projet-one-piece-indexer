@@ -9,6 +9,7 @@ import { useAnnotationDetection } from '@/hooks/useAnnotationDetection';
 import { useAnnotationMetadata } from '@/hooks/useAnnotationMetadata';
 import { useTauriLocalOcrContext } from '@/context/TauriLocalOcrContext';
 import { capitalizeOcrSentenceStarts } from '@/lib/ocr-utils';
+import { postOcrImage } from '@/lib/ocrProxyClient';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { ArrowLeft, Upload } from "lucide-react";
 import { toast } from "sonner";
@@ -110,9 +111,8 @@ function imageElementToJpegBlob(img) {
 }
 
 async function runModalPoneglyph(imageBlob) {
-    const response = await fetch('/api/poneglyph_one_shot', {
-        method: 'POST',
-        body: imageBlob
+    const response = await postOcrImage('/api/poneglyph_one_shot', imageBlob, {
+        allowAnonymous: true,
     });
 
     if (!response.ok) throw new Error("Erreur API Poneglyph-BBox");
@@ -173,23 +173,6 @@ export default function SandboxClient() {
         const file = e.dataTransfer.files[0];
         handleImageUpload(file);
     };
-
-    useEffect(() => {
-        const imgEl = imageRef.current;
-        if (!imgEl) return;
-        const observer = new ResizeObserver((entries) => {
-            const entry = entries[0];
-            if (entry && imgEl.naturalWidth) {
-                setImageDimensions({
-                    width: imgEl.offsetWidth,
-                    naturalWidth: imgEl.naturalWidth,
-                    naturalHeight: imgEl.naturalHeight
-                });
-            }
-        });
-        observer.observe(imgEl);
-        return () => observer.disconnect();
-    }, [imageUrl]);
 
     const {
         formData, setFormData, charInput, setCharInput,
@@ -463,10 +446,10 @@ export default function SandboxClient() {
                         ? "Serveur OCR local hors ligne."
                         : tauriLocalOcr.isDownloadingLocalSuryaBBoxModel
                             ? "Telechargement du modele Surya-BBox en cours."
-                            : tauriLocalOcr.localSuryaBBoxModelStatus?.error
-                                ? tauriLocalOcr.localSuryaBBoxModelStatus.error
-                                : !tauriLocalOcr.localSuryaBBoxModelStatus?.installed
-                                    ? "Telechargez le modele Surya-BBox d'abord."
+                            : !tauriLocalOcr.localSuryaBBoxModelStatus?.installed
+                                ? "Telechargez le modele Surya-BBox d'abord."
+                                : tauriLocalOcr.localSuryaBBoxModelStatus?.error
+                                    ? tauriLocalOcr.localSuryaBBoxModelStatus.error
                                     : !tauriLocalOcr.localSuryaBBoxModelStatus?.ready
                                         ? "Chargez le modele Surya-BBox en VRAM d'abord."
                                         : "Surya-BBox indisponible.";
@@ -588,10 +571,12 @@ export default function SandboxClient() {
                 localTextDownloadState={tauriLocalOcr.localTextDownloadState}
                 localSuryaDownloadState={tauriLocalOcr.localSuryaDownloadState}
                 localSuryaBBoxDownloadState={tauriLocalOcr.localSuryaBBoxDownloadState}
+                localDownloadProgress={tauriLocalOcr.localDownloadProgress}
                 localTextDownloadProgress={tauriLocalOcr.localTextDownloadProgress}
                 localSuryaDownloadProgress={tauriLocalOcr.localSuryaDownloadProgress}
                 localSuryaBBoxDownloadProgress={tauriLocalOcr.localSuryaBBoxDownloadProgress}
                 localConnectionState={tauriLocalOcr.localConnectionState}
+                isLoadingLocalModel={tauriLocalOcr.isLoadingLocalModel}
                 isLoadingLocalTextModel={tauriLocalOcr.isLoadingLocalTextModel}
                 isLoadingLocalSuryaModel={tauriLocalOcr.isLoadingLocalSuryaModel}
                 isLoadingLocalSuryaBBoxModel={tauriLocalOcr.isLoadingLocalSuryaBBoxModel}
@@ -601,9 +586,11 @@ export default function SandboxClient() {
                 canRunLocalTextOcr={tauriLocalOcr.canRunLocalTextOcr}
                 canRunLocalSuryaOcr={tauriLocalOcr.canRunLocalSuryaOcr}
                 canRunLocalSuryaBBoxOcr={tauriLocalOcr.canRunLocalSuryaBBoxOcr}
+                downloadLocalModel={tauriLocalOcr.downloadLocalModel}
                 downloadLocalTextModel={tauriLocalOcr.downloadLocalTextModel}
                 downloadLocalSuryaModel={tauriLocalOcr.downloadLocalSuryaModel}
                 downloadLocalSuryaBBoxModel={tauriLocalOcr.downloadLocalSuryaBBoxModel}
+                loadLocalModel={tauriLocalOcr.loadLocalModel}
                 loadLocalTextModel={tauriLocalOcr.loadLocalTextModel}
                 loadLocalSuryaModel={tauriLocalOcr.loadLocalSuryaModel}
                 loadLocalSuryaBBoxModel={tauriLocalOcr.loadLocalSuryaBBoxModel}

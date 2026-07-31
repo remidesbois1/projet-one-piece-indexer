@@ -75,15 +75,13 @@ const userRoutes = require('./routes/userRoutes');
 const statRoutes = require('./routes/statsRoutes')
 const mangaRoutes = require('./routes/mangaRoutes');
 const publicRoutes = require('./routes/v1/publicRoutes');
+const { requestLogger } = require('./middleware/requestLogger');
 
 
 
 app.use(express.json({ limit: '1mb' }));
 
-app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
-  next();
-});
+app.use(requestLogger);
 
 app.get('/', (req, res) => {
   res.status(200).json({

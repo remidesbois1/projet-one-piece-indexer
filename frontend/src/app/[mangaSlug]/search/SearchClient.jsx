@@ -5,7 +5,6 @@ import { searchBubbles, searchF2llmLocal, searchOcrPageMatch, getMetadataSuggest
 import { generateF2llmBrowserQueryEmbedding } from '@/lib/f2llmBrowserEmbedding';
 import { getProxiedImageUrl, cn } from '@/lib/utils';
 import { useDebounce } from '@/hooks/useDebounce';
-import { useAuth } from '@/context/AuthContext';
 import { useDetection } from '@/context/DetectionContext';
 import { useWorker } from '@/context/WorkerContext';
 import Link from 'next/link';
@@ -129,12 +128,12 @@ const clampDetectedBox = (box, imageWidth, imageHeight) => {
     return { x, y, w, h };
 };
 
-const ResultImage = ({ url, pageId, token, coords, type }) => {
+const ResultImage = ({ url, pageId, coords, type }) => {
     if (type === 'semantic' || !coords) {
         return (
             <div className="w-full aspect-[2/3] bg-[#071625] overflow-hidden relative group">
                 <img
-                    src={getProxiedImageUrl(url, pageId, token)}
+                    src={getProxiedImageUrl(url, pageId)}
                     crossOrigin="anonymous"
                     alt="Page preview"
                     className="w-full h-full object-cover object-top transition-transform duration-500 group-hover:scale-105"
@@ -161,7 +160,7 @@ const ResultImage = ({ url, pageId, token, coords, type }) => {
                 }}
             >
                 <img
-                    src={getProxiedImageUrl(url, pageId, token)}
+                    src={getProxiedImageUrl(url, pageId)}
                     crossOrigin="anonymous"
                     alt="Bubble crop"
                     className="max-w-none"
@@ -181,7 +180,6 @@ const ResultImage = ({ url, pageId, token, coords, type }) => {
 };
 
 export default function SearchPage() {
-    const { session } = useAuth();
     const { mangaSlug } = useManga();
     const {
         detectBubbles,
@@ -984,7 +982,7 @@ export default function SearchPage() {
                             <div className="grid gap-0 lg:grid-cols-[minmax(280px,520px)_1fr]">
                                 <div className="min-h-[420px] bg-[#071625]">
                                     <img
-                                        src={getProxiedImageUrl(topOcrResult.url_image, topOcrResult.page_id, session?.access_token)}
+                                        src={getProxiedImageUrl(topOcrResult.url_image, topOcrResult.page_id)}
                                         crossOrigin="anonymous"
                                         alt="Meilleur resultat OCR"
                                         className="h-full max-h-[680px] w-full object-contain object-top transition-transform duration-500 group-hover:scale-[1.015]"
@@ -1071,7 +1069,6 @@ export default function SearchPage() {
                                     <ResultImage
                                         url={item.url_image}
                                         pageId={item.page_id}
-                                        token={session?.access_token}
                                         coords={item.coords}
                                         type={item.type}
                                     />

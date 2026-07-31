@@ -1,7 +1,31 @@
 const { supabase } = require('../config/supabaseClient');
 
+function getBearerToken(req) {
+  const authorization = req.headers.authorization;
+  if (!authorization) return null;
+
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() || null;
+}
+
+const optionalAuthMiddleware = async (req, res, next) => {
+  const token = getBearerToken(req);
+  if (!token) return next();
+
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    if (error || !user) {
+      return res.status(401).json({ error: 'Accès non autorisé : token invalide ou expiré.' });
+    }
+    req.user = user;
+    return next();
+  } catch {
+    return res.status(401).json({ error: 'Accès non autorisé : token invalide ou expiré.' });
+  }
+};
+
 const authMiddleware = async (req, res, next) => {
-  const token = req.headers.authorization ? req.headers.authorization.split(' ')[1] : null;
+  const token = getBearerToken(req);
 
   if (!token) {
     return res.status(401).json({ error: 'Accès non autorisé : token manquant.' });
@@ -37,4 +61,4 @@ const roleCheck = (allowedRoles) => {
   };
 };
 
-module.exports = { authMiddleware, roleCheck };
+module.exports = { authMiddleware, getBearerToken, optionalAuthMiddleware, roleCheck };

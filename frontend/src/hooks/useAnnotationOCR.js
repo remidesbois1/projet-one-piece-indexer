@@ -5,6 +5,7 @@ import { useWorker, OCR_MODELS } from '@/context/WorkerContext';
 import { useTauriLocalOcrContext } from '@/context/TauriLocalOcrContext';
 import { analyzeBubble } from '@/lib/geminiClient';
 import { capitalizeOcrSentenceStarts } from '@/lib/ocr-utils';
+import { postOcrImage } from '@/lib/ocrProxyClient';
 import { cropImage, cropImageBitmap } from '@/lib/utils';
 import { toast } from 'sonner';
 
@@ -109,7 +110,7 @@ export function useAnnotationOCR({
     const runModel = useCallback(async (modelData, areaToCrop, requestId) => {
         if (modelData.key === 'lighton') {
             const blob = await cropImage(imageRef.current, areaToCrop);
-            const response = await fetch('/api/local_lighton', { method: 'POST', body: blob });
+            const response = await postOcrImage('/api/local_lighton', blob);
             if (!response.ok) throw new Error(`Erreur OCR ${modelData.label}`);
             const result = await response.json();
             return result.text || '';

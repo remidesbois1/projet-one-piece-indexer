@@ -50,11 +50,46 @@ function Remove-GeneratedBackendPath {
 
     $resolvedTarget = (Resolve-Path -LiteralPath $TargetPath).Path
     $resolvedRoot = (Resolve-Path -LiteralPath $BackendRoot).Path
-    if (-not $resolvedTarget.StartsWith($resolvedRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+    $rootPrefix = $resolvedRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
+    if (
+        $resolvedTarget.Equals($resolvedRoot, [System.StringComparison]::OrdinalIgnoreCase) -or
+        -not $resolvedTarget.StartsWith($rootPrefix, [System.StringComparison]::OrdinalIgnoreCase)
+    ) {
         throw "Refusing to remove generated path outside desktop_backend: $resolvedTarget"
     }
 
-    Remove-Item -LiteralPath $resolvedTarget -Recurse -Force
+    $targetItem = Get-Item -LiteralPath $resolvedTarget -Force
+    if ($targetItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
+        Remove-Item -LiteralPath $resolvedTarget -Force
+    } else {
+        Remove-Item -LiteralPath $resolvedTarget -Recurse -Force
+    }
+}
+
+function Remove-GeneratedPythonBytecode {
+    param(
+        [Parameter(Mandatory = $true)][string]$BackendRoot
+    )
+
+    if (-not (Test-Path -LiteralPath $BackendRoot -PathType Container)) {
+        throw "desktop_backend directory not found: $BackendRoot"
+    }
+
+    $resolvedRoot = (Resolve-Path -LiteralPath $BackendRoot).Path
+    $bytecodeFiles = @(
+        Get-ChildItem -LiteralPath $resolvedRoot -Recurse -Force -File -Filter "*.pyc"
+    )
+    foreach ($bytecodeFile in $bytecodeFiles) {
+        Remove-GeneratedBackendPath -TargetPath $bytecodeFile.FullName -BackendRoot $resolvedRoot
+    }
+
+    $cacheDirectories = @(
+        Get-ChildItem -LiteralPath $resolvedRoot -Recurse -Force -Directory -Filter "__pycache__" |
+            Sort-Object { $_.FullName.Length } -Descending
+    )
+    foreach ($cacheDirectory in $cacheDirectories) {
+        Remove-GeneratedBackendPath -TargetPath $cacheDirectory.FullName -BackendRoot $resolvedRoot
+    }
 }
 
 Write-Host ""
@@ -153,6 +188,7 @@ if ($PyInstaller) {
             "--hidden-import", "transformers",
             "--hidden-import", "huggingface_hub",
             "--collect-all", "transformers",
+            "--add-data", "model_registry.json;.",
             "local_ocr_server.py"
         )
 
@@ -186,6 +222,7 @@ Remove-GeneratedBackendPath -TargetPath (Join-Path $backendDirForCleanup "local_
 if (-not $PyInstaller) {
     Remove-GeneratedBackendPath -TargetPath (Join-Path $backendDirForCleanup "local_ocr_server_bundle") -BackendRoot $backendDirForCleanup
 }
+Remove-GeneratedPythonBytecode -BackendRoot $backendDirForCleanup
 
 # --- Tauri build ---
 Write-Host ""

@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { readPageImage } = require('./pageStorage');
 
 const GEMINI_EMBED_MODEL = 'gemini-embedding-2-preview';
 
@@ -12,13 +13,8 @@ async function generateGeminiEmbedding(text, taskType = "RETRIEVAL_QUERY", image
 
     if (imageUrl) {
         try {
-            const imageResponse = await axios.get(imageUrl, {
-                responseType: 'arraybuffer',
-                timeout: 20000,
-                headers: { 'User-Agent': 'OnePieceIndexer/1.0' }
-            });
-            const imgBase64 = Buffer.from(imageResponse.data).toString('base64');
-            const contentType = imageResponse.headers['content-type'] || 'image/jpeg';
+            const { buffer, contentType } = await readPageImage(imageUrl);
+            const imgBase64 = buffer.toString('base64');
             parts.push({ inlineData: { mimeType: contentType, data: imgBase64 } });
         } catch (imgError) {
             console.warn(`[Gemini Embed] Image skipped (${imageUrl}): ${imgError.message}`);

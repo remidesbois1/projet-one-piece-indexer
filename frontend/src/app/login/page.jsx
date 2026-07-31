@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from 'react';
+import React, { Suspense, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 
-export default function LoginPage() {
+function LoginContent() {
     const router = useRouter();
     const { loginAsGuest } = useAuth();
     const [email, setEmail] = useState('');
@@ -122,5 +122,19 @@ export default function LoginPage() {
                 </Card>
             </div>
         </div>
+    );
+}
+
+export default function LoginPage() {
+    return (
+        <Suspense
+            fallback={(
+                <div className="poneglyph-app flex min-h-screen items-center justify-center">
+                    <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-700 border-t-white" />
+                </div>
+            )}
+        >
+            <LoginContent />
+        </Suspense>
     );
 }

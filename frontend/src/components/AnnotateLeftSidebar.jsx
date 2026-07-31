@@ -21,6 +21,7 @@ import {
 import AnnotateOcrModelSelector from './AnnotateOcrModelSelector';
 import AnnotateBubbleScanner from './AnnotateBubbleScanner';
 import { cn } from '@/lib/utils';
+import { canDownloadMissingLocalModel } from './localModelRecovery';
 
 const PAGE_STATUSES = [
     { value: 'not_started', label: 'Non commencée' },
@@ -31,6 +32,14 @@ const PAGE_STATUSES = [
 
 const PONEGLYPH_BBOX_LABEL = "Poneglyph-BBox";
 const SURYA_BBOX_LABEL = "Surya-BBox";
+
+export function formatPageStatus(status, isGuest = false) {
+    if (typeof status === 'string' && status.trim()) {
+        return status.replace(/_/g, ' ');
+    }
+
+    return isGuest ? 'lecture publique' : 'statut inconnu';
+}
 
 export default function AnnotateLeftSidebar({
     fromSearch,
@@ -112,7 +121,8 @@ export default function AnnotateLeftSidebar({
 }) {
     const isStaff = role === 'Admin' || role === 'Modo';
     const isAdmin = role === 'Admin';
-    const canInlineEditStatus = isAdmin && handlePageStatusChange && !isSandbox;
+    const hasPageStatus = typeof page?.statut === 'string' && page.statut.length > 0;
+    const canInlineEditStatus = isAdmin && hasPageStatus && handlePageStatusChange && !isSandbox;
     const isExtractionRunning = isOneShotLoading || isPoneglyphLoading || isLocalInferencing || isLocalSuryaBBoxInferencing;
     const localConnectionUnavailable = ['offline', 'reconnecting', 'unavailable'].includes(localConnectionState?.status);
     const localConnectionLabel = localConnectionState?.status === 'reconnecting'
@@ -149,12 +159,16 @@ export default function AnnotateLeftSidebar({
     const poneglyphDownloadActive = Boolean(isDownloadingLocalModel || localDownloadState?.active);
     const poneglyphDownloadPercent = Number.isFinite(localDownloadProgress) ? Math.round(localDownloadProgress) : null;
     const poneglyphIsLoading = Boolean(isLoadingLocalModel || localModelStatus?.loading);
-    const canDownloadPoneglyph = isTauri && handleOneShotLocalPoneglyph && !localModelStatus?.installed && !poneglyphDownloadActive && !localModelStatus?.error;
+    const canDownloadPoneglyph = isTauri
+        && handleOneShotLocalPoneglyph
+        && canDownloadMissingLocalModel(localModelStatus, poneglyphDownloadActive);
     const canLoadPoneglyph = isTauri && handleOneShotLocalPoneglyph && localModelStatus?.installed && !localModelStatus?.ready && !poneglyphIsLoading && !poneglyphDownloadActive && !localModelStatus?.error;
     const poneglyphAction = canRunLocalOcr ? 'run' : canLoadPoneglyph ? 'load' : canDownloadPoneglyph ? 'download' : null;
 
     const suryaBBoxIsLoading = Boolean(isLoadingLocalSuryaBBoxModel || localSuryaBBoxModelStatus?.loading);
-    const canDownloadSuryaBBox = isTauri && handleOneShotLocalSuryaBbox && !localSuryaBBoxModelStatus?.error && !localSuryaBBoxModelStatus?.installed && !suryaBBoxDownloadActive;
+    const canDownloadSuryaBBox = isTauri
+        && handleOneShotLocalSuryaBbox
+        && canDownloadMissingLocalModel(localSuryaBBoxModelStatus, suryaBBoxDownloadActive);
     const canLoadSuryaBBox = isTauri && handleOneShotLocalSuryaBbox && !localSuryaBBoxModelStatus?.error && localSuryaBBoxModelStatus?.installed && !localSuryaBBoxModelStatus?.ready && !suryaBBoxIsLoading && !suryaBBoxDownloadActive;
     const suryaBBoxAction = canRunLocalSuryaBBoxOcr ? 'run' : canLoadSuryaBBox ? 'load' : canDownloadSuryaBBox ? 'download' : null;
 
@@ -201,7 +215,7 @@ export default function AnnotateLeftSidebar({
                         </Select>
                     ) : (
                         <Badge variant="secondary" className="border border-white/12 bg-white/[0.07] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-200">
-                            {page.statut.replace(/_/g, ' ')}
+                            {formatPageStatus(page?.statut, isGuest)}
                         </Badge>
                     )}
                 </div>

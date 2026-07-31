@@ -6,10 +6,12 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
+    "test": "node --test",
     "export:f2llm": "python scripts/export_f2llm_onnx.py --model-id ../scripts/embed/f2llm_v2_160m_finetuned_full --output models/f2llm-v2-160m-one-piece-retrieval",
     "export:f2llm:base": "python scripts/export_f2llm_onnx.py",
     "backfill:f2llm": "node scripts/backfill_f2llm_embeddings.js",
     "backfill:f2llm:force": "node scripts/backfill_f2llm_embeddings.js --force",
+    "migrate:private-pages": "node scripts/migrate_pages_to_private_r2.js",
     "training:schema": "node scripts/apply_training_schema.js"
   },
   "dependencies": {

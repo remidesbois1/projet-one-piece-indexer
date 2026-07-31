@@ -5,6 +5,11 @@ const { supabase, supabaseAdmin } = require('../config/supabaseClient');
 const { generateVoyageEmbedding, rerankVoyage } = require('../utils/voyageClient');
 const { generateGeminiEmbedding } = require('../utils/geminiClient');
 const {
+    VALIDATED_BUBBLE_STATUS,
+    getPageImagePath,
+    keepValidatedBubbleRows,
+} = require('../utils/publicMedia');
+const {
     buildCandidateTokenQueries,
     buildInformativeTokens,
     normalizeQueryBubbles,
@@ -98,7 +103,7 @@ function formatSemanticPageResult(c) {
         type: 'semantic',
         id: `page-${c.id}`,
         page_id: c.id,
-        url_image: c.url_image,
+        url_image: getPageImagePath(c.id),
         content: snippet || "",
         context: `Tome ${c.tome_numero} - Chap. ${c.chapitre_numero} - Page ${c.numero_page}`,
         scores: { ai: 0, vector: Math.round(c.similarity * 100), local: Math.round(c.similarity * 100) },
@@ -139,7 +144,7 @@ async function runF2llmVectorSearch({ req, query, embedding, page = 1, limit = 1
     };
 
     const rpcStart = Date.now();
-    const { data, error } = await supabase.rpc('match_pages_f2llm', {
+    const { data, error } = await supabaseAdmin.rpc('match_pages_f2llm', {
         query_embedding: embedding,
         match_threshold: 0.30,
         match_count: 50,
@@ -187,6 +192,7 @@ async function findCandidatePageIdsFromTokenQueries(tokenQueries) {
         const { data, error } = await supabaseAdmin
             .from('bulles')
             .select('id_page')
+            .eq('statut', VALIDATED_BUBBLE_STATUS)
             .ilike('texte_propose', `%${term}%`)
             .limit(OCR_CANDIDATE_PAGES_PER_TOKEN);
 
@@ -233,13 +239,19 @@ async function fetchCandidatePages(pageIds) {
                     y,
                     w,
                     h,
+                    statut,
                     order
                 )
             `)
             .in('id', chunk);
 
         if (error) throw error;
-        pages.push(...(data || []));
+        pages.push(...(data || []).map((page) => ({
+            ...page,
+            bulles: (page.bulles || []).filter(
+                (bubble) => bubble.statut === VALIDATED_BUBBLE_STATUS
+            ),
+        })));
     }
 
     return pages;
@@ -255,7 +267,7 @@ function formatOcrPageResult(pageRecord, provider) {
         type: 'ocr',
         id: `page-${pageRecord.id}`,
         page_id: pageRecord.id,
-        url_image: pageRecord.url_image,
+        url_image: getPageImagePath(pageRecord.id),
         content,
         context: `Tome ${pageTome?.numero ?? '?'} - Chap. ${chapitre?.numero ?? '?'} - Page ${pageRecord.numero_page}`,
         scores: {
@@ -474,7 +486,7 @@ router.get('/', async (req, res) => {
                     voyageEmbedMs = Date.now() - embStart;
 
                     const rpcStart = Date.now();
-                    const { data, error } = await supabase.rpc('match_pages', {
+                    const { data, error } = await supabaseAdmin.rpc('match_pages', {
                         query_embedding: embedding,
                         match_threshold: 0.30,
                         match_count: 50,
@@ -491,7 +503,7 @@ router.get('/', async (req, res) => {
                         geminiEmbedMs = Date.now() - embStart;
 
                         const rpcStart = Date.now();
-                        const { data, error } = await supabase.rpc('match_pages_gemini', {
+                        const { data, error } = await supabaseAdmin.rpc('match_pages_gemini', {
                             query_embedding: embedding,
                             match_threshold: 0.30,
                             match_count: 50,
@@ -599,7 +611,7 @@ router.get('/', async (req, res) => {
                         type: 'semantic',
                         id: `page-${c.id}`,
                         page_id: c.id,
-                        url_image: c.url_image,
+                        url_image: getPageImagePath(c.id),
                         content: snippet || "",
                         context: `Tome ${c.tome_numero} - Chap. ${c.chapitre_numero} - Page ${c.numero_page}`,
                         scores: { ai: 0, vector: Math.round(c.similarity * 100) },
@@ -649,7 +661,7 @@ router.get('/', async (req, res) => {
                         type: 'semantic',
                         id: `page-${c.id}`,
                         page_id: c.id,
-                        url_image: c.url_image,
+                        url_image: getPageImagePath(c.id),
                         content: snippet || "",
                         context: `Tome ${c.tome_numero} - Chap. ${c.chapitre_numero} - Page ${c.numero_page}`,
                         scores: { ai: finalScore, vector: Math.round(c.similarity * 100) },
@@ -672,20 +684,20 @@ router.get('/', async (req, res) => {
             insertSearchLog(searchLog);
 
         } else {
-            const { data, error } = await supabase.rpc('search_bulles', {
+            const { data, error } = await supabaseAdmin.rpc('search_bulles', {
                 search_term: q,
                 page_limit: 10000,
                 page_offset: 0
             });
             if (error) throw error;
 
-            let filteredData = data || [];
+            let filteredData = await keepValidatedBubbleRows(supabaseAdmin, data || []);
 
             const filterManga = req.query.manga;
             if (filterManga) {
                 const pageIds = filteredData.map(b => b.page_id);
                 if (pageIds.length > 0) {
-                    const { data: pagesMangaData, error: mangaError } = await supabase
+                    const { data: pagesMangaData, error: mangaError } = await supabaseAdmin
                         .from('pages')
                         .select('id, chapitres!inner(tomes!inner(mangas!inner(slug)))')
                         .in('id', pageIds);
@@ -708,7 +720,7 @@ router.get('/', async (req, res) => {
             if (filterCharacters || filterArc) {
                 const pageIds = filteredData.map(b => b.page_id);
                 if (pageIds.length > 0) {
-                    const { data: pagesData } = await supabase
+                    const { data: pagesData } = await supabaseAdmin
                         .from('pages')
                         .select('id, description')
                         .in('id', pageIds)
@@ -756,7 +768,7 @@ router.get('/', async (req, res) => {
                 type: 'bubble',
                 id: b.id,
                 page_id: b.page_id,
-                url_image: b.url_image,
+                url_image: getPageImagePath(b.page_id),
                 coords: { x: b.x, y: b.y, w: b.w, h: b.h },
                 content: b.texte_propose,
                 context: `Tome ${b.tome_numero} - Chap. ${b.chapitre_numero} - Page ${b.numero_page}`

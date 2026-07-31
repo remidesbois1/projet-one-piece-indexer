@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTauriLocalOcrContext } from '@/context/TauriLocalOcrContext';
+import { canDownloadMissingLocalModel } from './localModelRecovery';
 
 function formatBytes(value) {
     if (!value) return "-";
@@ -293,7 +294,10 @@ export default function LocalOcrStatusIndicator() {
     const canLoadText = localTextModelStatus?.installed && !localTextModelStatus?.ready && !isLoadingLocalTextModel && !textDownloadActive;
     const canDownloadSurya = !localSuryaModelStatus?.installed && !suryaDownloadActive;
     const canLoadSurya = localSuryaModelStatus?.installed && !localSuryaModelStatus?.ready && !isLoadingLocalSuryaModel && !suryaDownloadActive;
-    const canDownloadSuryaBBox = !localSuryaBBoxModelStatus?.error && !localSuryaBBoxModelStatus?.installed && !suryaBBoxDownloadActive;
+    const canDownloadSuryaBBox = canDownloadMissingLocalModel(
+        localSuryaBBoxModelStatus,
+        suryaBBoxDownloadActive
+    );
     const canLoadSuryaBBox = !localSuryaBBoxModelStatus?.error && localSuryaBBoxModelStatus?.installed && !localSuryaBBoxModelStatus?.ready && !isLoadingLocalSuryaBBoxModel && !suryaBBoxDownloadActive;
 
     return (

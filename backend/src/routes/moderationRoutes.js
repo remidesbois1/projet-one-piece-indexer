@@ -4,6 +4,7 @@ const { authMiddleware, roleCheck } = require('../middleware/auth');
 
 
 const { supabaseAdmin } = require('../config/supabaseClient');
+const { getPageImagePath } = require('../utils/publicMedia');
 
 router.get('/pages', authMiddleware, roleCheck(['Admin', 'Modo']), async (req, res) => {
     const { data, error } = await supabaseAdmin
@@ -15,7 +16,10 @@ router.get('/pages', authMiddleware, roleCheck(['Admin', 'Modo']), async (req, r
         .eq('statut', 'pending_review');
 
     if (error) return res.status(500).json({ error: 'Db error' });
-    res.json(data);
+    res.json((data || []).map((page) => ({
+        ...page,
+        url_image: getPageImagePath(page.id),
+    })));
 });
 
 router.put('/pages/approve-all', authMiddleware, roleCheck(['Admin']), async (req, res) => {

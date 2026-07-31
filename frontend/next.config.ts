@@ -7,13 +7,23 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: '**',
       },
+      {
+        protocol: 'http',
+        hostname: 'localhost',
+        port: '3001',
+      },
+      {
+        protocol: 'http',
+        hostname: '127.0.0.1',
+        port: '3001',
+      },
     ],
   },
   async rewrites() {
     return [
       {
-        source: '/s3-proxy/:path*',
-        destination: 'https://s3.onepiece-index.com/:path*',
+        source: '/s3-proxy/covers/:path*',
+        destination: 'https://s3.onepiece-index.com/covers/:path*',
       },
     ];
   },
