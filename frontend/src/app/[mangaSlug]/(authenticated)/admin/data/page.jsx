@@ -2,9 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useManga } from '@/context/MangaContext';
-import { useAuth } from '@/context/AuthContext';
 import { getAdminHierarchy, getAdminBubblesForPage, getBubbleHistory } from '@/lib/api';
-import { fetchOriginalPageImage } from '@/lib/pageImageClient';
 import {
     Dialog,
     DialogContent,
@@ -23,11 +21,10 @@ import {
     ImageOff
 } from "lucide-react";
 import Image from "next/image";
-import { cn } from "@/lib/utils";
+import { cn, getProxiedImageUrl } from "@/lib/utils";
 
 export default function AdminDataPage() {
     const { currentManga } = useManga();
-    const { session } = useAuth();
     const pageTitle = currentManga ? `Explorateur : ${currentManga.titre}` : "Explorateur de Données";
     const [hierarchy, setHierarchy] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -37,40 +34,8 @@ export default function AdminDataPage() {
     const [selectedChapter, setSelectedChapter] = useState(null);
     const [selectedPage, setSelectedPage] = useState(null);
     const [bubbles, setBubbles] = useState([]);
-    const [originalImageUrls, setOriginalImageUrls] = useState({});
-    const [originalImageErrors, setOriginalImageErrors] = useState({});
 
     const [loadingBubbles, setLoadingBubbles] = useState(false);
-
-    useEffect(() => {
-        let active = true;
-        const objectUrls = [];
-        const accessToken = session?.access_token;
-
-        setOriginalImageUrls({});
-        setOriginalImageErrors({});
-
-        if (!selectedChapter || !accessToken) return undefined;
-
-        selectedChapter.pages.forEach((page) => {
-            fetchOriginalPageImage(page.id, accessToken)
-                .then((blob) => {
-                    if (!active) return;
-                    const objectUrl = URL.createObjectURL(blob);
-                    objectUrls.push(objectUrl);
-                    setOriginalImageUrls((current) => ({ ...current, [page.id]: objectUrl }));
-                })
-                .catch(() => {
-                    if (!active) return;
-                    setOriginalImageErrors((current) => ({ ...current, [page.id]: true }));
-                });
-        });
-
-        return () => {
-            active = false;
-            objectUrls.forEach((objectUrl) => URL.revokeObjectURL(objectUrl));
-        };
-    }, [selectedChapter, session?.access_token]);
 
 
 
@@ -247,23 +212,18 @@ export default function AdminDataPage() {
                                         )}
                                     >
                                         <div className="w-full aspect-[2/3] bg-[#040d18] mb-2 rounded overflow-hidden relative">
-                                            {originalImageUrls[page.id] ? (
+                                            {page.url_image ? (
                                                 <Image
-                                                    src={originalImageUrls[page.id]}
+                                                    src={getProxiedImageUrl(page.url_image)}
                                                     alt={`Page ${page.numero_page}`}
                                                     fill
                                                     sizes="(max-width: 768px) 50vw, 20vw"
                                                     className="object-cover"
-                                                    unoptimized
                                                     loading="lazy"
                                                 />
-                                            ) : originalImageErrors[page.id] ? (
-                                                <div className="flex h-full w-full items-center justify-center">
-                                                    <ImageOff className="h-6 w-6 text-red-300" />
-                                                </div>
                                             ) : (
-                                                <div className="flex h-full w-full items-center justify-center">
-                                                    <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+                                                <div className="w-full h-full flex items-center justify-center">
+                                                    <ImageOff className="h-6 w-6 text-slate-300" />
                                                 </div>
                                             )}
 

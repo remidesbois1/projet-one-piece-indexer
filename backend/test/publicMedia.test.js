@@ -169,7 +169,6 @@ test('public page endpoints hide raw media, workflow fields, creators, and draft
     const preview = await fetch(`${baseUrl}/api/pages/42/image?token=leaked-access-token`);
     assert.equal(await preview.text(), 'protected-preview');
     assert.match(preview.headers.get('cache-control'), /^public,/);
-    assert.equal(preview.headers.get('cross-origin-resource-policy'), 'cross-origin');
 
     const deniedOriginal = await fetch(`${baseUrl}/api/pages/42/image/original`);
     assert.equal(deniedOriginal.status, 401);
@@ -180,7 +179,6 @@ test('public page endpoints hide raw media, workflow fields, creators, and draft
     assert.equal(await original.text(), 'raw-image');
     assert.equal(original.headers.get('content-length'), '9');
     assert.equal(original.headers.get('cache-control'), 'private, no-store');
-    assert.equal(original.headers.get('cross-origin-resource-policy'), 'cross-origin');
     assert.equal(original.headers.get('vary'), 'Authorization');
   });
 

@@ -148,7 +148,6 @@ router.get('/:id/image', async (req, res) => {
 
         res.set('Content-Type', 'image/avif');
         res.set('Cache-Control', 'public, max-age=86400');
-        res.set('Cross-Origin-Resource-Policy', 'cross-origin');
         res.send(protectedImageBuffer);
 
     } catch (err) {
@@ -173,7 +172,6 @@ router.get('/:id/image/original', requireAuth, async (req, res) => {
             res.set('Content-Length', String(contentLength));
         }
         res.set('Cache-Control', 'private, no-store');
-        res.set('Cross-Origin-Resource-Policy', 'cross-origin');
         res.set('Vary', 'Authorization');
         await streamImageBody(body, res);
         return undefined;
