@@ -2,10 +2,12 @@
 
 import React, { useMemo, useRef, useState, useEffect } from 'react';
 import { useManga } from '@/context/MangaContext';
+import { useAuth } from '@/context/AuthContext';
 import { useUserProfile } from '@/hooks/useUserProfile';
 import { useRouter } from 'next/navigation';
 import { deleteBubblesForChapter, deleteBubblesForPage, getTomes, getChapitres, getPages } from '@/lib/api';
-import { getProxiedImageUrl } from '@/lib/utils';
+import { getCoverThumbnailUrl, getPageDisplayStatus } from '@/lib/utils';
+import CoverThumbnailImage from '@/components/CoverThumbnailImage';
 import { toast } from 'sonner';
 
 import {
@@ -24,6 +26,7 @@ import { ChevronRight, ChevronLeft, ArrowLeft, BookOpen, CheckCircle2, PenLine, 
 
 export default function DashboardPage() {
     const { profile, loading: profileLoading } = useUserProfile();
+    const { session } = useAuth();
     const router = useRouter();
     const { mangaSlug, currentManga } = useManga();
 
@@ -348,13 +351,16 @@ export default function DashboardPage() {
                             onClick={() => openTome(tome)}
                             className="poneglyph-panel poneglyph-card-hover group cursor-pointer overflow-hidden rounded-xl"
                         >
-                            <div className="aspect-[2/3] w-full overflow-hidden bg-[#071625]">
+                            <div className="relative aspect-[2/3] w-full overflow-hidden bg-[#071625]">
                                 {tome.cover_url ? (
-                                    <img
-                                        src={getProxiedImageUrl(tome.cover_url)}
+                                    <CoverThumbnailImage
+                                        src={getCoverThumbnailUrl(tome.cover_url, 512)}
                                         crossOrigin="anonymous"
                                         alt={`Tome ${tome.numero}`}
+                                        fill
+                                        sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 20vw"
                                         className="h-full w-full object-cover transition duration-700 group-hover:scale-[1.03] group-hover:brightness-[1.03]"
+                                        unoptimized
                                         loading="lazy"
                                     />
                                 ) : (
@@ -475,13 +481,15 @@ export default function DashboardPage() {
                                  </div>
                              ) : (
                                 <div className="grid gap-5 sm:grid-cols-[120px_minmax(0,1fr)] sm:items-center lg:grid-cols-[140px_minmax(0,1fr)]">
-                                    <div className="hidden aspect-[2/3] overflow-hidden rounded-lg border border-white/14 bg-[#071625] shadow-[0_16px_34px_rgba(0,0,0,0.32)] sm:block">
+                                    <div className="relative hidden aspect-[2/3] overflow-hidden rounded-lg border border-white/14 bg-[#071625] shadow-[0_16px_34px_rgba(0,0,0,0.32)] sm:block">
                                         {selectedTome?.cover_url ? (
-                                            <img
-                                                src={getProxiedImageUrl(selectedTome.cover_url)}
-                                                crossOrigin="anonymous"
+                                            <CoverThumbnailImage
+                                                src={getCoverThumbnailUrl(selectedTome.cover_url, 512)}
                                                 alt={`Tome ${selectedTome.numero}`}
+                                                fill
+                                                sizes="140px"
                                                 className="h-full w-full object-cover"
+                                                unoptimized
                                             />
                                         ) : (
                                             <div className="flex h-full items-center justify-center text-[#7b8aa9]">
@@ -579,13 +587,14 @@ export default function DashboardPage() {
 
                                         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
                                              {pages.map((page) => {
+                                                 const displayStatus = getPageDisplayStatus(page.statut, !session);
                                                  const statusLabel = {
                                                      in_progress: 'En cours',
                                                      pending_review: 'À valider',
                                                      completed: 'Terminé',
                                                      rejected: 'Rejete',
                                                      not_started: 'Vide',
-                                                 }[page.statut] || 'Vide';
+                                                 }[displayStatus] || 'Vide';
 
                                                  return (
                                                      <div
@@ -593,9 +602,9 @@ export default function DashboardPage() {
                                                          onClick={() => router.push(`/${mangaSlug}/annotate/${page.id}`)}
                                                          className={`
                                 group/page relative flex min-h-24 cursor-pointer flex-col justify-between rounded-xl border p-3.5 text-left shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_18px_34px_rgba(32,76,121,0.13)]
-                                ${getPageStatusColor(page.statut)}
+                                ${getPageStatusColor(displayStatus)}
                                 `}
-                                                         title={`Page ${page.numero_page} - ${page.statut}`}
+                                                         title={`Page ${page.numero_page} - ${displayStatus}`}
                                                      >
                                                          <div className="flex items-start justify-between gap-2">
                                                              <div>

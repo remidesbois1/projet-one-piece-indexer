@@ -1,11 +1,19 @@
 const express = require('express');
-const router = express.Router();
 const { supabase } = require('../config/supabaseClient');
+const { readPageImage } = require('../utils/pageStorage');
+const { createImageThumbnail, getThumbnailWidth } = require('../utils/imageThumbnail');
+
+function createMangaRouter({
+    supabaseClient = supabase,
+    readImage = readPageImage,
+    thumbnailImage = createImageThumbnail,
+} = {}) {
+const router = express.Router();
 
 // Get all mangas
 router.get('/', async (req, res) => {
     try {
-        const { data, error } = await supabase
+        const { data, error } = await supabaseClient
             .from('mangas')
             .select('*')
             .eq('enabled', true)
@@ -20,11 +28,39 @@ router.get('/', async (req, res) => {
     }
 });
 
+router.get('/:slug/cover/thumbnail', async (req, res) => {
+    try {
+        const { data: manga, error } = await supabaseClient
+            .from('mangas')
+            .select('cover_url')
+            .eq('slug', req.params.slug)
+            .eq('enabled', true)
+            .single();
+
+        if (error || !manga?.cover_url) {
+            return res.status(404).json({ error: "Couverture non trouvÃ©e" });
+        }
+
+        const { buffer: imageBuffer } = await readImage(manga.cover_url);
+        const thumbnailBuffer = await thumbnailImage(imageBuffer, {
+            width: getThumbnailWidth(req.query.width, 600),
+        });
+
+        res.set('Content-Type', 'image/avif');
+        res.set('Cache-Control', 'public, max-age=86400');
+        res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+        res.send(thumbnailBuffer);
+    } catch (error) {
+        console.error("Erreur thumbnail couverture manga:", error);
+        res.status(500).json({ error: "Erreur lors du traitement de la couverture" });
+    }
+});
+
 // Get manga by slug
 router.get('/:slug', async (req, res) => {
     try {
         const { slug } = req.params;
-        const { data, error } = await supabase
+        const { data, error } = await supabaseClient
             .from('mangas')
             .select('*')
             .eq('slug', slug)
@@ -41,4 +77,10 @@ router.get('/:slug', async (req, res) => {
     }
 });
 
+return router;
+}
+
+const router = createMangaRouter();
+
 module.exports = router;
+module.exports.createMangaRouter = createMangaRouter;

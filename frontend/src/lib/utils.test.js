@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cn, getProxiedImageUrl, cropImage } from './utils';
+import { cn, getCoverThumbnailUrl, getMangaCoverThumbnailUrl, getPageDisplayStatus, getPageImageThumbnailUrl, getProxiedImageUrl, cropImage } from './utils';
 
 describe('Utils', () => {
     describe('cn (Tailwind class merger)', () => {
@@ -56,6 +56,30 @@ describe('Utils', () => {
             expect(getProxiedImageUrl(null)).toBeNull();
             expect(getProxiedImageUrl('')).toBe('');
         });
+    });
+
+    it('builds a server-side page thumbnail URL', () => {
+        process.env.NEXT_PUBLIC_BACKEND_URL = 'https://api.test/api';
+        expect(getPageImageThumbnailUrl('/api/pages/page123/image', null, 640))
+            .toBe('https://api.test/api/pages/page123/image/thumbnail?width=640');
+    });
+
+    it('builds a server-side manga cover thumbnail URL', () => {
+        process.env.NEXT_PUBLIC_BACKEND_URL = 'https://api.test/api';
+        expect(getMangaCoverThumbnailUrl('one-piece', 600))
+            .toBe('https://api.test/api/mangas/one-piece/cover/thumbnail?width=600');
+    });
+
+    it('routes stored tome covers through the server thumbnail endpoint', () => {
+        process.env.NEXT_PUBLIC_BACKEND_URL = 'https://api.test/api';
+        expect(getCoverThumbnailUrl('/s3-proxy/covers/tome-22-123.jpg', 360))
+            .toBe('https://api.test/api/covers/thumbnail?path=tome-22-123.jpg&width=360');
+    });
+
+    it('shows public chapter pages as available when private status metadata is absent', () => {
+        expect(getPageDisplayStatus(undefined, true)).toBe('completed');
+        expect(getPageDisplayStatus('in_progress', true)).toBe('in_progress');
+        expect(getPageDisplayStatus(undefined, false)).toBe('not_started');
     });
 
     describe('cropImage', () => {

@@ -26,7 +26,7 @@ import {
 import { useSearchParams, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { getAllMangas, toggleMangaEnabled } from '@/lib/api';
-import { getProxiedImageUrl } from '@/lib/utils';
+import { getCoverThumbnailUrl } from '@/lib/utils';
 
 const TABS = [
     { value: 'content', label: 'Bibliothèque', icon: Library, tint: 'text-slate-200' },
@@ -225,7 +225,7 @@ function MangaVisibility({ mangas, loading, togglingId, onToggle }) {
                         >
                             <div className="flex items-center gap-3">
                                 {manga.cover_url ? (
-                                    <img src={getProxiedImageUrl(manga.cover_url)} alt={manga.titre} className="h-12 w-9 rounded-md border border-white/12 object-cover" />
+                                    <img src={getCoverThumbnailUrl(manga.cover_url, 160)} alt={manga.titre} className="h-12 w-9 rounded-md border border-white/12 object-cover" />
                                 ) : (
                                     <div className="flex h-12 w-9 items-center justify-center rounded-md border border-white/10 bg-white/[0.04]">
                                         <BookOpen className="h-4 w-4 text-slate-500" />

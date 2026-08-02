@@ -10,6 +10,7 @@ const {
     toPublicBubbleDto,
 } = require('../utils/publicMedia');
 const { openPageImage, readPageImage } = require('../utils/pageStorage');
+const { createImageThumbnail, getThumbnailWidth } = require('../utils/imageThumbnail');
 
 async function streamImageBody(body, response) {
     if (!body) throw new Error('R2 returned an empty page object');
@@ -42,6 +43,7 @@ function createPageRouter({
     openImage = openPageImage,
     readImage = readPageImage,
     previewImage = createPublicPreviewImage,
+    thumbnailImage = createImageThumbnail,
 } = {}) {
 const router = express.Router();
 
@@ -148,10 +150,47 @@ router.get('/:id/image', async (req, res) => {
 
         res.set('Content-Type', 'image/avif');
         res.set('Cache-Control', 'public, max-age=86400');
+        res.set('Cross-Origin-Resource-Policy', 'cross-origin');
         res.send(protectedImageBuffer);
 
     } catch (err) {
         console.error("Erreur service image:", err);
+        res.status(500).json({ error: "Erreur lors du traitement de l'image" });
+    }
+});
+
+router.get('/:id/image/thumbnail', async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const { data: page, error } = await supabaseClient
+            .from('pages')
+            .select('url_image')
+            .eq('id', id)
+            .single();
+
+        if (error || !page) return res.status(404).json({ error: "Page non trouvÃ©e" });
+
+        const { buffer: imageBuffer } = await readImage(page.url_image);
+        const { data: bubbles, error: bubblesError } = await supabaseClient
+            .from('bulles')
+            .select('x, y, w, h')
+            .eq('id_page', id)
+            .eq('statut', VALIDATED_BUBBLE_STATUS);
+
+        if (bubblesError) throw bubblesError;
+
+        const protectedImageBuffer = await previewImage(imageBuffer, bubbles);
+        const thumbnailBuffer = await thumbnailImage(protectedImageBuffer, {
+            width: getThumbnailWidth(req.query.width),
+        });
+
+        res.set('Content-Type', 'image/avif');
+        res.set('Cache-Control', 'public, max-age=86400');
+        res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+        res.send(thumbnailBuffer);
+    } catch (error) {
+        console.error("Erreur thumbnail image:", error);
         res.status(500).json({ error: "Erreur lors du traitement de l'image" });
     }
 });
@@ -172,6 +211,7 @@ router.get('/:id/image/original', requireAuth, async (req, res) => {
             res.set('Content-Length', String(contentLength));
         }
         res.set('Cache-Control', 'private, no-store');
+        res.set('Cross-Origin-Resource-Policy', 'cross-origin');
         res.set('Vary', 'Authorization');
         await streamImageBody(body, res);
         return undefined;
@@ -182,6 +222,32 @@ router.get('/:id/image/original', requireAuth, async (req, res) => {
             return undefined;
         }
         return res.status(500).json({ error: "Erreur lors du chargement de l'image" });
+    }
+});
+
+router.get('/:id/image/original/thumbnail', requireAuth, async (req, res) => {
+    try {
+        const { data: page, error } = await supabaseClient
+            .from('pages')
+            .select('url_image')
+            .eq('id', req.params.id)
+            .single();
+
+        if (error || !page) return res.status(404).json({ error: "Page non trouvÃ©e" });
+
+        const { buffer: imageBuffer } = await readImage(page.url_image);
+        const thumbnailBuffer = await thumbnailImage(imageBuffer, {
+            width: getThumbnailWidth(req.query.width),
+        });
+
+        res.set('Content-Type', 'image/avif');
+        res.set('Cache-Control', 'private, no-store');
+        res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+        res.set('Vary', 'Authorization');
+        res.send(thumbnailBuffer);
+    } catch (error) {
+        console.error("Erreur thumbnail image originale:", error);
+        res.status(500).json({ error: "Erreur lors du traitement de l'image" });
     }
 });
 

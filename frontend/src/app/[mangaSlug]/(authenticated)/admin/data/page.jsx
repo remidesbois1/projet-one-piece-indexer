@@ -2,7 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { useManga } from '@/context/MangaContext';
+import { useAuth } from '@/context/AuthContext';
 import { getAdminHierarchy, getAdminBubblesForPage, getBubbleHistory } from '@/lib/api';
+import { fetchOriginalPageThumbnail } from '@/lib/pageImageClient';
 import {
     Dialog,
     DialogContent,
@@ -21,10 +23,11 @@ import {
     ImageOff
 } from "lucide-react";
 import Image from "next/image";
-import { cn, getProxiedImageUrl } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 export default function AdminDataPage() {
     const { currentManga } = useManga();
+    const { session } = useAuth();
     const pageTitle = currentManga ? `Explorateur : ${currentManga.titre}` : "Explorateur de Données";
     const [hierarchy, setHierarchy] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -34,8 +37,52 @@ export default function AdminDataPage() {
     const [selectedChapter, setSelectedChapter] = useState(null);
     const [selectedPage, setSelectedPage] = useState(null);
     const [bubbles, setBubbles] = useState([]);
+    const [originalImageState, setOriginalImageState] = useState({ chapterKey: null, urls: {}, errors: {} });
 
     const [loadingBubbles, setLoadingBubbles] = useState(false);
+
+    useEffect(() => {
+        let active = true;
+        const objectUrls = [];
+        const accessToken = session?.access_token;
+
+        if (!selectedChapter || !accessToken) return undefined;
+
+        const chapterKey = selectedChapter.id ?? selectedChapter.numero;
+
+        selectedChapter.pages.forEach((page) => {
+            fetchOriginalPageThumbnail(page.id, accessToken, { width: 320 })
+                .then((blob) => {
+                    if (!active) return;
+                    const objectUrl = URL.createObjectURL(blob);
+                    objectUrls.push(objectUrl);
+                    setOriginalImageState((current) => {
+                        const base = current.chapterKey === chapterKey
+                            ? current
+                            : { chapterKey, urls: {}, errors: {} };
+                        return { ...base, urls: { ...base.urls, [page.id]: objectUrl } };
+                    });
+                })
+                .catch(() => {
+                    if (!active) return;
+                    setOriginalImageState((current) => {
+                        const base = current.chapterKey === chapterKey
+                            ? current
+                            : { chapterKey, urls: {}, errors: {} };
+                        return { ...base, errors: { ...base.errors, [page.id]: true } };
+                    });
+                });
+        });
+
+        return () => {
+            active = false;
+            objectUrls.forEach((objectUrl) => URL.revokeObjectURL(objectUrl));
+        };
+    }, [selectedChapter, session?.access_token]);
+
+    const chapterImageState = originalImageState.chapterKey === (selectedChapter?.id ?? selectedChapter?.numero)
+        ? originalImageState
+        : { urls: {}, errors: {} };
 
 
 
@@ -212,18 +259,23 @@ export default function AdminDataPage() {
                                         )}
                                     >
                                         <div className="w-full aspect-[2/3] bg-[#040d18] mb-2 rounded overflow-hidden relative">
-                                            {page.url_image ? (
+                                            {chapterImageState.urls[page.id] ? (
                                                 <Image
-                                                    src={getProxiedImageUrl(page.url_image)}
+                                                    src={chapterImageState.urls[page.id]}
                                                     alt={`Page ${page.numero_page}`}
                                                     fill
                                                     sizes="(max-width: 768px) 50vw, 20vw"
                                                     className="object-cover"
+                                                    unoptimized
                                                     loading="lazy"
                                                 />
+                                            ) : chapterImageState.errors[page.id] ? (
+                                                <div className="flex h-full w-full items-center justify-center">
+                                                    <ImageOff className="h-6 w-6 text-red-300" />
+                                                </div>
                                             ) : (
-                                                <div className="w-full h-full flex items-center justify-center">
-                                                    <ImageOff className="h-6 w-6 text-slate-300" />
+                                                <div className="flex h-full w-full items-center justify-center">
+                                                    <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
                                                 </div>
                                             )}
 

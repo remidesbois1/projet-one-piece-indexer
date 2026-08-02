@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useManga } from '@/context/MangaContext';
 import { getCovers, uploadCover } from '@/lib/api';
 import { Loader2, Image as ImageIcon, Upload, CheckCircle2 } from "lucide-react";
-import { getProxiedImageUrl } from "@/lib/utils";
+import { getCoverThumbnailUrl } from "@/lib/utils";
 
 const CoverManager = () => {
     const { mangaSlug } = useManga();
@@ -134,7 +134,7 @@ function CoverTile({ src, alt, large, onUpload, uploading }) {
     return (
         <div className={`group relative ${size} shrink-0 overflow-hidden rounded-xl border border-white/12 bg-[#040d18]`}>
             {src ? (
-                <img src={getProxiedImageUrl(src)} alt={alt} className="h-full w-full object-cover" />
+                <img src={getCoverThumbnailUrl(src, large ? 512 : 360)} alt={alt} className="h-full w-full object-cover" />
             ) : (
                 <div className="flex h-full w-full items-center justify-center text-slate-600">
                     <ImageIcon className="h-8 w-8" />

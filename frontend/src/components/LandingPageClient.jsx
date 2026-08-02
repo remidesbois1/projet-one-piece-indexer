@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { getMangaCoverThumbnailUrl } from "@/lib/utils";
 import {
     ArrowRight,
     BookOpen,
@@ -179,11 +180,12 @@ function MangaCard({ manga, index }) {
                 <div className="relative min-h-[220px] bg-[#0b1624]">
                     {manga.cover_url ? (
                         <Image
-                            src={manga.cover_url}
+                            src={getMangaCoverThumbnailUrl(manga.slug, 600)}
                             alt={`Couverture du manga ${manga.titre}`}
                             fill
                             sizes="(max-width: 640px) 120px, 150px"
                             className="object-cover transition duration-700 group-hover:scale-105"
+                            unoptimized
                         />
                     ) : (
                         <div className="flex h-full items-center justify-center text-slate-500">

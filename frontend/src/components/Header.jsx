@@ -94,7 +94,7 @@ const Header = ({ onOpenApiKeyModal }) => {
                     <Link href={getHref('/search')} prefetch={false} className={getLinkStyle('/search')}>
                         Recherche
                     </Link>
-                    {!isGuest && (isAdmin || isModo) && (
+                    {!isGuest && (
                         <Link href={getHref('/my-submissions')} prefetch={false} className={getLinkStyle('/my-submissions')}>
                             Mes Soumissions
                         </Link>

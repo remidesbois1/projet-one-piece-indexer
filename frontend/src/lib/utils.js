@@ -22,6 +22,40 @@ export function getProxiedImageUrl(url, pageId = null) {
     return url;
 }
 
+export function getPageImageThumbnailUrl(url, pageId = null, width = 640) {
+    const imageUrl = getProxiedImageUrl(url, pageId);
+    if (!imageUrl || !/\/pages\/[^/]+\/image$/.test(imageUrl)) return imageUrl;
+
+    return `${imageUrl}/thumbnail?width=${encodeURIComponent(width)}`;
+}
+
+export function getMangaCoverThumbnailUrl(slug, width = 600) {
+    if (!slug) return null;
+    const backendUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001/api').replace(/\/$/, '');
+    return `${backendUrl}/mangas/${encodeURIComponent(slug)}/cover/thumbnail?width=${encodeURIComponent(width)}`;
+}
+
+export function getCoverThumbnailUrl(url, width = 512) {
+    if (!url) return url;
+
+    let coverPath = null;
+    if (url.startsWith('/s3-proxy/covers/')) {
+        coverPath = url.slice('/s3-proxy/covers/'.length);
+    } else if (url.includes('s3.onepiece-index.com/covers/')) {
+        coverPath = new URL(url).pathname.replace(/^\/covers\//, '');
+    }
+
+    if (!coverPath) return getProxiedImageUrl(url);
+
+    const backendUrl = (process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001/api').replace(/\/$/, '');
+    return `${backendUrl}/covers/thumbnail?path=${encodeURIComponent(coverPath)}&width=${encodeURIComponent(width)}`;
+}
+
+export function getPageDisplayStatus(status, isPublicViewer = false) {
+    if (typeof status === 'string' && status.trim()) return status;
+    return isPublicViewer ? 'completed' : 'not_started';
+}
+
 export const cropImage = (imageElement, rect) => {
     return new Promise((resolve, reject) => {
         if (!imageElement) {

@@ -74,6 +74,7 @@ const analysisRoutes = require('./routes/analysisRoutes');
 const userRoutes = require('./routes/userRoutes');
 const statRoutes = require('./routes/statsRoutes')
 const mangaRoutes = require('./routes/mangaRoutes');
+const coverRoutes = require('./routes/coverRoutes');
 const publicRoutes = require('./routes/v1/publicRoutes');
 const { requestLogger } = require('./middleware/requestLogger');
 
@@ -113,6 +114,7 @@ app.use('/api/analyse', analysisRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/stats', statsLimiter, statRoutes);
 app.use('/api/mangas', mangaRoutes);
+app.use('/api/covers', coverRoutes);
 
 // Public API v1
 app.use('/v1', publicLimiter, publicRoutes);
