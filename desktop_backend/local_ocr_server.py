@@ -18,7 +18,7 @@ from typing import Optional
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 
 BBOX_MODEL_KEY = "bbox"
@@ -198,6 +198,8 @@ SURYA_BBOX_USER_PROMPT = os.getenv(
     ),
 )
 MAX_IMAGE_SIZE = (1540, 1540)
+MAX_IMAGE_BYTES = 25 * 1024 * 1024
+MAX_IMAGE_BASE64_CHARS = ((MAX_IMAGE_BYTES + 2) // 3) * 4
 BACKEND_TRANSFORMERS = "transformers"
 BACKEND_NOT_LOADED = "not_loaded"
 GENERATION_ENGINE_TRANSFORMERS = "transformers_generate"
@@ -381,7 +383,12 @@ app = FastAPI(title="Poneglyph Local OCR Backend")
 
 
 class OcrRequest(BaseModel):
-    image_bytes_base64: str
+    model_config = ConfigDict(extra="forbid")
+
+    image_bytes_base64: str = Field(
+        min_length=4,
+        max_length=MAX_IMAGE_BASE64_CHARS,
+    )
 
 
 def normalize_model_key(model_key: str) -> str:
@@ -1610,7 +1617,13 @@ def global_active_backend() -> str:
 
 def decode_image_request(request: OcrRequest):
     try:
-        return base64.b64decode(request.image_bytes_base64, validate=True)
+        decoded = base64.b64decode(request.image_bytes_base64, validate=True)
+        if len(decoded) > MAX_IMAGE_BYTES:
+            return JSONResponse(
+                status_code=413,
+                content={"error": "Image trop volumineuse."},
+            )
+        return decoded
     except (binascii.Error, ValueError) as exc:
         return JSONResponse(
             status_code=400,

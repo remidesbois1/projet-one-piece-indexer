@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { GripVertical, Pencil, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export const SortableBubbleItem = ({ bubble, index, user, onEdit, onDelete, disabled, isAdmin }) => {
+export const SortableBubbleItem = ({ bubble, index, user, onEdit, onDelete, disabled, canManage, isAdmin }) => {
     const {
         attributes,
         listeners,
@@ -23,7 +23,7 @@ export const SortableBubbleItem = ({ bubble, index, user, onEdit, onDelete, disa
         touchAction: 'none'
     };
 
-    const canManageOwnProposedBubble = !disabled && bubble.statut === 'Proposé' && user && bubble.id_user_createur === user.id;
+    const canManageOwnProposedBubble = canManage && bubble.statut === 'Proposé' && user && bubble.id_user_createur === user.id;
     const canDelete = isAdmin || canManageOwnProposedBubble;
 
     return (

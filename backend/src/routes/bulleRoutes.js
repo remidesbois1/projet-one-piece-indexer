@@ -5,72 +5,57 @@ const { authMiddleware, roleCheck } = require('../middleware/auth');
 const sharp = require('sharp');
 const { logBubbleHistory } = require('../utils/auditLogger');
 const { readPageImage } = require('../utils/pageStorage');
+const { validateBubbleGeometryForPage } = require('../utils/bubbleGeometry');
+const { mapBubbleReorderError } = require('../utils/bubbleReorder');
+const { mapBubbleMutationError } = require('../utils/bubblePermissions');
+const {
+  bubbleCreateSchema,
+  bubbleUpdateSchema,
+  chapterIdParamsSchema,
+  idParamsSchema,
+  moderationCommentSchema,
+  pageIdParamsSchema,
+  pendingBubblesQuerySchema,
+  reorderBubblesSchema,
+  validateRequest,
+} = require('../validation/requestSchemas');
 
-router.post('/', authMiddleware, async (req, res) => {
+router.post('/', authMiddleware, validateRequest({ body: bubbleCreateSchema }), async (req, res) => {
   const { id: userId } = req.user;
-  const { id_page, x, y, w, h, texte_propose, order: explicitOrder } = req.body;
-
-  if (id_page === undefined || x === undefined || y === undefined || w === undefined || h === undefined || texte_propose === undefined) {
-    return res.status(400).json({ error: 'Données manquantes.' });
-  }
+  const { id_page, x, y, w, h, texte_propose, order: explicitOrder } = req.validated.body;
 
   try {
-    let newOrder;
-    if (explicitOrder !== undefined && explicitOrder !== null) {
-      newOrder = explicitOrder;
-    } else {
-      const { data: maxOrderData, error: maxOrderError } = await supabaseAdmin
-        .from('bulles')
-        .select('order')
-        .eq('id_page', id_page)
-        .order('order', { ascending: false })
-        .limit(1)
-        .single();
-
-      const maxOrder = maxOrderData ? maxOrderData.order : 0;
-      newOrder = maxOrder + 1;
-    }
-
-    const { data, error: insertError } = await supabaseAdmin
-      .from('bulles')
-      .insert([{
-        id_page,
-        id_user_createur: userId,
-        x, y, w, h,
-        texte_propose,
-        statut: 'Proposé',
-        order: newOrder
-      }])
-      .select()
-      .single();
-
-    if (insertError) throw insertError;
+    await validateBubbleGeometryForPage(id_page, { x, y, w, h });
+    const { data: mutation, error } = await supabaseAdmin.rpc('create_editable_bubble', {
+      p_actor_id: userId,
+      p_page_id: id_page,
+      p_x: x,
+      p_y: y,
+      p_w: w,
+      p_h: h,
+      p_text: texte_propose,
+      p_order: explicitOrder ?? null,
+    });
+    if (error) throw error;
+    const data = mutation?.after;
+    if (!data) throw new Error('La création de la bulle n’a retourné aucune donnée.');
 
     // Audit Log: Creation
     await logBubbleHistory(data.id, userId, 'create', null, { ...data }, 'Création initiale');
-
-    if (insertError) throw insertError;
-    const { error: pageUpdateError } = await supabaseAdmin
-      .from('pages')
-      .update({ statut: 'in_progress' })
-      .eq('id', id_page);
-
-    if (pageUpdateError) {
-      console.error("Erreur lors de la mise à jour du statut de la page :", pageUpdateError);
-    }
 
     res.status(201).json(data);
 
   } catch (error) {
     console.error("Erreur lors de la création de la bulle:", error);
-    res.status(500).json({ error: "Erreur lors de la création de la bulle." });
+    const response = error.statusCode
+      ? { status: error.statusCode, message: error.message }
+      : mapBubbleMutationError(error, "Erreur lors de la création de la bulle.");
+    res.status(response.status).json({ error: response.message });
   }
 });
 
-router.get('/pending', authMiddleware, roleCheck(['Admin', 'Modo']), async (req, res) => {
-  const { page = 1, limit = 5 } = req.query;
-  const pageInt = parseInt(page);
-  const limitInt = parseInt(limit);
+router.get('/pending', authMiddleware, roleCheck(['Admin', 'Modo']), validateRequest({ query: pendingBubblesQuerySchema }), async (req, res) => {
+  const { page: pageInt, limit: limitInt } = req.validated.query;
   const offset = (pageInt - 1) * limitInt;
 
   try {
@@ -96,17 +81,22 @@ router.get('/pending', authMiddleware, roleCheck(['Admin', 'Modo']), async (req,
   }
 });
 
-router.put('/reorder', authMiddleware, async (req, res) => {
-  const { orderedBubbles } = req.body;
-  if (!orderedBubbles || !Array.isArray(orderedBubbles)) {
-    return res.status(400).json({ error: "Un tableau de bulles ordonnées est requis." });
-  }
+router.put('/reorder', authMiddleware, validateRequest({ body: reorderBubblesSchema }), async (req, res) => {
+  const { pageId, orderedBubbles } = req.validated.body;
   try {
-    const { error } = await supabaseAdmin.rpc('reorder_bubbles', { bubbles_data: orderedBubbles });
-    if (error) throw error;
+    const { error } = await supabaseAdmin.rpc('reorder_page_bubbles', {
+      p_page_id: pageId,
+      p_actor_id: req.user.id,
+      p_bubbles: orderedBubbles,
+    });
+    if (error) {
+      const response = mapBubbleReorderError(error);
+      return res.status(response.status).json({ error: response.message });
+    }
     res.status(200).json({ message: "Ordre mis à jour." });
   } catch (error) {
-    res.status(500).json({ error: "Erreur lors de la mise à jour de l'ordre." });
+    const response = mapBubbleReorderError(error);
+    res.status(response.status).json({ error: response.message });
   }
 });
 
@@ -126,47 +116,55 @@ router.put('/validate-all', authMiddleware, roleCheck(['Admin']), async (req, re
   }
 });
 
-router.put('/:id/validate', authMiddleware, roleCheck(['Admin', 'Modo']), async (req, res) => {
-  const { id } = req.params;
+router.put('/:id/validate', authMiddleware, roleCheck(['Admin', 'Modo']), validateRequest({ params: idParamsSchema }), async (req, res) => {
+  const { id } = req.validated.params;
   try {
-    const { data, error } = await supabaseAdmin.from('bulles').update({ statut: 'Validé', validated_at: new Date() }).eq('id', id).select().single();
+    const { data: mutation, error } = await supabaseAdmin.rpc('moderate_proposed_bubble', {
+      p_actor_id: req.user.id,
+      p_bubble_id: id,
+      p_decision: 'validate',
+      p_comment: null,
+    });
     if (error) throw error;
+    const data = mutation?.after;
+    if (!data) throw new Error('La validation n’a retourné aucune donnée.');
 
     // Audit Log: Validate
-    await logBubbleHistory(id, req.user.id, 'validate', null, data, 'Validation effectuée');
+    await logBubbleHistory(id, req.user.id, 'validate', mutation.before, data, 'Validation effectuée');
 
     res.status(200).json(data);
   } catch (error) {
-    res.status(500).json({ error: "Erreur lors de la validation de la bulle." });
+    const response = mapBubbleMutationError(error, "Erreur lors de la validation de la bulle.");
+    res.status(response.status).json({ error: response.message });
   }
 });
 
-router.put('/:id/reject', authMiddleware, roleCheck(['Admin', 'Modo']), async (req, res) => {
-  const { id } = req.params;
-  const { comment } = req.body;
+router.put('/:id/reject', authMiddleware, roleCheck(['Admin', 'Modo']), validateRequest({ params: idParamsSchema, body: moderationCommentSchema }), async (req, res) => {
+  const { id } = req.validated.params;
+  const { comment } = req.validated.body;
   try {
-    const { data, error } = await supabaseAdmin
-      .from('bulles')
-      .update({
-        statut: 'Rejeté',
-        commentaire_moderation: comment || null
-      })
-      .eq('id', id)
-      .select()
-      .single();
+    const { data: mutation, error } = await supabaseAdmin.rpc('moderate_proposed_bubble', {
+      p_actor_id: req.user.id,
+      p_bubble_id: id,
+      p_decision: 'reject',
+      p_comment: comment || null,
+    });
     if (error) throw error;
+    const data = mutation?.after;
+    if (!data) throw new Error('Le rejet n’a retourné aucune donnée.');
 
     // Audit Log: Reject
-    await logBubbleHistory(id, req.user.id, 'reject', null, data, comment || 'Rejet effectué');
+    await logBubbleHistory(id, req.user.id, 'reject', mutation.before, data, comment || 'Rejet effectué');
 
     res.status(200).json(data);
   } catch (error) {
-    res.status(500).json({ error: "Erreur lors du rejet de la bulle." });
+    const response = mapBubbleMutationError(error, "Erreur lors du rejet de la bulle.");
+    res.status(response.status).json({ error: response.message });
   }
 });
 
-router.get('/:id/crop', authMiddleware, async (req, res) => {
-  const { id } = req.params;
+router.get('/:id/crop', authMiddleware, validateRequest({ params: idParamsSchema }), async (req, res) => {
+  const { id } = req.validated.params;
   try {
     const { data: bubble, error } = await supabaseAdmin.from('bulles').select(`x, y, w, h, pages ( url_image )`).eq('id', id).single();
     if (error) throw error;
@@ -186,15 +184,10 @@ router.get('/:id/crop', authMiddleware, async (req, res) => {
   }
 });
 
-router.put('/:id', authMiddleware, async (req, res) => {
-  const { id } = req.params;
-  const { x, y, w, h, texte_propose } = req.body;
+router.put('/:id', authMiddleware, validateRequest({ params: idParamsSchema, body: bubbleUpdateSchema }), async (req, res) => {
+  const { id } = req.validated.params;
+  const { x, y, w, h, texte_propose } = req.validated.body;
   const userId = req.user.id;
-  const userRole = req.user.role;
-
-  if (x === undefined && y === undefined && w === undefined && h === undefined && texte_propose === undefined) {
-    return res.status(400).json({ error: "Aucune donnée à mettre à jour." });
-  }
 
   try {
     const { data: existingBubble, error: findError } = await supabaseAdmin
@@ -207,11 +200,14 @@ router.put('/:id', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: "Bulle non trouvée." });
     }
 
-    const isCreator = existingBubble.id_user_createur === userId;
-    const isStaff = ['Admin', 'Modo'].includes(userRole);
-
-    if (!isCreator && !isStaff) {
-      return res.status(403).json({ error: "Accès refusé. Vous n'avez pas les droits pour modifier cette bulle." });
+    const isGeometryUpdate = x !== undefined || y !== undefined || w !== undefined || h !== undefined;
+    if (isGeometryUpdate) {
+      await validateBubbleGeometryForPage(existingBubble.id_page, {
+        x: x ?? existingBubble.x,
+        y: y ?? existingBubble.y,
+        w: w ?? existingBubble.w,
+        h: h ?? existingBubble.h,
+      });
     }
 
     const updateData = {};
@@ -221,16 +217,16 @@ router.put('/:id', authMiddleware, async (req, res) => {
     if (h !== undefined) updateData.h = h;
     if (texte_propose !== undefined) updateData.texte_propose = texte_propose;
 
-    const { data, error } = await supabaseAdmin
-      .from('bulles')
-      .update(updateData)
-      .eq('id', id)
-      .select()
-      .single();
-
+    const { data: mutation, error } = await supabaseAdmin.rpc('update_editable_bubble', {
+      p_actor_id: userId,
+      p_bubble_id: id,
+      p_patch: updateData,
+    });
     if (error) throw error;
+    const data = mutation?.after;
+    const before = mutation?.before;
+    if (!data || !before) throw new Error('La modification n’a retourné aucune donnée.');
 
-    const isGeometryUpdate = x !== undefined || y !== undefined || w !== undefined || h !== undefined;
     const isTextUpdate = texte_propose !== undefined;
 
     if (isTextUpdate) {
@@ -238,7 +234,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
         id,
         userId,
         'update_text',
-        { texte_propose: existingBubble.texte_propose },
+        { texte_propose: before.texte_propose },
         { texte_propose: texte_propose },
         'Modification du texte'
       );
@@ -249,7 +245,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
         id,
         userId,
         'update_geometry',
-        { x: existingBubble.x, y: existingBubble.y, w: existingBubble.w, h: existingBubble.h },
+        { x: before.x, y: before.y, w: before.w, h: before.h },
         { x: data.x, y: data.y, w: data.w, h: data.h },
         'Modification de la géométrie'
       );
@@ -259,12 +255,15 @@ router.put('/:id', authMiddleware, async (req, res) => {
 
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: "Erreur lors de la mise à jour de la bulle." });
+    const response = error.statusCode
+      ? { status: error.statusCode, message: error.message }
+      : mapBubbleMutationError(error, "Erreur lors de la mise à jour de la bulle.");
+    res.status(response.status).json({ error: response.message });
   }
 });
 
-router.delete('/page/:pageId', authMiddleware, roleCheck(['Admin']), async (req, res) => {
-  const { pageId } = req.params;
+router.delete('/page/:pageId', authMiddleware, roleCheck(['Admin']), validateRequest({ params: pageIdParamsSchema }), async (req, res) => {
+  const { pageId } = req.validated.params;
 
   try {
     const { count, error } = await supabaseAdmin
@@ -288,8 +287,8 @@ router.delete('/page/:pageId', authMiddleware, roleCheck(['Admin']), async (req,
   }
 });
 
-router.delete('/chapter/:chapterId', authMiddleware, roleCheck(['Admin']), async (req, res) => {
-  const { chapterId } = req.params;
+router.delete('/chapter/:chapterId', authMiddleware, roleCheck(['Admin']), validateRequest({ params: chapterIdParamsSchema }), async (req, res) => {
+  const { chapterId } = req.validated.params;
 
   try {
     const { data: pages, error: pagesError } = await supabaseAdmin
@@ -325,31 +324,23 @@ router.delete('/chapter/:chapterId', authMiddleware, roleCheck(['Admin']), async
   }
 });
 
-router.delete('/:id', authMiddleware, async (req, res) => {
-  const { id } = req.params;
-  const userId = req.user.id;
-  const isAdmin = req.user.role === 'Admin';
+router.delete('/:id', authMiddleware, validateRequest({ params: idParamsSchema }), async (req, res) => {
+  const { id } = req.validated.params;
   try {
-    const { data: existingBubble, error: findError } = await supabaseAdmin.from('bulles').select('id, id_user_createur, statut').eq('id', id).single();
-    if (findError || !existingBubble) {
-      return res.status(404).json({ error: "Bulle non trouvée." });
-    }
-    if (!isAdmin && existingBubble.id_user_createur !== userId) {
-      return res.status(403).json({ error: "Accès refusé. Vous n'êtes pas le créateur de cette bulle." });
-    }
-    if (!isAdmin && existingBubble.statut !== 'Proposé') {
-      return res.status(403).json({ error: "Action refusée. La bulle a déjà été traitée par un modérateur." });
-    }
-    const { error } = await supabaseAdmin.from('bulles').delete().eq('id', id);
+    const { error } = await supabaseAdmin.rpc('delete_editable_bubble', {
+      p_actor_id: req.user.id,
+      p_bubble_id: id,
+    });
     if (error) throw error;
     res.status(204).send();
   } catch (error) {
-    res.status(500).json({ error: "Erreur lors de la suppression de la bulle." });
+    const response = mapBubbleMutationError(error, "Erreur lors de la suppression de la bulle.");
+    res.status(response.status).json({ error: response.message });
   }
 });
 
-router.get('/:id/history', authMiddleware, async (req, res) => {
-  const { id } = req.params;
+router.get('/:id/history', authMiddleware, validateRequest({ params: idParamsSchema }), async (req, res) => {
+  const { id } = req.validated.params;
   try {
     const { data, error } = await supabaseAdmin
       .from('bubble_history')

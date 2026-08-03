@@ -1,0 +1,11 @@
+{
+  "name": "@poneglyph/shared",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./input-limits": "./src/input-limits.json",
+    "./input-limits.json": "./src/input-limits.json"
+  }
+}

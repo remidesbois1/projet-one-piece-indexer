@@ -1,5 +1,16 @@
 import axios from 'axios';
 import { supabase } from './supabaseClient';
+import {
+    bubbleCreatePayloadSchema,
+    bubbleUpdatePayloadSchema,
+    f2llmSearchPayloadSchema,
+    keywordSearchPayloadSchema,
+    moderationCommentPayloadSchema,
+    ocrSearchPayloadSchema,
+    paginationSchema,
+    parsePositiveId,
+    reorderBubblesPayloadSchema,
+} from './inputSchemas';
 
 const apiClient = axios.create({
     baseURL: process.env.NEXT_PUBLIC_BACKEND_URL,
@@ -31,66 +42,78 @@ export const getChapitres = (id_tome) => apiClient.get(`/chapitres/tome/${id_tom
 export const getPages = (id_chapitre) => apiClient.get(`/pages?id_chapitre=${id_chapitre}`);
 export const getPageById = (id) => apiClient.get(`/pages/${id}`);
 
-export const getBubblesForPage = (pageId) => apiClient.get(`/pages/${pageId}/bulles`);
-export const createBubble = (bubbleData) => apiClient.post('/bulles', bubbleData);
-export const updateBubbleText = (id, text) => apiClient.put(`/bulles/${id}`, { texte_propose: text });
-export const updateBubbleGeometry = (id, geometry) => apiClient.put(`/bulles/${id}`, { ...geometry });
-export const deleteBubble = (id) => apiClient.delete(`/bulles/${id}`);
-export const deleteBubblesForPage = (pageId) => apiClient.delete(`/bulles/page/${pageId}`);
-export const deleteBubblesForChapter = (chapterId) => apiClient.delete(`/bulles/chapter/${chapterId}`);
-export const reorderBubbles = (orderedBubbles) => apiClient.put('/bulles/reorder', { orderedBubbles });
+export const getBubblesForPage = (pageId) => apiClient.get(`/pages/${parsePositiveId(pageId)}/bulles`);
+export const createBubble = (bubbleData) => apiClient.post('/bulles', bubbleCreatePayloadSchema.parse(bubbleData));
+export const updateBubbleText = (id, text) => apiClient.put(`/bulles/${parsePositiveId(id)}`, bubbleUpdatePayloadSchema.parse({ texte_propose: text }));
+export const updateBubbleGeometry = (id, geometry) => apiClient.put(`/bulles/${parsePositiveId(id)}`, bubbleUpdatePayloadSchema.parse(geometry));
+export const deleteBubble = (id) => apiClient.delete(`/bulles/${parsePositiveId(id)}`);
+export const deleteBubblesForPage = (pageId) => apiClient.delete(`/bulles/page/${parsePositiveId(pageId)}`);
+export const deleteBubblesForChapter = (chapterId) => apiClient.delete(`/bulles/chapter/${parsePositiveId(chapterId)}`);
+export const reorderBubbles = (pageId, orderedBubbles) => apiClient.put('/bulles/reorder', {
+    pageId: parsePositiveId(pageId),
+    orderedBubbles: reorderBubblesPayloadSchema.parse(orderedBubbles),
+});
 
 export const searchBubbles = (query, page = 1, limit = 10, mode = 'keyword', filters = {}, rerank = false, localOnly = false) => {
+    const request = keywordSearchPayloadSchema.parse({ query, page, limit, mode, filters, rerank, localOnly });
     const params = new URLSearchParams({
-        q: query,
-        page: page.toString(),
-        limit: limit.toString(),
-        mode,
-        rerank: rerank.toString(),
-        local_only: localOnly.toString(),
+        q: request.query,
+        page: request.page.toString(),
+        limit: request.limit.toString(),
+        mode: request.mode,
+        rerank: request.rerank.toString(),
+        local_only: request.localOnly.toString(),
     });
 
-    if (filters.characters && filters.characters.length > 0) {
-        params.append('characters', JSON.stringify(filters.characters));
+    if (request.filters.characters.length > 0) {
+        params.append('characters', JSON.stringify(request.filters.characters));
     }
-    if (filters.arc) {
-        params.append('arc', filters.arc);
+    if (request.filters.arc) {
+        params.append('arc', request.filters.arc);
     }
-    if (filters.tome) {
-        params.append('tome', filters.tome.toString());
+    if (request.filters.tome) {
+        params.append('tome', request.filters.tome.toString());
     }
 
     return apiClient.get(`/search?${params.toString()}`);
 };
 export const searchF2llmLocal = ({ query, embedding, page = 1, limit = 10, filters = {} }) => {
+    const request = f2llmSearchPayloadSchema.parse({ query, embedding, page, limit, filters });
     return apiClient.post('/search/f2llm-local', {
-        query,
-        embedding,
-        page,
-        limit,
-        characters: filters.characters || [],
-        arc: filters.arc || '',
-        tome: filters.tome || '',
+        query: request.query,
+        embedding: request.embedding,
+        page: request.page,
+        limit: request.limit,
+        characters: request.filters.characters,
+        arc: request.filters.arc,
+        tome: request.filters.tome,
     });
 };
 export const searchOcrPageMatch = ({ bubbles, page = 1, limit = 24, filters = {}, provider = 'unknown', rawText = '' }) => {
+    const request = ocrSearchPayloadSchema.parse({ bubbles, page, limit, filters, provider, rawText });
     return apiClient.post('/search/ocr-match', {
-        bubbles,
-        page,
-        limit,
-        provider,
-        raw_text: rawText,
-        characters: filters.characters || [],
-        arc: filters.arc || '',
-        tome: filters.tome || '',
+        bubbles: request.bubbles,
+        page: request.page,
+        limit: request.limit,
+        provider: request.provider,
+        raw_text: request.rawText,
+        characters: request.filters.characters,
+        arc: request.filters.arc,
+        tome: request.filters.tome,
     });
 };
 export const searchSemantic = (query, limit = 6) => apiClient.get(`/search/semantic?q=${query}&limit=${limit}`);
 
-export const getPendingBubbles = (page = 1, limit = 5) => apiClient.get(`/bulles/pending?page=${page}&limit=${limit}`);
-export const validateBubble = (id) => apiClient.put(`/bulles/${id}/validate`, {});
+export const getPendingBubbles = (page = 1, limit = 5) => {
+    const pagination = paginationSchema.parse({ page, limit });
+    return apiClient.get('/bulles/pending', { params: pagination });
+};
+export const validateBubble = (id) => apiClient.put(`/bulles/${parsePositiveId(id)}/validate`, {});
 export const validateAllBubbles = () => apiClient.put('/bulles/validate-all', {});
-export const rejectBubble = (id, comment) => apiClient.put(`/bulles/${id}/reject`, { comment });
+export const rejectBubble = (id, comment) => apiClient.put(
+    `/bulles/${parsePositiveId(id)}/reject`,
+    moderationCommentPayloadSchema.parse({ comment })
+);
 export const getPagesForReview = () => apiClient.get('/moderation/pages');
 export const approvePage = (pageId) => apiClient.put(`/moderation/pages/${pageId}/approve`, {});
 export const approveAllPages = () => apiClient.put('/moderation/pages/approve-all', {});
@@ -99,7 +122,19 @@ export const submitPageForReview = (pageId) => apiClient.put(`/pages/${pageId}/s
 export const updatePageStatus = (pageId, statut) => apiClient.put(`/pages/${pageId}/status`, { statut });
 
 export const createTome = (tomeData, mangaSlug) => apiClient.post('/admin/tomes', tomeData, { params: mangaSlug ? { manga: mangaSlug } : {} });
-export const uploadChapter = (formData) => apiClient.post('/admin/chapitres/upload', formData);
+export const uploadChapter = (formData, {
+    idempotencyKey,
+    signal,
+    onUploadProgress,
+} = {}) => apiClient.post('/admin/chapitres/upload', formData, {
+    headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+    signal,
+    onUploadProgress,
+});
+export const getChapterImport = (jobId, { signal } = {}) => apiClient.get(
+    `/admin/chapter-imports/${encodeURIComponent(jobId)}`,
+    { signal }
+);
 
 
 export const savePageDescription = (pageId, description, embedding_voyage = null, embedding_gemini = null, embedding_f2llm = null) => {
@@ -115,7 +150,7 @@ export const getMetadataSuggestions = (mangaSlug) => apiClient.get('/analyse/met
 
 
 
-export const getBubbleCrop = (id) => apiClient.get(`/bulles/${id}/crop`, { responseType: 'blob' });
+export const getBubbleCrop = (id) => apiClient.get(`/bulles/${parsePositiveId(id)}/crop`, { responseType: 'blob' });
 export const getMySubmissions = (page = 1, limit = 10, mangaSlug) => {
     const params = { page, limit };
     if (mangaSlug) params.manga = mangaSlug;
@@ -126,7 +161,7 @@ export const getLandingStats = () => apiClient.get('/stats/landing');
 export const getTopContributors = () => apiClient.get('/stats/top-contributors');
 
 
-export const getBubbleHistory = (id) => apiClient.get(`/bulles/${id}/history`);
+export const getBubbleHistory = (id) => apiClient.get(`/bulles/${parsePositiveId(id)}/history`);
 export const getAdminHierarchy = () => apiClient.get('/admin/hierarchy');
 export const getAdminBubblesForPage = (pageId) => apiClient.get(`/admin/pages/${pageId}/bulles`);
 export const getBannedIps = () => apiClient.get('/admin/banned-ips');

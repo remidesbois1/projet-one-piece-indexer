@@ -77,6 +77,7 @@ const mangaRoutes = require('./routes/mangaRoutes');
 const coverRoutes = require('./routes/coverRoutes');
 const publicRoutes = require('./routes/v1/publicRoutes');
 const { requestLogger } = require('./middleware/requestLogger');
+const { startChapterImportWorker } = require('./jobs/chapterImportWorker');
 
 
 
@@ -119,6 +120,30 @@ app.use('/api/covers', coverRoutes);
 // Public API v1
 app.use('/v1', publicLimiter, publicRoutes);
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Serveur démarré, port : ${PORT}`);
 });
+
+let chapterImportWorker = null;
+if (process.env.CHAPTER_IMPORT_WORKER_ENABLED !== 'false') {
+  try {
+    chapterImportWorker = startChapterImportWorker();
+  } catch (error) {
+    console.error('[ChapterImportWorker] Unable to start:', error);
+  }
+}
+
+let shuttingDown = false;
+function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[Server] ${signal} received, stopping background work.`);
+  chapterImportWorker?.stop();
+  server.close((error) => {
+    if (error) console.error('[Server] Shutdown failed:', error);
+    process.exitCode = error ? 1 : 0;
+  });
+}
+
+process.once('SIGINT', () => shutdown('SIGINT'));
+process.once('SIGTERM', () => shutdown('SIGTERM'));

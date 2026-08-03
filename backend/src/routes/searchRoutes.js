@@ -15,6 +15,13 @@ const {
     normalizeQueryBubbles,
     rankOcrPageCandidates,
 } = require('../utils/ocrPageSearch');
+const {
+    f2llmSearchBodySchema,
+    ocrSearchBodySchema,
+    searchContextQuerySchema,
+    searchQuerySchema,
+    validateRequest,
+} = require('../validation/requestSchemas');
 
 const DUAL_OVERLAP_BONUS = 1.15;
 const OCR_CANDIDATE_TOKEN_LIMIT = 12;
@@ -128,7 +135,7 @@ async function runF2llmVectorSearch({ req, query, embedding, page = 1, limit = 1
     const filterCharacters = parseCharacters(characters);
     const filterArc = arc && arc !== '' ? arc : null;
     const filterTome = tome && tome !== '' ? parseInt(tome) : null;
-    const filterManga = req.query.manga || req.body?.manga;
+    const filterManga = req.validated?.query?.manga || null;
     const totalStart = Date.now();
     const userInfo = await getUserFromReq(req);
     const searchLog = {
@@ -285,18 +292,18 @@ function formatOcrPageResult(pageRecord, provider) {
     };
 }
 
-router.post('/ocr-match', async (req, res) => {
+router.post('/ocr-match', validateRequest({ body: ocrSearchBodySchema, query: searchContextQuerySchema }), async (req, res) => {
     const {
         bubbles,
-        page = 1,
-        limit = 24,
+        page,
+        limit,
         manga,
         characters,
         arc,
         tome,
-        provider = 'unknown',
+        provider,
         raw_text,
-    } = req.body || {};
+    } = req.validated.body;
 
     const queryBubbles = normalizeQueryBubbles(bubbles);
     if (!queryBubbles.some(bubble => bubble.content)) {
@@ -305,10 +312,10 @@ router.post('/ocr-match', async (req, res) => {
 
     const filterCharacters = parseCharacters(characters);
     const filterArc = arc && arc !== 'all' ? arc : null;
-    const filterTome = tome && tome !== 'all' ? parseInt(tome, 10) : null;
-    const filterManga = manga || req.query.manga || null;
-    const parsedLimit = Math.max(1, Math.min(48, parseInt(limit, 10) || 24));
-    const parsedPage = Math.max(1, parseInt(page, 10) || 1);
+    const filterTome = tome || null;
+    const filterManga = manga || req.validated.query.manga || null;
+    const parsedLimit = limit;
+    const parsedPage = page;
     const offset = (parsedPage - 1) * parsedLimit;
     const totalStart = Date.now();
     const userInfo = await getUserFromReq(req);
@@ -405,17 +412,17 @@ router.post('/ocr-match', async (req, res) => {
     }
 });
 
-router.post('/f2llm-local', async (req, res) => {
+router.post('/f2llm-local', validateRequest({ body: f2llmSearchBodySchema, query: searchContextQuerySchema }), async (req, res) => {
     try {
         const {
             query,
             embedding,
-            page = 1,
-            limit = 10,
+            page,
+            limit,
             characters,
             arc,
             tome,
-        } = req.body || {};
+        } = req.validated.body;
 
         const result = await runF2llmVectorSearch({
             req,
@@ -435,27 +442,25 @@ router.post('/f2llm-local', async (req, res) => {
     }
 });
 
-router.get('/', async (req, res) => {
-    const { q, page = 1, limit = 10, mode = 'keyword', characters, arc, tome, rerank } = req.query;
-    const shouldRerank = rerank === 'true';
-    const localOnly = req.query.local_only === 'true' || req.query.localOnly === 'true';
+router.get('/', validateRequest({ query: searchQuerySchema }), async (req, res) => {
+    const { q, page, limit, mode, characters, arc, tome, rerank, local_only, localOnly: legacyLocalOnly, manga } = req.validated.query;
+    const shouldRerank = rerank;
+    const localOnly = local_only ?? legacyLocalOnly ?? false;
 
-    if (!q || q.length < 2) return res.status(400).json({ error: "Recherche trop courte" });
-
-    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const offset = (page - 1) * limit;
     let finalResults = [];
     let totalCount = 0;
 
     const filterCharacters = parseCharacters(characters);
     const filterArc = arc && arc !== '' ? arc : null;
-    const filterTome = tome && tome !== '' ? parseInt(tome) : null;
+    const filterTome = tome || null;
 
     const userInfo = await getUserFromReq(req);
     const searchLog = {
         raw_query: q,
         model_provider: mode === 'semantic' && localOnly ? 'f2llm-local' : 'dual',
         search_mode: mode,
-        manga_slug: req.query.manga || null,
+        manga_slug: manga || null,
         filter_characters: filterCharacters,
         filter_arc: filterArc,
         filter_tome: filterTome,
@@ -467,8 +472,8 @@ router.get('/', async (req, res) => {
 
     try {
         if (mode === 'semantic') {
-            const candidatesQueryLimit = shouldRerank ? Math.max(24, parseInt(limit)) : parseInt(limit);
-            const filterManga = req.query.manga;
+            const candidatesQueryLimit = shouldRerank ? Math.max(24, limit) : limit;
+            const filterManga = manga;
 
             if (localOnly) {
                 return res.status(400).json({
@@ -670,7 +675,7 @@ router.get('/', async (req, res) => {
                 })
                     .filter(r => r.scores.ai >= 70)
                     .sort((a, b) => b.scores.ai - a.scores.ai)
-                    .slice(0, parseInt(limit));
+                    .slice(0, limit);
 
                 totalCount = finalResults.length;
             }
@@ -693,7 +698,7 @@ router.get('/', async (req, res) => {
 
             let filteredData = await keepValidatedBubbleRows(supabaseAdmin, data || []);
 
-            const filterManga = req.query.manga;
+            const filterManga = manga;
             if (filterManga) {
                 const pageIds = filteredData.map(b => b.page_id);
                 if (pageIds.length > 0) {
@@ -762,7 +767,7 @@ router.get('/', async (req, res) => {
             }
 
             totalCount = filteredData.length;
-            const paginatedData = filteredData.slice(offset, offset + parseInt(limit));
+            const paginatedData = filteredData.slice(offset, offset + limit);
 
             finalResults = paginatedData.map(b => ({
                 type: 'bubble',
@@ -783,32 +788,6 @@ router.get('/', async (req, res) => {
         searchLog.duration_total_ms = Date.now() - totalStart;
         insertSearchLog(searchLog);
         res.status(500).json({ error: "Erreur moteur de recherche" });
-    }
-});
-
-router.post('/feedback', async (req, res) => {
-    const { query, doc_id, doc_text, is_relevant, model_provider } = req.body;
-
-    try {
-        const { error } = await supabase
-            .from('search_feedback')
-            .insert({
-                query,
-                doc_id: doc_id ? parseInt(String(doc_id).replace('page-', ''), 10) : null,
-                doc_text,
-                is_relevant,
-                model_provider: model_provider || 'dual',
-            });
-
-        if (error) {
-            console.error("Feedback insert error:", error);
-            return res.status(500).json({ error: error.message });
-        }
-
-        res.json({ success: true });
-    } catch (err) {
-        console.error("Feedback server error:", err);
-        res.status(500).json({ error: "Internal Error" });
     }
 });
 

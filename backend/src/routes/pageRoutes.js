@@ -11,6 +11,7 @@ const {
 } = require('../utils/publicMedia');
 const { openPageImage, readPageImage } = require('../utils/pageStorage');
 const { createImageThumbnail, getThumbnailWidth } = require('../utils/imageThumbnail');
+const { mapBubbleMutationError } = require('../utils/bubblePermissions');
 
 async function streamImageBody(body, response) {
     if (!body) throw new Error('R2 returned an empty page object');
@@ -91,15 +92,17 @@ router.get('/:id/bulles', optionalAuth, async (req, res) => {
 });
 
 router.put('/:id/submit-review', requireAuth, async (req, res) => {
-    const { data, error } = await supabaseAdminClient
-        .from('pages')
-        .update({ statut: 'pending_review' })
-        .eq('id', req.params.id)
-        .select()
-        .single();
-
-    if (error) return res.status(500).json({ error: "Erreur soumission" });
-    res.json(data);
+    try {
+        const { data, error } = await supabaseAdminClient.rpc('submit_page_for_review', {
+            p_actor_id: req.user.id,
+            p_page_id: req.params.id,
+        });
+        if (error) throw error;
+        return res.json(data);
+    } catch (error) {
+        const response = mapBubbleMutationError(error, 'Erreur soumission');
+        return res.status(response.status).json({ error: response.message });
+    }
 });
 
 router.put('/:id/status', requireAuth, requireRole(['Admin']), async (req, res) => {

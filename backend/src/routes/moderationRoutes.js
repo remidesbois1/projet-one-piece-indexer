@@ -43,10 +43,12 @@ router.put('/pages/:id/approve', authMiddleware, roleCheck(['Admin', 'Modo']), a
         .from('pages')
         .update({ statut: 'completed' })
         .eq('id', req.params.id)
+        .eq('statut', 'pending_review')
         .select()
-        .single();
+        .maybeSingle();
 
     if (error) return res.status(500).json({ error: 'Update failed' });
+    if (!data) return res.status(409).json({ error: 'Cette page n’est plus en attente de validation.' });
     res.json(data);
 });
 
@@ -59,10 +61,12 @@ router.put('/pages/:id/reject', authMiddleware, roleCheck(['Admin', 'Modo']), as
             commentaire_moderation: comment || null
         })
         .eq('id', req.params.id)
+        .eq('statut', 'pending_review')
         .select()
-        .single();
+        .maybeSingle();
 
     if (error) return res.status(500).json({ error: 'Update failed' });
+    if (!data) return res.status(409).json({ error: 'Cette page n’est plus en attente de validation.' });
     res.json(data);
 });
 

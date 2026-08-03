@@ -1,0 +1,9 @@
+{
+  "name": "projet-poneglyph",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend",
+    "packages/*"
+  ]
+}

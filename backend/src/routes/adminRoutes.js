@@ -4,7 +4,6 @@ const { authMiddleware, roleCheck } = require('../middleware/auth');
 
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const multer = require('multer');
-const unzipper = require('unzipper');
 const fs = require('fs');
 const path = require('path');
 const mime = require('mime-types');
@@ -18,6 +17,11 @@ const { buildPageEmbeddingText } = require('../utils/pageEmbeddingText');
 const { cancelModalCall, submitTrainingJob } = require('../utils/modalTrainingLauncher');
 const { createPageStorageRef, getPrivatePagesBucketName } = require('../utils/pageStorage');
 const { getPageImagePath } = require('../utils/publicMedia');
+const { chapterUploadBodySchema, validateRequest } = require('../validation/requestSchemas');
+const {
+  chapterArchiveUploadMiddleware,
+  createChapterImportHandlers,
+} = require('./chapterImportRoutes');
 
 // Ensure environment variables are loaded
 if (process.env.NODE_ENV !== 'production') {
@@ -58,6 +62,7 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage: storage });
+const chapterImportHandlers = createChapterImportHandlers();
 
 const TRAINING_JOB_CONFIGS = {
   surya_bubble_ocr: {
@@ -249,98 +254,12 @@ router.post('/tomes', authMiddleware, roleCheck(['Admin']), async (req, res) => 
   }
 });
 
-router.post('/chapitres/upload', authMiddleware, roleCheck(['Admin']), upload.single('cbzFile'), async (req, res) => {
-  const { tome_id, numero, titre } = req.body;
-  const file = req.file;
+router.post('/chapitres/upload', authMiddleware, roleCheck(['Admin']), chapterArchiveUploadMiddleware, validateRequest(
+  { body: chapterUploadBodySchema },
+  { onInvalid: (req) => req.file?.path && fs.existsSync(req.file.path) && fs.unlinkSync(req.file.path) }
+), chapterImportHandlers.create);
 
-  if (!tome_id || !numero || !titre || !file) {
-    if (file && fs.existsSync(file.path)) fs.unlinkSync(file.path);
-    return res.status(400).json({ error: "tome_id, numero, titre et un fichier sont requis." });
-  }
-
-  try {
-    const { data: newChapitre, error: chapError } = await supabaseAdmin
-      .from('chapitres')
-      .insert({ id_tome: tome_id, numero: parseInt(numero), titre: titre })
-      .select()
-      .single();
-
-    if (chapError) {
-      if (chapError.code === '23505') return res.status(409).json({ error: `Le chapitre ${numero} existe déjà.` });
-      throw chapError;
-    }
-
-    console.log(`[Upload] Chapitre ${newChapitre.id} créé. Traitement R2...`);
-
-    const fileStream = fs.createReadStream(file.path);
-    const zip = fileStream.pipe(unzipper.Parse({ forceStream: true }));
-
-    let pageCounter = 1;
-    const validImageExtensions = /\.(webp|jpg|avif|jpeg|png)$/i;
-    const errors = [];
-
-    for await (const entry of zip) {
-      const fileName = entry.path;
-      const fileType = entry.type;
-
-      if (fileType === 'File' && validImageExtensions.test(fileName) && !fileName.includes('__MACOSX')) {
-        try {
-          const fileBuffer = await entry.buffer();
-
-          const safeFileName = path.basename(fileName).replace(/[^a-zA-Z0-9._-]/g, '');
-          const extension = path.extname(safeFileName);
-          const contentType = mime.lookup(extension) || 'application/octet-stream';
-
-          const storagePath = `tome-${tome_id}/chapitre-${numero}/${pageCounter}-${safeFileName}`;
-
-          const pagesBucketName = getPrivatePagesBucketName();
-          await s3Client.send(new PutObjectCommand({
-            Bucket: pagesBucketName,
-            Key: storagePath,
-            Body: fileBuffer,
-            ContentType: contentType,
-            CacheControl: 'private, no-store',
-          }));
-
-          const pageStorageRef = createPageStorageRef(pagesBucketName, storagePath);
-
-          // Insertion de la page en BDD Supabase
-          const { error: pageError } = await supabaseAdmin
-            .from('pages')
-            .insert({
-              id_chapitre: newChapitre.id,
-              numero_page: pageCounter,
-              url_image: pageStorageRef,
-              statut: 'not_started'
-            });
-
-          if (pageError) throw pageError;
-
-          pageCounter++;
-
-        } catch (err) {
-          console.error(`Erreur image ${fileName}:`, err);
-          errors.push(`Erreur sur ${fileName}: ${err.message}`);
-        }
-      } else {
-        entry.autodrain();
-      }
-    }
-
-    res.status(201).json({
-      message: `Chapitre ${numero} migré sur R2 avec succès. ${pageCounter - 1} pages traitées.`,
-      warnings: errors.length > 0 ? errors : undefined
-    });
-
-  } catch (error) {
-    console.error("Erreur S3:", error);
-    res.status(500).json({ error: "Echec du traitement.", details: error.message });
-  } finally {
-    if (file && fs.existsSync(file.path)) {
-      fs.unlink(file.path, () => { });
-    }
-  }
-});
+router.get('/chapter-imports/:id', authMiddleware, roleCheck(['Admin']), chapterImportHandlers.get);
 
 router.get('/hierarchy', authMiddleware, roleCheck(['Admin', 'Modo']), async (req, res) => {
   try {

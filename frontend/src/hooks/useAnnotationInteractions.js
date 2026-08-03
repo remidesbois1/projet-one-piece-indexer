@@ -14,6 +14,7 @@ export function useAnnotationInteractions({
     setPendingAnnotation,
     setRectangle,
     canEdit,
+    canEditBubble = () => false,
     isMobile,
     pageStatus,
     isSubmitting,
@@ -141,7 +142,7 @@ export function useAnnotationInteractions({
             } 
             setActiveInteraction({ type: null, handle: null, startX: 0, startY: 0, initialBox: null, targetId: null });
         }
-    }, [isDrawing, imageRef, startPoint, endPoint, getContainerCoords, setRectangle, activeInteraction, existingBubbles]);
+    }, [isDrawing, imageRef, startPoint, endPoint, getContainerCoords, setRectangle, activeInteraction, existingBubbles, onUpdateGeometry]);
 
     const handleInteractionStart = useCallback((e, type, handle = null, targetBubble = null) => {
         if (!canEdit || isMobile) return;
@@ -150,6 +151,7 @@ export function useAnnotationInteractions({
 
         const bubbleToUse = targetBubble || pendingAnnotation;
         if (!bubbleToUse) return;
+        if (bubbleToUse.id && !canEditBubble(bubbleToUse)) return;
 
         setActiveInteraction({
             type,
@@ -164,7 +166,7 @@ export function useAnnotationInteractions({
                 h: bubbleToUse.h
             }
         });
-    }, [canEdit, isMobile, pendingAnnotation]);
+    }, [canEdit, canEditBubble, isMobile, pendingAnnotation]);
 
     useEffect(() => {
         if (!activeInteraction.type) return;

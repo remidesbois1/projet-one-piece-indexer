@@ -1,0 +1,17 @@
+{
+  "bubbleTextLength": 20000,
+  "bubblesPerPage": 2000,
+  "coordinate": 100000,
+  "searchQueryLength": 500,
+  "ocrTextLength": 50000,
+  "ocrBubbles": 500,
+  "filterCharacters": 32,
+  "chapterTitleLength": 255,
+  "chapterArchiveBytes": 536870912,
+  "chapterArchiveEntries": 1000,
+  "chapterArchivePages": 500,
+  "chapterArchiveEntryBytes": 67108864,
+  "chapterArchiveExpandedBytes": 2147483648,
+  "chapterArchiveCompressionRatio": 100,
+  "chapterImagePixels": 120000000
+}

@@ -18,6 +18,7 @@ import { getProxiedImageUrl } from '@/lib/utils';
 import { fetchOriginalPageImage } from '@/lib/pageImageClient';
 import { capitalizeOcrSentenceStarts } from '@/lib/ocr-utils';
 import { postOcrImage } from '@/lib/ocrProxyClient';
+import { canCreateBubble, canEditBubble, canReorderBubbles } from '@/lib/bubblePermissions';
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -113,7 +114,7 @@ export default function AnnotatePage() {
     const [showApiKeyModal, setShowApiKeyModal] = useState(false);
     const [showDescModal, setShowDescModal] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const canEdit = page && !isGuest && (role === 'Admin' || role === 'Modo') && (page.statut === 'not_started' || page.statut === 'in_progress');
+    const canEdit = canCreateBubble({ page, user, role, isGuest });
 
     const containerRef = useRef(null);
     const imageRef = useRef(null);
@@ -122,6 +123,11 @@ export default function AnnotatePage() {
     const [chapterPages, setChapterPages] = useState([]);
     const [navContext, setNavContext] = useState({ prev: null, next: null });
     const [isMobile, setIsMobile] = useState(false);
+    const canReorder = canReorderBubbles({ page, user, role, isGuest, bubbles: existingBubbles });
+    const canEditExistingBubble = useCallback(
+        (bubble) => canEditBubble({ page, user, role, isGuest, bubble }),
+        [page, user, role, isGuest]
+    );
 
     const chapterPagesRef = useRef([]);
     chapterPagesRef.current = chapterPages;
@@ -346,7 +352,7 @@ export default function AnnotatePage() {
         handleMouseUp, handleInteractionStart
     } = useAnnotationInteractions({
         containerRef, imageRef, imageDimensions, existingBubbles, setExistingBubbles: setExistingBubblesAndCache,
-        pendingAnnotation, setPendingAnnotation, setRectangle, canEdit, isMobile,
+        pendingAnnotation, setPendingAnnotation, setRectangle, canEdit, canEditBubble: canEditExistingBubble, isMobile,
         pageStatus: page?.statut, isSubmitting, showApiKeyModal, showDescModal
     });
 
@@ -477,7 +483,7 @@ export default function AnnotatePage() {
     };
 
     const handleEditBubble = (bubble) => {
-        if (!canEdit || isMobile) return;
+        if (!canEdit || !canEditExistingBubble(bubble) || isMobile) return;
         setPendingAnnotation(bubble);
         setIsModalOpen(true);
     };
@@ -559,7 +565,7 @@ export default function AnnotatePage() {
     };
 
     const handleDragEnd = (event) => {
-        if (isGuest) return;
+        if (!canReorder || !pageId) return;
         const { active, over } = event;
         if (active && over && active.id !== over.id) {
             setExistingBubblesAndCache((bubbles) => {
@@ -567,7 +573,7 @@ export default function AnnotatePage() {
                 const newIndex = bubbles.findIndex(b => b.id === over.id);
                 const newOrder = arrayMove(bubbles, oldIndex, newIndex);
                 const orderedBubblesForApi = newOrder.map((b, index) => ({ id: b.id, order: index + 1 }));
-                reorderBubbles(orderedBubblesForApi).catch(() => fetchBubbles());
+                reorderBubbles(pageId, orderedBubblesForApi).catch(() => fetchBubbles());
                 return newOrder;
             });
         }
@@ -1039,6 +1045,7 @@ export default function AnnotatePage() {
                 <div className="flex flex-col lg:flex-row flex-1 overflow-hidden min-h-0">
                     <AnnotateCanvas
                         canEdit={canEdit}
+                        canEditBubble={canEditExistingBubble}
                         imageDimensions={imageDimensions}
                         setImageDimensions={setImageDimensions}
                         containerRef={containerRef}
@@ -1076,6 +1083,8 @@ export default function AnnotatePage() {
                         handleEditBubble={handleEditBubble}
                         handleDeleteBubble={handleDeleteBubble}
                         canEdit={canEdit}
+                        canEditBubble={canEditExistingBubble}
+                        canReorder={canReorder}
                         role={role}
                     />
                 </div>

@@ -19,6 +19,8 @@ export default function AnnotateAnnotationSidebar({
     handleEditBubble,
     handleDeleteBubble,
     canEdit,
+    canEditBubble,
+    canReorder,
     role
 }) {
     const isAdmin = role === 'Admin';
@@ -50,7 +52,8 @@ export default function AnnotateAnnotationSidebar({
                                             user={user}
                                             onEdit={handleEditBubble}
                                             onDelete={handleDeleteBubble}
-                                            disabled={!canEdit}
+                                            disabled={!canReorder}
+                                            canManage={canEdit && canEditBubble(bubble)}
                                             isAdmin={isAdmin}
                                         />
                                     ))}

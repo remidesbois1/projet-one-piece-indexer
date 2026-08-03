@@ -19,6 +19,7 @@ export function measureRenderedImage(imageElement) {
 
 export default function AnnotateCanvas({
     canEdit,
+    canEditBubble = () => false,
     imageDimensions,
     setImageDimensions,
     containerRef,
@@ -226,6 +227,7 @@ export default function AnnotateCanvas({
                     const colorClass = bubble.statut === 'Validé'
                         ? "border-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20"
                         : "border-amber-500 bg-amber-500/10 hover:bg-amber-500/20";
+                    const bubbleCanBeEdited = canEdit && canEditBubble(bubble);
 
                     return (
                         <div
@@ -234,7 +236,7 @@ export default function AnnotateCanvas({
                             className={cn(
                                 "absolute border-2 z-10 transition-colors cursor-pointer group",
                                 colorClass,
-                                canEdit && isShiftPressed && "cursor-move"
+                                bubbleCanBeEdited && isShiftPressed && "cursor-move"
                             )}
                             onMouseEnter={() => setHoveredBubble(bubble)}
                             onMouseLeave={() => setHoveredBubble(null)}
@@ -246,7 +248,7 @@ export default function AnnotateCanvas({
                             onClick={(e) => {
                                 e.stopPropagation();
                                 if (isShiftPressed) return;
-                                if (canEdit) {
+                                if (bubbleCanBeEdited) {
                                     handleEditBubble(bubble);
                                 } else {
                                     navigator.clipboard.writeText(bubble.texte_propose || "");
@@ -261,7 +263,7 @@ export default function AnnotateCanvas({
                                 #{index + 1}
                             </div>
 
-                            {canEdit && isShiftPressed && (
+                            {bubbleCanBeEdited && isShiftPressed && (
                                 <>
                                     {[
                                         { h: 'nw', c: 'top-0 left-0 -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize' },
