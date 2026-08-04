@@ -6,6 +6,8 @@
   "exports": {
     ".": "./src/index.js",
     "./input-limits": "./src/input-limits.json",
-    "./input-limits.json": "./src/input-limits.json"
+    "./input-limits.json": "./src/input-limits.json",
+    "./model-registry": "./src/model-registry.json",
+    "./model-registry.json": "./src/model-registry.json"
   }
 }

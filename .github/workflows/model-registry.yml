@@ -1,0 +1,56 @@
+name: Model registry
+
+on:
+  pull_request:
+    paths:
+      - README.md
+      - package.json
+      - package-lock.json
+      - packages/shared/src/model-registry.json
+      - scripts/render-model-registry.mjs
+      - documentation/generated/**
+      - frontend/src/lib/modelRegistry.js
+      - frontend/src/lib/modelRegistry.test.js
+      - frontend/src/components/LandingPageClient.jsx
+      - frontend/src/components/ModelBenchmarkRegistry.jsx
+      - frontend/src/components/ModelBenchmarkRegistry.test.jsx
+      - frontend/src/context/WorkerContext.jsx
+      - frontend/src/workers/**
+      - backend/test/modelRegistry.test.js
+      - .github/workflows/model-registry.yml
+  push:
+    branches: [master]
+    paths:
+      - README.md
+      - package.json
+      - package-lock.json
+      - packages/shared/src/model-registry.json
+      - scripts/render-model-registry.mjs
+      - documentation/generated/**
+      - frontend/src/lib/modelRegistry.js
+      - frontend/src/lib/modelRegistry.test.js
+      - frontend/src/components/LandingPageClient.jsx
+      - frontend/src/components/ModelBenchmarkRegistry.jsx
+      - frontend/src/components/ModelBenchmarkRegistry.test.jsx
+      - frontend/src/context/WorkerContext.jsx
+      - frontend/src/workers/**
+      - backend/test/modelRegistry.test.js
+      - .github/workflows/model-registry.yml
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: node scripts/render-model-registry.mjs --check
+      - run: rm -rf package-lock.json node_modules && npm install
+      - run: npm test -- src/lib/modelRegistry.test.js src/components/ModelBenchmarkRegistry.test.jsx
+        working-directory: frontend

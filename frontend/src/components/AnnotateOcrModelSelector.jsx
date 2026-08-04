@@ -90,7 +90,11 @@ export default function AnnotateOcrModelSelector({
                                 <button type="button" onClick={() => toggleOcrModel(model.key)} className="flex min-w-0 flex-1 items-center gap-2 text-left" title={model.description}>
                                     <span className={cn('flex h-4 w-4 shrink-0 items-center justify-center rounded border', checked ? 'border-sky-300 bg-sky-500 text-white' : 'border-white/25 bg-white/[0.04] text-transparent')}><Check size={11} strokeWidth={3} /></span>
                                     {model.runtime === 'tauri' || model.runtime === 'onnx' ? <Cpu size={12} className="shrink-0 text-[#8dbbff]" /> : <CloudLightning size={12} className="shrink-0 text-indigo-400" />}
-                                    <span className="min-w-0 flex-1"><span className="block truncate text-[10px] font-bold text-slate-200">{model.label}</span><span className="block text-[8px] font-semibold text-slate-400">{model.runtime === 'tauri' ? 'Local desktop' : model.type === 'api' ? 'Modal GPU' : 'Navigateur'} · {model.size}</span></span>
+                                    <span className="min-w-0 flex-1">
+                                        <span className="block truncate text-[10px] font-bold text-slate-200">{model.label}</span>
+                                        <span className="block text-[8px] font-semibold text-slate-400">{model.runtime === 'tauri' ? 'Local desktop' : model.type === 'api' ? 'Modal GPU' : 'Navigateur'} · {model.size}</span>
+                                        <span className="block truncate text-[8px] font-medium text-sky-300/80" title={model.benchmark}>{model.cer}</span>
+                                    </span>
                                 </button>
                                 <div className="shrink-0">{renderModelAction(model)}</div>
                             </div>

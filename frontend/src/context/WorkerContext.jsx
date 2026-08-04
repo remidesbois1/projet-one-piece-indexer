@@ -1,5 +1,6 @@
 "use client";
 import React, { createContext, useContext, useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import { formatBenchmarkContext, formatRegistryMetric, OCR_MODEL_REGISTRY_IDS } from '@/lib/modelRegistry';
 
 const WorkerContext = createContext();
 
@@ -12,7 +13,8 @@ export const OCR_MODELS = {
         key: 'ppocrv6Line',
         label: 'PP-OCRv6',
         description: 'YOLO lignes + OCR ONNX',
-        cer: '1.92%',
+        cer: formatRegistryMetric(OCR_MODEL_REGISTRY_IDS.ppocrv6Line),
+        benchmark: formatBenchmarkContext(OCR_MODEL_REGISTRY_IDS.ppocrv6Line),
         size: '~87 Mo',
         type: 'local',
         runtime: 'onnx'
@@ -21,7 +23,8 @@ export const OCR_MODELS = {
         key: 'poneglyphLocal',
         label: 'Poneglyph',
         description: 'Inference locale via Tauri',
-        cer: '< 0.1%',
+        cer: formatRegistryMetric(OCR_MODEL_REGISTRY_IDS.poneglyphLocal),
+        benchmark: formatBenchmarkContext(OCR_MODEL_REGISTRY_IDS.poneglyphLocal),
         size: '~4 Go',
         type: 'local',
         runtime: 'tauri',
@@ -31,7 +34,8 @@ export const OCR_MODELS = {
         key: 'suryaLocal',
         label: 'Surya',
         description: 'Inference locale via Tauri',
-        cer: '< 0.1%',
+        cer: formatRegistryMetric(OCR_MODEL_REGISTRY_IDS.suryaLocal),
+        benchmark: formatBenchmarkContext(OCR_MODEL_REGISTRY_IDS.suryaLocal),
         size: '~4 Go',
         type: 'local',
         runtime: 'tauri',
@@ -41,7 +45,8 @@ export const OCR_MODELS = {
         key: 'gemini',
         label: 'Gemini 3.1 Flash Lite',
         description: 'Google Gemini API',
-        cer: '~ 0.5%',
+        cer: formatRegistryMetric(OCR_MODEL_REGISTRY_IDS.gemini),
+        benchmark: formatBenchmarkContext(OCR_MODEL_REGISTRY_IDS.gemini),
         size: 'Cloud',
         type: 'api'
     },
@@ -49,7 +54,8 @@ export const OCR_MODELS = {
         key: 'lighton',
         label: 'LightOn OCR',
         description: 'Inference OCR Modal GPU',
-        cer: '< 0.1%',
+        cer: formatRegistryMetric(OCR_MODEL_REGISTRY_IDS.lighton),
+        benchmark: formatBenchmarkContext(OCR_MODEL_REGISTRY_IDS.lighton),
         size: 'API Cloud',
         type: 'api'
     }

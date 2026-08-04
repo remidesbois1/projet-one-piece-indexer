@@ -1,0 +1,228 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-08-01",
+  "provenance_policy": "Published values must come from a pinned artifact and carry the dataset, split, date, hardware, model revision and evaluation protocol.",
+  "models": {
+    "ppocrv6-line": {
+      "display_name": "PP-OCRv6 Bubble Line",
+      "task": "bubble-line-ocr",
+      "artifact": {
+        "repository": "Remidesbois/pp-ocrv6-one-piece-bubble-line-rec",
+        "revision": "10b932d4aadca2830850ccf5951116597404bef8",
+        "url": "https://huggingface.co/Remidesbois/pp-ocrv6-one-piece-bubble-line-rec"
+      },
+      "benchmark": {
+        "status": "published",
+        "dataset": "Poneglyph validated bubbles reconstructed from detected text lines",
+        "split": "test held-out by page",
+        "date": "2026-06-29",
+        "sample_count": 1219,
+        "hardware": "Not recorded; offline scoring over pinned predictions",
+        "protocol": "YOLO26n line detection, horizontal line stitching, PP-OCRv6 CTC decoding, then spacing and case rules learned only from the training split.",
+        "source_url": "https://huggingface.co/Remidesbois/pp-ocrv6-one-piece-bubble-line-rec/blob/10b932d4aadca2830850ccf5951116597404bef8/postprocess_official_metrics.json",
+        "primary_metric": "cer",
+        "metrics": {
+          "cer": {
+            "label": "CER",
+            "value": 0.014505395907584179,
+            "unit": "ratio",
+            "lower_is_better": true,
+            "display_precision": 3
+          },
+          "exact_match": {
+            "label": "Exact match",
+            "value": 0.7596390484003281,
+            "unit": "ratio",
+            "lower_is_better": false,
+            "display_precision": 2
+          }
+        }
+      }
+    },
+    "lighton-bubble": {
+      "display_name": "LightOnOCR Poneglyph",
+      "task": "bubble-ocr",
+      "artifact": {
+        "repository": "Remidesbois/LightonOCR-2-1b-poneglyph",
+        "revision": "3d5181ce138e7d92132a741f1e54c3a9e602e129",
+        "url": "https://huggingface.co/Remidesbois/LightonOCR-2-1b-poneglyph"
+      },
+      "benchmark": {
+        "status": "published",
+        "dataset": "Poneglyph validated single-bubble crops",
+        "split": "test held-out by page",
+        "date": "2026-07-01",
+        "sample_count": 1128,
+        "hardware": "Modal NVIDIA H100",
+        "protocol": "Strict full-generation transcription with the published prompt; whitespace-normalized CER and WER, exact match, blank-rate and multiline-rate over every held-out sample.",
+        "source_url": "https://huggingface.co/Remidesbois/LightonOCR-2-1b-poneglyph/blob/3d5181ce138e7d92132a741f1e54c3a9e602e129/benchmark_test.json",
+        "primary_metric": "cer",
+        "metrics": {
+          "cer": {
+            "label": "CER",
+            "value": 0.0042395336512983575,
+            "unit": "ratio",
+            "lower_is_better": true,
+            "display_precision": 3
+          },
+          "wer": {
+            "label": "WER",
+            "value": 0.014048008728859793,
+            "unit": "ratio",
+            "lower_is_better": true,
+            "display_precision": 3
+          },
+          "exact_match": {
+            "label": "Exact match",
+            "value": 0.925531914893617,
+            "unit": "ratio",
+            "lower_is_better": false,
+            "display_precision": 2
+          }
+        }
+      }
+    },
+    "surya-bubble": {
+      "display_name": "Surya OCR 2 Poneglyph",
+      "task": "bubble-ocr",
+      "artifact": {
+        "repository": "Remidesbois/surya-bubble-ocr-poneglyph",
+        "revision": "7d7b358c545cfe757329f780da6ed4100bb5909f",
+        "url": "https://huggingface.co/Remidesbois/surya-bubble-ocr-poneglyph"
+      },
+      "benchmark": {
+        "status": "published",
+        "dataset": "Poneglyph validated single-bubble crops",
+        "split": "test held-out by page",
+        "date": "2026-07-30",
+        "sample_count": 1423,
+        "hardware": "NVIDIA RTX 3090 24 GB",
+        "protocol": "Exhaustive generative evaluation with a 256-token budget, collapsed whitespace and explicit blank, hallucination and token-limit accounting.",
+        "source_url": "https://huggingface.co/Remidesbois/surya-bubble-ocr-poneglyph/blob/7d7b358c545cfe757329f780da6ed4100bb5909f/benchmark_test.json",
+        "primary_metric": "cer",
+        "metrics": {
+          "cer": {
+            "label": "CER",
+            "value": 0.004509963642143325,
+            "unit": "ratio",
+            "lower_is_better": true,
+            "display_precision": 3
+          },
+          "wer": {
+            "label": "WER",
+            "value": 0.01655595298926929,
+            "unit": "ratio",
+            "lower_is_better": true,
+            "display_precision": 3
+          },
+          "exact_match": {
+            "label": "Exact match",
+            "value": 0.9065354884047786,
+            "unit": "ratio",
+            "lower_is_better": false,
+            "display_precision": 2
+          },
+          "token_limit_rate": {
+            "label": "Token limit",
+            "value": 0,
+            "unit": "ratio",
+            "lower_is_better": true,
+            "display_precision": 2
+          }
+        }
+      }
+    },
+    "one-shot-panel-detector": {
+      "display_name": "YoloPiece Panel Detector",
+      "task": "panel-detection",
+      "artifact": {
+        "repository": "Remidesbois/YoloPiece_OneShot_Models",
+        "revision": "c4d5393095fadacfedc49d81acb2a8ac29d23aad",
+        "url": "https://huggingface.co/Remidesbois/YoloPiece_OneShot_Models"
+      },
+      "benchmark": {
+        "status": "published",
+        "dataset": "Poneglyph panel annotation dataset",
+        "split": "test held-out by page",
+        "date": "2026-07-02",
+        "sample_count": 31,
+        "hardware": "CUDA device 0; exact GPU model not recorded in the artifact",
+        "protocol": "Ultralytics YOLO test-split evaluation at 800 px; confidence-ranked detections scored with standard mAP50 and mAP50-95.",
+        "source_url": "https://huggingface.co/Remidesbois/YoloPiece_OneShot_Models/blob/c4d5393095fadacfedc49d81acb2a8ac29d23aad/metrics/panel_detector_metrics.json",
+        "primary_metric": "map50",
+        "metrics": {
+          "map50": {
+            "label": "mAP50",
+            "value": 0.9940366112707735,
+            "unit": "ratio",
+            "lower_is_better": false,
+            "display_precision": 2
+          },
+          "map50_95": {
+            "label": "mAP50-95",
+            "value": 0.986110385292093,
+            "unit": "ratio",
+            "lower_is_better": false,
+            "display_precision": 2
+          }
+        }
+      }
+    },
+    "one-shot-reading-order": {
+      "display_name": "YoloPiece One-Shot Reading Order",
+      "task": "reading-order",
+      "artifact": {
+        "repository": "Remidesbois/YoloPiece_OneShot_Models",
+        "revision": "c4d5393095fadacfedc49d81acb2a8ac29d23aad",
+        "url": "https://huggingface.co/Remidesbois/YoloPiece_OneShot_Models"
+      },
+      "benchmark": {
+        "status": "published",
+        "dataset": "Poneglyph panel and bubble reading-order annotations",
+        "split": "test held-out by page",
+        "date": "2026-07-02",
+        "sample_count": 31,
+        "hardware": "CPU offline scoring; exact processor not recorded in the artifact",
+        "protocol": "Global pairwise logistic reranker selected on validation only, reconstructed with Borda plus vertical repair, then evaluated once on the test pages.",
+        "source_url": "https://huggingface.co/Remidesbois/YoloPiece_OneShot_Models/blob/c4d5393095fadacfedc49d81acb2a8ac29d23aad/metrics/reading_order_benchmark.json",
+        "primary_metric": "page_exact_match",
+        "metrics": {
+          "page_exact_match": {
+            "label": "Exact page",
+            "value": 0.967741935483871,
+            "unit": "ratio",
+            "lower_is_better": false,
+            "display_precision": 2
+          },
+          "bubble_position_accuracy": {
+            "label": "Bubble position accuracy",
+            "value": 0.9931506849315068,
+            "unit": "ratio",
+            "lower_is_better": false,
+            "display_precision": 2
+          },
+          "global_pairwise_accuracy": {
+            "label": "Global pairwise accuracy",
+            "value": 0.9992862241256245,
+            "unit": "ratio",
+            "lower_is_better": false,
+            "display_precision": 2
+          }
+        }
+      }
+    },
+    "gemini-flash-lite": {
+      "display_name": "Gemini 3.1 Flash Lite",
+      "task": "bubble-ocr-fallback",
+      "artifact": {
+        "repository": "google/gemini-3.1-flash-lite",
+        "revision": "provider-managed",
+        "url": "https://ai.google.dev/gemini-api/docs/models"
+      },
+      "benchmark": {
+        "status": "not_published",
+        "reason": "No comparable Poneglyph held-out benchmark has been published for this provider-managed model."
+      }
+    }
+  }
+}

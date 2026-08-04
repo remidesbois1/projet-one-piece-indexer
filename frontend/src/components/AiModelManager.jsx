@@ -9,6 +9,7 @@ import { Progress } from '@/components/ui/progress';
 import { Loader2, Save, RotateCcw, Cpu, Eye, MessageSquareText, Sparkles, Search, Play, Square } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn, loadImage, getProxiedImageUrl } from '@/lib/utils';
+import ModelBenchmarkRegistry from '@/components/ModelBenchmarkRegistry';
 
 const MODEL_ROLES = [
     {
@@ -338,6 +339,8 @@ export default function AiModelManager({ mangaSlug }) {
                     );
                 })}
             </div>
+
+            <ModelBenchmarkRegistry />
 
             {hasChanges && (
                 <div className="flex items-center gap-3 rounded-xl border border-[#8dbbff]/30 bg-[#3d86ff]/10 p-4 text-sm text-[#bcd6ff]">

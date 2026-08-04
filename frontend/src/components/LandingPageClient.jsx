@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { getMangaCoverThumbnailUrl } from "@/lib/utils";
+import { formatBenchmarkSampleCount, formatRegistryMetric, getModelRegistryEntry } from "@/lib/modelRegistry";
 import {
     ArrowRight,
     BookOpen,
@@ -223,20 +224,23 @@ function MangaCard({ manga, index }) {
     );
 }
 
+const ppocrBenchmark = getModelRegistryEntry('ppocrv6-line').benchmark;
+const suryaBenchmark = getModelRegistryEntry('surya-bubble').benchmark;
+
 const features = [
     {
         icon: ScanText,
         title: "OCR Local - PP-OCRv6 Ligne",
         badge: "ONNX",
         description: "Detecteur YOLO26n et recognizer PP-OCRv6 specialises pour transcrire les lignes de bulles en local navigateur.",
-        details: ["PP-OCRv6", "YOLO lignes", "~87 Mo", "WebGPU", "CER 1.92%", "0 $/OCR"],
+        details: ["PP-OCRv6", "YOLO lignes", "~83 Mo", "WebGPU", formatRegistryMetric('ppocrv6-line'), `${formatBenchmarkSampleCount(ppocrBenchmark.sample_count)} bulles test`],
     },
     {
         icon: Zap,
         title: "OCR Poneglyph & Surya + Modèle Local",
         badge: "Multi-Desktop",
         description: "Modèles spécialisés pour les pages complètes et les bulles isolées, disponibles sur Modal GPU ou en local via l'application desktop.",
-        details: ["Surya CER 0.451%", "1 423 bulles test", "GPU local / Modal", "0% de troncature"],
+        details: [formatRegistryMetric('lighton-bubble'), formatRegistryMetric('surya-bubble'), `${formatBenchmarkSampleCount(suryaBenchmark.sample_count)} bulles test`, "GPU local / Modal"],
     },
     {
         icon: Cpu,
@@ -247,17 +251,17 @@ const features = [
     },
     {
         icon: Boxes,
-        title: "Détection de Bulles - YOLO26",
+        title: "Détection One-Shot - YOLO26",
         badge: "ONNX",
         description: "YOLO26n fine-tuné isole chaque zone de texte côté client via ONNX Runtime Web.",
-        details: ["2.4M params", "mAP50 0.994", "ONNX", "2.2s @ 1080p", "5.2 GFLOPs"],
+        details: ["Panel detector", formatRegistryMetric('one-shot-panel-detector'), "ONNX", "2.4M params"],
     },
     {
         icon: Layers,
         title: "Tri One-Shot - ONNX",
         badge: "v3",
         description: "Deux rankers ordonnent les cases puis les bulles dans le contexte, sans serveur et en Web Worker.",
-        details: ["gemma3_context.onnx", "bubble_order.onnx", "93.75% page exact", "Mini Worker"],
+        details: ["global_bubble_order.onnx", "bubble_order.onnx", formatRegistryMetric('one-shot-reading-order'), "Web Worker"],
     },
     {
         icon: Search,

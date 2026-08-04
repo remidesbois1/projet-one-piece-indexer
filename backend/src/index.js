@@ -76,8 +76,10 @@ const statRoutes = require('./routes/statsRoutes')
 const mangaRoutes = require('./routes/mangaRoutes');
 const coverRoutes = require('./routes/coverRoutes');
 const publicRoutes = require('./routes/v1/publicRoutes');
+const publicV2Routes = require('./routes/v2/publicRoutes');
 const { requestLogger } = require('./middleware/requestLogger');
 const { startChapterImportWorker } = require('./jobs/chapterImportWorker');
+const { publicApiSpec } = require('./openapi/publicApi');
 
 
 
@@ -118,7 +120,12 @@ app.use('/api/mangas', mangaRoutes);
 app.use('/api/covers', coverRoutes);
 
 // Public API v1
+app.get('/openapi.json', publicLimiter, (req, res) => {
+  res.set('Cache-Control', 'public, max-age=300');
+  res.json(publicApiSpec);
+});
 app.use('/v1', publicLimiter, publicRoutes);
+app.use('/v2', publicLimiter, publicV2Routes);
 
 const server = app.listen(PORT, () => {
   console.log(`Serveur démarré, port : ${PORT}`);

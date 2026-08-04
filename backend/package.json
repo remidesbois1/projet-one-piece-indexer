@@ -1,12 +1,13 @@
 {
   "name": "backend",
   "version": "1.0.0",
-  "description": "API for the One Piece Indexer project.",
+  "description": "API for Projet Poneglyph.",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "test": "node --test",
+    "test:api-contract": "node --test test/publicApiContract.test.js",
     "export:f2llm": "python scripts/export_f2llm_onnx.py --model-id ../scripts/embed/f2llm_v2_160m_finetuned_full --output models/f2llm-v2-160m-one-piece-retrieval",
     "export:f2llm:base": "python scripts/export_f2llm_onnx.py",
     "backfill:f2llm": "node scripts/backfill_f2llm_embeddings.js",

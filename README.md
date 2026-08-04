@@ -8,7 +8,8 @@ Le **Projet Poneglyph** est une plateforme de haute performance dédiée à la n
 
 **Accès Public :** [**poneglyph.fr**](https://poneglyph.fr)
 **Sandbox OCR :** [**poneglyph.fr/sandbox**](https://poneglyph.fr/sandbox)
-**API Publique :** `https://api.poneglyph.fr/v1`
+**API Publique recommandée :** `https://api.poneglyph.fr/v2`
+**Contrat OpenAPI :** [`https://api.poneglyph.fr/openapi.json`](https://api.poneglyph.fr/openapi.json)
 
 ---
 
@@ -18,7 +19,7 @@ Le **Projet Poneglyph** est une plateforme de haute performance dédiée à la n
 - [Moteur de Recherche Multi-Modal](#moteur-de-recherche-multi-modal)
 - [Pipeline OCR Hybride](#pipeline-ocr-hybride)
 - [Modèle PP-OCRv6 Bubble Line](documentation/ppocrv6_bubble_line_recognition.md)
-- [API Publique V1](#api-publique-v1)
+- [API Publique](#api-publique)
 - [Infrastructure](#infrastructure)
 - [Développement Local](#développement-local)
 - [Build Desktop](#build-desktop)
@@ -101,6 +102,18 @@ Architecture hybride, multicouche et parallélisée :
 
 ## Pipeline OCR Hybride
 
+<!-- model-registry:start -->
+> Tableau généré depuis `shared/model-registry.json` (registre v1, 2026-08-01). Les protocoles complets sont publiés dans [la fiche de provenance](documentation/generated/model-benchmarks.md).
+
+| Modèle | Résultat publié | Dataset et split | Date et échantillons | Matériel | Version et preuve |
+|---|---|---|---|---|---|
+| PP-OCRv6 Bubble Line | CER 1,451 % · Exact match 75,96 % | Poneglyph validated bubbles reconstructed from detected text lines — test held-out by page | 2026-06-29 · 1 219 | Not recorded; offline scoring over pinned predictions | [10b932d4aadc](https://huggingface.co/Remidesbois/pp-ocrv6-one-piece-bubble-line-rec/tree/10b932d4aadca2830850ccf5951116597404bef8) · [source](https://huggingface.co/Remidesbois/pp-ocrv6-one-piece-bubble-line-rec/blob/10b932d4aadca2830850ccf5951116597404bef8/postprocess_official_metrics.json) |
+| LightOnOCR Poneglyph | CER 0,424 % · WER 1,405 % · Exact match 92,55 % | Poneglyph validated single-bubble crops — test held-out by page | 2026-07-01 · 1 128 | Modal NVIDIA H100 | [3d5181ce138e](https://huggingface.co/Remidesbois/LightonOCR-2-1b-poneglyph/tree/3d5181ce138e7d92132a741f1e54c3a9e602e129) · [source](https://huggingface.co/Remidesbois/LightonOCR-2-1b-poneglyph/blob/3d5181ce138e7d92132a741f1e54c3a9e602e129/benchmark_test.json) |
+| Surya OCR 2 Poneglyph | CER 0,451 % · WER 1,656 % · Exact match 90,65 % · Token limit 0,00 % | Poneglyph validated single-bubble crops — test held-out by page | 2026-07-30 · 1 423 | NVIDIA RTX 3090 24 GB | [7d7b358c545c](https://huggingface.co/Remidesbois/surya-bubble-ocr-poneglyph/tree/7d7b358c545cfe757329f780da6ed4100bb5909f) · [source](https://huggingface.co/Remidesbois/surya-bubble-ocr-poneglyph/blob/7d7b358c545cfe757329f780da6ed4100bb5909f/benchmark_test.json) |
+| YoloPiece Panel Detector | mAP50 99,40 % · mAP50-95 98,61 % | Poneglyph panel annotation dataset — test held-out by page | 2026-07-02 · 31 | CUDA device 0; exact GPU model not recorded in the artifact | [c4d5393095fa](https://huggingface.co/Remidesbois/YoloPiece_OneShot_Models/tree/c4d5393095fadacfedc49d81acb2a8ac29d23aad) · [source](https://huggingface.co/Remidesbois/YoloPiece_OneShot_Models/blob/c4d5393095fadacfedc49d81acb2a8ac29d23aad/metrics/panel_detector_metrics.json) |
+| YoloPiece One-Shot Reading Order | Exact page 96,77 % · Bubble position accuracy 99,32 % · Global pairwise accuracy 99,93 % | Poneglyph panel and bubble reading-order annotations — test held-out by page | 2026-07-02 · 31 | CPU offline scoring; exact processor not recorded in the artifact | [c4d5393095fa](https://huggingface.co/Remidesbois/YoloPiece_OneShot_Models/tree/c4d5393095fadacfedc49d81acb2a8ac29d23aad) · [source](https://huggingface.co/Remidesbois/YoloPiece_OneShot_Models/blob/c4d5393095fadacfedc49d81acb2a8ac29d23aad/metrics/reading_order_benchmark.json) |
+<!-- model-registry:end -->
+
 ### PP-OCRv6 Ligne (Local Navigateur)
 
 Le moteur navigateur local combine un détecteur de lignes YOLO26n ONNX et un recognizer PP-OCRv6 ONNX pour transcrire les bulles sans appel cloud. Le pipeline détecte les lignes dans une bulle, les déduplique, les assemble en une image horizontale, puis lance le recognizer CTC PP-OCRv6.
@@ -109,8 +122,7 @@ Le moteur navigateur local combine un détecteur de lignes YOLO26n ONNX et un re
 - **Documentation :** [`documentation/ppocrv6_bubble_line_recognition.md`](documentation/ppocrv6_bubble_line_recognition.md)
 - **Runtime :** ONNX Runtime Web (WASM)
 - **Taille :** ~83 Mo (`YOLO lignes` + `PP-OCRv6 rec`)
-- **CER validation :** 1.92% (`71.62%` exact-match)
-- **CER test :** 1.71% (`71.21%` exact-match)
+- **Métriques :** voir le tableau généré depuis le registre ci-dessus.
 - **Coût :** 0 $/OCR
 
 ### LightOn-OCR Poneglyph (Cloud Modal / Local GPU)
@@ -120,7 +132,7 @@ Modèle de pointe pour une précision extrême, déployé en serverless sur **Mo
 - **Poneglyph-BBox** (full-page) : [`LightonOCR-2-1b-poneglyph-bbox`](https://huggingface.co/Remidesbois/LightonOCR-2-1b-poneglyph-bbox) — détecte toutes les bulles d'une page et renvoie texte + bbox.
 - **Poneglyph** (bulle unique) : [`LightonOCR-2-1b-poneglyph`](https://huggingface.co/Remidesbois/LightonOCR-2-1b-poneglyph) — transcription d'une bulle isolée.
 
-- **Dernier benchmark H100 (01/07/2026) :** CER **0.424%** - WER **1.405%** - exact-match **92.55%**
+- **Métriques :** voir le tableau généré depuis le registre ci-dessus.
 - **Cloud :** GPU NVIDIA L4 via Modal (~0.000222 $/seconde)
 - **Local :** 0$/OCR, 5-15s/page selon GPU
 - **Optimisation :** Post-processing de troncature pour 0% d'hallucination
@@ -133,7 +145,7 @@ Fine-tune du VLM [`datalab-to/surya-ocr-2`](https://huggingface.co/datalab-to/su
 - **Surya** (bulle unique) : [`surya-bubble-ocr-poneglyph`](https://huggingface.co/Remidesbois/surya-bubble-ocr-poneglyph).
 
 - **Local :** 0$/OCR via transformers (`AutoModelForImageTextToText`)
-- **Benchmark RTX 3090 (30/07/2026, test held-out de 1 423 bulles) :** CER **0.451%** - WER **1.656%** - exact-match **90.65%** - sorties vides **0%** - limite de génération atteinte **0%**
+- **Métriques :** voir le tableau généré depuis le registre ci-dessus.
 - **Pipeline crop reproductible :** [`docker_scripts/finetune_surya_bubble_ocr`](docker_scripts/finetune_surya_bubble_ocr) (split strict par page → fine-tuning hybride → benchmark exhaustif → publication Hugging Face)
 - **Pipeline BBox :** [`docker_scripts/finetune_surya_ocr_bbox`](docker_scripts/finetune_surya_ocr_bbox)
 
@@ -141,7 +153,7 @@ Fine-tune du VLM [`datalab-to/surya-ocr-2`](https://huggingface.co/datalab-to/su
 
 Détection instantanée des bulles sur la planche.
 
-- **Performance :** mAP50 **0.994** / mAP50-95 **0.868**
+- **Métriques :** voir le tableau généré depuis le registre ci-dessus.
 - **Architecture :** YOLO26n (2.4M paramètres, 5.2 GFLOPs)
 - **Exécution :** ONNX Runtime Web (WASM) côté client
 - **Modèles :** [`YoloPiece_OneShot_Models`](https://huggingface.co/Remidesbois/YoloPiece_OneShot_Models) (`bubble_detector.onnx`, `panel_detector.onnx`)
@@ -154,8 +166,7 @@ Détection instantanée des bulles sur la planche.
 |---|---|
 | **Architecture** | Détecteurs YOLO + rankers pairwise ONNX |
 | **Rankers** | `panel_order.onnx` + `bubble_order.onnx` |
-| **Exact page accuracy** | **93.75%** (15/16 pages test) |
-| **Exact panel / bulles** | **100.00%** / **98.18%** |
+| **Métriques** | Voir le tableau généré depuis le registre ci-dessus. |
 | **Exécution** | Local (Web worker, ONNX Runtime Web) |
 
 ### Google Gemini 3.1 Flash-Lite (Cloud Fallback)
@@ -164,19 +175,42 @@ Fallback pour les configurations ne supportant pas WebGPU. 500 requêtes gratuit
 
 ---
 
-## API Publique V1
+## API Publique
 
-**Base URL :** `https://api.poneglyph.fr/v1`
+Le contrat exécutable est publié au format OpenAPI 3.1 sur
+[`/openapi.json`](https://api.poneglyph.fr/openapi.json). Les changements de
+routes publiques déclenchent aussi une validation de ce contrat en CI.
 
-| Endpoint | Méthode | Description |
+### Versions supportées
+
+| Version | Statut | Usage |
 |---|---|---|
-| `/status` | GET | État de l'API |
-| `/stats` | GET | Statistiques globales |
-| `/series` | GET | Liste des séries |
-| `/tomes/:id` | GET | Détails d'un volume |
-| `/pages/:id` | GET | Contenu d'une page |
-| `/quotes/random` | GET | Citation aléatoire |
-| `/search` | GET | Recherche textuelle |
+| **v2** | Stable, recommandée | Toutes les nouvelles intégrations. Les numéros de volumes et chapitres sont toujours rattachés à un `seriesSlug`. |
+| **v1** | Dépréciée, maintenue pour compatibilité | Aucun nouvel endpoint. Les routes historiques par numéro peuvent être ambiguës dès que plusieurs séries sont présentes. Aucune date de retrait n'est annoncée. |
+
+**Base URL v2 :** `https://api.poneglyph.fr/v2`
+
+| Endpoint v2 | Méthode | Description |
+|---|---|---|
+| `/series/{seriesSlug}/volumes/{volumeNumber}/chapters` | GET | Chapitres d'un volume précisément rattaché à une série. |
+| `/series/{seriesSlug}/chapters/{chapterNumber}/pages/{pageNumber}` | GET | Page et bulles validées d'un chapitre précisément rattaché à une série. |
+
+Les collections acceptent `page` (défaut `1`) et `page_size` (défaut `50`,
+maximum `100`). Chaque réponse v2 contient les identifiants stables des
+ressources, `series_slug`, un objet `pagination` et des liens de navigation.
+
+**Base URL v1 :** `https://api.poneglyph.fr/v1`
+
+| Endpoint v1 déprécié | Méthode | Description |
+|---|---|---|
+| `/status` | GET | État de l'API historique. |
+| `/tomes` | GET | Liste historique des volumes, sans scope de série. |
+| `/tomes/{tomeNumero}/chapters` | GET | Chapitres d'un numéro de volume historique. |
+| `/search` | GET | Recherche textuelle historique. |
+| `/stats` | GET | Statistiques globales. |
+| `/quotes/random` | GET | Citation validée aléatoire. |
+| `/chapters/{numero}` | GET | Détail historique d'un chapitre par numéro. |
+| `/chapters/{chapterNo}/pages/{pageNo}` | GET | Page historique par numéros de chapitre et de page. |
 
 > Les images publiques sont fortement floutées, sauf dans les zones des bulles de texte.
 
@@ -338,7 +372,7 @@ Coût de fonctionnement : **~5 EUR/mois**
 ## Structure du Projet
 
 ```
-projet-one-piece-indexer/
+projet-poneglyph/
 ├── backend/                    # API Node.js / Express
 │   ├── src/
 │   ├── scripts/

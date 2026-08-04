@@ -1,0 +1,47 @@
+name: Public API contract
+
+on:
+  pull_request:
+    paths:
+      - README.md
+      - package.json
+      - package-lock.json
+      - packages/shared/**
+      - backend/package.json
+      - backend/src/index.js
+      - backend/src/openapi/**
+      - backend/src/routes/v1/**
+      - backend/src/routes/v2/**
+      - backend/test/publicApiContract.test.js
+      - .github/workflows/public-api-contract.yml
+  push:
+    branches: [master]
+    paths:
+      - README.md
+      - package.json
+      - package-lock.json
+      - packages/shared/**
+      - backend/package.json
+      - backend/src/index.js
+      - backend/src/openapi/**
+      - backend/src/routes/v1/**
+      - backend/src/routes/v2/**
+      - backend/test/publicApiContract.test.js
+      - .github/workflows/public-api-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run test:api-contract
+        working-directory: backend

@@ -1,5 +1,6 @@
 import * as ort from 'onnxruntime-web';
 import { capitalizeOcrSentenceStarts, fixFrenchPunctuation } from '../lib/ocr-utils.js';
+import modelRegistry from '@poneglyph/shared/model-registry.json';
 
 ort.env.wasm.wasmPaths = new URL('/onnx/', self.location.origin).href;
 ort.env.wasm.proxy = false;
@@ -21,7 +22,8 @@ let ppocrLineDetectorBuffer = null;
 let ppocrRecBuffer = null;
 let ppocrRunQueue = Promise.resolve();
 
-const PPOCR_LINE_MODEL_BASE = 'https://huggingface.co/Remidesbois/pp-ocrv6-one-piece-bubble-line-rec/resolve/main/onnx';
+const PPOCR_MODEL_ARTIFACT = modelRegistry.models['ppocrv6-line'].artifact;
+const PPOCR_LINE_MODEL_BASE = `https://huggingface.co/${PPOCR_MODEL_ARTIFACT.repository}/resolve/${PPOCR_MODEL_ARTIFACT.revision}/onnx`;
 const PPOCR_LINE_DETECTOR_PATH = `${PPOCR_LINE_MODEL_BASE}/bubble_line_detector_yolo26n.onnx`;
 const PPOCR_REC_PATH = `${PPOCR_LINE_MODEL_BASE}/ppocrv6_bubble_line_rec.onnx`;
 const PPOCR_REC_WEBGPU_COMPAT_PATH = `${PPOCR_LINE_MODEL_BASE}/ppocrv6_bubble_line_rec_webgpu.onnx`;
@@ -37,7 +39,7 @@ const PPOCR_SESSION_PROVIDER_CANDIDATES = self.navigator?.gpu
 
 const MODELS = {
     ppocrv6Line: {
-        id: 'Remidesbois/pp-ocrv6-one-piece-bubble-line-rec#webgpu-compat',
+        id: `${PPOCR_MODEL_ARTIFACT.repository}@${PPOCR_MODEL_ARTIFACT.revision}#webgpu-compat`,
         runtime: 'onnx',
         paths: {
             detector: PPOCR_LINE_DETECTOR_PATH,
@@ -46,7 +48,7 @@ const MODELS = {
         },
     },
     ppocrv6LineOriginal: {
-        id: 'Remidesbois/pp-ocrv6-one-piece-bubble-line-rec',
+        id: `${PPOCR_MODEL_ARTIFACT.repository}@${PPOCR_MODEL_ARTIFACT.revision}`,
         runtime: 'onnx',
         paths: {
             detector: PPOCR_LINE_DETECTOR_PATH,

@@ -1,12 +1,14 @@
 import * as ort from 'onnxruntime-web';
+import modelRegistry from '@poneglyph/shared/model-registry.json';
 
 ort.env.wasm.wasmPaths = new URL('/onnx/', self.location.origin).href;
 
 // ---------------------------------------------------------------------------
 // Model URLs
 // ---------------------------------------------------------------------------
-const ONE_SHOT_MODEL_REVISION = 'c4d5393095fadacfedc49d81acb2a8ac29d23aad';
-const ONE_SHOT_MODEL_BASE = `https://huggingface.co/Remidesbois/YoloPiece_OneShot_Models/resolve/${ONE_SHOT_MODEL_REVISION}`;
+const ONE_SHOT_ARTIFACT = modelRegistry.models['one-shot-reading-order'].artifact;
+const ONE_SHOT_MODEL_REVISION = ONE_SHOT_ARTIFACT.revision;
+const ONE_SHOT_MODEL_BASE = `https://huggingface.co/${ONE_SHOT_ARTIFACT.repository}/resolve/${ONE_SHOT_MODEL_REVISION}`;
 const BUBBLE_MODEL_PATH = `${ONE_SHOT_MODEL_BASE}/bubble_detector.onnx`;
 const PANEL_MODEL_PATH = `${ONE_SHOT_MODEL_BASE}/panel_detector.onnx`;
 const PANEL_ORDER_PATH = `${ONE_SHOT_MODEL_BASE}/panel_order.onnx`;

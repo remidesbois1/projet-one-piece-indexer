@@ -1,53 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const { supabaseAdmin } = require('../../config/supabaseClient');
+const { publicApiAccessMiddleware } = require('../../middleware/publicApiAccess');
 const {
     VALIDATED_BUBBLE_STATUS,
     getPageImagePath,
     keepValidatedBubbleRows,
 } = require('../../utils/publicMedia');
 
-let cachedBannedIps = new Set();
-let lastInfoFetch = 0;
-const CACHE_TTL = 60 * 1000;
-
-async function refreshBannedIps() {
-    const now = Date.now();
-    if (now - lastInfoFetch < CACHE_TTL && cachedBannedIps.size > 0) return;
-
-    try {
-        const { data, error } = await supabaseAdmin.from('banned_ips').select('ip');
-        if (!error && data) {
-            cachedBannedIps = new Set(data.map(r => r.ip));
-            lastInfoFetch = now;
-        }
-    } catch (e) {
-        console.error("Failed to refresh banned IPs", e);
-    }
-}
-
-const ipHandler = async (req, res, next) => {
-    let ip = req.headers['cf-connecting-ip'] ||
-        (req.headers['x-forwarded-for'] ? req.headers['x-forwarded-for'].split(',')[0].trim() : null) ||
-        req.ip ||
-        req.connection.remoteAddress;
-
-    if (ip && ip.includes('::ffff:')) ip = ip.split('::ffff:')[1];
-
-    if (Date.now() - lastInfoFetch >= CACHE_TTL) {
-        refreshBannedIps();
-    }
-
-    if (cachedBannedIps.has(ip)) {
-        console.warn(`[Blocked] Request from banned IP: ${ip}`);
-        return res.status(403).json({ error: "Access denied." });
-    }
-
-    req.clientIp = ip;
-    next();
-};
-
-router.use(ipHandler);
+router.use(publicApiAccessMiddleware);
 
 
 /**
@@ -57,7 +18,7 @@ router.use(ipHandler);
 router.get('/status', (req, res) => {
     res.json({
         status: 'online',
-        message: 'One Piece Indexer Public API v1',
+        message: 'Projet Poneglyph Public API v1 (deprecated)',
         your_ip: req.clientIp
     });
 });
