@@ -13,5 +13,7 @@
   "chapterArchiveEntryBytes": 67108864,
   "chapterArchiveExpandedBytes": 2147483648,
   "chapterArchiveCompressionRatio": 100,
-  "chapterImagePixels": 120000000
+  "chapterImagePixels": 120000000,
+  "pageImageBytes": 67108864,
+  "bubbleCropPixels": 25000000
 }

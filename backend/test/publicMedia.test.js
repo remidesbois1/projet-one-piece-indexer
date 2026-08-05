@@ -258,6 +258,34 @@ test('private image routes reject unsupported stored content without caching it'
   });
 });
 
+test('private image routes preserve bounded storage error statuses and security headers', async () => {
+  for (const expected of [
+    { code: 'PAGE_IMAGE_TOO_LARGE', statusCode: 413 },
+    { code: 'PAGE_IMAGE_TIMEOUT', statusCode: 504 },
+  ]) {
+    const fake = createFakeSupabase();
+    const storageError = Object.assign(new Error('bounded storage failure'), expected);
+    const router = createPageRouter({
+      supabaseClient: fake.client,
+      supabaseAdminClient: fake.client,
+      optionalAuth: (_req, _res, next) => next(),
+      requireAuth: (_req, _res, next) => next(),
+      requireRole: () => (_req, _res, next) => next(),
+      openImage: async () => { throw storageError; },
+      readImage: async () => { throw storageError; },
+    });
+
+    await withServer(router, async (baseUrl) => {
+      for (const pathSuffix of ['/image/original', '/image/original/thumbnail']) {
+        const response = await fetch(`${baseUrl}/api/pages/42${pathSuffix}`);
+        assert.equal(response.status, expected.statusCode);
+        assertPrivateImageHeaders(response);
+        assert.deepEqual(await response.json(), { error: 'bounded storage failure' });
+      }
+    });
+  }
+});
+
 test('private image not-found responses retain the non-cacheable security headers', async () => {
   const missingPageClient = {
     from() {

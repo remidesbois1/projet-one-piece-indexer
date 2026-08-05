@@ -2,9 +2,9 @@ const express = require('express');
 const router = express.Router();
 const { supabaseAdmin } = require('../config/supabaseClient');
 const { authMiddleware, roleCheck } = require('../middleware/auth');
-const sharp = require('sharp');
 const { logBubbleHistory } = require('../utils/auditLogger');
 const { readPageImage } = require('../utils/pageStorage');
+const { BubbleCropError, createBubbleCrop } = require('../utils/bubbleCrop');
 const { validateBubbleGeometryForPage } = require('../utils/bubbleGeometry');
 const { mapBubbleReorderError } = require('../utils/bubbleReorder');
 const { mapBubbleMutationError } = require('../utils/bubblePermissions');
@@ -172,15 +172,21 @@ router.get('/:id/crop', authMiddleware, validateRequest({ params: idParamsSchema
       return res.status(404).json({ error: "Bulle ou image de la page non trouvée." });
     }
     const { buffer: imageBuffer } = await readPageImage(bubble.pages.url_image);
-    const croppedImageBuffer = await sharp(imageBuffer)
-      .extract({ left: bubble.x, top: bubble.y, width: bubble.w, height: bubble.h })
-      .avif({ quality: 20, effort: 2 })
-      .toBuffer();
+    const croppedImageBuffer = await createBubbleCrop(imageBuffer, bubble);
     res.set('Content-Type', 'image/avif');
+    res.set('Cache-Control', 'private, no-store');
+    res.set('X-Content-Type-Options', 'nosniff');
+    res.vary('Authorization');
     res.send(croppedImageBuffer);
   } catch (error) {
     console.error("ERREUR CROP:", error);
-    res.status(500).json({ error: "Une erreur est survenue lors du traitement de l'image." });
+    if (error instanceof BubbleCropError) {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
+    if (error?.code === 'PAGE_IMAGE_TOO_LARGE' || error?.code === 'PAGE_IMAGE_TIMEOUT') {
+      return res.status(error.statusCode).json({ error: error.message });
+    }
+    return res.status(500).json({ error: "Une erreur est survenue lors du traitement de l'image." });
   }
 });
 

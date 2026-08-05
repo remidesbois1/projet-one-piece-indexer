@@ -34,24 +34,9 @@ const OCR_MAX_CANDIDATE_PAGES = 600;
 const OCR_TOTAL_BUDGET_MS = 2_000;
 const ocrCandidateSearch = createOcrCandidateSearch({ client: supabaseAdmin });
 
-async function getUserFromReq(req) {
-    try {
-        const auth = req.headers.authorization;
-        if (!auth) return {};
-        const token = auth.replace('Bearer ', '');
-        const { data: { user } } = await supabase.auth.getUser(token);
-        if (!user) return {};
-        return { user_id: user.id, user_email: user.email };
-    } catch { return {}; }
-}
 
-async function insertSearchLog(log) {
-    try {
-        await supabaseAdmin.from('search_logs').insert(log);
-    } catch (err) {
-        console.error('Failed to insert search log:', err.message);
-    }
-}
+
+
 
 function parseCharacters(chars) {
     if (!chars) return null;
@@ -142,31 +127,17 @@ async function runF2llmVectorSearch({ req, query, embedding, page = 1, limit = 1
     const filterTome = tome && tome !== '' ? parseInt(tome) : null;
     const filterManga = req.validated?.query?.manga || null;
     const totalStart = Date.now();
-    const userInfo = await getUserFromReq(req);
-    const searchLog = {
-        raw_query: query,
-        model_provider: 'f2llm-browser-ft',
-        search_mode: 'semantic',
-        manga_slug: filterManga || null,
-        filter_characters: filterCharacters,
-        filter_arc: filterArc,
-        filter_tome: filterTome,
-        rerank_enabled: false,
-        ...userInfo,
-    };
-
+        
     const rpcStart = Date.now();
     const { data, error } = await supabaseAdmin.rpc('match_pages_f2llm', {
         query_embedding: embedding,
         match_threshold: 0.30,
         match_count: 50,
     });
-    searchLog.duration_f2llm_rpc_ms = Date.now() - rpcStart;
-    if (error) throw error;
+        if (error) throw error;
 
     let filteredPages = data || [];
-    searchLog.f2llm_candidates_count = filteredPages.length;
-
+    
     if (filterManga) {
         filteredPages = filteredPages.filter(p => p.manga_slug === filterManga);
     }
@@ -181,15 +152,9 @@ async function runF2llmVectorSearch({ req, query, embedding, page = 1, limit = 1
     const finalResults = filteredPages.slice(offset, offset + parseInt(limit)).map(formatSemanticPageResult);
     const totalCount = filteredPages.length;
 
-    searchLog.merged_candidates_count = filteredPages.length;
-    searchLog.final_results_count = finalResults.length;
-    if (finalResults.length > 0) {
-        searchLog.top_result_id = finalResults[0].page_id;
-        searchLog.top_result_score = finalResults[0].scores.vector;
-    }
-    searchLog.duration_total_ms = Date.now() - totalStart;
-    insertSearchLog(searchLog);
-
+            if (finalResults.length > 0) {
+                    }
+        
     return { results: finalResults, totalCount };
 }
 
@@ -314,27 +279,14 @@ router.post('/ocr-match', validateRequest({ body: ocrSearchBodySchema, query: se
     const parsedPage = page;
     const offset = (parsedPage - 1) * parsedLimit;
     const totalStart = Date.now();
-    const userInfo = await getUserFromReq(req);
-    const budget = createOcrSearchBudget(req);
+        const budget = createOcrSearchBudget(req);
 
-    const searchLog = {
-        raw_query: raw_text || queryBubbles.map(bubble => bubble.content).join('\n'),
-        model_provider: provider,
-        search_mode: 'ocr',
-        manga_slug: filterManga,
-        filter_characters: filterCharacters,
-        filter_arc: filterArc,
-        filter_tome: filterTome,
-        rerank_enabled: false,
-        ...userInfo,
-    };
-
+    
     try {
         const tokenStart = Date.now();
         const informativeTokens = buildInformativeTokens(queryBubbles);
         const tokenQueries = buildCandidateTokenQueries(queryBubbles, OCR_CANDIDATE_TOKEN_LIMIT);
-        searchLog.duration_normalization_ms = Date.now() - tokenStart;
-
+        
         const candidateLookup = await ocrCandidateSearch.getCandidates({
             terms: tokenQueries.slice(0, OCR_CANDIDATE_QUERY_LIMIT),
             filters: {
@@ -346,17 +298,9 @@ router.post('/ocr-match', validateRequest({ body: ocrSearchBodySchema, query: se
             signal: budget.signal,
         });
         const candidatePageIds = candidateLookup.rows.map(row => row.page_id);
-        searchLog.merged_candidates_count = candidatePageIds.length;
-        searchLog.duration_ocr_candidate_rpc_ms = candidateLookup.rpcDurationMs;
-        searchLog.ocr_candidate_terms_count = candidateLookup.termsCount;
-        searchLog.ocr_candidate_pages_count = candidatePageIds.length;
-        searchLog.ocr_candidate_cache_hit = candidateLookup.cacheHit;
-
+                                        
         if (!candidatePageIds.length) {
-            searchLog.final_results_count = 0;
-            searchLog.duration_total_ms = Date.now() - totalStart;
-            insertSearchLog(searchLog);
-            return res.json({
+                                                return res.json({
                 results: [],
                 totalCount: 0,
                 ocr: {
@@ -373,8 +317,7 @@ router.post('/ocr-match', validateRequest({ body: ocrSearchBodySchema, query: se
         const fetchStart = Date.now();
         let candidatePages = await fetchCandidatePages(candidatePageIds, budget.signal);
         const candidateFetchMs = Date.now() - fetchStart;
-        searchLog.duration_ocr_candidate_fetch_ms = candidateFetchMs;
-
+        
         candidatePages = candidatePages.filter(pageRecord => {
             const { chapitre, tome: pageTome, manga: pageManga } = getNestedPageMeta(pageRecord);
             if (filterManga && pageManga?.slug !== filterManga) return false;
@@ -388,25 +331,18 @@ router.post('/ocr-match', validateRequest({ body: ocrSearchBodySchema, query: se
             limit: OCR_MAX_CANDIDATE_PAGES,
             deadline: budget.deadline,
         });
-        searchLog.duration_ocr_rank_ms = Date.now() - rankStart;
-        if (ranking.budgetExceeded) {
+                if (ranking.budgetExceeded) {
             throw new OcrSearchBudgetError('OCR candidate ranking exceeded its time budget.');
         }
         const rankedPages = ranking.results;
-        searchLog.duration_merge_ms = searchLog.duration_ocr_candidate_rpc_ms + candidateFetchMs + searchLog.duration_ocr_rank_ms;
-
+        
         const topOcrScore = rankedPages[0]?.score || 0;
         const ocrResults = rankedPages.map(pageRecord => formatOcrPageResult(pageRecord, provider));
         const finalResults = ocrResults.slice(offset, offset + parsedLimit);
 
-        searchLog.final_results_count = finalResults.length;
-        if (finalResults.length > 0) {
-            searchLog.top_result_id = finalResults[0].page_id;
-            searchLog.top_result_score = finalResults[0].scores.ocr ?? Math.round((finalResults[0].similarity || 0) * 100);
-        }
-        searchLog.duration_total_ms = Date.now() - totalStart;
-        insertSearchLog(searchLog);
-
+                if (finalResults.length > 0) {
+                                }
+                
         res.json({
             results: finalResults,
             totalCount: ocrResults.length,
@@ -423,11 +359,7 @@ router.post('/ocr-match', validateRequest({ body: ocrSearchBodySchema, query: se
         });
     } catch (error) {
         console.error("Erreur recherche OCR:", error);
-        searchLog.error = error.message;
-        searchLog.ocr_budget_exceeded = error instanceof OcrSearchBudgetError || budget.timedOut();
-        searchLog.duration_total_ms = Date.now() - totalStart;
-        insertSearchLog(searchLog);
-        if (req.aborted || res.headersSent) return;
+                                        if (req.aborted || res.headersSent) return;
         if (searchLog.ocr_budget_exceeded) {
             return res.status(504).json({
                 error: "La recherche OCR a dépassé son budget de calcul.",
@@ -483,19 +415,7 @@ router.get('/', validateRequest({ query: searchQuerySchema }), async (req, res) 
     const filterArc = arc && arc !== '' ? arc : null;
     const filterTome = tome || null;
 
-    const userInfo = await getUserFromReq(req);
-    const searchLog = {
-        raw_query: q,
-        model_provider: mode === 'semantic' && localOnly ? 'f2llm-local' : 'dual',
-        search_mode: mode,
-        manga_slug: manga || null,
-        filter_characters: filterCharacters,
-        filter_arc: filterArc,
-        filter_tome: filterTome,
-        rerank_enabled: shouldRerank,
-        ...userInfo,
-    };
-
+        
     const totalStart = Date.now();
 
     try {
@@ -551,13 +471,7 @@ router.get('/', validateRequest({ query: searchQuerySchema }), async (req, res) 
                 })()
             ]);
 
-            searchLog.duration_voyage_embedding_ms = voyageEmbedMs;
-            searchLog.duration_gemini_embedding_ms = geminiEmbedMs;
-            searchLog.duration_voyage_rpc_ms = voyageRpcMs;
-            searchLog.duration_gemini_rpc_ms = geminiRpcMs;
-            searchLog.voyage_candidates_count = voyageResults.length;
-            searchLog.gemini_candidates_count = geminiResults.length;
-
+                                                                        
             // Merge results from both engines
             const mergeStart = Date.now();
             const pageMap = new Map();
@@ -586,10 +500,7 @@ router.get('/', validateRequest({ query: searchQuerySchema }), async (req, res) 
                 }
             }
 
-            searchLog.dual_overlap_count = overlapCount;
-            searchLog.merged_candidates_count = pageMap.size;
-            searchLog.duration_merge_ms = Date.now() - mergeStart;
-
+                                    
             let matchedPages = Array.from(pageMap.values()).sort((a, b) => b.similarity - a.similarity);
 
             // Apply filters
@@ -626,10 +537,7 @@ router.get('/', validateRequest({ query: searchQuerySchema }), async (req, res) 
             const candidates = filteredPages.slice(0, candidatesQueryLimit);
 
             if (!candidates.length) {
-                searchLog.final_results_count = 0;
-                searchLog.duration_total_ms = Date.now() - totalStart;
-                insertSearchLog(searchLog);
-                return res.json({ results: [], totalCount: 0 });
+                                                                return res.json({ results: [], totalCount: 0 });
             }
 
             if (!shouldRerank) {
@@ -678,8 +586,7 @@ router.get('/', validateRequest({ query: searchQuerySchema }), async (req, res) 
                     console.error(`Rerank error, falling back to vector similarity:`, err);
                     scores = candidates.map(c => ({ i: c.id, s: c.similarity * 100 }));
                 }
-                searchLog.duration_rerank_ms = Date.now() - rerankStart;
-
+                
                 finalResults = candidates.map(c => {
                     const aiData = scores.find(s => s.i === c.id);
                     const finalScore = aiData ? aiData.s : 0;
@@ -708,14 +615,9 @@ router.get('/', validateRequest({ query: searchQuerySchema }), async (req, res) 
                 totalCount = finalResults.length;
             }
 
-            searchLog.final_results_count = finalResults.length;
-            if (finalResults.length > 0) {
-                searchLog.top_result_id = finalResults[0].page_id;
-                searchLog.top_result_score = finalResults[0].scores.ai || finalResults[0].scores.vector;
-            }
-            searchLog.duration_total_ms = Date.now() - totalStart;
-            insertSearchLog(searchLog);
-
+                        if (finalResults.length > 0) {
+                                            }
+                        
         } else {
             const { data, error } = await supabaseAdmin.rpc('search_bulles', {
                 search_term: q,
@@ -812,10 +714,20 @@ router.get('/', validateRequest({ query: searchQuerySchema }), async (req, res) 
 
     } catch (error) {
         console.error("Erreur moteur de recherche:", error);
-        searchLog.error = error.message;
-        searchLog.duration_total_ms = Date.now() - totalStart;
-        insertSearchLog(searchLog);
-        res.status(500).json({ error: "Erreur moteur de recherche" });
+                                res.status(500).json({ error: "Erreur moteur de recherche" });
+    }
+});
+
+
+        if (error) {
+            console.error("Feedback insert error:", error);
+            return res.status(500).json({ error: error.message });
+        }
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error("Feedback server error:", err);
+        res.status(500).json({ error: "Internal Error" });
     }
 });
 

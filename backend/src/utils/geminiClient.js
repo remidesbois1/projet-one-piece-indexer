@@ -1,5 +1,6 @@
 const axios = require('axios');
 const { readPageImage } = require('./pageStorage');
+const { logger } = require('./logger');
 
 const GEMINI_EMBED_MODEL = 'gemini-embedding-2-preview';
 
@@ -17,7 +18,9 @@ async function generateGeminiEmbedding(text, taskType = "RETRIEVAL_QUERY", image
             const imgBase64 = buffer.toString('base64');
             parts.push({ inlineData: { mimeType: contentType, data: imgBase64 } });
         } catch (imgError) {
-            console.warn(`[Gemini Embed] Image skipped (${imageUrl}): ${imgError.message}`);
+            logger.warn('gemini_embedding_image_skipped', {
+                error_code: imgError?.code || imgError?.name || 'IMAGE_READ_FAILED',
+            });
         }
     }
 

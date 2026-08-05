@@ -1,10 +1,12 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const sharp = require('sharp');
 
 const {
   BubbleGeometryError,
   assertBubbleWithinImage,
   clearBubbleGeometryCache,
+  readSafePageMetadata,
   validateBubbleGeometryForPage,
 } = require('../src/utils/bubbleGeometry');
 
@@ -112,4 +114,26 @@ test('concurrent geometry checks share the same metadata read', async () => {
     validateBubbleGeometryForPage(7, { x: 20, y: 20, w: 10, h: 10 }, options),
   ]);
   assert.equal(reads, 1);
+});
+
+test('page-aware geometry validates against EXIF-oriented display dimensions', async () => {
+  clearBubbleGeometryCache();
+  const input = await sharp({
+    create: { width: 30, height: 20, channels: 3, background: '#abcdef' },
+  }).jpeg().withMetadata({ orientation: 6 }).toBuffer();
+
+  await validateBubbleGeometryForPage(43, { x: 0, y: 0, w: 20, h: 30 }, {
+    supabaseClient: pageClient({ data: { url_image: 'r2://private/oriented.jpg' }, error: null }),
+    readImage: async () => ({ buffer: input }),
+  });
+});
+
+test('page metadata pixel bombs retain a bounded 413 response', async () => {
+  const input = await sharp({
+    create: { width: 11, height: 10, channels: 3, background: '#abcdef' },
+  }).png().toBuffer();
+  await assert.rejects(
+    () => readSafePageMetadata(input, { maxPixels: 100 }),
+    (error) => error instanceof BubbleGeometryError && error.statusCode === 413
+  );
 });

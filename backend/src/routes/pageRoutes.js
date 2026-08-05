@@ -54,9 +54,16 @@ function isUnsupportedPageImageError(error) {
     return error instanceof UnsupportedPageImageError || error?.code === 'UNSUPPORTED_PAGE_IMAGE';
 }
 
+function isExpectedPageStorageError(error) {
+    return error?.code === 'PAGE_IMAGE_TOO_LARGE' || error?.code === 'PAGE_IMAGE_TIMEOUT';
+}
+
 function sendPrivateImageError(res, error, fallbackMessage) {
     if (isUnsupportedPageImageError(error)) {
         return res.status(415).json({ error: error.message });
+    }
+    if (isExpectedPageStorageError(error)) {
+        return res.status(error.statusCode).json({ error: error.message });
     }
     return res.status(500).json({ error: fallbackMessage });
 }
@@ -75,7 +82,6 @@ function createPageRouter({
 const router = express.Router();
 
 router.get('/', optionalAuth, async (req, res) => {
-    console.log('GET pages', req.query);
     const { id_chapitre } = req.query;
     if (!id_chapitre) return res.status(400).json({ error: "id_chapitre manquant" });
 
@@ -247,7 +253,9 @@ router.get('/:id/image/original', privateImageHeaders, requireAuth, async (req, 
             res.destroy(error);
             return undefined;
         }
-        if (!isUnsupportedPageImageError(error)) console.error("Erreur service image originale:", error);
+        if (!isUnsupportedPageImageError(error) && !isExpectedPageStorageError(error)) {
+            console.error("Erreur service image originale:", error);
+        }
         return sendPrivateImageError(res, error, "Erreur lors du chargement de l'image");
     }
 });
@@ -271,7 +279,9 @@ router.get('/:id/image/original/thumbnail', privateImageHeaders, requireAuth, as
         res.set('Content-Type', 'image/avif');
         res.send(thumbnailBuffer);
     } catch (error) {
-        if (!isUnsupportedPageImageError(error)) console.error("Erreur thumbnail image originale:", error);
+        if (!isUnsupportedPageImageError(error) && !isExpectedPageStorageError(error)) {
+            console.error("Erreur thumbnail image originale:", error);
+        }
         sendPrivateImageError(res, error, "Erreur lors du traitement de l'image");
     }
 });

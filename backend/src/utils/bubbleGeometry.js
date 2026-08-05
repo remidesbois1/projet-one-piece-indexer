@@ -1,11 +1,36 @@
 const sharp = require('sharp');
+const inputLimits = require('@poneglyph/shared/input-limits.json');
 const { supabaseAdmin } = require('../config/supabaseClient');
+const { getOrientedImageDimensions } = require('./pageImageDimensions');
+const { requirePageImageContentType } = require('./pageImageMime');
 const { readPageImage } = require('./pageStorage');
 
 const PAGE_DIMENSIONS_CACHE_TTL_MS = 30 * 60 * 1_000;
 const MAX_CACHED_PAGE_DIMENSIONS = 500;
 const pageDimensionsCache = new Map();
 const pendingPageDimensions = new Map();
+
+async function readSafePageMetadata(buffer, { maxPixels = inputLimits.chapterImagePixels } = {}) {
+  if (!Number.isSafeInteger(maxPixels) || maxPixels < 1 || maxPixels > inputLimits.chapterImagePixels) {
+    throw new TypeError(`maxPixels must be an integer between 1 and ${inputLimits.chapterImagePixels}`);
+  }
+  requirePageImageContentType(buffer);
+  const image = sharp(buffer, {
+    failOn: 'error',
+    limitInputPixels: maxPixels,
+    sequentialRead: true,
+  });
+  try {
+    return await image.metadata();
+  } catch (error) {
+    if (/exceeds pixel limit/i.test(String(error?.message || ''))) {
+      throw new BubbleGeometryError('L’image source dépasse la limite de pixels.', 413);
+    }
+    throw error;
+  } finally {
+    image.destroy();
+  }
+}
 
 class BubbleGeometryError extends Error {
   constructor(message, statusCode = 400) {
@@ -37,7 +62,7 @@ function assertBubbleWithinImage(geometry, imageSize) {
 async function validateBubbleGeometryForPage(pageId, geometry, {
   supabaseClient = supabaseAdmin,
   readImage = readPageImage,
-  readMetadata = async (buffer) => sharp(buffer).metadata(),
+  readMetadata = readSafePageMetadata,
 } = {}) {
   const { data: page, error } = await supabaseClient
     .from('pages')
@@ -61,17 +86,17 @@ async function validateBubbleGeometryForPage(pageId, geometry, {
       request = (async () => {
         const { buffer } = await readImage(page.url_image);
         const nextMetadata = await readMetadata(buffer);
-        if (nextMetadata?.width && nextMetadata?.height) {
+        const nextDimensions = getOrientedImageDimensions(nextMetadata);
+        if (nextDimensions) {
           pageDimensionsCache.set(cacheKey, {
-            width: nextMetadata.width,
-            height: nextMetadata.height,
+            ...nextDimensions,
             expiresAt: Date.now() + PAGE_DIMENSIONS_CACHE_TTL_MS,
           });
           while (pageDimensionsCache.size > MAX_CACHED_PAGE_DIMENSIONS) {
             pageDimensionsCache.delete(pageDimensionsCache.keys().next().value);
           }
         }
-        return nextMetadata;
+        return nextDimensions;
       })().finally(() => pendingPageDimensions.delete(cacheKey));
       pendingPageDimensions.set(cacheKey, request);
     }
@@ -96,5 +121,6 @@ module.exports = {
   BubbleGeometryError,
   assertBubbleWithinImage,
   clearBubbleGeometryCache,
+  readSafePageMetadata,
   validateBubbleGeometryForPage,
 };

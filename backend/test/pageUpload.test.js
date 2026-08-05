@@ -9,6 +9,7 @@ const {
   isPageImageValidationError,
   preparePageUpload,
 } = require('../src/services/pageUpload');
+const inputLimits = require('@poneglyph/shared/input-limits.json');
 
 async function withTempDirectory(callback) {
   const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'poneglyph-page-upload-'));
@@ -71,7 +72,35 @@ test('page uploads fail closed if inspection and final bytes disagree', async ()
     () => preparePageUpload('unused', {
       inspect: async () => ({ format: 'jpeg', contentType: 'image/jpeg' }),
       readFile: async () => png,
+      stat: async () => ({ size: png.length }),
     }),
     (error) => error.code === 'UNSUPPORTED_PAGE_IMAGE' && error.statusCode === 415
+  );
+});
+
+test('page uploads reject oversized files before inspection or allocation', async () => {
+  let inspected = false;
+  let read = false;
+  await assert.rejects(
+    () => preparePageUpload('oversized', {
+      stat: async () => ({ size: inputLimits.pageImageBytes + 1 }),
+      inspect: async () => { inspected = true; },
+      readFile: async () => { read = true; return Buffer.alloc(0); },
+    }),
+    (error) => error.code === 'PAGE_IMAGE_TOO_LARGE' && error.statusCode === 413
+  );
+  assert.equal(inspected, false);
+  assert.equal(read, false);
+});
+
+test('page uploads recheck bytes after inspection to close file replacement races', async () => {
+  await assert.rejects(
+    () => preparePageUpload('changed', {
+      maxBytes: 8,
+      stat: async () => ({ size: 8 }),
+      inspect: async () => ({ format: 'png', contentType: 'image/png' }),
+      readFile: async () => Buffer.alloc(9),
+    }),
+    (error) => error.code === 'PAGE_IMAGE_TOO_LARGE' && error.statusCode === 413
   );
 });

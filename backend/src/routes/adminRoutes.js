@@ -7,15 +7,22 @@ const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
 const mime = require('mime-types');
+const inputLimits = require('@poneglyph/shared/input-limits.json');
 
 const { supabaseAdmin } = require('../config/supabaseClient');
 const { logBubbleHistory } = require('../utils/auditLogger');
+const { clearBubbleGeometryCache } = require('../utils/bubbleGeometry');
 const { generateGeminiEmbedding } = require('../utils/geminiClient');
 const { generateVoyageEmbedding } = require('../utils/voyageClient');
 const { generateF2llmEmbedding } = require('../utils/f2llmClient');
 const { buildPageEmbeddingText } = require('../utils/pageEmbeddingText');
 const { cancelModalCall, submitTrainingJob } = require('../utils/modalTrainingLauncher');
-const { createPageStorageRef, getPrivatePagesBucketName } = require('../utils/pageStorage');
+const {
+  PageStorageError,
+  createPageStorageRef,
+  getPrivatePagesBucketName,
+  normalizePageStorageKey,
+} = require('../utils/pageStorage');
 const { getPageImagePath } = require('../utils/publicMedia');
 const { isPageImageValidationError, preparePageUpload } = require('../services/pageUpload');
 const { chapterUploadBodySchema, validateRequest } = require('../validation/requestSchemas');
@@ -32,6 +39,7 @@ if (process.env.NODE_ENV !== 'production') {
 const r2Config = {
   region: 'auto',
   endpoint: process.env.R2_ENDPOINT,
+  forcePathStyle: true,
   credentials: (process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY) ? {
     accessKeyId: process.env.R2_ACCESS_KEY_ID,
     secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
@@ -63,6 +71,30 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage: storage });
+const pageUpload = multer({
+  storage: storage,
+  limits: {
+    fileSize: inputLimits.pageImageBytes,
+    files: 1,
+    fields: 1,
+    parts: 2,
+    fieldNameSize: 100,
+    fieldSize: 2048,
+  },
+});
+
+function uploadSinglePage(req, res, next) {
+  pageUpload.single('file')(req, res, (error) => {
+    if (!error) return next();
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ error: 'L’image de page dépasse la taille maximale autorisée.' });
+    }
+    if (String(error.code || '').startsWith('LIMIT_')) {
+      return res.status(400).json({ error: 'Le formulaire d’upload de page est invalide.' });
+    }
+    return next(error);
+  });
+}
 const chapterImportHandlers = createChapterImportHandlers();
 
 const TRAINING_JOB_CONFIGS = {
@@ -579,7 +611,7 @@ router.get('/ai-models/available', authMiddleware, roleCheck(['Admin']), async (
 
 
 
-router.post('/upload/page', authMiddleware, roleCheck(['Admin']), upload.single('file'), async (req, res) => {
+router.post('/upload/page', authMiddleware, roleCheck(['Admin']), uploadSinglePage, async (req, res) => {
   const { key } = req.body;
   const file = req.file;
 
@@ -589,20 +621,28 @@ router.post('/upload/page', authMiddleware, roleCheck(['Admin']), upload.single(
   }
 
   try {
+    const normalizedKey = normalizePageStorageKey(key);
     const { buffer: fileBuffer, contentType } = await preparePageUpload(file.path);
 
     const pagesBucketName = getPrivatePagesBucketName();
     await s3Client.send(new PutObjectCommand({
       Bucket: pagesBucketName,
-      Key: key,
+      Key: normalizedKey,
       Body: fileBuffer,
       ContentType: contentType,
       CacheControl: 'private, no-store',
     }));
+    clearBubbleGeometryCache();
 
-    const pageStorageRef = createPageStorageRef(pagesBucketName, key);
+    const pageStorageRef = createPageStorageRef(pagesBucketName, normalizedKey);
     res.json({ url: pageStorageRef });
   } catch (error) {
+    if (error instanceof PageStorageError && error.code === 'INVALID_PAGE_KEY') {
+      return res.status(400).json({ error: 'La clé de stockage de la page est invalide.' });
+    }
+    if (error?.code === 'PAGE_IMAGE_TOO_LARGE') {
+      return res.status(413).json({ error: 'L’image de page dépasse la taille maximale autorisée.' });
+    }
     if (isPageImageValidationError(error)) {
       return res.status(415).json({ error: "Le fichier doit être une image JPEG, PNG, WebP ou AVIF valide." });
     }

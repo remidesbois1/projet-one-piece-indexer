@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { logger } = require('./logger');
 
 const VOYAGE_API_URL_EMBED = 'https://api.voyageai.com/v1/embeddings';
 const VOYAGE_API_URL_RERANK = 'https://api.voyageai.com/v1/rerank';
@@ -39,7 +40,9 @@ async function generateVoyageEmbedding(text, inputType = null) {
             throw new Error('No embedding returned from Voyage AI.');
         }
     } catch (error) {
-        console.error('Error generating Voyage embedding:', error.response ? error.response.data : error.message);
+        logger.error('voyage_embedding_failed', {
+            error_code: error?.code || error?.response?.status || error?.name || 'VOYAGE_EMBEDDING_FAILED',
+        });
         throw error;
     }
 }
@@ -82,7 +85,9 @@ async function rerankVoyage(query, documents) {
             throw new Error('No reranking results returned from Voyage AI.');
         }
     } catch (error) {
-        console.error('Error reranking with Voyage:', error.response ? error.response.data : error.message);
+        logger.error('voyage_reranking_failed', {
+            error_code: error?.code || error?.response?.status || error?.name || 'VOYAGE_RERANK_FAILED',
+        });
         throw error;
     }
 }
