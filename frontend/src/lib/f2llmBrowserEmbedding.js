@@ -1,6 +1,16 @@
+import { createAbortError } from './searchRequestLifecycle';
+
 let worker = null;
 let nextRequestId = 1;
 const pendingRequests = new Map();
+
+function takePendingRequest(requestId) {
+    const request = pendingRequests.get(requestId);
+    if (!request) return null;
+    pendingRequests.delete(requestId);
+    request.cleanup?.();
+    return request;
+}
 
 function ensureWorker() {
     if (typeof window === 'undefined') {
@@ -23,34 +33,48 @@ function ensureWorker() {
 
         if (!requestId || !pendingRequests.has(requestId)) return;
 
-        const request = pendingRequests.get(requestId);
+        const request = takePendingRequest(requestId);
         if (status === 'complete' || status === 'ready') {
-            pendingRequests.delete(requestId);
             request.resolve(embedding);
         } else if (status === 'error') {
-            pendingRequests.delete(requestId);
             request.reject(new Error(error || 'Erreur F2LLM'));
         }
     });
 
     worker.addEventListener('error', (event) => {
-        for (const request of pendingRequests.values()) {
+        for (const requestId of [...pendingRequests.keys()]) {
+            const request = takePendingRequest(requestId);
             request.reject(new Error(event.message || 'Erreur worker F2LLM'));
         }
-        pendingRequests.clear();
         worker = null;
     });
 
     return worker;
 }
 
-export function generateF2llmBrowserQueryEmbedding(text) {
+export function generateF2llmBrowserQueryEmbedding(text, { signal } = {}) {
+    if (signal?.aborted) return Promise.reject(createAbortError());
+
     const currentWorker = ensureWorker();
     const requestId = nextRequestId;
     nextRequestId += 1;
 
     return new Promise((resolve, reject) => {
-        pendingRequests.set(requestId, { resolve, reject });
-        currentWorker.postMessage({ type: 'embed', requestId, text });
+        const handleAbort = () => {
+            const request = takePendingRequest(requestId);
+            if (!request) return;
+            currentWorker.postMessage({ type: 'cancel', requestId });
+            request.reject(createAbortError());
+        };
+        const cleanup = () => signal?.removeEventListener('abort', handleAbort);
+
+        pendingRequests.set(requestId, { resolve, reject, cleanup });
+        signal?.addEventListener('abort', handleAbort, { once: true });
+
+        try {
+            currentWorker.postMessage({ type: 'embed', requestId, text });
+        } catch (error) {
+            takePendingRequest(requestId)?.reject(error);
+        }
     });
 }

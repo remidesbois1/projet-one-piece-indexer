@@ -31,6 +31,7 @@ const IMAGE_FORMATS = new Map([
   ['webp', { extension: 'webp', contentType: 'image/webp' }],
   ['avif', { extension: 'avif', contentType: 'image/avif' }],
 ]);
+const AVIF_IMAGE_TYPE = IMAGE_FORMATS.get('avif');
 const naturalPathCollator = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
 
 class ChapterImportError extends Error {
@@ -234,7 +235,9 @@ async function inspectImageFile(filePath, { maxPixels = DEFAULT_LIMITS.imagePixe
     image?.destroy();
   }
 
-  const imageType = IMAGE_FORMATS.get(metadata.format);
+  const imageType = metadata.format === 'heif' && metadata.compression === 'av1'
+    ? AVIF_IMAGE_TYPE
+    : IMAGE_FORMATS.get(metadata.format);
   const pixels = Number(metadata.width) * Number(metadata.height);
   if (!imageType || !Number.isSafeInteger(pixels) || pixels < 1 || pixels > maxPixels) {
     throw new ChapterImportError('UNSUPPORTED_IMAGE', 'Seules les images JPEG, PNG, WebP et AVIF bornées sont acceptées.');

@@ -13,6 +13,8 @@ let model = null;
 let tokenizer = null;
 let device = null;
 let loadingPromise = null;
+const activeRequestIds = new Set();
+const cancelledRequestIds = new Set();
 
 env.localModelPath = `${self.location.origin}/`;
 
@@ -124,6 +126,11 @@ async function embedQuery(text) {
 self.addEventListener('message', async (event) => {
     const { type, requestId, text } = event.data || {};
 
+    if (type === 'cancel') {
+        if (activeRequestIds.has(requestId)) cancelledRequestIds.add(requestId);
+        return;
+    }
+
     try {
         if (type === 'init') {
             await ensureLoaded();
@@ -136,11 +143,19 @@ self.addEventListener('message', async (event) => {
                 throw new Error('Recherche trop courte');
             }
 
+            activeRequestIds.add(requestId);
             const embedding = await embedQuery(text.trim());
+            if (cancelledRequestIds.has(requestId)) return;
             self.postMessage({ status: 'complete', requestId, embedding, device });
         }
     } catch (err) {
+        if (cancelledRequestIds.has(requestId)) return;
         const error = err instanceof Error ? err.message : String(err);
         self.postMessage({ status: 'error', requestId, error });
+    } finally {
+        if (type === 'embed') {
+            activeRequestIds.delete(requestId);
+            cancelledRequestIds.delete(requestId);
+        }
     }
 });

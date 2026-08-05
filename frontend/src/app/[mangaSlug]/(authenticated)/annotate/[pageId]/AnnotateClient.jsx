@@ -22,8 +22,9 @@ import { canCreateBubble, canEditBubble, canReorderBubbles } from '@/lib/bubbleP
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { ArrowLeft, Send, X, Shield, FileText, Loader2 } from "lucide-react";
+import { AlertCircle, ArrowLeft, Send, X, Shield, FileText, Loader2, RefreshCcw } from "lucide-react";
 import { toast } from "sonner";
+import { Skeleton } from "@/components/ui/skeleton";
 import AnnotateLeftSidebar from '@/components/AnnotateLeftSidebar';
 import AnnotateCanvas from '@/components/AnnotateCanvas';
 import AnnotateAnnotationSidebar from '@/components/AnnotateAnnotationSidebar';
@@ -39,6 +40,13 @@ const PAGE_STATUSES = [
 
 const PREFETCH_BEHIND_COUNT = 1;
 const PREFETCH_AHEAD_COUNT = 2;
+
+const RESOURCE_STATUS = Object.freeze({
+    IDLE: 'idle',
+    LOADING: 'loading',
+    READY: 'ready',
+    ERROR: 'error',
+});
 
 function normalizePageId(id) {
     return id == null ? null : String(id);
@@ -84,6 +92,46 @@ async function runModalPoneglyph(imageBlob) {
     return response.json();
 }
 
+function AnnotationLoadingState({ message = 'Chargement de la page…' }) {
+    return (
+        <div className="-mx-4 -my-7 flex h-[calc(100%+3.5rem)] min-h-[60vh] overflow-hidden bg-[#030a13] sm:-mx-8 lg:-mx-10" role="status" aria-live="polite">
+            <div className="hidden w-[280px] shrink-0 space-y-5 border-r border-white/10 bg-[#06111e] p-5 lg:block">
+                <Skeleton className="h-8 w-36 bg-white/10" />
+                <Skeleton className="h-20 w-full bg-white/10" />
+                <Skeleton className="h-40 w-full bg-white/10" />
+            </div>
+            <div className="flex min-w-0 flex-1 flex-col">
+                <div className="flex h-16 items-center justify-between border-b border-white/10 px-5">
+                    <Skeleton className="h-8 w-44 bg-white/10" />
+                    <span className="flex items-center gap-2 text-sm font-semibold text-slate-300">
+                        <Loader2 className="h-4 w-4 animate-spin text-[#8dbbff]" />
+                        {message}
+                    </span>
+                </div>
+                <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+                    <Skeleton className="h-full min-h-[360px] w-full max-w-[760px] bg-white/10" />
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function AnnotationErrorState({ title, message, onRetry }) {
+    return (
+        <div className="flex min-h-[60vh] items-center justify-center px-4" role="alert">
+            <div className="max-w-md rounded-2xl border border-red-400/25 bg-red-950/20 p-6 text-center text-slate-100">
+                <AlertCircle className="mx-auto h-8 w-8 text-red-300" />
+                <h2 className="mt-3 text-lg font-bold">{title}</h2>
+                <p className="mt-2 text-sm text-slate-300">{message}</p>
+                <Button type="button" variant="outline" onClick={onRetry} className="mt-5 border-white/15 bg-white/10 text-white hover:bg-white/15 hover:text-white">
+                    <RefreshCcw className="mr-2 h-4 w-4" />
+                    Réessayer
+                </Button>
+            </div>
+        </div>
+    );
+}
+
 export default function AnnotatePage() {
     const { user, session, isGuest, role } = useAuth();
     const params = useParams();
@@ -96,8 +144,15 @@ export default function AnnotatePage() {
     const { mangaSlug, currentManga } = useManga();
 
     const [page, setPage] = useState(null);
+    const [pageLoadStatus, setPageLoadStatus] = useState(RESOURCE_STATUS.LOADING);
+    const [pageLoadError, setPageLoadError] = useState(null);
+    const [pageRetryGeneration, setPageRetryGeneration] = useState(0);
     const [existingBubbles, setExistingBubbles] = useState([]);
-    const [error, setError] = useState(null);
+    const [bubblesLoadStatus, setBubblesLoadStatus] = useState(RESOURCE_STATUS.LOADING);
+    const [bubblesLoadError, setBubblesLoadError] = useState(null);
+    const [imageLoadStatus, setImageLoadStatus] = useState(RESOURCE_STATUS.LOADING);
+    const [imageLoadError, setImageLoadError] = useState(null);
+    const [imageRetryGeneration, setImageRetryGeneration] = useState(0);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isUpdatingPageStatus, setIsUpdatingPageStatus] = useState(false);
     const [loadingText, setLoadingText] = useState("Analyse en cours...");
@@ -114,7 +169,8 @@ export default function AnnotatePage() {
     const [showApiKeyModal, setShowApiKeyModal] = useState(false);
     const [showDescModal, setShowDescModal] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const canEdit = canCreateBubble({ page, user, role, isGuest });
+    const canEdit = bubblesLoadStatus === RESOURCE_STATUS.READY
+        && canCreateBubble({ page, user, role, isGuest });
 
     const containerRef = useRef(null);
     const imageRef = useRef(null);
@@ -140,15 +196,29 @@ export default function AnnotatePage() {
     const bubbleCacheRef = useRef(new Map());
     const imageBlobCacheRef = useRef(new Map());
 
+    const beginPageTransition = useCallback(() => {
+        setPage(null);
+        setExistingBubbles([]);
+        setOriginalImageUrl(null);
+        setPageLoadStatus(RESOURCE_STATUS.LOADING);
+        setPageLoadError(null);
+        setBubblesLoadStatus(RESOURCE_STATUS.LOADING);
+        setBubblesLoadError(null);
+        setImageLoadStatus(RESOURCE_STATUS.LOADING);
+        setImageLoadError(null);
+    }, []);
+
     useEffect(() => {
         imageBlobCacheRef.current.clear();
     }, [session?.access_token]);
 
     useEffect(() => {
         if (paramsPageId && String(paramsPageId) !== String(pageIdRef.current)) {
+            navGenerationRef.current += 1;
+            beginPageTransition();
             setPageId(paramsPageId);
         }
-    }, [paramsPageId]);
+    }, [beginPageTransition, paramsPageId]);
 
     useEffect(() => {
         if (!detectionDebugEnabled) {
@@ -162,6 +232,7 @@ export default function AnnotatePage() {
             const urlPageId = pathParts[pathParts.length - 1];
             if (urlPageId && String(urlPageId) !== String(pageIdRef.current)) {
                 navGenerationRef.current += 1;
+                beginPageTransition();
                 setPageId(urlPageId);
                 setImageDimensions(null);
                 setPendingAnnotation(null);
@@ -169,15 +240,15 @@ export default function AnnotatePage() {
                 setIsModalOpen(false);
                 setDebugImageUrl(null);
                 setDetectionDebugData(null);
-                setError(null);
             }
         };
         window.addEventListener('popstate', handlePopState);
         return () => window.removeEventListener('popstate', handlePopState);
-    }, []);
+    }, [beginPageTransition]);
 
     const navigateToPage = useCallback((newPageId) => {
         navGenerationRef.current += 1;
+        beginPageTransition();
         setPageId(newPageId);
         setImageDimensions(null);
         window.history.pushState({}, '', `/${mangaSlug}/annotate/${newPageId}`);
@@ -186,7 +257,6 @@ export default function AnnotatePage() {
         setIsModalOpen(false);
         setDebugImageUrl(null);
         setDetectionDebugData(null);
-        setError(null);
         const pages = chapterPagesRef.current;
         if (pages.length > 0) {
             const currentIndex = pages.findIndex(p => p.id === parseInt(newPageId));
@@ -195,7 +265,7 @@ export default function AnnotatePage() {
                 next: currentIndex < pages.length - 1 ? pages[currentIndex + 1] : null
             });
         }
-    }, [mangaSlug]);
+    }, [beginPageTransition, mangaSlug]);
 
     const cacheBubblesForPage = useCallback((targetPageId, bubbles) => {
         const cacheKey = normalizePageId(targetPageId);
@@ -230,6 +300,8 @@ export default function AnnotatePage() {
         let objectUrl = null;
         setOriginalImageUrl(null);
         setImageDimensions(null);
+        setImageLoadError(null);
+        setImageLoadStatus(RESOURCE_STATUS.LOADING);
 
         if (!pageId || !session?.access_token) return undefined;
 
@@ -240,14 +312,25 @@ export default function AnnotatePage() {
                 setOriginalImageUrl(objectUrl);
             })
             .catch((imageError) => {
-                if (active) setError(imageError.message || "Impossible de charger l'image originale.");
+                if (!active) return;
+                setImageLoadStatus(RESOURCE_STATUS.ERROR);
+                setImageLoadError(imageError.message || "Impossible de charger l'image originale.");
             });
 
         return () => {
             active = false;
             if (objectUrl) URL.revokeObjectURL(objectUrl);
         };
-    }, [getOriginalPageBlob, pageId, session?.access_token]);
+    }, [getOriginalPageBlob, imageRetryGeneration, pageId, session?.access_token]);
+
+    const retryImageLoad = useCallback(() => {
+        const token = session?.access_token;
+        const cacheKey = `${normalizePageId(pageId)}:${token || 'none'}`;
+        imageBlobCacheRef.current.delete(cacheKey);
+        setImageLoadError(null);
+        setImageLoadStatus(RESOURCE_STATUS.LOADING);
+        setImageRetryGeneration(generation => generation + 1);
+    }, [pageId, session?.access_token]);
 
     const prefetchAnnotatePage = useCallback((targetPage) => {
         const targetPageId = normalizePageId(targetPage?.id);
@@ -356,10 +439,13 @@ export default function AnnotatePage() {
         pageStatus: page?.statut, isSubmitting, showApiKeyModal, showDescModal
     });
 
-    const fetchBubbles = useCallback(() => {
+    const fetchBubbles = useCallback(({ force = false } = {}) => {
         if (pageId && (session?.access_token || isGuest)) {
             const gen = navGenerationRef.current;
             const cacheKey = normalizePageId(pageId);
+            if (force && cacheKey) bubbleCacheRef.current.delete(cacheKey);
+            setBubblesLoadStatus(RESOURCE_STATUS.LOADING);
+            setBubblesLoadError(null);
             const cachedBubbles = cacheKey ? bubbleCacheRef.current.get(cacheKey) : null;
             const bubblesRequest = cachedBubbles
                 ? Promise.resolve(cachedBubbles).catch(() => {
@@ -374,15 +460,27 @@ export default function AnnotatePage() {
                     const sortedBubbles = sortBubblesForAnnotation(unwrapApiData(response));
                     cacheBubblesForPage(pageId, sortedBubbles);
                     setExistingBubbles(sortedBubbles);
+                    setBubblesLoadStatus(RESOURCE_STATUS.READY);
                 })
-                .catch(error => console.error(error));
+                .catch(bubblesError => {
+                    if (gen !== navGenerationRef.current) return;
+                    setExistingBubbles([]);
+                    setBubblesLoadStatus(RESOURCE_STATUS.ERROR);
+                    setBubblesLoadError(bubblesError?.response?.data?.error || bubblesError?.message || 'Impossible de charger les annotations.');
+                });
         }
     }, [cacheBubblesForPage, pageId, session?.access_token, isGuest]);
+
+    const retryBubblesLoad = useCallback(() => {
+        void fetchBubbles({ force: true });
+    }, [fetchBubbles]);
 
     useEffect(() => {
         if (pageId && (session?.access_token || isGuest)) {
             const gen = navGenerationRef.current;
             const cacheKey = normalizePageId(pageId);
+            setPageLoadStatus(RESOURCE_STATUS.LOADING);
+            setPageLoadError(null);
             const cachedPage = cacheKey ? pageCacheRef.current.get(cacheKey) : null;
             const pageRequest = cachedPage
                 ? Promise.resolve(cachedPage).catch(() => {
@@ -398,6 +496,7 @@ export default function AnnotatePage() {
                     if (!pageData) throw new Error("Page non trouvée");
                     pageCacheRef.current.set(cacheKey, pageData);
                     setPage(pageData);
+                    setPageLoadStatus(RESOURCE_STATUS.READY);
                     if (pageData.id_chapitre) {
                         getPages(pageData.id_chapitre)
                             .then(pagesRes => {
@@ -409,15 +508,32 @@ export default function AnnotatePage() {
                                     prev: currentIndex > 0 ? pages[currentIndex - 1] : null,
                                     next: currentIndex < pages.length - 1 ? pages[currentIndex + 1] : null
                                 });
+                            })
+                            .catch(() => {
+                                if (gen !== navGenerationRef.current) return;
+                                setChapterPages([]);
+                                setNavContext({ prev: null, next: null });
                             });
                     }
                 })
-                .catch(() => {
-                    if (gen === navGenerationRef.current) setError("Impossible de charger la page.");
+                .catch((pageError) => {
+                    if (gen !== navGenerationRef.current) return;
+                    setPage(null);
+                    setPageLoadStatus(RESOURCE_STATUS.ERROR);
+                    setPageLoadError(pageError?.response?.data?.error || pageError?.message || "Impossible de charger la page.");
                 });
             fetchBubbles();
         }
-    }, [pageId, session?.access_token, isGuest, fetchBubbles]);
+    }, [pageId, session?.access_token, isGuest, fetchBubbles, pageRetryGeneration]);
+
+    const retryPageLoad = useCallback(() => {
+        const cacheKey = normalizePageId(pageId);
+        if (cacheKey) pageCacheRef.current.delete(cacheKey);
+        setPage(null);
+        setPageLoadError(null);
+        setPageLoadStatus(RESOURCE_STATUS.LOADING);
+        setPageRetryGeneration(generation => generation + 1);
+    }, [pageId]);
 
     useEffect(() => {
         if (!pageId || chapterPages.length === 0 || !session?.access_token) return;
@@ -535,13 +651,31 @@ export default function AnnotatePage() {
         }
     };
 
+    const commitPageUpdate = useCallback((targetPageId, nextPage) => {
+        const targetKey = normalizePageId(targetPageId);
+        if (!targetKey || !nextPage) return;
+
+        const cachedPage = pageCacheRef.current.get(targetKey);
+        const mergedPage = cachedPage ? { ...cachedPage, ...nextPage } : nextPage;
+        pageCacheRef.current.set(targetKey, mergedPage);
+        setChapterPages(previousPages => previousPages.map(chapterPage => (
+            normalizePageId(chapterPage.id) === targetKey
+                ? { ...chapterPage, ...mergedPage }
+                : chapterPage
+        )));
+
+        if (normalizePageId(pageIdRef.current) === targetKey) {
+            setPage(previousPage => previousPage ? { ...previousPage, ...mergedPage } : mergedPage);
+        }
+    }, []);
+
     const handleSubmitPage = async () => {
         if (isGuest || isMobile) return;
         if (window.confirm("Envoyer pour validation ?")) {
+            const targetPageId = pageId;
             try {
-                const response = await submitPageForReview(pageId);
-                pageCacheRef.current.set(normalizePageId(pageId), response.data);
-                setPage(response.data);
+                const response = await submitPageForReview(targetPageId);
+                commitPageUpdate(targetPageId, response.data);
                 toast.success("Page soumise pour validation !");
             } catch (error) { toast.error("Erreur soumission."); }
         }
@@ -550,13 +684,12 @@ export default function AnnotatePage() {
     const handlePageStatusChange = async (statut) => {
         if (role !== 'Admin' || !pageId || statut === page?.statut) return;
 
+        const targetPageId = pageId;
         setIsUpdatingPageStatus(true);
         try {
-            const response = await updatePageStatus(pageId, statut);
-            pageCacheRef.current.set(normalizePageId(pageId), response.data);
-            setPage(response.data);
+            const response = await updatePageStatus(targetPageId, statut);
+            commitPageUpdate(targetPageId, response.data);
             toast.success("Statut de la page mis à jour.");
-            window.location.reload();
         } catch (error) {
             toast.error("Erreur lors du changement de statut.");
         } finally {
@@ -882,15 +1015,29 @@ export default function AnnotatePage() {
         return handleOneShotPoneglyph({ preferLocal: true, localEngine: 'surya_bbox' });
     };
 
-    if (error) return <div className="p-8 text-red-500">{error}</div>;
-    if (!page) return null;
-    if (session?.access_token && !originalImageUrl) {
+    if (pageLoadStatus === RESOURCE_STATUS.ERROR) {
         return (
-            <div className="flex min-h-[60vh] items-center justify-center gap-3 text-slate-300">
-                <Loader2 className="h-5 w-5 animate-spin" />
-                Chargement sécurisé de la page...
-            </div>
+            <AnnotationErrorState
+                title="Page indisponible"
+                message={pageLoadError || 'Impossible de charger cette page.'}
+                onRetry={retryPageLoad}
+            />
         );
+    }
+    if (pageLoadStatus !== RESOURCE_STATUS.READY || !page) {
+        return <AnnotationLoadingState message="Chargement des métadonnées…" />;
+    }
+    if (imageLoadStatus === RESOURCE_STATUS.ERROR) {
+        return (
+            <AnnotationErrorState
+                title="Image indisponible"
+                message={imageLoadError || "Impossible de charger l'image de la page."}
+                onRetry={retryImageLoad}
+            />
+        );
+    }
+    if (session?.access_token && !originalImageUrl) {
+        return <AnnotationLoadingState message="Chargement sécurisé de l’image…" />;
     }
 
     return (
@@ -1023,6 +1170,24 @@ export default function AnnotatePage() {
                     </div>
                 )}
 
+                {bubblesLoadStatus === RESOURCE_STATUS.LOADING && (
+                    <div className="flex items-center justify-center gap-2 border-b border-sky-300/20 bg-sky-400/10 px-5 py-2 text-xs font-semibold text-sky-100" role="status" aria-live="polite">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Chargement des annotations…
+                    </div>
+                )}
+
+                {bubblesLoadStatus === RESOURCE_STATUS.ERROR && (
+                    <div className="flex flex-wrap items-center justify-center gap-3 border-b border-amber-300/25 bg-amber-400/10 px-5 py-2 text-xs font-semibold text-amber-100" role="alert">
+                        <AlertCircle className="h-4 w-4" />
+                        <span>{bubblesLoadError || 'Impossible de charger les annotations. Les modifications sont désactivées.'}</span>
+                        <Button type="button" variant="outline" size="sm" onClick={retryBubblesLoad} className="h-7 border-amber-200/30 bg-white/10 px-2 text-[11px] text-amber-50 hover:bg-white/15 hover:text-white">
+                            <RefreshCcw className="mr-1.5 h-3 w-3" />
+                            Réessayer
+                        </Button>
+                    </div>
+                )}
+
                 {isGuest && (
                     <div className="bg-amber-50 border-b border-amber-200 px-6 py-2 flex items-center justify-center gap-2 text-amber-800 text-sm font-medium">
                         <Shield className="h-4 w-4" />
@@ -1044,6 +1209,7 @@ export default function AnnotatePage() {
 
                 <div className="flex flex-col lg:flex-row flex-1 overflow-hidden min-h-0">
                     <AnnotateCanvas
+                        imageKey={`${normalizePageId(pageId)}:${imageRetryGeneration}`}
                         canEdit={canEdit}
                         canEditBubble={canEditExistingBubble}
                         imageDimensions={imageDimensions}
@@ -1056,6 +1222,15 @@ export default function AnnotatePage() {
                         imageUrl={session?.access_token
                             ? originalImageUrl
                             : getProxiedImageUrl(page.url_image, pageId)}
+                        isImageLoading={imageLoadStatus === RESOURCE_STATUS.LOADING}
+                        onImageLoad={() => {
+                            setImageLoadError(null);
+                            setImageLoadStatus(RESOURCE_STATUS.READY);
+                        }}
+                        onImageError={() => {
+                            setImageLoadStatus(RESOURCE_STATUS.ERROR);
+                            setImageLoadError("Impossible d’afficher l’image de la page.");
+                        }}
                         isSubmitting={isSubmitting}
                         loadingText={loadingText}
                         rectangle={rectangle}

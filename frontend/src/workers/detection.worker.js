@@ -30,6 +30,8 @@ let globalBubbleOrderSession = null;
 let globalBubbleOrderFeatureCount = null;
 let globalBubbleOrderPostprocess = null;
 let globalBubbleOrderLoadAttempted = false;
+const activeRequestIds = new Set();
+const cancelledRequestIds = new Set();
 
 // ---------------------------------------------------------------------------
 // Progress helper
@@ -140,7 +142,12 @@ async function loadOptionalGlobalBubbleOrder() {
 }
 
 self.addEventListener('message', async (event) => {
-    const { type, imageBlob, debug = false } = event.data;
+    const { type, requestId, imageBlob, debug = false } = event.data;
+
+    if (type === 'cancel') {
+        if (activeRequestIds.has(requestId)) cancelledRequestIds.add(requestId);
+        return;
+    }
 
     if (type === 'init') {
         try {
@@ -223,6 +230,7 @@ self.addEventListener('message', async (event) => {
 
     if (type === 'run-positions-only' && imageBlob) {
         if (!bubbleSession) return;
+        activeRequestIds.add(requestId);
         try {
             const bitmap = await createImageBitmap(imageBlob);
             const { height: inputH, width: inputW } = getImageInputSize(bubbleSession, 800, 800);
@@ -231,15 +239,21 @@ self.addEventListener('message', async (event) => {
             const bubbleResults = await bubbleSession.run(bubbleFeeds);
             const bubbleOutput = bubbleResults[bubbleSession.outputNames[0]].data;
             const boxes = simplifyPostProcess(bubbleOutput, scale, padX, padY);
-            self.postMessage({ status: 'complete', boxes });
+            if (cancelledRequestIds.has(requestId)) return;
+            self.postMessage({ status: 'complete', requestId, boxes });
         } catch (err) {
+            if (cancelledRequestIds.has(requestId)) return;
             console.error("[Worker] Positions-only run error:", err);
-            self.postMessage({ status: 'error', error: err.message });
+            self.postMessage({ status: 'error', requestId, error: err.message });
+        } finally {
+            activeRequestIds.delete(requestId);
+            cancelledRequestIds.delete(requestId);
         }
     }
 
     if (type === 'run' && imageBlob) {
         if (!bubbleSession) return;
+        activeRequestIds.add(requestId);
         try {
             const bitmap = await createImageBitmap(imageBlob);
 
@@ -252,8 +266,10 @@ self.addEventListener('message', async (event) => {
             const boxes = simplifyPostProcess(bubbleOutput, scale, padX, padY);
 
             if (boxes.length <= 1) {
+                if (cancelledRequestIds.has(requestId)) return;
                 self.postMessage({
                     status: 'complete',
+                    requestId,
                     boxes,
                     debug: debug ? buildReadingOrderDebug({
                         mode: 'single_or_empty',
@@ -328,8 +344,10 @@ self.addEventListener('message', async (event) => {
                 readingOrderMode = 'panel_less_fallback';
             }
 
+            if (cancelledRequestIds.has(requestId)) return;
             self.postMessage({
                 status: 'complete',
+                requestId,
                 boxes: sortedBoxes,
                 debug: debug ? buildReadingOrderDebug({
                     mode: readingOrderMode,
@@ -341,8 +359,12 @@ self.addEventListener('message', async (event) => {
                 }) : undefined
             });
         } catch (err) {
+            if (cancelledRequestIds.has(requestId)) return;
             console.error("[Worker] Run Error:", err);
-            self.postMessage({ status: 'error', error: err.message });
+            self.postMessage({ status: 'error', requestId, error: err.message });
+        } finally {
+            activeRequestIds.delete(requestId);
+            cancelledRequestIds.delete(requestId);
         }
     }
 });

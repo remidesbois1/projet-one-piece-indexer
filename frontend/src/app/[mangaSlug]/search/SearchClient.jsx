@@ -3,6 +3,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { searchBubbles, searchF2llmLocal, searchOcrPageMatch, getMetadataSuggestions, getTomes, submitSearchFeedback } from '@/lib/api';
 import { generateF2llmBrowserQueryEmbedding } from '@/lib/f2llmBrowserEmbedding';
+import {
+    createAbortError,
+    createSearchRequestLifecycle,
+    isAbortError,
+    throwIfAborted,
+} from '@/lib/searchRequestLifecycle';
 import { getProxiedImageUrl, cn } from '@/lib/utils';
 import { useDebounce } from '@/hooks/useDebounce';
 import { useDetection } from '@/context/DetectionContext';
@@ -99,20 +105,36 @@ function PoneglyphHeaderGlyphs({ count = 15, color = "#2F7AAF" }) {
     );
 }
 
-const waitForCondition = (predicate, timeoutMs, errorMessage) => {
+const waitForCondition = (predicate, timeoutMs, errorMessage, signal) => {
     const started = Date.now();
     return new Promise((resolve, reject) => {
+        let timer = null;
+        const cleanup = () => {
+            if (timer !== null) window.clearTimeout(timer);
+            signal?.removeEventListener('abort', handleAbort);
+        };
+        const handleAbort = () => {
+            cleanup();
+            reject(createAbortError());
+        };
         const tick = () => {
+            if (signal?.aborted) {
+                handleAbort();
+                return;
+            }
             if (predicate()) {
+                cleanup();
                 resolve();
                 return;
             }
             if (Date.now() - started >= timeoutMs) {
+                cleanup();
                 reject(new Error(errorMessage));
                 return;
             }
-            window.setTimeout(tick, 100);
+            timer = window.setTimeout(tick, 100);
         };
+        signal?.addEventListener('abort', handleAbort, { once: true });
         tick();
     });
 };
@@ -235,7 +257,10 @@ export default function SearchPage() {
     const [tomes, setTomes] = useState([]);
     const [charPopoverOpen, setCharPopoverOpen] = useState(false);
 
-    const abortControllerRef = useRef(null);
+    const searchLifecycleRef = useRef(null);
+    if (!searchLifecycleRef.current) {
+        searchLifecycleRef.current = createSearchRequestLifecycle();
+    }
     const inputRef = useRef(null);
     const fileInputRef = useRef(null);
     const isFirstRun = useRef(true);
@@ -243,6 +268,24 @@ export default function SearchPage() {
     const ocrModelStatusRef = useRef(ocrModelStatus);
     const activeOcrModelKeyRef = useRef(activeOcrModelKey);
     const ocrWorkerRef = useRef(ocrWorker);
+    const activeLocalSearchRequestIdRef = useRef(null);
+
+    const invalidateActiveSearch = useCallback(() => {
+        searchLifecycleRef.current.invalidate();
+        activeLocalSearchRequestIdRef.current = null;
+        setIsLoading(false);
+    }, []);
+
+    const clearSearchResults = useCallback(() => {
+        setResults([]);
+        setTotalCount(0);
+        setHasMore(false);
+    }, []);
+
+    useEffect(() => () => {
+        searchLifecycleRef.current.invalidate();
+        activeLocalSearchRequestIdRef.current = null;
+    }, [mangaSlug]);
 
     useEffect(() => {
         detectionStatusRef.current = detectionStatus;
@@ -279,6 +322,8 @@ export default function SearchPage() {
 
     useEffect(() => {
         const handleProgress = (event) => {
+            const requestId = activeLocalSearchRequestIdRef.current;
+            if (!requestId || !searchLifecycleRef.current.isCurrent(requestId)) return;
             const progress = Math.round(event.detail?.progress || 0);
             const file = event.detail?.file || '';
             setLocalModelStatus(`F2LLM ${progress}% ${file ? file.split('/').pop() : ''}`.trim());
@@ -290,21 +335,26 @@ export default function SearchPage() {
 
     useEffect(() => {
         if (inputRef.current) inputRef.current.focus();
+        const controller = new AbortController();
 
         const fetchMetadata = async () => {
             try {
                 const [metadataRes, tomesRes] = await Promise.all([
-                    getMetadataSuggestions(mangaSlug),
-                    getTomes(mangaSlug)
+                    getMetadataSuggestions(mangaSlug, { signal: controller.signal }),
+                    getTomes(mangaSlug, { signal: controller.signal })
                 ]);
+                if (controller.signal.aborted) return;
                 setCharacterSuggestions(metadataRes.data.characters || []);
                 setArcSuggestions(metadataRes.data.arcs || []);
                 setTomes(tomesRes.data || []);
             } catch (err) {
-                console.error('Erreur chargement metadata:', err);
+                if (!isAbortError(err, controller.signal)) {
+                    console.error('Erreur chargement metadata:', err);
+                }
             }
         };
         fetchMetadata();
+        return () => controller.abort();
     }, [mangaSlug]);
 
     useEffect(() => {
@@ -320,8 +370,11 @@ export default function SearchPage() {
             setPage(1);
             fetchResults(debouncedQuery, 1, true);
         } else {
+            searchLifecycleRef.current.invalidate();
+            setIsLoading(false);
             setResults([]);
             setTotalCount(0);
+            setHasMore(false);
         }
     }, [debouncedQuery, useSemantic, useOcrSearch, selectedCharacters, selectedArc, selectedTome]);
 
@@ -339,34 +392,46 @@ export default function SearchPage() {
         })
         .filter(Boolean);
 
-    const ensureOneShotReady = async () => {
+    const ensureOneShotReady = async (request) => {
+        throwIfAborted(request.signal);
         if (detectionStatusRef.current === 'ready') return;
-        setOcrStatus("Chargement One-Shot...");
+        searchLifecycleRef.current.commit(request.requestId, () => {
+            setOcrStatus("Chargement One-Shot...");
+        });
         loadDetectionModel();
         await waitForCondition(
             () => detectionStatusRef.current === 'ready',
             120000,
-            "Le pipeline One-Shot n'a pas pu etre charge."
+            "Le pipeline One-Shot n'a pas pu etre charge.",
+            request.signal
         );
+        throwIfAborted(request.signal);
     };
 
-    const ensurePpocrReady = async () => {
+    const ensurePpocrReady = async (request) => {
+        throwIfAborted(request.signal);
         if (ocrWorkerRef.current && ocrModelStatusRef.current === 'ready' && activeOcrModelKeyRef.current === 'ppocrv6Line') return;
-        setOcrStatus("Chargement PP-OCRv6...");
+        searchLifecycleRef.current.commit(request.requestId, () => {
+            setOcrStatus("Chargement PP-OCRv6...");
+        });
         await waitForCondition(
             () => Boolean(ocrWorkerRef.current),
             10000,
-            "Worker PP-OCRv6 indisponible."
+            "Worker PP-OCRv6 indisponible.",
+            request.signal
         );
+        throwIfAborted(request.signal);
         ocrWorkerRef.current.postMessage({ type: 'init', modelKey: 'ppocrv6Line' });
         await waitForCondition(
             () => ocrWorkerRef.current && ocrModelStatusRef.current === 'ready' && activeOcrModelKeyRef.current === 'ppocrv6Line',
             120000,
-            "PP-OCRv6 n'a pas pu etre charge."
+            "PP-OCRv6 n'a pas pu etre charge.",
+            request.signal
         );
+        throwIfAborted(request.signal);
     };
 
-    const runPpocrSearchCrop = (imageBitmap, requestId) => new Promise((resolve, reject) => {
+    const runPpocrSearchCrop = (imageBitmap, workerRequestId, signal) => new Promise((resolve, reject) => {
         const worker = ocrWorkerRef.current;
         if (!worker) {
             imageBitmap?.close?.();
@@ -374,49 +439,83 @@ export default function SearchPage() {
             return;
         }
 
-        const timeout = window.setTimeout(() => {
+        let settled = false;
+        let timeout = null;
+        const cleanup = () => {
+            if (timeout !== null) window.clearTimeout(timeout);
             worker.removeEventListener('message', handleMessage);
-            reject(new Error("Timeout PP-OCRv6 sur une bulle."));
-        }, 90000);
+            signal?.removeEventListener('abort', handleAbort);
+        };
+        const settle = (callback, value) => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            callback(value);
+        };
+        const handleAbort = () => {
+            worker.postMessage({ type: 'cancel', requestId: workerRequestId });
+            settle(reject, createAbortError());
+        };
 
         const handleMessage = (event) => {
             const data = event.data || {};
-            if (data.requestId !== requestId) return;
-            window.clearTimeout(timeout);
-            worker.removeEventListener('message', handleMessage);
+            if (data.requestId !== workerRequestId) return;
             if (data.status === 'complete') {
-                resolve(data);
+                settle(resolve, data);
             } else {
-                reject(new Error(data.error || "Erreur PP-OCRv6."));
+                settle(reject, new Error(data.error || "Erreur PP-OCRv6."));
             }
         };
 
+        if (signal?.aborted) {
+            imageBitmap?.close?.();
+            settle(reject, createAbortError());
+            return;
+        }
+
+        timeout = window.setTimeout(() => {
+            settle(reject, new Error("Timeout PP-OCRv6 sur une bulle."));
+        }, 90000);
         worker.addEventListener('message', handleMessage);
-        worker.postMessage({ type: 'run', imageBitmap, requestId }, [imageBitmap]);
+        signal?.addEventListener('abort', handleAbort, { once: true });
+        worker.postMessage({ type: 'run', imageBitmap, requestId: workerRequestId }, [imageBitmap]);
     });
 
-    const extractOcrBubblesFromImage = async (imageFile) => {
+    const extractOcrBubblesFromImage = async (imageFile, request) => {
         if (!imageFile) throw new Error("Image manquante.");
 
-        await ensureOneShotReady();
-        setOcrStatus("Detection One-Shot...");
-        const boxes = await detectBubbles(imageFile);
+        await ensureOneShotReady(request);
+        searchLifecycleRef.current.commit(request.requestId, () => {
+            setOcrStatus("Detection One-Shot...");
+        });
+        const boxes = await detectBubbles(imageFile, { signal: request.signal });
+        throwIfAborted(request.signal);
         if (!boxes?.length) {
             throw new Error("Aucune bulle detectee par le pipeline One-Shot.");
         }
 
-        await ensurePpocrReady();
+        await ensurePpocrReady(request);
         const pageBitmap = await createImageBitmap(imageFile);
         const bubbles = [];
 
         try {
+            throwIfAborted(request.signal);
             for (let index = 0; index < boxes.length; index += 1) {
+                throwIfAborted(request.signal);
                 const bbox = clampDetectedBox(boxes[index], pageBitmap.width, pageBitmap.height);
                 if (bbox.w <= 0 || bbox.h <= 0) continue;
 
-                setOcrStatus(`PP-OCRv6 ${index + 1}/${boxes.length}...`);
+                searchLifecycleRef.current.commit(request.requestId, () => {
+                    setOcrStatus(`PP-OCRv6 ${index + 1}/${boxes.length}...`);
+                });
                 const crop = await createImageBitmap(pageBitmap, bbox.x, bbox.y, bbox.w, bbox.h);
-                const result = await runPpocrSearchCrop(crop, `search-ppocr-${Date.now()}-${index}`);
+                throwIfAborted(request.signal);
+                const result = await runPpocrSearchCrop(
+                    crop,
+                    `search-ppocr-${request.requestId}-${index}`,
+                    request.signal
+                );
+                throwIfAborted(request.signal);
                 const content = String(result?.text || '').trim();
                 if (!content) continue;
 
@@ -445,6 +544,7 @@ export default function SearchPage() {
             return;
         }
 
+        invalidateActiveSearch();
         if (ocrImagePreviewUrl) URL.revokeObjectURL(ocrImagePreviewUrl);
         setOcrImageFile(file);
         setOcrImagePreviewUrl(URL.createObjectURL(file));
@@ -452,10 +552,8 @@ export default function SearchPage() {
         setOcrProvider(null);
         setOcrStatus('');
         setOcrHasSearched(false);
-        setResults([]);
-        setTotalCount(0);
-        setHasMore(false);
-    }, [ocrImagePreviewUrl]);
+        clearSearchResults();
+    }, [clearSearchResults, invalidateActiveSearch, ocrImagePreviewUrl]);
 
     useEffect(() => {
         if (!useOcrSearch) return;
@@ -480,6 +578,8 @@ export default function SearchPage() {
             return;
         }
 
+        activeLocalSearchRequestIdRef.current = null;
+        const request = searchLifecycleRef.current.begin();
         setIsLoading(true);
         if (isNewSearch) {
             setResults([]);
@@ -493,16 +593,21 @@ export default function SearchPage() {
                 rawText: ocrExtractedBubbles.map(bubble => bubble.content).join('\n'),
             };
 
-            if (isNewSearch || !extracted.bubbles?.length) {
-                extracted = await extractOcrBubblesFromImage(ocrImageFile);
+            if (ocrImageFile && (isNewSearch || !extracted.bubbles?.length)) {
+                extracted = await extractOcrBubblesFromImage(ocrImageFile, request);
+                throwIfAborted(request.signal);
                 if (!extracted.bubbles.length) {
                     throw new Error("Aucune bulle lisible detectee dans l'image.");
                 }
-                setOcrExtractedBubbles(extracted.bubbles);
-                setOcrProvider(extracted.provider);
+                searchLifecycleRef.current.commit(request.requestId, () => {
+                    setOcrExtractedBubbles(extracted.bubbles);
+                    setOcrProvider(extracted.provider);
+                });
             }
 
-            setOcrStatus("Recherche de la page...");
+            searchLifecycleRef.current.commit(request.requestId, () => {
+                setOcrStatus("Recherche de la page...");
+            });
             const response = await searchOcrPageMatch({
                 bubbles: extracted.bubbles,
                 page: pageToFetch,
@@ -510,22 +615,30 @@ export default function SearchPage() {
                 filters: getActiveFilters(),
                 provider: extracted.provider,
                 rawText: extracted.rawText,
+                signal: request.signal,
             });
+            throwIfAborted(request.signal);
 
             const newResults = (response.data.results || []).slice(0, OCR_RESULTS_LIMIT);
             const total = response.data.totalCount || 0;
 
-            setResults(prev => isNewSearch ? newResults : [...prev, ...newResults]);
-            setTotalCount(newResults.length);
-            setHasMore(false);
-            setOcrHasSearched(true);
-            setOcrStatus(`${extracted.bubbles.length} bulles OCR, top ${newResults.length} affiche sur ${total} pages classees.`);
+            searchLifecycleRef.current.commit(request.requestId, () => {
+                setResults(prev => isNewSearch ? newResults : [...prev, ...newResults]);
+                setTotalCount(newResults.length);
+                setHasMore(false);
+                setOcrHasSearched(true);
+                setOcrStatus(`${extracted.bubbles.length} bulles OCR, top ${newResults.length} affiche sur ${total} pages classees.`);
+            });
         } catch (err) {
-            const message = err?.response?.data?.error || err?.message || "Recherche OCR impossible.";
-            toast.error(message);
-            setOcrStatus(message);
+            if (searchLifecycleRef.current.isCurrent(request.requestId) && !isAbortError(err, request.signal)) {
+                const message = err?.response?.data?.error || err?.message || "Recherche OCR impossible.";
+                toast.error(message);
+                setOcrStatus(message);
+            }
         } finally {
-            setIsLoading(false);
+            if (searchLifecycleRef.current.commit(request.requestId, () => setIsLoading(false))) {
+                searchLifecycleRef.current.finish(request.requestId);
+            }
         }
     };
 
@@ -552,8 +665,8 @@ export default function SearchPage() {
     };
 
     const fetchResults = async (searchTerm, pageToFetch, isNewSearch) => {
-        if (abortControllerRef.current) abortControllerRef.current.abort();
-        abortControllerRef.current = new AbortController();
+        activeLocalSearchRequestIdRef.current = null;
+        const request = searchLifecycleRef.current.begin();
 
         setIsLoading(true);
         if (isNewSearch) {
@@ -565,15 +678,24 @@ export default function SearchPage() {
             const filters = getActiveFilters();
             let response;
             if (useSemantic && localOnly) {
-                setLocalModelStatus('F2LLM');
-                const embedding = await generateF2llmBrowserQueryEmbedding(searchTerm);
-                setLocalModelStatus('F2LLM pret');
+                activeLocalSearchRequestIdRef.current = request.requestId;
+                searchLifecycleRef.current.commit(request.requestId, () => {
+                    setLocalModelStatus('F2LLM');
+                });
+                const embedding = await generateF2llmBrowserQueryEmbedding(searchTerm, {
+                    signal: request.signal,
+                });
+                throwIfAborted(request.signal);
+                searchLifecycleRef.current.commit(request.requestId, () => {
+                    setLocalModelStatus('F2LLM pret');
+                });
                 response = await searchF2llmLocal({
                     query: searchTerm,
                     embedding,
                     page: pageToFetch,
                     limit: RESULTS_PER_PAGE,
                     filters,
+                    signal: request.signal,
                 });
             } else {
                 response = await searchBubbles(
@@ -583,26 +705,36 @@ export default function SearchPage() {
                     useSemantic ? 'semantic' : 'keyword',
                     filters,
                     useSemantic && !localOnly,
-                    false
+                    false,
+                    { signal: request.signal }
                 );
             }
+            throwIfAborted(request.signal);
 
-            let newResults = response.data.results;
-            const total = response.data.totalCount;
+            const newResults = response.data.results || [];
+            const total = response.data.totalCount || 0;
 
-            setResults(prev => isNewSearch ? newResults : [...prev, ...newResults]);
+            searchLifecycleRef.current.commit(request.requestId, () => {
+                setResults(prev => isNewSearch ? newResults : [...prev, ...newResults]);
 
-            if (useSemantic && pageToFetch === 1) {
-                setTotalCount(newResults.length);
-                setHasMore(false);
-            } else {
-                setTotalCount(total);
-                setHasMore((isNewSearch ? newResults.length : results.length + newResults.length) < total);
-            }
+                if (useSemantic && pageToFetch === 1) {
+                    setTotalCount(newResults.length);
+                    setHasMore(false);
+                } else {
+                    setTotalCount(total);
+                    const previousCount = isNewSearch ? 0 : results.length;
+                    setHasMore(previousCount + newResults.length < total);
+                }
+            });
         } catch (err) {
-            if (err.name !== 'AbortError') console.error("Erreur recherche", err);
+            if (searchLifecycleRef.current.isCurrent(request.requestId) && !isAbortError(err, request.signal)) {
+                console.error("Erreur recherche", err);
+            }
         } finally {
-            setIsLoading(false);
+            if (searchLifecycleRef.current.commit(request.requestId, () => setIsLoading(false))) {
+                activeLocalSearchRequestIdRef.current = null;
+                searchLifecycleRef.current.finish(request.requestId);
+            }
         }
     };
 
@@ -619,6 +751,7 @@ export default function SearchPage() {
     const handleFeedback = async (e, item, isRelevant) => {
         e.preventDefault();
         e.stopPropagation();
+        const searchRequestId = searchLifecycleRef.current.currentRequestId();
 
         if (feedbackGiven[item.id]) {
             toast.info("Déjà voté.");
@@ -634,11 +767,84 @@ export default function SearchPage() {
                 model_provider: localOnly ? 'f2llm-local-ft' : 'dual'
             });
 
-            setFeedbackGiven(prev => ({ ...prev, [item.id]: true }));
-            toast.success("Merci pour votre retour !");
+            searchLifecycleRef.current.commit(searchRequestId, () => {
+                setFeedbackGiven(prev => ({ ...prev, [item.id]: true }));
+                toast.success("Merci pour votre retour !");
+            });
         } catch (err) {
-            console.error("Feedback error", err);
+            if (searchLifecycleRef.current.isCurrent(searchRequestId)) {
+                console.error("Feedback error", err);
+            }
         }
+    };
+
+    const handleSearchModeChange = (value) => {
+        invalidateActiveSearch();
+        setSearchMode(value);
+        setPage(1);
+        clearSearchResults();
+        setOcrHasSearched(false);
+        setOcrStatus('');
+    };
+
+    const handleLocalOnlyChange = (checked) => {
+        invalidateActiveSearch();
+        setLocalOnly(checked);
+        setPage(1);
+        clearSearchResults();
+    };
+
+    const handleQueryChange = (event) => {
+        invalidateActiveSearch();
+        const value = event.target.value;
+        setQuery(value);
+        if (value.trim().length < 2) clearSearchResults();
+    };
+
+    const handleClearQuery = () => {
+        invalidateActiveSearch();
+        setQuery('');
+        setPage(1);
+        clearSearchResults();
+        inputRef.current?.focus();
+    };
+
+    const handleTomeChange = (value) => {
+        invalidateActiveSearch();
+        setSelectedTome(value);
+        setPage(1);
+        clearSearchResults();
+        setOcrHasSearched(false);
+        setOcrStatus('');
+    };
+
+    const handleArcChange = (value) => {
+        invalidateActiveSearch();
+        setSelectedArc(value);
+        setPage(1);
+        clearSearchResults();
+        setOcrHasSearched(false);
+        setOcrStatus('');
+    };
+
+    const updateSelectedCharacters = (updater) => {
+        invalidateActiveSearch();
+        setSelectedCharacters(updater);
+        setPage(1);
+        clearSearchResults();
+        setOcrHasSearched(false);
+        setOcrStatus('');
+    };
+
+    const resetFilters = () => {
+        invalidateActiveSearch();
+        setSelectedCharacters([]);
+        setSelectedArc('all');
+        setSelectedTome('all');
+        setPage(1);
+        clearSearchResults();
+        setOcrHasSearched(false);
+        setOcrStatus('');
     };
 
     const accentColor = useOcrSearch ? "#eab308" : useSemantic ? "#A11010" : "#2f7aaf";
@@ -669,13 +875,7 @@ export default function SearchPage() {
                         <Tabs
                             defaultValue="keyword"
                             value={searchMode}
-                            onValueChange={(v) => {
-                                setSearchMode(v);
-                                setResults([]);
-                                setTotalCount(0);
-                                setHasMore(false);
-                                setOcrHasSearched(false);
-                            }}
+                            onValueChange={handleSearchModeChange}
                             className="w-full max-w-xl"
                         >
                             <TabsList className="grid h-12 w-full grid-cols-3 rounded-xl border border-white/12 bg-white/8 p-1">
@@ -718,12 +918,7 @@ export default function SearchPage() {
                                 <Switch
                                     id="local-only-search"
                                     checked={localOnly}
-                                    onCheckedChange={(checked) => {
-                                        setLocalOnly(checked);
-                                        setResults([]);
-                                        setTotalCount(0);
-                                        setHasMore(false);
-                                    }}
+                                    onCheckedChange={handleLocalOnlyChange}
                                 />
                             </div>
                         )}
@@ -800,7 +995,7 @@ export default function SearchPage() {
                                     ref={inputRef}
                                     type="text"
                                     value={query}
-                                    onChange={(e) => setQuery(e.target.value)}
+                                    onChange={handleQueryChange}
                                     onKeyDown={handleKeyDown}
                                     placeholder={useSemantic ? "Ex: Première rencontre entre Luffy et Sanji..." : "Cherchez un dialogue exact..."}
                                     className="h-14 rounded-2xl border-none bg-transparent pl-6 pr-24 text-base text-slate-100 shadow-none ring-0 placeholder:text-slate-500 focus-visible:ring-0 sm:h-16 sm:text-lg"
@@ -809,7 +1004,7 @@ export default function SearchPage() {
                                 <div className="absolute right-2 flex items-center gap-1">
                                     {query && (
                                         <button
-                                            onClick={() => { setQuery(''); setResults([]); inputRef.current?.focus(); }}
+                                            onClick={handleClearQuery}
                                             className="p-2 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
                                         >
                                             <X className="h-4 w-4" />
@@ -858,11 +1053,9 @@ export default function SearchPage() {
                                 <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => {
-                                        setSelectedCharacters([]);
-                                        setSelectedArc('all');
-                                        setSelectedTome('all');
-                                    }}
+                                onClick={() => {
+                                    resetFilters();
+                                }}
                                     className="h-9 text-[11px] font-bold text-slate-400 transition-colors hover:text-red-300"
                                 >
                                     Tout réinitialiser
@@ -892,7 +1085,7 @@ export default function SearchPage() {
                                                         key={char}
                                                         className="rounded-lg h-9 text-xs mb-0.5"
                                                         onSelect={() => {
-                                                            setSelectedCharacters(prev =>
+                                                            updateSelectedCharacters(prev =>
                                                                 prev.includes(char) ? prev.filter(c => c !== char) : [...prev, char]
                                                             );
                                                         }}
@@ -917,7 +1110,7 @@ export default function SearchPage() {
                                                 onClick={(e) => {
                                                     e.preventDefault();
                                                     e.stopPropagation();
-                                                    setSelectedCharacters(prev => prev.filter(c => c !== char));
+                                                    updateSelectedCharacters(prev => prev.filter(c => c !== char));
                                                 }}
                                             >
                                                 <X className="h-3 w-3" />
@@ -929,7 +1122,7 @@ export default function SearchPage() {
 
                             <div className="space-y-2 opacity-50 grayscale select-none">
                                 <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-[2px] mb-1.5 block">Arc narratif</Label>
-                                <Select value={selectedArc} onValueChange={setSelectedArc} disabled>
+                                <Select value={selectedArc} onValueChange={handleArcChange} disabled>
                                     <SelectTrigger className="h-10 text-xs font-bold bg-white rounded-xl border-slate-200 shadow-sm">
                                         <SelectValue placeholder="Indisponible" />
                                     </SelectTrigger>
@@ -942,7 +1135,7 @@ export default function SearchPage() {
 
                             <div className="space-y-2">
                                 <Label className="text-[10px] font-bold text-slate-400 uppercase tracking-[2px] mb-1.5 block">Tome</Label>
-                                <Select value={selectedTome} onValueChange={setSelectedTome}>
+                                <Select value={selectedTome} onValueChange={handleTomeChange}>
                                     <SelectTrigger className="h-10 text-xs font-bold bg-white rounded-xl border-slate-200 shadow-sm">
                                         <SelectValue placeholder="Tous les tomes" />
                                     </SelectTrigger>
@@ -1158,7 +1351,7 @@ export default function SearchPage() {
                         </p>
                         {!useSemantic && !useOcrSearch && (
                             <Button
-                                onClick={() => setSearchMode('semantic')}
+                                onClick={() => handleSearchModeChange('semantic')}
                                 className="rounded-2xl h-12 px-8 bg-[#A11010] shadow-xl shadow-red-900/20 gap-2 font-bold uppercase tracking-widest text-xs transition-all active:scale-95 text-white"
                             >
                                 <Sparkles className="h-4 w-4" />

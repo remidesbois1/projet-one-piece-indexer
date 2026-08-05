@@ -37,7 +37,10 @@ apiClient.interceptors.request.use(async (config) => {
     return config;
 });
 
-export const getTomes = (mangaSlug) => apiClient.get('/tomes', { params: mangaSlug ? { manga: mangaSlug } : {} });
+export const getTomes = (mangaSlug, { signal } = {}) => apiClient.get('/tomes', {
+    params: mangaSlug ? { manga: mangaSlug } : {},
+    signal,
+});
 export const getChapitres = (id_tome) => apiClient.get(`/chapitres/tome/${id_tome}`);
 export const getPages = (id_chapitre) => apiClient.get(`/pages?id_chapitre=${id_chapitre}`);
 export const getPageById = (id) => apiClient.get(`/pages/${id}`);
@@ -54,7 +57,16 @@ export const reorderBubbles = (pageId, orderedBubbles) => apiClient.put('/bulles
     orderedBubbles: reorderBubblesPayloadSchema.parse(orderedBubbles),
 });
 
-export const searchBubbles = (query, page = 1, limit = 10, mode = 'keyword', filters = {}, rerank = false, localOnly = false) => {
+export const searchBubbles = (
+    query,
+    page = 1,
+    limit = 10,
+    mode = 'keyword',
+    filters = {},
+    rerank = false,
+    localOnly = false,
+    { signal } = {}
+) => {
     const request = keywordSearchPayloadSchema.parse({ query, page, limit, mode, filters, rerank, localOnly });
     const params = new URLSearchParams({
         q: request.query,
@@ -75,9 +87,9 @@ export const searchBubbles = (query, page = 1, limit = 10, mode = 'keyword', fil
         params.append('tome', request.filters.tome.toString());
     }
 
-    return apiClient.get(`/search?${params.toString()}`);
+    return apiClient.get(`/search?${params.toString()}`, { signal });
 };
-export const searchF2llmLocal = ({ query, embedding, page = 1, limit = 10, filters = {} }) => {
+export const searchF2llmLocal = ({ query, embedding, page = 1, limit = 10, filters = {}, signal }) => {
     const request = f2llmSearchPayloadSchema.parse({ query, embedding, page, limit, filters });
     return apiClient.post('/search/f2llm-local', {
         query: request.query,
@@ -87,9 +99,9 @@ export const searchF2llmLocal = ({ query, embedding, page = 1, limit = 10, filte
         characters: request.filters.characters,
         arc: request.filters.arc,
         tome: request.filters.tome,
-    });
+    }, { signal });
 };
-export const searchOcrPageMatch = ({ bubbles, page = 1, limit = 24, filters = {}, provider = 'unknown', rawText = '' }) => {
+export const searchOcrPageMatch = ({ bubbles, page = 1, limit = 24, filters = {}, provider = 'unknown', rawText = '', signal }) => {
     const request = ocrSearchPayloadSchema.parse({ bubbles, page, limit, filters, provider, rawText });
     return apiClient.post('/search/ocr-match', {
         bubbles: request.bubbles,
@@ -100,7 +112,7 @@ export const searchOcrPageMatch = ({ bubbles, page = 1, limit = 24, filters = {}
         characters: request.filters.characters,
         arc: request.filters.arc,
         tome: request.filters.tome,
-    });
+    }, { signal });
 };
 export const searchSemantic = (query, limit = 6) => apiClient.get(`/search/semantic?q=${query}&limit=${limit}`);
 
@@ -146,7 +158,10 @@ export const savePageDescription = (pageId, description, embedding_voyage = null
         embedding_f2llm,
     });
 };
-export const getMetadataSuggestions = (mangaSlug) => apiClient.get('/analyse/metadata-suggestions', { params: mangaSlug ? { manga: mangaSlug } : {} });
+export const getMetadataSuggestions = (mangaSlug, { signal } = {}) => apiClient.get('/analyse/metadata-suggestions', {
+    params: mangaSlug ? { manga: mangaSlug } : {},
+    signal,
+});
 
 
 

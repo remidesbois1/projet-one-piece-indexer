@@ -104,6 +104,10 @@ function createFakeSupabase() {
 
 async function withServer(router, callback) {
   const app = express();
+  app.use((_req, res, next) => {
+    res.vary('Origin');
+    next();
+  });
   app.use('/api/pages', router);
   const server = http.createServer(app);
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -119,6 +123,17 @@ function assertNoRawStorageUrl(value) {
   assert.doesNotMatch(JSON.stringify(value), /(?:r2\.cloudflarestorage\.com|s3\.|amazonaws\.com)/i);
 }
 
+function assertPrivateImageHeaders(response) {
+  assert.equal(response.headers.get('cache-control'), 'private, no-store');
+  assert.equal(response.headers.get('pragma'), 'no-cache');
+  assert.equal(response.headers.get('expires'), '0');
+  assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(response.headers.get('cross-origin-resource-policy'), 'cross-origin');
+  const vary = new Set((response.headers.get('vary') || '').split(',').map((value) => value.trim().toLowerCase()));
+  assert.ok(vary.has('origin'));
+  assert.ok(vary.has('authorization'));
+}
+
 test('page image paths are application-owned and page DTOs never serialize the stored URL', () => {
   assert.equal(getPageImagePath(42), '/api/pages/42/image');
 
@@ -129,6 +144,10 @@ test('page image paths are application-owned and page DTOs never serialize the s
 
 test('public page endpoints hide raw media, workflow fields, creators, and draft bubbles', async () => {
   const fake = createFakeSupabase();
+  const rawImage = Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    Buffer.from('raw-image'),
+  ]);
   const router = createPageRouter({
     supabaseClient: fake.client,
     supabaseAdminClient: fake.client,
@@ -138,11 +157,11 @@ test('public page endpoints hide raw media, workflow fields, creators, and draft
       : res.status(401).json({ error: 'unauthorized' }),
     requireRole: () => (_req, _res, next) => next(),
     openImage: async () => ({
-      body: Readable.from([Buffer.from('raw-'), Buffer.from('image')]),
+      body: Readable.from([rawImage.subarray(0, 4), rawImage.subarray(4)]),
       contentType: 'image/avif',
-      contentLength: 9,
+      contentLength: rawImage.length,
     }),
-    readImage: async () => ({ buffer: Buffer.from('raw-image'), contentType: 'image/avif' }),
+    readImage: async () => ({ buffer: rawImage, contentType: 'image/avif' }),
     previewImage: async (_buffer, bubbles) => {
       assert.equal(bubbles.length, 1);
       return Buffer.from('protected-preview');
@@ -183,31 +202,84 @@ test('public page endpoints hide raw media, workflow fields, creators, and draft
 
     const deniedOriginal = await fetch(`${baseUrl}/api/pages/42/image/original`);
     assert.equal(deniedOriginal.status, 401);
+    assertPrivateImageHeaders(deniedOriginal);
 
     const deniedOriginalThumbnail = await fetch(`${baseUrl}/api/pages/42/image/original/thumbnail`);
     assert.equal(deniedOriginalThumbnail.status, 401);
+    assertPrivateImageHeaders(deniedOriginalThumbnail);
 
     const original = await fetch(`${baseUrl}/api/pages/42/image/original`, {
       headers: { Authorization: 'Bearer valid-token' },
     });
-    assert.equal(await original.text(), 'raw-image');
-    assert.equal(original.headers.get('content-length'), '9');
-    assert.equal(original.headers.get('cache-control'), 'private, no-store');
-    assert.equal(original.headers.get('cross-origin-resource-policy'), 'cross-origin');
-    assert.equal(original.headers.get('vary'), 'Authorization');
+    assert.deepEqual(Buffer.from(await original.arrayBuffer()), rawImage);
+    assert.equal(original.headers.get('content-type'), 'image/png');
+    assert.equal(original.headers.get('content-length'), String(rawImage.length));
+    assertPrivateImageHeaders(original);
 
     const originalThumbnail = await fetch(`${baseUrl}/api/pages/42/image/original/thumbnail?width=640`, {
       headers: { Authorization: 'Bearer valid-token' },
     });
     assert.equal(await originalThumbnail.text(), 'thumbnail');
-    assert.equal(originalThumbnail.headers.get('cache-control'), 'private, no-store');
-    assert.equal(originalThumbnail.headers.get('vary'), 'Authorization');
+    assert.equal(originalThumbnail.headers.get('content-type'), 'image/avif');
+    assertPrivateImageHeaders(originalThumbnail);
   });
 
   const validatedFilters = fake.calls.flatMap((call) => call.filters)
     .filter((filter) => filter.field === 'statut' && filter.operator === 'eq');
   assert.ok(validatedFilters.length >= 2);
   assert.ok(validatedFilters.every((filter) => filter.value === VALIDATED_BUBBLE_STATUS));
+});
+
+test('private image routes reject unsupported stored content without caching it', async () => {
+  const fake = createFakeSupabase();
+  const activeContent = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script/></svg>');
+  const router = createPageRouter({
+    supabaseClient: fake.client,
+    supabaseAdminClient: fake.client,
+    optionalAuth: (_req, _res, next) => next(),
+    requireAuth: (_req, _res, next) => next(),
+    requireRole: () => (_req, _res, next) => next(),
+    openImage: async () => ({
+      body: Readable.from([activeContent]),
+      contentType: 'image/avif',
+      contentLength: activeContent.length,
+    }),
+    readImage: async () => ({ buffer: activeContent, contentType: 'image/avif' }),
+  });
+
+  await withServer(router, async (baseUrl) => {
+    for (const pathSuffix of ['/image/original', '/image/original/thumbnail']) {
+      const response = await fetch(`${baseUrl}/api/pages/42${pathSuffix}`);
+      assert.equal(response.status, 415);
+      assert.equal(response.headers.get('content-type'), 'application/json; charset=utf-8');
+      assertPrivateImageHeaders(response);
+      assert.match((await response.json()).error, /JPEG, PNG, WebP ou AVIF/);
+    }
+  });
+});
+
+test('private image not-found responses retain the non-cacheable security headers', async () => {
+  const missingPageClient = {
+    from() {
+      return {
+        select() { return this; },
+        eq() { return this; },
+        single: async () => ({ data: null, error: null }),
+      };
+    },
+  };
+  const router = createPageRouter({
+    supabaseClient: missingPageClient,
+    requireAuth: (_req, _res, next) => next(),
+  });
+
+  await withServer(router, async (baseUrl) => {
+    for (const pathSuffix of ['/image/original', '/image/original/thumbnail']) {
+      const response = await fetch(`${baseUrl}/api/pages/missing${pathSuffix}`);
+      assert.equal(response.status, 404);
+      assertPrivateImageHeaders(response);
+    }
+  });
 });
 
 test('validated search filtering preserves order and drops unreviewed rows', async () => {

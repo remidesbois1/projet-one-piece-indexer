@@ -1,34 +1,47 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
 import { useManga } from '@/context/MangaContext';
 import { getCovers, uploadCover } from '@/lib/api';
-import { Loader2, Image as ImageIcon, Upload, CheckCircle2 } from "lucide-react";
+import { AlertCircle, Loader2, Image as ImageIcon, RefreshCcw, Upload, CheckCircle2 } from "lucide-react";
 import { getCoverThumbnailUrl } from "@/lib/utils";
+import { Button } from '@/components/ui/button';
 
 const CoverManager = () => {
     const { mangaSlug } = useManga();
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState(null);
+    const [loadError, setLoadError] = useState(null);
     const [uploading, setUploading] = useState(null);
+    const requestGenerationRef = useRef(0);
 
-    const fetchCovers = async () => {
+    const fetchCovers = useCallback(async () => {
+        const requestId = ++requestGenerationRef.current;
         try {
             setLoading(true);
+            setLoadError(null);
             const res = await getCovers(mangaSlug);
+            if (requestId !== requestGenerationRef.current) return false;
             setData(res.data);
+            return true;
         } catch (error) {
-            console.error("Error fetching covers:", error);
+            if (requestId !== requestGenerationRef.current) return false;
+            setData(null);
+            setLoadError(error?.response?.data?.error || error?.message || 'Impossible de charger les couvertures.');
+            return false;
         } finally {
-            setLoading(false);
+            if (requestId === requestGenerationRef.current) setLoading(false);
         }
-    };
+    }, [mangaSlug]);
 
     useEffect(() => {
         if (mangaSlug) {
-            fetchCovers();
+            void fetchCovers();
         }
-    }, [mangaSlug]);
+        return () => {
+            requestGenerationRef.current += 1;
+        };
+    }, [fetchCovers, mangaSlug]);
 
     const handleUpload = async (type, id, file) => {
         if (!file) return;
@@ -57,7 +70,19 @@ const CoverManager = () => {
         );
     }
 
-    if (!data) return null;
+    if (loadError || !data) {
+        return (
+            <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-red-300/20 bg-red-950/20 p-8 text-center text-slate-100" role="alert">
+                <AlertCircle className="h-8 w-8 text-red-300" />
+                <h3 className="mt-3 font-semibold">Couvertures indisponibles</h3>
+                <p className="mt-2 max-w-md text-sm text-slate-300">{loadError || 'Aucune donnée de couverture disponible.'}</p>
+                <Button type="button" variant="outline" size="sm" onClick={() => void fetchCovers()} className="mt-4 border-white/15 bg-white/10 text-white hover:bg-white/15 hover:text-white">
+                    <RefreshCcw className="mr-2 h-4 w-4" />
+                    Réessayer
+                </Button>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-6">

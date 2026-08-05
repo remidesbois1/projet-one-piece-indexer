@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import React, { useMemo, useRef, useState, useEffect } from 'react';
+import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import { useManga } from '@/context/MangaContext';
 import { useAuth } from '@/context/AuthContext';
 import { useUserProfile } from '@/hooks/useUserProfile';
@@ -22,10 +22,42 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 
-import { ChevronRight, ChevronLeft, ArrowLeft, BookOpen, CheckCircle2, PenLine, Loader2, Trash2, Search, ArrowUpDown } from "lucide-react";
+import { AlertCircle, ChevronRight, ChevronLeft, ArrowLeft, BookOpen, CheckCircle2, PenLine, Loader2, RefreshCcw, Trash2, Search, ArrowUpDown } from "lucide-react";
+
+const LOAD_STATUS = Object.freeze({
+    LOADING: 'loading',
+    READY: 'ready',
+    EMPTY: 'empty',
+    ERROR: 'error',
+});
+
+const DRAWER_STATUS = Object.freeze({
+    CLOSED: 'closed',
+    LOADING_CHAPTERS: 'loading-chapters',
+    CHAPTERS_READY: 'chapters-ready',
+    CHAPTERS_EMPTY: 'chapters-empty',
+    LOADING_PAGES: 'loading-pages',
+    PAGES_READY: 'pages-ready',
+    PAGES_EMPTY: 'pages-empty',
+    ERROR_CHAPTERS: 'error-chapters',
+    ERROR_PAGES: 'error-pages',
+});
+
+function RecoverableLoadError({ message, onRetry, compact = false }) {
+    return (
+        <div className={`flex flex-col items-center justify-center rounded-xl border border-red-300/20 bg-red-950/20 text-center text-slate-100 ${compact ? 'min-h-52 p-6' : 'col-span-full min-h-64 p-8'}`} role="alert">
+            <AlertCircle className="h-8 w-8 text-red-300" />
+            <p className="mt-3 max-w-md text-sm text-slate-300">{message}</p>
+            <Button type="button" variant="outline" size="sm" onClick={onRetry} className="mt-4 border-white/15 bg-white/10 text-white hover:bg-white/15 hover:text-white">
+                <RefreshCcw className="mr-2 h-4 w-4" />
+                Réessayer
+            </Button>
+        </div>
+    );
+}
 
 export default function DashboardPage() {
-    const { profile, loading: profileLoading } = useUserProfile();
+    const { profile } = useUserProfile();
     const { session } = useAuth();
     const router = useRouter();
     const { mangaSlug, currentManga } = useManga();
@@ -37,7 +69,8 @@ export default function DashboardPage() {
     const [isSheetOpen, setIsSheetOpen] = useState(false);
     const [selectedTome, setSelectedTome] = useState(null);
     const [selectedChapter, setSelectedChapter] = useState(null);
-    const [isLoadingData, setIsLoadingData] = useState(false);
+    const [catalogState, setCatalogState] = useState({ status: LOAD_STATUS.LOADING, error: null });
+    const [drawerState, setDrawerState] = useState({ status: DRAWER_STATUS.CLOSED, error: null });
     const [deletingTarget, setDeletingTarget] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [sortDirection, setSortDirection] = useState('asc');
@@ -46,12 +79,40 @@ export default function DashboardPage() {
     const drawerDragStartYRef = useRef(null);
     const drawerDragYRef = useRef(0);
     const drawerDragFrameRef = useRef(null);
+    const catalogRequestRef = useRef(0);
+    const drawerRequestRef = useRef(0);
+    const sheetCleanupTimerRef = useRef(null);
     const isAdmin = profile?.role === 'Admin';
     const volumesPerPage = 5;
 
+    const loadTomes = useCallback(async () => {
+        const requestId = ++catalogRequestRef.current;
+        setCatalogState({ status: LOAD_STATUS.LOADING, error: null });
+        try {
+            const response = await getTomes(mangaSlug);
+            if (requestId !== catalogRequestRef.current) return;
+            const nextTomes = Array.isArray(response.data) ? response.data : [];
+            setTomes(nextTomes);
+            setCatalogState({
+                status: nextTomes.length > 0 ? LOAD_STATUS.READY : LOAD_STATUS.EMPTY,
+                error: null,
+            });
+        } catch (error) {
+            if (requestId !== catalogRequestRef.current) return;
+            setTomes([]);
+            setCatalogState({
+                status: LOAD_STATUS.ERROR,
+                error: error?.response?.data?.error || error?.message || 'Impossible de charger les volumes.',
+            });
+        }
+    }, [mangaSlug]);
+
     useEffect(() => {
-        getTomes().then(res => setTomes(res.data)).catch(console.error);
-    }, []);
+        void loadTomes();
+        return () => {
+            catalogRequestRef.current += 1;
+        };
+    }, [loadTomes]);
 
     const displayedTomes = useMemo(() => {
         const normalizedSearch = searchTerm.trim().toLowerCase();
@@ -97,6 +158,10 @@ export default function DashboardPage() {
             if (drawerDragFrameRef.current) {
                 cancelAnimationFrame(drawerDragFrameRef.current);
             }
+            if (sheetCleanupTimerRef.current) {
+                clearTimeout(sheetCleanupTimerRef.current);
+            }
+            drawerRequestRef.current += 1;
         };
     }, []);
 
@@ -179,41 +244,95 @@ export default function DashboardPage() {
     };
 
     const openTome = async (tome) => {
+        if (sheetCleanupTimerRef.current) {
+            clearTimeout(sheetCleanupTimerRef.current);
+            sheetCleanupTimerRef.current = null;
+        }
+        const requestId = ++drawerRequestRef.current;
         setSelectedTome(tome);
         setSelectedChapter(null);
+        setChapters([]);
         setPages([]);
         setIsSheetOpen(true);
-        setIsLoadingData(true);
+        setDrawerState({ status: DRAWER_STATUS.LOADING_CHAPTERS, error: null });
 
         try {
             const res = await getChapitres(tome.id);
-            setChapters(res.data);
+            if (requestId !== drawerRequestRef.current) return;
+            const nextChapters = Array.isArray(res.data) ? res.data : [];
+            setChapters(nextChapters);
+            setDrawerState({
+                status: nextChapters.length > 0 ? DRAWER_STATUS.CHAPTERS_READY : DRAWER_STATUS.CHAPTERS_EMPTY,
+                error: null,
+            });
         } catch (e) {
-            console.error(e);
-        } finally {
-            setIsLoadingData(false);
+            if (requestId !== drawerRequestRef.current) return;
+            setChapters([]);
+            setDrawerState({
+                status: DRAWER_STATUS.ERROR_CHAPTERS,
+                error: e?.response?.data?.error || e?.message || 'Impossible de charger les chapitres.',
+            });
         }
     };
 
     const openChapter = async (chapter) => {
+        const requestId = ++drawerRequestRef.current;
         setSelectedChapter(chapter);
-        setIsLoadingData(true);
+        setPages([]);
+        setDrawerState({ status: DRAWER_STATUS.LOADING_PAGES, error: null });
         try {
             const res = await getPages(chapter.id);
-            setPages(res.data);
+            if (requestId !== drawerRequestRef.current) return;
+            const nextPages = Array.isArray(res.data) ? res.data : [];
+            setPages(nextPages);
+            setDrawerState({
+                status: nextPages.length > 0 ? DRAWER_STATUS.PAGES_READY : DRAWER_STATUS.PAGES_EMPTY,
+                error: null,
+            });
         } catch (e) {
-            console.error(e);
-        } finally {
-            setIsLoadingData(false);
+            if (requestId !== drawerRequestRef.current) return;
+            setPages([]);
+            setDrawerState({
+                status: DRAWER_STATUS.ERROR_PAGES,
+                error: e?.response?.data?.error || e?.message || 'Impossible de charger les pages.',
+            });
+        }
+    };
+
+    const returnToChapters = () => {
+        drawerRequestRef.current += 1;
+        setSelectedChapter(null);
+        setPages([]);
+        setDrawerState({
+            status: chapters.length > 0 ? DRAWER_STATUS.CHAPTERS_READY : DRAWER_STATUS.CHAPTERS_EMPTY,
+            error: null,
+        });
+    };
+
+    const retryDrawerLoad = () => {
+        if (drawerState.status === DRAWER_STATUS.ERROR_CHAPTERS && selectedTome) {
+            void openTome(selectedTome);
+        } else if (drawerState.status === DRAWER_STATUS.ERROR_PAGES && selectedChapter) {
+            void openChapter(selectedChapter);
         }
     };
 
     const handleSheetChange = (open) => {
         setIsSheetOpen(open);
-        if (!open) {
-            setTimeout(() => {
+        if (open) {
+            if (sheetCleanupTimerRef.current) {
+                clearTimeout(sheetCleanupTimerRef.current);
+                sheetCleanupTimerRef.current = null;
+            }
+        } else {
+            drawerRequestRef.current += 1;
+            setDrawerState({ status: DRAWER_STATUS.CLOSED, error: null });
+            sheetCleanupTimerRef.current = setTimeout(() => {
                 setSelectedTome(null);
                 setSelectedChapter(null);
+                setChapters([]);
+                setPages([]);
+                sheetCleanupTimerRef.current = null;
             }, 300);
         }
     };
@@ -301,8 +420,6 @@ export default function DashboardPage() {
         }
     };
 
-    if (profileLoading) return null;
-
     return (
         <div className="w-full">
             <header className="mb-9 flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
@@ -313,7 +430,7 @@ export default function DashboardPage() {
                                 Bibliothèque {currentManga?.titre || 'Poneglyph'}
                             </h1>
                             <Badge variant="outline" className="poneglyph-chip h-9 rounded-full px-4 text-xs font-black uppercase tracking-wide">
-                                {tomes.length} volumes
+                                {catalogState.status === LOAD_STATUS.LOADING ? '…' : tomes.length} volumes
                             </Badge>
                         </div>
                     </div>
@@ -342,7 +459,7 @@ export default function DashboardPage() {
             </header>
 
             <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-                {paginatedTomes.map((tome) => {
+                {catalogState.status === LOAD_STATUS.READY && paginatedTomes.map((tome) => {
                     const tomeTitle = tome.titre || tome.title || tome.nom || 'Ã‰dition Originale';
 
                     return (
@@ -393,12 +510,24 @@ export default function DashboardPage() {
                     );
                 })}
 
-                {tomes.length === 0 && [1, 2, 3, 4, 5].map((i) => (
+                {catalogState.status === LOAD_STATUS.LOADING && [1, 2, 3, 4, 5].map((i) => (
                     <div key={i} className="aspect-[2/3] animate-pulse rounded-xl border border-white/10 bg-white/8" />
                 ))}
+
+                {catalogState.status === LOAD_STATUS.ERROR && (
+                    <RecoverableLoadError message={catalogState.error} onRetry={() => void loadTomes()} />
+                )}
+
+                {catalogState.status === LOAD_STATUS.EMPTY && (
+                    <div className="col-span-full flex min-h-64 flex-col items-center justify-center rounded-xl border border-dashed border-white/15 bg-white/[0.04] p-8 text-center">
+                        <BookOpen className="h-10 w-10 text-slate-500" />
+                        <p className="mt-3 font-semibold text-slate-200">Aucun volume disponible</p>
+                        <p className="mt-1 text-sm text-slate-400">Les volumes publiés apparaîtront ici.</p>
+                    </div>
+                )}
             </div>
 
-            {tomes.length > 0 && (
+            {catalogState.status === LOAD_STATUS.READY && tomes.length > 0 && (
                 <div className="mt-9 flex items-center justify-center gap-4">
                     <Button
                         type="button"
@@ -451,7 +580,7 @@ export default function DashboardPage() {
                                         variant="ghost"
                                         size="sm"
                                         className="-ml-2 h-9 rounded-full px-2 text-slate-300 hover:bg-white/8 hover:text-white"
-                                        onClick={() => setSelectedChapter(null)}
+                                        onClick={returnToChapters}
                                     >
                                         <ArrowLeft className="mr-1 h-4 w-4" />
                                         Retour au Tome {selectedTome?.numero}
@@ -518,9 +647,16 @@ export default function DashboardPage() {
                         <div className="p-5 sm:p-8 lg:p-10">
 
                             {!selectedChapter && (
-                                isLoadingData ? (
+                                drawerState.status === DRAWER_STATUS.LOADING_CHAPTERS ? (
                                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                                         {[1, 2, 3, 4, 5, 6, 7, 8].map(i => <Skeleton key={i} className="h-20 w-full rounded-xl bg-white/10" />)}
+                                    </div>
+                                ) : drawerState.status === DRAWER_STATUS.ERROR_CHAPTERS ? (
+                                    <RecoverableLoadError compact message={drawerState.error} onRetry={retryDrawerLoad} />
+                                ) : drawerState.status === DRAWER_STATUS.CHAPTERS_EMPTY ? (
+                                    <div className="flex min-h-52 flex-col items-center justify-center rounded-xl border border-dashed border-white/15 bg-white/[0.04] p-6 text-center">
+                                        <BookOpen className="h-9 w-9 text-slate-500" />
+                                        <p className="mt-3 font-semibold text-slate-200">Aucun chapitre dans ce volume</p>
                                     </div>
                                 ) : (
                                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -562,9 +698,16 @@ export default function DashboardPage() {
                             )}
 
                             {selectedChapter && (
-                                isLoadingData ? (
+                                drawerState.status === DRAWER_STATUS.LOADING_PAGES ? (
                                     <div className="grid grid-cols-5 gap-3">
                                         {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(i => <Skeleton key={i} className="aspect-square rounded-lg" />)}
+                                    </div>
+                                ) : drawerState.status === DRAWER_STATUS.ERROR_PAGES ? (
+                                    <RecoverableLoadError compact message={drawerState.error} onRetry={retryDrawerLoad} />
+                                ) : drawerState.status === DRAWER_STATUS.PAGES_EMPTY ? (
+                                    <div className="flex min-h-52 flex-col items-center justify-center rounded-xl border border-dashed border-white/15 bg-white/[0.04] p-6 text-center">
+                                        <BookOpen className="h-9 w-9 text-slate-500" />
+                                        <p className="mt-3 font-semibold text-slate-200">Aucune page dans ce chapitre</p>
                                     </div>
                                 ) : (
                                     <div className="space-y-5">

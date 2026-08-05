@@ -12,6 +12,11 @@ const {
 const { openPageImage, readPageImage } = require('../utils/pageStorage');
 const { createImageThumbnail, getThumbnailWidth } = require('../utils/imageThumbnail');
 const { mapBubbleMutationError } = require('../utils/bubblePermissions');
+const {
+    UnsupportedPageImageError,
+    requirePageImageContentType,
+    sniffPageImageBody,
+} = require('../utils/pageImageMime');
 
 async function streamImageBody(body, response) {
     if (!body) throw new Error('R2 returned an empty page object');
@@ -33,6 +38,27 @@ async function streamImageBody(body, response) {
     }
 
     await pipeline(readable, response);
+}
+
+function privateImageHeaders(_req, res, next) {
+    res.set('Cache-Control', 'private, no-store');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+    res.set('X-Content-Type-Options', 'nosniff');
+    res.set('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.vary('Authorization');
+    next();
+}
+
+function isUnsupportedPageImageError(error) {
+    return error instanceof UnsupportedPageImageError || error?.code === 'UNSUPPORTED_PAGE_IMAGE';
+}
+
+function sendPrivateImageError(res, error, fallbackMessage) {
+    if (isUnsupportedPageImageError(error)) {
+        return res.status(415).json({ error: error.message });
+    }
+    return res.status(500).json({ error: fallbackMessage });
 }
 
 function createPageRouter({
@@ -198,7 +224,7 @@ router.get('/:id/image/thumbnail', async (req, res) => {
     }
 });
 
-router.get('/:id/image/original', requireAuth, async (req, res) => {
+router.get('/:id/image/original', privateImageHeaders, requireAuth, async (req, res) => {
     try {
         const { data: page, error } = await supabaseClient
             .from('pages')
@@ -208,27 +234,25 @@ router.get('/:id/image/original', requireAuth, async (req, res) => {
 
         if (error || !page) return res.status(404).json({ error: "Page non trouvée" });
 
-        const { body, contentType, contentLength } = await openImage(page.url_image);
-        res.set('Content-Type', contentType);
+        const { body, contentLength } = await openImage(page.url_image);
+        const inspectedImage = await sniffPageImageBody(body);
+        res.set('Content-Type', inspectedImage.contentType);
         if (Number.isSafeInteger(contentLength) && contentLength >= 0) {
             res.set('Content-Length', String(contentLength));
         }
-        res.set('Cache-Control', 'private, no-store');
-        res.set('Cross-Origin-Resource-Policy', 'cross-origin');
-        res.set('Vary', 'Authorization');
-        await streamImageBody(body, res);
+        await streamImageBody(inspectedImage.body, res);
         return undefined;
     } catch (error) {
-        console.error("Erreur service image originale:", error);
         if (res.headersSent) {
             res.destroy(error);
             return undefined;
         }
-        return res.status(500).json({ error: "Erreur lors du chargement de l'image" });
+        if (!isUnsupportedPageImageError(error)) console.error("Erreur service image originale:", error);
+        return sendPrivateImageError(res, error, "Erreur lors du chargement de l'image");
     }
 });
 
-router.get('/:id/image/original/thumbnail', requireAuth, async (req, res) => {
+router.get('/:id/image/original/thumbnail', privateImageHeaders, requireAuth, async (req, res) => {
     try {
         const { data: page, error } = await supabaseClient
             .from('pages')
@@ -239,18 +263,16 @@ router.get('/:id/image/original/thumbnail', requireAuth, async (req, res) => {
         if (error || !page) return res.status(404).json({ error: "Page non trouvÃ©e" });
 
         const { buffer: imageBuffer } = await readImage(page.url_image);
+        requirePageImageContentType(imageBuffer);
         const thumbnailBuffer = await thumbnailImage(imageBuffer, {
             width: getThumbnailWidth(req.query.width),
         });
 
         res.set('Content-Type', 'image/avif');
-        res.set('Cache-Control', 'private, no-store');
-        res.set('Cross-Origin-Resource-Policy', 'cross-origin');
-        res.set('Vary', 'Authorization');
         res.send(thumbnailBuffer);
     } catch (error) {
-        console.error("Erreur thumbnail image originale:", error);
-        res.status(500).json({ error: "Erreur lors du traitement de l'image" });
+        if (!isUnsupportedPageImageError(error)) console.error("Erreur thumbnail image originale:", error);
+        sendPrivateImageError(res, error, "Erreur lors du traitement de l'image");
     }
 });
 

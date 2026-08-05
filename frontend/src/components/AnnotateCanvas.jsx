@@ -18,6 +18,7 @@ export function measureRenderedImage(imageElement) {
 }
 
 export default function AnnotateCanvas({
+    imageKey,
     canEdit,
     canEditBubble = () => false,
     imageDimensions,
@@ -28,6 +29,9 @@ export default function AnnotateCanvas({
     handleMouseMove,
     handleMouseUp,
     imageUrl,
+    isImageLoading = false,
+    onImageLoad,
+    onImageError,
     isSubmitting,
     loadingText,
     rectangle,
@@ -97,7 +101,14 @@ export default function AnnotateCanvas({
                 onMouseUp={handleMouseUp}
                 onMouseLeave={handleMouseUp}
             >
+                {isImageLoading && (
+                    <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#071625] text-sm font-semibold text-slate-300" role="status" aria-live="polite">
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin text-[#8dbbff]" />
+                        Chargement de l’image…
+                    </div>
+                )}
                 <img
+                    key={imageKey}
                     ref={imageRef}
                     src={imageUrl}
                     crossOrigin="anonymous"
@@ -106,7 +117,9 @@ export default function AnnotateCanvas({
                     onLoad={(event) => {
                         const dimensions = measureRenderedImage(event.currentTarget);
                         if (dimensions) setImageDimensions(dimensions);
+                        onImageLoad?.(event);
                     }}
+                    onError={onImageError}
                 />
 
                 {isSubmitting && (

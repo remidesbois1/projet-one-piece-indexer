@@ -465,15 +465,35 @@ function scorePageCandidate(queryBubbles, pageRecord) {
   };
 }
 
-function rankOcrPageCandidates(queryBubblesInput, pageRecords, options = {}) {
+function rankOcrPageCandidatesWithBudget(queryBubblesInput, pageRecords, options = {}) {
   const queryBubbles = normalizeQueryBubbles(queryBubblesInput);
   const limit = Number(options.limit) || 24;
+  const now = typeof options.now === 'function' ? options.now : () => Date.now();
+  const deadline = Number.isFinite(options.deadline) ? options.deadline : Number.POSITIVE_INFINITY;
+  const scored = [];
+  let processedCount = 0;
+  let budgetExceeded = false;
 
-  return (Array.isArray(pageRecords) ? pageRecords : [])
-    .map(pageRecord => scorePageCandidate(queryBubbles, pageRecord))
-    .filter(Boolean)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
+  for (const pageRecord of Array.isArray(pageRecords) ? pageRecords : []) {
+    if (now() >= deadline) {
+      budgetExceeded = true;
+      break;
+    }
+    const score = scorePageCandidate(queryBubbles, pageRecord);
+    processedCount += 1;
+    if (score) scored.push(score);
+  }
+
+  scored.sort((left, right) => right.score - left.score || Number(left.id) - Number(right.id));
+  return {
+    results: scored.slice(0, limit),
+    processedCount,
+    budgetExceeded,
+  };
+}
+
+function rankOcrPageCandidates(queryBubblesInput, pageRecords, options = {}) {
+  return rankOcrPageCandidatesWithBudget(queryBubblesInput, pageRecords, options).results;
 }
 
 module.exports = {
@@ -483,6 +503,7 @@ module.exports = {
   normalizeQueryBubbles,
   normalizeText,
   rankOcrPageCandidates,
+  rankOcrPageCandidatesWithBudget,
   scorePageCandidate,
   textSimilarity,
   tokenize,

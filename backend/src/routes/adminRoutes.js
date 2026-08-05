@@ -17,6 +17,7 @@ const { buildPageEmbeddingText } = require('../utils/pageEmbeddingText');
 const { cancelModalCall, submitTrainingJob } = require('../utils/modalTrainingLauncher');
 const { createPageStorageRef, getPrivatePagesBucketName } = require('../utils/pageStorage');
 const { getPageImagePath } = require('../utils/publicMedia');
+const { isPageImageValidationError, preparePageUpload } = require('../services/pageUpload');
 const { chapterUploadBodySchema, validateRequest } = require('../validation/requestSchemas');
 const {
   chapterArchiveUploadMiddleware,
@@ -588,8 +589,7 @@ router.post('/upload/page', authMiddleware, roleCheck(['Admin']), upload.single(
   }
 
   try {
-    const fileBuffer = fs.readFileSync(file.path);
-    const contentType = file.mimetype || 'image/avif';
+    const { buffer: fileBuffer, contentType } = await preparePageUpload(file.path);
 
     const pagesBucketName = getPrivatePagesBucketName();
     await s3Client.send(new PutObjectCommand({
@@ -603,8 +603,11 @@ router.post('/upload/page', authMiddleware, roleCheck(['Admin']), upload.single(
     const pageStorageRef = createPageStorageRef(pagesBucketName, key);
     res.json({ url: pageStorageRef });
   } catch (error) {
+    if (isPageImageValidationError(error)) {
+      return res.status(415).json({ error: "Le fichier doit être une image JPEG, PNG, WebP ou AVIF valide." });
+    }
     console.error("Erreur upload page:", error);
-    res.status(500).json({ error: "Erreur upload vers R2." });
+    return res.status(500).json({ error: "Erreur upload vers R2." });
   } finally {
     if (file && fs.existsSync(file.path)) fs.unlinkSync(file.path);
   }

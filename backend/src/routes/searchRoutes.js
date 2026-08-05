@@ -13,8 +13,12 @@ const {
     buildCandidateTokenQueries,
     buildInformativeTokens,
     normalizeQueryBubbles,
-    rankOcrPageCandidates,
+    rankOcrPageCandidatesWithBudget,
 } = require('../utils/ocrPageSearch');
+const {
+    OcrSearchBudgetError,
+    createOcrCandidateSearch,
+} = require('../services/ocrCandidateSearch');
 const {
     f2llmSearchBodySchema,
     ocrSearchBodySchema,
@@ -25,9 +29,10 @@ const {
 
 const DUAL_OVERLAP_BONUS = 1.15;
 const OCR_CANDIDATE_TOKEN_LIMIT = 12;
-const OCR_CANDIDATE_QUERY_LIMIT = 56;
-const OCR_CANDIDATE_PAGES_PER_TOKEN = 1200;
-const OCR_MAX_CANDIDATE_PAGES = 3500;
+const OCR_CANDIDATE_QUERY_LIMIT = 48;
+const OCR_MAX_CANDIDATE_PAGES = 600;
+const OCR_TOTAL_BUDGET_MS = 2_000;
+const ocrCandidateSearch = createOcrCandidateSearch({ client: supabaseAdmin });
 
 async function getUserFromReq(req) {
     try {
@@ -188,40 +193,10 @@ async function runF2llmVectorSearch({ req, query, embedding, page = 1, limit = 1
     return { results: finalResults, totalCount };
 }
 
-async function findCandidatePageIdsFromTokenQueries(tokenQueries) {
-    const pageScores = new Map();
-
-    for (const query of tokenQueries.slice(0, OCR_CANDIDATE_QUERY_LIMIT)) {
-        const term = typeof query === 'string' ? query : query.term;
-        const weight = typeof query === 'string' ? Math.max(1, query.length / 5) : query.weight;
-        if (!term) continue;
-
-        const { data, error } = await supabaseAdmin
-            .from('bulles')
-            .select('id_page')
-            .eq('statut', VALIDATED_BUBBLE_STATUS)
-            .ilike('texte_propose', `%${term}%`)
-            .limit(OCR_CANDIDATE_PAGES_PER_TOKEN);
-
-        if (error) throw error;
-
-        for (const row of data || []) {
-            if (!row.id_page) continue;
-            pageScores.set(row.id_page, (pageScores.get(row.id_page) || 0) + weight);
-        }
-    }
-
-    return Array.from(pageScores.entries())
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, OCR_MAX_CANDIDATE_PAGES)
-        .map(([pageId]) => pageId);
-}
-
-async function fetchCandidatePages(pageIds) {
+async function fetchCandidatePages(pageIds, signal) {
     if (!pageIds.length) return [];
 
-    const pages = [];
-    for (const chunk of chunkArray(pageIds, 250)) {
+    const batches = await Promise.all(chunkArray(pageIds, 200).map(async (chunk) => {
         const { data, error } = await supabaseAdmin
             .from('pages')
             .select(`
@@ -250,18 +225,39 @@ async function fetchCandidatePages(pageIds) {
                     order
                 )
             `)
-            .in('id', chunk);
+            .in('id', chunk)
+            .abortSignal(signal);
 
         if (error) throw error;
-        pages.push(...(data || []).map((page) => ({
+        return (data || []).map((page) => ({
             ...page,
             bulles: (page.bulles || []).filter(
                 (bubble) => bubble.statut === VALIDATED_BUBBLE_STATUS
             ),
-        })));
-    }
+        }));
+    }));
 
-    return pages;
+    return batches.flat();
+}
+
+function createOcrSearchBudget(req) {
+    const controller = new AbortController();
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+    }, OCR_TOTAL_BUDGET_MS);
+    const onAborted = () => controller.abort();
+    req.once('aborted', onAborted);
+    return {
+        deadline: Date.now() + OCR_TOTAL_BUDGET_MS,
+        signal: controller.signal,
+        timedOut: () => timedOut,
+        cleanup() {
+            clearTimeout(timeout);
+            req.removeListener('aborted', onAborted);
+        },
+    };
 }
 
 function formatOcrPageResult(pageRecord, provider) {
@@ -319,6 +315,7 @@ router.post('/ocr-match', validateRequest({ body: ocrSearchBodySchema, query: se
     const offset = (parsedPage - 1) * parsedLimit;
     const totalStart = Date.now();
     const userInfo = await getUserFromReq(req);
+    const budget = createOcrSearchBudget(req);
 
     const searchLog = {
         raw_query: raw_text || queryBubbles.map(bubble => bubble.content).join('\n'),
@@ -338,10 +335,22 @@ router.post('/ocr-match', validateRequest({ body: ocrSearchBodySchema, query: se
         const tokenQueries = buildCandidateTokenQueries(queryBubbles, OCR_CANDIDATE_TOKEN_LIMIT);
         searchLog.duration_normalization_ms = Date.now() - tokenStart;
 
-        const candidateStart = Date.now();
-        const candidatePageIds = await findCandidatePageIdsFromTokenQueries(tokenQueries);
+        const candidateLookup = await ocrCandidateSearch.getCandidates({
+            terms: tokenQueries.slice(0, OCR_CANDIDATE_QUERY_LIMIT),
+            filters: {
+                manga: filterManga,
+                tome: filterTome,
+                characters: filterCharacters,
+                arc: filterArc,
+            },
+            signal: budget.signal,
+        });
+        const candidatePageIds = candidateLookup.rows.map(row => row.page_id);
         searchLog.merged_candidates_count = candidatePageIds.length;
-        const candidateLookupMs = Date.now() - candidateStart;
+        searchLog.duration_ocr_candidate_rpc_ms = candidateLookup.rpcDurationMs;
+        searchLog.ocr_candidate_terms_count = candidateLookup.termsCount;
+        searchLog.ocr_candidate_pages_count = candidatePageIds.length;
+        searchLog.ocr_candidate_cache_hit = candidateLookup.cacheHit;
 
         if (!candidatePageIds.length) {
             searchLog.final_results_count = 0;
@@ -356,13 +365,15 @@ router.post('/ocr-match', validateRequest({ body: ocrSearchBodySchema, query: se
                     candidatePagesCount: 0,
                     rankedPagesCount: 0,
                     topScore: 0,
+                    cacheHit: candidateLookup.cacheHit,
                 },
             });
         }
 
         const fetchStart = Date.now();
-        let candidatePages = await fetchCandidatePages(candidatePageIds);
+        let candidatePages = await fetchCandidatePages(candidatePageIds, budget.signal);
         const candidateFetchMs = Date.now() - fetchStart;
+        searchLog.duration_ocr_candidate_fetch_ms = candidateFetchMs;
 
         candidatePages = candidatePages.filter(pageRecord => {
             const { chapitre, tome: pageTome, manga: pageManga } = getNestedPageMeta(pageRecord);
@@ -373,10 +384,16 @@ router.post('/ocr-match', validateRequest({ body: ocrSearchBodySchema, query: se
         });
 
         const rankStart = Date.now();
-        const rankedPages = rankOcrPageCandidates(queryBubbles, candidatePages, {
+        const ranking = rankOcrPageCandidatesWithBudget(queryBubbles, candidatePages, {
             limit: OCR_MAX_CANDIDATE_PAGES,
+            deadline: budget.deadline,
         });
-        searchLog.duration_merge_ms = candidateLookupMs + candidateFetchMs + (Date.now() - rankStart);
+        searchLog.duration_ocr_rank_ms = Date.now() - rankStart;
+        if (ranking.budgetExceeded) {
+            throw new OcrSearchBudgetError('OCR candidate ranking exceeded its time budget.');
+        }
+        const rankedPages = ranking.results;
+        searchLog.duration_merge_ms = searchLog.duration_ocr_candidate_rpc_ms + candidateFetchMs + searchLog.duration_ocr_rank_ms;
 
         const topOcrScore = rankedPages[0]?.score || 0;
         const ocrResults = rankedPages.map(pageRecord => formatOcrPageResult(pageRecord, provider));
@@ -401,14 +418,25 @@ router.post('/ocr-match', validateRequest({ body: ocrSearchBodySchema, query: se
                 topScore: topOcrScore,
                 tokens: informativeTokens,
                 candidateQueries: tokenQueries.slice(0, OCR_CANDIDATE_QUERY_LIMIT).map(query => query.term),
+                cacheHit: candidateLookup.cacheHit,
             },
         });
     } catch (error) {
         console.error("Erreur recherche OCR:", error);
         searchLog.error = error.message;
+        searchLog.ocr_budget_exceeded = error instanceof OcrSearchBudgetError || budget.timedOut();
         searchLog.duration_total_ms = Date.now() - totalStart;
         insertSearchLog(searchLog);
+        if (req.aborted || res.headersSent) return;
+        if (searchLog.ocr_budget_exceeded) {
+            return res.status(504).json({
+                error: "La recherche OCR a dépassé son budget de calcul.",
+                code: 'OCR_SEARCH_BUDGET_EXCEEDED',
+            });
+        }
         res.status(500).json({ error: "Erreur recherche OCR" });
+    } finally {
+        budget.cleanup();
     }
 });
 

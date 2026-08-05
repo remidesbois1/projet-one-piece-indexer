@@ -1,5 +1,6 @@
 "use client";
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createAbortError } from '@/lib/searchRequestLifecycle';
 
 const DetectionContext = createContext();
 
@@ -12,6 +13,7 @@ export const DetectionProvider = ({ children }) => {
     const [downloadProgress, setDownloadProgress] = useState(0);
     const [downloadStats, setDownloadStats] = useState({ loaded: 0, total: 0 });
     const detectionStatusRef = useRef(detectionStatus);
+    const nextDetectionRequestIdRef = useRef(1);
 
     useEffect(() => {
         detectionStatusRef.current = detectionStatus;
@@ -56,51 +58,93 @@ export const DetectionProvider = ({ children }) => {
     
     const detectBubbles = React.useCallback((blob, options = {}) => {
         return new Promise((resolve, reject) => {
+            const signal = options.signal;
+            if (signal?.aborted) {
+                reject(createAbortError());
+                return;
+            }
             if (!workerRef.current || detectionStatusRef.current !== 'ready') {
-                return reject(new Error("Modèle de détection non prêt."));
+                reject(new Error("Modèle de détection non prêt."));
+                return;
             }
 
+            const currentWorker = workerRef.current;
+            const requestId = `detection-${nextDetectionRequestIdRef.current}`;
+            nextDetectionRequestIdRef.current += 1;
+
+            const cleanup = () => {
+                currentWorker.removeEventListener('message', handleMessage);
+                signal?.removeEventListener('abort', handleAbort);
+            };
+            const handleAbort = () => {
+                cleanup();
+                currentWorker.postMessage({ type: 'cancel', requestId });
+                reject(createAbortError());
+            };
             const handleMessage = (e) => {
-                const { status, boxes, debug, error } = e.data;
+                const { status, requestId: responseRequestId, boxes, debug, error } = e.data;
+                if (responseRequestId !== requestId) return;
                 if (status === 'complete') {
-                    workerRef.current.removeEventListener('message', handleMessage);
+                    cleanup();
                     resolve(options.returnDebug ? { boxes, debug } : boxes);
                 }
                 if (status === 'error') {
-                    workerRef.current.removeEventListener('message', handleMessage);
+                    cleanup();
                     reject(new Error(error));
                 }
             };
 
-            workerRef.current.addEventListener('message', handleMessage);
-            workerRef.current.postMessage({
+            currentWorker.addEventListener('message', handleMessage);
+            signal?.addEventListener('abort', handleAbort, { once: true });
+            currentWorker.postMessage({
                 type: 'run',
+                requestId,
                 imageBlob: blob,
                 debug: Boolean(options.debug || options.returnDebug)
             });
         });
     }, []);
 
-    const detectBubblesPositionsOnly = React.useCallback((blob) => {
+    const detectBubblesPositionsOnly = React.useCallback((blob, { signal } = {}) => {
         return new Promise((resolve, reject) => {
+            if (signal?.aborted) {
+                reject(createAbortError());
+                return;
+            }
             if (!workerRef.current || detectionStatusRef.current !== 'ready') {
-                return reject(new Error("Modèle de détection non prêt."));
+                reject(new Error("Modèle de détection non prêt."));
+                return;
             }
 
+            const currentWorker = workerRef.current;
+            const requestId = `detection-positions-${nextDetectionRequestIdRef.current}`;
+            nextDetectionRequestIdRef.current += 1;
+
+            const cleanup = () => {
+                currentWorker.removeEventListener('message', handleMessage);
+                signal?.removeEventListener('abort', handleAbort);
+            };
+            const handleAbort = () => {
+                cleanup();
+                currentWorker.postMessage({ type: 'cancel', requestId });
+                reject(createAbortError());
+            };
             const handleMessage = (e) => {
-                const { status, boxes, error } = e.data;
+                const { status, requestId: responseRequestId, boxes, error } = e.data;
+                if (responseRequestId !== requestId) return;
                 if (status === 'complete') {
-                    workerRef.current.removeEventListener('message', handleMessage);
+                    cleanup();
                     resolve(boxes);
                 }
                 if (status === 'error') {
-                    workerRef.current.removeEventListener('message', handleMessage);
+                    cleanup();
                     reject(new Error(error));
                 }
             };
 
-            workerRef.current.addEventListener('message', handleMessage);
-            workerRef.current.postMessage({ type: 'run-positions-only', imageBlob: blob });
+            currentWorker.addEventListener('message', handleMessage);
+            signal?.addEventListener('abort', handleAbort, { once: true });
+            currentWorker.postMessage({ type: 'run-positions-only', requestId, imageBlob: blob });
         });
     }, []);
 
