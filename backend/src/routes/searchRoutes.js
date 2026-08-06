@@ -719,16 +719,4 @@ router.get('/', validateRequest({ query: searchQuerySchema }), async (req, res) 
 });
 
 
-        if (error) {
-            console.error("Feedback insert error:", error);
-            return res.status(500).json({ error: error.message });
-        }
-
-        res.json({ success: true });
-    } catch (err) {
-        console.error("Feedback server error:", err);
-        res.status(500).json({ error: "Internal Error" });
-    }
-});
-
 module.exports = router;

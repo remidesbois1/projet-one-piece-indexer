@@ -3,7 +3,11 @@
   "version": "1.0.0",
   "description": "API for Projet Poneglyph.",
   "main": "src/index.js",
+  "engines": {
+    "node": ">=22.14.0"
+  },
   "scripts": {
+    "build": "echo 'No build needed for backend'",
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "test": "node --test",

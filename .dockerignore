@@ -1,0 +1,10 @@
+.git
+docs
+docker_scripts
+desktop_backend
+frontend/src-tauri
+backend/models
+**/node_modules
+**/.next
+**/target
+**/*.log

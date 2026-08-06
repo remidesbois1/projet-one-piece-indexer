@@ -1,0 +1,13 @@
+.git
+frontend
+docs
+docker_scripts
+desktop_backend
+
+**/node_modules
+**/.next
+**/target
+**/*.log
+
+backend/models
+backend/test
