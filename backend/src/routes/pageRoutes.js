@@ -18,6 +18,8 @@ const {
     sniffPageImageBody,
 } = require('../utils/pageImageMime');
 
+const { imageCache, cacheKey, getPageRevision } = require('../utils/imageCache');
+
 async function streamImageBody(body, response) {
     if (!body) throw new Error('R2 returned an empty page object');
     if (Buffer.isBuffer(body) || body instanceof Uint8Array) {
@@ -171,8 +173,6 @@ router.get('/:id/image', async (req, res) => {
 
         if (error || !page) return res.status(404).json({ error: "Page non trouvée" });
 
-        const { buffer: imageBuffer } = await readImage(page.url_image);
-
         const { data: bubbles, error: bubblesError } = await supabaseClient
             .from('bulles')
             .select('x, y, w, h')
@@ -181,7 +181,15 @@ router.get('/:id/image', async (req, res) => {
 
         if (bubblesError) throw bubblesError;
 
-        const protectedImageBuffer = await previewImage(imageBuffer, bubbles);
+        const revision = getPageRevision(bubbles);
+        const key = cacheKey.pagePreview({ pageId: id, revision });
+        let protectedImageBuffer = imageCache.get(key);
+
+        if (!protectedImageBuffer) {
+            const { buffer: imageBuffer } = await readImage(page.url_image);
+            protectedImageBuffer = await previewImage(imageBuffer, bubbles);
+            imageCache.set(key, protectedImageBuffer);
+        }
 
         res.set('Content-Type', 'image/avif');
         res.set('Cache-Control', 'public, max-age=86400');
@@ -204,9 +212,7 @@ router.get('/:id/image/thumbnail', async (req, res) => {
             .eq('id', id)
             .single();
 
-        if (error || !page) return res.status(404).json({ error: "Page non trouvÃ©e" });
-
-        const { buffer: imageBuffer } = await readImage(page.url_image);
+        if (error || !page) return res.status(404).json({ error: "Page non trouvée" });
         const { data: bubbles, error: bubblesError } = await supabaseClient
             .from('bulles')
             .select('x, y, w, h')
@@ -215,10 +221,18 @@ router.get('/:id/image/thumbnail', async (req, res) => {
 
         if (bubblesError) throw bubblesError;
 
-        const protectedImageBuffer = await previewImage(imageBuffer, bubbles);
-        const thumbnailBuffer = await thumbnailImage(protectedImageBuffer, {
-            width: getThumbnailWidth(req.query.width),
-        });
+        const width = getThumbnailWidth(req.query.width);
+        const revision = getPageRevision(bubbles);
+        const key = cacheKey.pageThumbnail({ pageId: id, revision, width });
+        
+        let thumbnailBuffer = imageCache.get(key);
+
+        if (!thumbnailBuffer) {
+            const { buffer: imageBuffer } = await readImage(page.url_image);
+            const protectedImageBuffer = await previewImage(imageBuffer, bubbles);
+            thumbnailBuffer = await thumbnailImage(protectedImageBuffer, { width });
+            imageCache.set(key, thumbnailBuffer);
+        }
 
         res.set('Content-Type', 'image/avif');
         res.set('Cache-Control', 'public, max-age=86400');
@@ -268,7 +282,7 @@ router.get('/:id/image/original/thumbnail', privateImageHeaders, requireAuth, as
             .eq('id', req.params.id)
             .single();
 
-        if (error || !page) return res.status(404).json({ error: "Page non trouvÃ©e" });
+        if (error || !page) return res.status(404).json({ error: "Page non trouvée" });
 
         const { buffer: imageBuffer } = await readImage(page.url_image);
         requirePageImageContentType(imageBuffer);

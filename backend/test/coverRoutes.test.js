@@ -46,3 +46,34 @@ test('cover thumbnails only read paths below the configured covers prefix', asyn
     assert.equal(response.headers.get('cross-origin-resource-policy'), 'cross-origin');
   });
 });
+
+test('caching prevents duplicate readImage calls on cache hit', async () => {
+  const { imageCache } = require('../src/utils/imageCache');
+
+  let readImageCallCount = 0;
+  
+  const router = createCoverRouter({
+    publicUrlBase: 'https://media.example.test',
+    readImage: async () => {
+      readImageCallCount++;
+      return { buffer: Buffer.from('cover') };
+    },
+    thumbnailImage: async () => {
+      return Buffer.from('cover-thumbnail');
+    },
+  });
+
+  const uniquePath = `cache-test-${Date.now()}.jpg`;
+
+  await withServer(router, async (baseUrl) => {
+    // First request: should call readImage
+    const res1 = await fetch(`${baseUrl}/api/covers/thumbnail?path=${uniquePath}&width=360`);
+    assert.equal(await res1.text(), 'cover-thumbnail');
+    assert.equal(readImageCallCount, 1);
+
+    // Second request: should HIT cache, readImage MUST NOT be called again
+    const res2 = await fetch(`${baseUrl}/api/covers/thumbnail?path=${uniquePath}&width=360`);
+    assert.equal(await res2.text(), 'cover-thumbnail');
+    assert.equal(readImageCallCount, 1, 'readImage should not be called on cache hit');
+  });
+});

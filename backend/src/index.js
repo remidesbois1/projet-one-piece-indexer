@@ -1,3 +1,4 @@
+require('node:dns').setDefaultResultOrder('ipv4first');
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
@@ -7,7 +8,7 @@ const app = express();
 
 // Trust proxy is required if running behind a reverse proxy (like Nginx, Heroku, Vercel, Supabase)
 // to correctly identify the client IP for rate limiting and blocking.
-app.set('trust proxy', parseTrustedProxyCidrs(process.env.TRUSTED_PROXY_CIDRS));
+app.set('trust proxy', process.env.TRUSTED_PROXY_CIDRS ? parseTrustedProxyCidrs(process.env.TRUSTED_PROXY_CIDRS) : 1);
 
 const allowedOrigins = [
   'https://onepiece-index.com',

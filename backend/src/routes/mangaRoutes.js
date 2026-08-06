@@ -2,6 +2,7 @@ const express = require('express');
 const { supabase } = require('../config/supabaseClient');
 const { readPageImage } = require('../utils/pageStorage');
 const { createImageThumbnail, getThumbnailWidth } = require('../utils/imageThumbnail');
+const { imageCache, cacheKey } = require('../utils/imageCache');
 
 function createMangaRouter({
     supabaseClient = supabase,
@@ -38,13 +39,22 @@ router.get('/:slug/cover/thumbnail', async (req, res) => {
             .single();
 
         if (error || !manga?.cover_url) {
-            return res.status(404).json({ error: "Couverture non trouvÃ©e" });
+            return res.status(404).json({ error: "Couverture non trouvée" });
         }
 
-        const { buffer: imageBuffer } = await readImage(manga.cover_url);
-        const thumbnailBuffer = await thumbnailImage(imageBuffer, {
-            width: getThumbnailWidth(req.query.width, 600),
-        });
+        const width = getThumbnailWidth(req.query.width, 600);
+        const path = manga.cover_url;
+        const key = cacheKey.cover({ path, width });
+        
+        let thumbnailBuffer;
+        
+        if (imageCache.has(key)) {
+            thumbnailBuffer = imageCache.get(key);
+        } else {
+            const { buffer: imageBuffer } = await readImage(manga.cover_url);
+            thumbnailBuffer = await thumbnailImage(imageBuffer, { width });
+            imageCache.set(key, thumbnailBuffer);
+        }
 
         res.set('Content-Type', 'image/avif');
         res.set('Cache-Control', 'public, max-age=86400');

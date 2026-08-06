@@ -14,6 +14,8 @@ function createCoverReference(path, publicUrlBase = process.env.R2_PUBLIC_URL) {
     return `${publicUrlBase.replace(/\/$/, '')}/${encodedPath}`;
 }
 
+const { imageCache, cacheKey } = require('../utils/imageCache');
+
 function createCoverRouter({
     readImage = readPageImage,
     thumbnailImage = createImageThumbnail,
@@ -23,11 +25,20 @@ function createCoverRouter({
 
     router.get('/thumbnail', async (req, res) => {
         try {
-            const reference = createCoverReference(req.query.path, publicUrlBase);
-            const { buffer: imageBuffer } = await readImage(reference);
-            const thumbnailBuffer = await thumbnailImage(imageBuffer, {
-                width: getThumbnailWidth(req.query.width, 512),
-            });
+            const width = getThumbnailWidth(req.query.width, 512);
+            const path = req.query.path || '';
+            const key = cacheKey.cover({ path, width });
+
+            let thumbnailBuffer;
+
+            if (imageCache.has(key)) {
+                thumbnailBuffer = imageCache.get(key);
+            } else {
+                const reference = createCoverReference(path, publicUrlBase);
+                const { buffer: imageBuffer } = await readImage(reference);
+                thumbnailBuffer = await thumbnailImage(imageBuffer, { width });
+                imageCache.set(key, thumbnailBuffer);
+            }
 
             res.set('Content-Type', 'image/avif');
             res.set('Cache-Control', 'public, max-age=86400');

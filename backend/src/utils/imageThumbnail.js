@@ -25,7 +25,7 @@ async function createImageThumbnail(imageBuffer, { width = DEFAULT_THUMBNAIL_WID
     })
     .avif({
       quality,
-      effort: 4,
+      effort: 1,
       chromaSubsampling: '4:4:4',
     })
     .toBuffer();

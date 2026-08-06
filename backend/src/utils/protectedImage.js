@@ -71,7 +71,7 @@ async function createPublicPreviewImage(imageBuffer, bubbles) {
     .composite(revealComposites)
     .avif({
       quality: 45,
-      effort: 3,
+      effort: 1,
       chromaSubsampling: '4:2:0'
     })
     .toBuffer();
