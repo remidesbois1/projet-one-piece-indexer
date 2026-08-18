@@ -11,6 +11,7 @@ import { useTauriLocalOcrContext } from '@/context/TauriLocalOcrContext';
 import { capitalizeOcrSentenceStarts } from '@/lib/ocr-utils';
 import { postOcrImage } from '@/lib/ocrProxyClient';
 import { getChatGptStatus, runChatGptPageOcr } from '@/lib/chatGptDesktop';
+import { reconcileOcrBubblesWithYolo } from '@/lib/ocrBboxFusion';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { ArrowLeft, Upload } from "lucide-react";
 import { toast } from "sonner";
@@ -482,23 +483,32 @@ export default function SandboxClient() {
                 toast.info('Connectez votre compte ChatGPT pour utiliser GPT-5.6 Luna.');
                 return;
             }
+            const yoloPromise = detectionStatus === 'ready'
+                ? fetch(imageRef.current.src)
+                    .then(response => response.blob())
+                    .then(blob => detectBubbles(blob))
+                    .catch(error => {
+                        console.error('YOLO Failed', error);
+                        return null;
+                    })
+                : Promise.resolve(null);
             const imageBlob = await imageElementToJpegBlob(imageRef.current);
             if (!imageBlob) throw new Error("Impossible de convertir l'image.");
-            const result = await runChatGptPageOcr(imageBlob);
+            const [result, yoloBoxes] = await Promise.all([runChatGptPageOcr(imageBlob), yoloPromise]);
             if (!Array.isArray(result?.bubbles)) throw new Error('Format de réponse OCR invalide.');
             const imageWidth = imageRef.current.naturalWidth;
             const imageHeight = imageRef.current.naturalHeight;
             const baseId = Date.now();
-            const newBubbles = result.bubbles.map((bubble, index) => {
-                const [x1, y1, x2, y2] = bubble.bbox;
+            const reconciledBubbles = reconcileOcrBubblesWithYolo(result.bubbles, yoloBoxes, imageWidth, imageHeight);
+            const newBubbles = reconciledBubbles.map((bubble, index) => {
                 return {
                     id: `sandbox-chatgpt-${baseId}-${index}`,
                     id_page: 'sandbox',
-                    x: Math.round((x1 / 1000) * imageWidth),
-                    y: Math.round((y1 / 1000) * imageHeight),
-                    w: Math.round(((x2 - x1) / 1000) * imageWidth),
-                    h: Math.round(((y2 - y1) / 1000) * imageHeight),
-                    texte_propose: bubble.content,
+                    x: bubble.x,
+                    y: bubble.y,
+                    w: bubble.w,
+                    h: bubble.h,
+                    texte_propose: capitalizeOcrSentenceStarts(bubble.content),
                     statut: 'Proposé',
                     id_user_createur: 'sandbox-user',
                     order: existingBubbles.length + index + 1,

@@ -1928,10 +1928,34 @@ async fn chatgpt_logout(state: State<'_, ChatGptState>) -> Result<ChatGptAuthSta
     Ok(auth_status(None))
 }
 
+fn chatgpt_ocr_request_body(
+    image_bytes_base64: &str,
+    mime_type: &str,
+    fast_mode: bool,
+) -> serde_json::Value {
+    serde_json::json!({
+        "model": CHATGPT_OCR_MODEL,
+        "service_tier": if fast_mode { "priority" } else { "default" },
+        "reasoning": {
+            "effort": "low"
+        },
+        "input": [{
+            "role": "user",
+            "content": [
+                { "type": "input_text", "text": CHATGPT_OCR_PROMPT },
+                { "type": "input_image", "image_url": format!("data:{mime_type};base64,{image_bytes_base64}") }
+            ]
+        }],
+        "stream": true,
+        "store": false,
+    })
+}
+
 #[tauri::command(rename_all = "snake_case")]
 async fn run_chatgpt_page_ocr(
     image_bytes_base64: String,
     mime_type: String,
+    fast_mode: bool,
     state: State<'_, ChatGptState>,
 ) -> Result<ChatGptOcrResponse, String> {
     validate_ocr_image_payload(&image_bytes_base64)?;
@@ -1950,18 +1974,11 @@ async fn run_chatgpt_page_ocr(
         .header("ChatGPT-Account-Id", &session.account_id)
         .header("Originator", "codex_cli_rs")
         .header("OpenAI-Beta", "responses=experimental")
-        .json(&serde_json::json!({
-            "model": CHATGPT_OCR_MODEL,
-            "input": [{
-                "role": "user",
-                "content": [
-                    { "type": "input_text", "text": CHATGPT_OCR_PROMPT },
-                    { "type": "input_image", "image_url": format!("data:{mime_type};base64,{image_bytes_base64}") }
-                ]
-            }],
-            "stream": true,
-            "store": false,
-        }))
+        .json(&chatgpt_ocr_request_body(
+            &image_bytes_base64,
+            &mime_type,
+            fast_mode,
+        ))
         .send()
         .await
         .map_err(|_| "Appel OCR GPT-5.6 Luna impossible.".to_string())?;
@@ -2037,9 +2054,9 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        decode_response_json, ensure_model_parent_directories, frontend_origin_for_target,
-        jwt_claims, normalize_frontend_path, parse_codex_response, query_parameter,
-        validate_ocr_image_payload, MAX_OCR_IMAGE_BASE64_BYTES,
+        chatgpt_ocr_request_body, decode_response_json, ensure_model_parent_directories,
+        frontend_origin_for_target, jwt_claims, normalize_frontend_path, parse_codex_response,
+        query_parameter, validate_ocr_image_payload, MAX_OCR_IMAGE_BASE64_BYTES,
     };
     use reqwest::StatusCode;
     use serde_json::Value;
@@ -2048,6 +2065,16 @@ mod tests {
     #[test]
     fn accepts_a_bounded_ocr_payload() {
         assert!(validate_ocr_image_payload("aGVsbG8=").is_ok());
+    }
+
+    #[test]
+    fn maps_luna_fast_mode_to_priority_service_with_low_reasoning() {
+        let fast = chatgpt_ocr_request_body("aGVsbG8=", "image/png", true);
+        let standard = chatgpt_ocr_request_body("aGVsbG8=", "image/png", false);
+        assert_eq!(fast["service_tier"], "priority");
+        assert_eq!(fast["reasoning"]["effort"], "low");
+        assert_eq!(standard["service_tier"], "default");
+        assert_eq!(standard["reasoning"]["effort"], "low");
     }
 
     #[test]

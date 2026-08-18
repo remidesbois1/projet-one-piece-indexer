@@ -5,11 +5,12 @@ import React, { useEffect, useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 
 
 import { KeyRound, ExternalLink, ShieldCheck, CheckCircle2, Trash2, ArrowRight, LogIn, Loader2 } from "lucide-react";
-import { getChatGptStatus, loginChatGpt, logoutChatGpt, subscribeToChatGptAuth } from '@/lib/chatGptDesktop';
+import { getChatGptFastMode, getChatGptStatus, loginChatGpt, logoutChatGpt, setChatGptFastMode, subscribeToChatGptAuth } from '@/lib/chatGptDesktop';
 
 const STORAGE_KEYS = {
     google: 'google_api_key',
@@ -144,6 +145,7 @@ const ApiKeyForm = ({ onSave = () => {} }) => {
     });
     const [chatGptStatus, setChatGptStatus] = useState({ available: false, connected: false });
     const [isChatGptPending, setIsChatGptPending] = useState(false);
+    const [chatGptFastMode, setChatGptFastModeState] = useState(getChatGptFastMode);
 
     useEffect(() => {
         let cancelled = false;
@@ -184,6 +186,11 @@ const ApiKeyForm = ({ onSave = () => {} }) => {
         } finally {
             setIsChatGptPending(false);
         }
+    };
+
+    const handleChatGptFastModeChange = (enabled) => {
+        setChatGptFastModeState(enabled);
+        setChatGptFastMode(enabled);
     };
 
     return (
@@ -240,6 +247,18 @@ const ApiKeyForm = ({ onSave = () => {} }) => {
                             {isChatGptPending ? 'Connexion dans le navigateur…' : 'Se connecter avec ChatGPT'}
                         </Button>
                     )}
+                    <div className="flex items-center justify-between gap-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                        <div>
+                            <Label htmlFor="chatgpt-fast-mode" className="text-sm font-semibold text-slate-700">Mode rapide Luna</Label>
+                            <p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">Active le traitement prioritaire tout en conservant le raisonnement léger.</p>
+                        </div>
+                        <Switch
+                            id="chatgpt-fast-mode"
+                            checked={chatGptFastMode}
+                            onCheckedChange={handleChatGptFastModeChange}
+                            aria-label="Activer le mode rapide de GPT-5.6 Luna"
+                        />
+                    </div>
                 </div>
             )}
         </div>

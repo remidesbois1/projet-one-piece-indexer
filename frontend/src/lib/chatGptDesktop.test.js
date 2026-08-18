@@ -7,10 +7,20 @@ vi.mock('@tauri-apps/api/core', () => ({
     isTauri: () => true,
 }));
 
-import { getChatGptStatus, logoutChatGpt, runChatGptPageOcr } from './chatGptDesktop';
+import {
+    CHATGPT_FAST_MODE_STORAGE_KEY,
+    getChatGptFastMode,
+    getChatGptStatus,
+    logoutChatGpt,
+    runChatGptPageOcr,
+    setChatGptFastMode,
+} from './chatGptDesktop';
 
 describe('chatGptDesktop', () => {
-    beforeEach(() => invoke.mockReset());
+    beforeEach(() => {
+        invoke.mockReset();
+        localStorage.clear();
+    });
 
     it('reads the in-memory desktop authentication status', async () => {
         invoke.mockResolvedValue({ connected: true, email: 'reader@example.com', model: 'gpt-5.6-luna' });
@@ -29,7 +39,21 @@ describe('chatGptDesktop', () => {
         expect(invoke).toHaveBeenCalledWith('run_chatgpt_page_ocr', {
             image_bytes_base64: 'AQID',
             mime_type: 'image/png',
+            fast_mode: false,
         });
+    });
+
+    it('persists and sends the Luna latency preference', async () => {
+        invoke.mockResolvedValue({ bubbles: [] });
+        setChatGptFastMode(true);
+
+        expect(getChatGptFastMode()).toBe(true);
+        expect(localStorage.getItem(CHATGPT_FAST_MODE_STORAGE_KEY)).toBe('true');
+
+        await runChatGptPageOcr(new Blob(['image'], { type: 'image/jpeg' }));
+        expect(invoke).toHaveBeenCalledWith('run_chatgpt_page_ocr', expect.objectContaining({
+            fast_mode: true,
+        }));
     });
 
     it('clears the desktop session without touching browser storage', async () => {

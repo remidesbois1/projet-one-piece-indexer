@@ -19,6 +19,7 @@ import { fetchOriginalPageImage } from '@/lib/pageImageClient';
 import { capitalizeOcrSentenceStarts } from '@/lib/ocr-utils';
 import { postOcrImage } from '@/lib/ocrProxyClient';
 import { getChatGptStatus, runChatGptPageOcr } from '@/lib/chatGptDesktop';
+import { reconcileOcrBubblesWithYolo } from '@/lib/ocrBboxFusion';
 import { canCreateBubble, canEditBubble, canReorderBubbles } from '@/lib/bubblePermissions';
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -854,25 +855,34 @@ export default function AnnotatePage() {
                 toast.info('Connectez votre compte ChatGPT pour utiliser GPT-5.6 Luna.');
                 return;
             }
+            const yoloPromise = detectionStatus === 'ready'
+                ? fetch(imageRef.current.src)
+                    .then(response => response.blob())
+                    .then(blob => runDebuggableDetection(blob))
+                    .catch(error => {
+                        console.error('YOLO Failed', error);
+                        return null;
+                    })
+                : Promise.resolve(null);
             const imageBlob = await imageElementToJpegBlob(imageRef.current);
             if (!imageBlob) throw new Error("Impossible de convertir l'image.");
-            const result = await runChatGptPageOcr(imageBlob);
+            const [result, yoloBoxes] = await Promise.all([runChatGptPageOcr(imageBlob), yoloPromise]);
             if (!Array.isArray(result?.bubbles)) throw new Error('Format de réponse OCR invalide.');
 
             const imageWidth = imageRef.current.naturalWidth;
             const imageHeight = imageRef.current.naturalHeight;
+            const reconciledBubbles = reconcileOcrBubblesWithYolo(result.bubbles, yoloBoxes, imageWidth, imageHeight);
             const { createBubble } = await import('@/lib/api');
             const createdBubbles = [];
-            for (const bubble of result.bubbles) {
-                const [x1, y1, x2, y2] = bubble.bbox;
+            for (const bubble of reconciledBubbles) {
                 try {
                     const response = await createBubble({
                         id_page: parseInt(pageId, 10),
-                        x: Math.round((x1 / 1000) * imageWidth),
-                        y: Math.round((y1 / 1000) * imageHeight),
-                        w: Math.round(((x2 - x1) / 1000) * imageWidth),
-                        h: Math.round(((y2 - y1) / 1000) * imageHeight),
-                        texte_propose: bubble.content,
+                        x: bubble.x,
+                        y: bubble.y,
+                        w: bubble.w,
+                        h: bubble.h,
+                        texte_propose: capitalizeOcrSentenceStarts(bubble.content),
                     });
                     createdBubbles.push(response.data);
                 } catch (error) {

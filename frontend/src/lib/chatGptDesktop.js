@@ -1,4 +1,5 @@
 const CHATGPT_AUTH_EVENT = 'poneglyph:chatgpt-auth-changed';
+export const CHATGPT_FAST_MODE_STORAGE_KEY = 'poneglyph_chatgpt_fast_mode';
 
 async function resolveDesktopInvoke() {
     if (typeof window === 'undefined') return null;
@@ -64,11 +65,22 @@ export async function logoutChatGpt() {
     return { available: true, ...status };
 }
 
-export async function runChatGptPageOcr(imageBlob) {
+export function getChatGptFastMode() {
+    if (typeof window === 'undefined') return false;
+    return window.localStorage.getItem(CHATGPT_FAST_MODE_STORAGE_KEY) === 'true';
+}
+
+export function setChatGptFastMode(enabled) {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(CHATGPT_FAST_MODE_STORAGE_KEY, String(Boolean(enabled)));
+}
+
+export async function runChatGptPageOcr(imageBlob, { fastMode = getChatGptFastMode() } = {}) {
     if (!(imageBlob instanceof Blob)) throw new Error('Image OCR manquante.');
     return invokeDesktop('run_chatgpt_page_ocr', {
         image_bytes_base64: await blobToBase64(imageBlob),
         mime_type: imageBlob.type || 'image/jpeg',
+        fast_mode: Boolean(fastMode),
     });
 }
 
