@@ -10,6 +10,7 @@ import { useAnnotationMetadata } from '@/hooks/useAnnotationMetadata';
 import { useTauriLocalOcrContext } from '@/context/TauriLocalOcrContext';
 import { capitalizeOcrSentenceStarts } from '@/lib/ocr-utils';
 import { postOcrImage } from '@/lib/ocrProxyClient';
+import { getChatGptStatus, runChatGptPageOcr } from '@/lib/chatGptDesktop';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { ArrowLeft, Upload } from "lucide-react";
 import { toast } from "sonner";
@@ -134,12 +135,22 @@ export default function SandboxClient() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [imageUrl, setImageUrl] = useState(null);
     const [isPoneglyphLoading, setIsPoneglyphLoading] = useState(false);
+    const [isChatGptLoading, setIsChatGptLoading] = useState(false);
+    const [chatGptDesktopAvailable, setChatGptDesktopAvailable] = useState(false);
     const [poneglyphRunMode, setPoneglyphRunMode] = useState(null);
 
     const containerRef = useRef(null);
     const imageRef = useRef(null);
     const fileInputRef = useRef(null);
     const tauriLocalOcr = useTauriLocalOcrContext();
+
+    useEffect(() => {
+        let cancelled = false;
+        getChatGptStatus().then(status => {
+            if (!cancelled) setChatGptDesktopAvailable(status.available);
+        });
+        return () => { cancelled = true; };
+    }, []);
 
     const [isMobile, setIsMobile] = useState(false);
 
@@ -460,6 +471,50 @@ export default function SandboxClient() {
         return handleOneShotPoneglyph({ preferLocal: true, localEngine: 'surya_bbox' });
     };
 
+    const handleChatGptOneShot = async () => {
+        if (!imageRef.current) return;
+        setIsChatGptLoading(true);
+        try {
+            const auth = await getChatGptStatus();
+            if (!auth.available) throw new Error("GPT-5.6 Luna est disponible uniquement dans l'application desktop.");
+            if (!auth.connected) {
+                setShowApiKeyModal(true);
+                toast.info('Connectez votre compte ChatGPT pour utiliser GPT-5.6 Luna.');
+                return;
+            }
+            const imageBlob = await imageElementToJpegBlob(imageRef.current);
+            if (!imageBlob) throw new Error("Impossible de convertir l'image.");
+            const result = await runChatGptPageOcr(imageBlob);
+            if (!Array.isArray(result?.bubbles)) throw new Error('Format de réponse OCR invalide.');
+            const imageWidth = imageRef.current.naturalWidth;
+            const imageHeight = imageRef.current.naturalHeight;
+            const baseId = Date.now();
+            const newBubbles = result.bubbles.map((bubble, index) => {
+                const [x1, y1, x2, y2] = bubble.bbox;
+                return {
+                    id: `sandbox-chatgpt-${baseId}-${index}`,
+                    id_page: 'sandbox',
+                    x: Math.round((x1 / 1000) * imageWidth),
+                    y: Math.round((y1 / 1000) * imageHeight),
+                    w: Math.round(((x2 - x1) / 1000) * imageWidth),
+                    h: Math.round(((y2 - y1) / 1000) * imageHeight),
+                    texte_propose: bubble.content,
+                    statut: 'Proposé',
+                    id_user_createur: 'sandbox-user',
+                    order: existingBubbles.length + index + 1,
+                };
+            });
+            if (!newBubbles.length) throw new Error('Aucune bulle exploitable détectée.');
+            setExistingBubbles(previous => [...previous, ...newBubbles].sort((a, b) => (a.order || 0) - (b.order || 0)));
+            toast.success(`${newBubbles.length} bulles créées avec GPT-5.6 Luna.`);
+        } catch (error) {
+            console.error(error);
+            toast.error(error?.message || 'OCR GPT-5.6 Luna indisponible.');
+        } finally {
+            setIsChatGptLoading(false);
+        }
+    };
+
     if (!page) {
         return (
             <div className="poneglyph-app relative flex min-h-screen flex-col items-center justify-center overflow-hidden p-6"
@@ -551,9 +606,12 @@ export default function SandboxClient() {
                 isAutoDetecting={isAutoDetecting}
                 queueLength={queueLength}
                 setShowDescModal={() => { }}
-                setShowApiKeyModal={() => { }}
+                setShowApiKeyModal={setShowApiKeyModal}
                 handleSubmitPage={() => { }}
                 handleOneShotPoneglyph={handleOneShotPoneglyph}
+                handleChatGptOneShot={handleChatGptOneShot}
+                isChatGptLoading={isChatGptLoading}
+                chatGptDesktopAvailable={chatGptDesktopAvailable}
                 isPoneglyphLoading={isPoneglyphLoading}
                 poneglyphRunMode={poneglyphRunMode}
                 handleOneShotLocalPoneglyph={handleOneShotLocalPoneglyph}

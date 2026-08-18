@@ -1,92 +1,12 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Poneglyph Desktop</title>
-  <link rel="stylesheet" href="app.css">
-  <script src="app.js" defer></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Poneglyph</title>
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">
-      <span class="brand-mark" aria-hidden="true">P</span>
-      <div>
-        <strong>Poneglyph Desktop</strong>
-        <span id="app-version">Shell local sécurisé</span>
-      </div>
-    </div>
-    <div class="topbar-actions">
-      <span class="security-badge" title="Le site distant ne reçoit aucune permission Tauri">
-        Interface web isolée
-      </span>
-      <button id="reload-web" class="button secondary" type="button">Recharger le site</button>
-      <a class="button" href="https://poneglyph.fr" target="_blank" rel="noopener noreferrer">
-        Ouvrir dans le navigateur
-      </a>
-    </div>
-  </header>
-
-  <main class="workspace">
-    <aside class="local-panel" aria-label="Outils OCR locaux privilégiés">
-      <section class="panel-section">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">Privilèges locaux</p>
-            <h1>Moteurs OCR</h1>
-          </div>
-          <button id="refresh-local" class="icon-button" type="button" aria-label="Actualiser les moteurs">↻</button>
-        </div>
-        <p class="section-copy">
-          Ces actions s’exécutent uniquement depuis ce shell embarqué. Le site affiché à droite n’a aucun accès natif.
-        </p>
-        <div id="health" class="health-card" role="status">Initialisation du backend local…</div>
-        <div id="models" class="model-list" aria-live="polite"></div>
-      </section>
-
-      <section class="panel-section ocr-section">
-        <div class="section-heading compact">
-          <div>
-            <p class="eyebrow">Inférence locale</p>
-            <h2>Tester une image</h2>
-          </div>
-        </div>
-        <label class="field-label" for="ocr-engine">Moteur</label>
-        <select id="ocr-engine" class="field">
-          <option value="bbox">Poneglyph-BBox</option>
-          <option value="text">Poneglyph texte</option>
-          <option value="surya">Surya texte</option>
-          <option value="surya_bbox">Surya-BBox</option>
-        </select>
-        <label class="file-drop" for="ocr-file">
-          <span>Choisir une image</span>
-          <small>PNG, JPEG, WebP ou AVIF · 20 Mio maximum</small>
-        </label>
-        <input id="ocr-file" type="file" accept="image/png,image/jpeg,image/webp,image/avif">
-        <button id="run-ocr" class="button primary full" type="button" disabled>Lancer l’OCR local</button>
-        <p id="ocr-feedback" class="feedback" role="status"></p>
-        <pre id="ocr-result" class="ocr-result" tabindex="0"></pre>
-      </section>
-    </aside>
-
-    <section class="web-panel" aria-label="Interface web Poneglyph non privilégiée">
-      <div class="web-notice">
-        <span aria-hidden="true">◉</span>
-        <p>
-          <strong>Zone distante non privilégiée.</strong>
-          Cette page peut utiliser les services web, mais aucune commande système ou OCR locale.
-        </p>
-      </div>
-      <iframe
-        id="web-content"
-        title="Poneglyph web"
-        src="https://poneglyph.fr"
-        sandbox="allow-downloads allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts"
-        referrerpolicy="no-referrer"
-      ></iframe>
-    </section>
-  </main>
-
-  <noscript>JavaScript est requis pour piloter les moteurs OCR locaux.</noscript>
+  <p>Ouverture de Poneglyph…</p>
+  <script>window.location.replace('https://poneglyph.fr');</script>
 </body>
 </html>

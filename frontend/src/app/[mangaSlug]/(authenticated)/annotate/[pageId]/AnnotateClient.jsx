@@ -18,6 +18,7 @@ import { getProxiedImageUrl } from '@/lib/utils';
 import { fetchOriginalPageImage } from '@/lib/pageImageClient';
 import { capitalizeOcrSentenceStarts } from '@/lib/ocr-utils';
 import { postOcrImage } from '@/lib/ocrProxyClient';
+import { getChatGptStatus, runChatGptPageOcr } from '@/lib/chatGptDesktop';
 import { canCreateBubble, canEditBubble, canReorderBubbles } from '@/lib/bubblePermissions';
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -158,6 +159,8 @@ export default function AnnotatePage() {
     const [loadingText, setLoadingText] = useState("Analyse en cours...");
     const [pendingAnnotation, setPendingAnnotation] = useState(null);
     const [isOneShotLoading, setIsOneShotLoading] = useState(false);
+    const [isChatGptLoading, setIsChatGptLoading] = useState(false);
+    const [chatGptDesktopAvailable, setChatGptDesktopAvailable] = useState(false);
     const [isPoneglyphLoading, setIsPoneglyphLoading] = useState(false);
     const [poneglyphRunMode, setPoneglyphRunMode] = useState(null);
     const [rectangle, setRectangle] = useState(null);
@@ -175,6 +178,14 @@ export default function AnnotatePage() {
     const containerRef = useRef(null);
     const imageRef = useRef(null);
     const tauriLocalOcr = useTauriLocalOcrContext();
+
+    useEffect(() => {
+        let cancelled = false;
+        getChatGptStatus().then(status => {
+            if (!cancelled) setChatGptDesktopAvailable(status.available);
+        });
+        return () => { cancelled = true; };
+    }, []);
 
     const [chapterPages, setChapterPages] = useState([]);
     const [navContext, setNavContext] = useState({ prev: null, next: null });
@@ -832,6 +843,53 @@ export default function AnnotatePage() {
         }
     };
 
+    const handleChatGptOneShot = async () => {
+        if (!imageRef.current) return;
+        setIsChatGptLoading(true);
+        try {
+            const auth = await getChatGptStatus();
+            if (!auth.available) throw new Error("GPT-5.6 Luna est disponible uniquement dans l'application desktop.");
+            if (!auth.connected) {
+                setShowApiKeyModal(true);
+                toast.info('Connectez votre compte ChatGPT pour utiliser GPT-5.6 Luna.');
+                return;
+            }
+            const imageBlob = await imageElementToJpegBlob(imageRef.current);
+            if (!imageBlob) throw new Error("Impossible de convertir l'image.");
+            const result = await runChatGptPageOcr(imageBlob);
+            if (!Array.isArray(result?.bubbles)) throw new Error('Format de réponse OCR invalide.');
+
+            const imageWidth = imageRef.current.naturalWidth;
+            const imageHeight = imageRef.current.naturalHeight;
+            const { createBubble } = await import('@/lib/api');
+            const createdBubbles = [];
+            for (const bubble of result.bubbles) {
+                const [x1, y1, x2, y2] = bubble.bbox;
+                try {
+                    const response = await createBubble({
+                        id_page: parseInt(pageId, 10),
+                        x: Math.round((x1 / 1000) * imageWidth),
+                        y: Math.round((y1 / 1000) * imageHeight),
+                        w: Math.round(((x2 - x1) / 1000) * imageWidth),
+                        h: Math.round(((y2 - y1) / 1000) * imageHeight),
+                        texte_propose: bubble.content,
+                    });
+                    createdBubbles.push(response.data);
+                } catch (error) {
+                    console.error('Erreur création bulle GPT-5.6 Luna', error);
+                }
+            }
+            if (!createdBubbles.length) throw new Error('Aucune bulle exploitable détectée.');
+            setExistingBubblesAndCache(previous => [...previous, ...createdBubbles].sort((a, b) => a.order - b.order));
+            toast.success(`${createdBubbles.length} bulles créées avec GPT-5.6 Luna.`);
+        } catch (error) {
+            console.error(error);
+            toast.error(error?.message || 'OCR GPT-5.6 Luna indisponible.');
+        } finally {
+            setIsChatGptLoading(false);
+        }
+    };
+
     const handleOneShotPoneglyph = async ({ preferLocal = false, localEngine = 'lighton' } = {}) => {
         if (!imageRef.current) return;
 
@@ -1077,6 +1135,9 @@ export default function AnnotatePage() {
                 isUpdatingPageStatus={isUpdatingPageStatus}
                 handleOneShot={handleOneShot}
                 isOneShotLoading={isOneShotLoading}
+                handleChatGptOneShot={handleChatGptOneShot}
+                isChatGptLoading={isChatGptLoading}
+                chatGptDesktopAvailable={chatGptDesktopAvailable}
                 handleOneShotPoneglyph={handleOneShotPoneglyph}
                 isPoneglyphLoading={isPoneglyphLoading}
                 poneglyphRunMode={poneglyphRunMode}

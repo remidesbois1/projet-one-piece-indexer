@@ -200,6 +200,8 @@ npm ci
 npm run tauri dev
 ```
 
+Dans l’application desktop, la fenêtre de configuration Gemini propose aussi une connexion ChatGPT. Cette session permet d’utiliser GPT-5.6 Luna pour l’extraction OCR d’une page entière. Le callback OAuth et les appels au backend Codex sont traités par le shell Rust afin d’éviter CORS ; les jetons restent en mémoire native et sont perdus à la fermeture de l’application.
+
 Sous Windows, l’installateur NSIS se construit depuis la racine avec :
 
 ```powershell

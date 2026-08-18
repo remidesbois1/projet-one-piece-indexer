@@ -16,7 +16,7 @@ fn read_json(relative: &str) -> Value {
 }
 
 #[test]
-fn production_window_starts_from_bundled_content_with_a_strict_csp() {
+fn desktop_window_uses_the_configured_dev_or_production_frontend() {
     let config = read_json("tauri.conf.json");
     let main_window = &config["app"]["windows"][0];
     let security = &config["app"]["security"];
@@ -28,44 +28,56 @@ fn production_window_starts_from_bundled_content_with_a_strict_csp() {
     assert!(csp.contains("script-src 'self'"));
     assert_eq!(
         security["capabilities"],
-        serde_json::json!(["local-privileged", "remote-readonly"])
+        serde_json::json!(["poneglyph-desktop"])
     );
 }
 
 #[test]
-fn remote_origins_receive_no_native_permissions() {
-    let local = read_json("capabilities/default.json");
-    let remote = read_json("capabilities/remote-readonly.json");
-    let local_urls = local["remote"]["urls"]
+fn native_permissions_are_limited_to_poneglyph_and_local_development() {
+    let capability = read_json("capabilities/default.json");
+    let urls = capability["remote"]["urls"]
         .as_array()
-        .expect("local development URLs must be explicit");
+        .expect("desktop URLs must be explicit");
 
-    assert_eq!(local["identifier"], "local-privileged");
-    assert!(local_urls.iter().all(|url| {
+    assert_eq!(capability["identifier"], "poneglyph-desktop");
+    assert!(urls.iter().all(|url| {
         let url = url.as_str().unwrap_or_default();
-        url.starts_with("http://localhost:3000/") || url.starts_with("http://127.0.0.1:3000/")
+        url.starts_with("https://poneglyph.fr/")
+            || url.starts_with("https://www.poneglyph.fr/")
+            || url.starts_with("http://localhost:3000/")
+            || url.starts_with("http://127.0.0.1:3000/")
     }));
-    assert_eq!(remote["identifier"], "remote-readonly");
-    assert!(remote["permissions"].as_array().is_some_and(Vec::is_empty));
-    assert!(remote["remote"]["urls"]
-        .as_array()
-        .is_some_and(|urls| urls.iter().all(|url| {
-            url.as_str()
-                .is_some_and(|url| url.starts_with("https://") && url.contains("poneglyph.fr/"))
-        })));
 }
 
 #[test]
-fn remote_site_is_sandboxed_and_cannot_replace_the_local_shell() {
+fn fallback_only_redirects_to_the_trusted_site() {
     let html = read_text("desktop-fallback/index.html");
     let rust = read_text("src/main.rs");
     let build_script = read_text("build.rs");
 
-    assert!(html.contains("sandbox=\""));
-    assert!(!html.contains("allow-top-navigation"));
-    assert!(!html.contains("window.location"));
-    assert!(!rust.contains("switch_frontend_origin"));
+    assert!(html.contains("window.location.replace('https://poneglyph.fr')"));
+    assert!(!html.contains("Moteurs OCR"));
+    assert!(rust.contains("async fn switch_frontend_origin"));
+    assert!(rust.contains("frontend_origin_for_target(&target)?"));
     assert!(build_script.contains("AppManifest::new().commands(COMMANDS)"));
+}
+
+#[test]
+fn chatgpt_commands_are_explicitly_scoped() {
+    let capability = read_json("capabilities/default.json");
+    let permissions = capability["permissions"]
+        .as_array()
+        .expect("permissions must be explicit");
+
+    for permission in [
+        "allow-chatgpt-login",
+        "allow-get-chatgpt-auth-status",
+        "allow-chatgpt-logout",
+        "allow-run-chatgpt-page-ocr",
+        "allow-switch-frontend-origin",
+    ] {
+        assert!(permissions.iter().any(|item| item == permission));
+    }
 }
 
 #[test]

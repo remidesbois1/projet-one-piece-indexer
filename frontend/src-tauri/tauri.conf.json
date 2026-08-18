@@ -22,7 +22,7 @@
       }
     ],
     "security": {
-      "capabilities": ["local-privileged", "remote-readonly"],
+      "capabilities": ["poneglyph-desktop"],
       "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:*; frame-src https://poneglyph.fr https://www.poneglyph.fr; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
       "devCsp": "default-src 'self' http://localhost:3000; script-src 'self' 'unsafe-eval' http://localhost:3000; style-src 'self' 'unsafe-inline' http://localhost:3000; img-src 'self' data: blob: http://localhost:3000 https:; font-src 'self' data: http://localhost:3000; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:* http://localhost:3000 ws://localhost:3000; frame-src https://poneglyph.fr https://www.poneglyph.fr; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
     }

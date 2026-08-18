@@ -4,13 +4,14 @@ use reqwest::StatusCode;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{
     env, fs,
+    io::{Read, Write},
     net::TcpListener,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::{Arc, Mutex},
-    time::Duration,
+    time::{Duration, Instant},
 };
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Manager, State, Url};
 use tokio::time::sleep;
 
 const BBOX_MODEL_DIR_NAME: &str = "lighton-ocr-poneglyph-bbox";
@@ -21,7 +22,66 @@ const BBOX_MODEL_KEY: &str = "bbox";
 const TEXT_MODEL_KEY: &str = "base";
 const SURYA_MODEL_KEY: &str = "surya";
 const SURYA_BBOX_MODEL_KEY: &str = "surya_bbox";
+const FRONTEND_PRODUCTION_ORIGIN: &str = "https://poneglyph.fr";
+const FRONTEND_LOCAL_ORIGIN: &str = "http://localhost:3000";
+const FRONTEND_LOCAL_API_HEALTH_URL: &str = "http://localhost:3001/";
 const MAX_OCR_IMAGE_BASE64_BYTES: usize = 28 * 1024 * 1024;
+const CHATGPT_CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
+const CHATGPT_REDIRECT_URI: &str = "http://localhost:1455/auth/callback";
+const CHATGPT_TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
+const CHATGPT_CODEX_RESPONSES_URL: &str = "https://chatgpt.com/backend-api/codex/responses";
+const CHATGPT_OCR_MODEL: &str = "gpt-5.6-luna";
+const CHATGPT_OCR_PROMPT: &str = r#"Tu es un moteur OCR de page/crop de manga. Extrais uniquement les textes visibles dans les bulles, cartouches ou onomatopees lisibles, avec leur bbox. Renvoie un JSON strict: { "bubbles": [ { "content": "texte exact", "bbox": [x1, y1, x2, y2] } ] } Regles: - Coordonnees normalisees entre 0 et 1000 dans le repere de l'image fournie. - Ordre de lecture japonais: haut droite vers bas gauche. - Garde le francais, ne traduis pas. - Corrige seulement les erreurs OCR evidentes de ponctuation/casse. - Les bbox doivent entourer parfaitement le texte dans les bulles, pas les bulles directement - Ignore les bulles vides ou illisibles. - N'ajoute aucun texte hors JSON. - Rétablis la casse naturelle (ALLEZ-Y ! -> Allez-y !)."#;
+
+#[derive(Clone)]
+struct ChatGptState {
+    client: reqwest::Client,
+    session: Arc<Mutex<Option<ChatGptSession>>>,
+}
+
+#[derive(Clone)]
+struct ChatGptSession {
+    access_token: String,
+    refresh_token: Option<String>,
+    account_id: String,
+    email: Option<String>,
+    expires_at: Instant,
+}
+
+impl Default for ChatGptState {
+    fn default() -> Self {
+        Self {
+            client: reqwest::Client::builder()
+                .timeout(Duration::from_secs(180))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new()),
+            session: Arc::new(Mutex::new(None)),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct ChatGptTokenResponse {
+    access_token: String,
+    refresh_token: Option<String>,
+    id_token: Option<String>,
+    expires_in: Option<u64>,
+}
+
+#[derive(Debug, Serialize)]
+struct ChatGptAuthStatus {
+    connected: bool,
+    email: Option<String>,
+    account_id: Option<String>,
+    model: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+struct ChatGptOcrResponse {
+    bubbles: Vec<Bubble>,
+    elapsed_ms: u64,
+    model: &'static str,
+}
 
 #[derive(Clone)]
 struct LocalBackendState {
@@ -135,6 +195,360 @@ struct HealthcheckResponse {
 struct Bubble {
     content: String,
     bbox: [i64; 4],
+}
+
+fn url_encode_component(value: &str) -> String {
+    value
+        .bytes()
+        .map(|byte| match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                (byte as char).to_string()
+            }
+            _ => format!("%{byte:02X}"),
+        })
+        .collect()
+}
+
+fn url_decode_component(value: &str) -> Result<String, String> {
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'%' if index + 2 < bytes.len() => {
+                let hex = std::str::from_utf8(&bytes[index + 1..index + 3])
+                    .map_err(|_| "Callback OAuth invalide.".to_string())?;
+                decoded.push(
+                    u8::from_str_radix(hex, 16)
+                        .map_err(|_| "Callback OAuth invalide.".to_string())?,
+                );
+                index += 3;
+            }
+            b'+' => {
+                decoded.push(b' ');
+                index += 1;
+            }
+            byte => {
+                decoded.push(byte);
+                index += 1;
+            }
+        }
+    }
+    String::from_utf8(decoded).map_err(|_| "Callback OAuth invalide.".to_string())
+}
+
+fn query_parameter(path: &str, name: &str) -> Result<Option<String>, String> {
+    let query = path
+        .split_once('?')
+        .map(|(_, query)| query)
+        .unwrap_or_default();
+    for pair in query.split('&') {
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        if key == name {
+            return url_decode_component(value).map(Some);
+        }
+    }
+    Ok(None)
+}
+
+fn open_system_browser(url: &str) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut command = Command::new("rundll32");
+        command.arg("url.dll,FileProtocolHandler").arg(url);
+        command
+    };
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut command = Command::new("open");
+        command.arg(url);
+        command
+    };
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut command = {
+        let mut command = Command::new("xdg-open");
+        command.arg(url);
+        command
+    };
+
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|err| format!("Impossible d'ouvrir le navigateur: {err}"))
+}
+
+fn wait_for_oauth_callback(listener: TcpListener, expected_state: &str) -> Result<String, String> {
+    listener
+        .set_nonblocking(true)
+        .map_err(|err| format!("Impossible de preparer le callback OAuth: {err}"))?;
+    let deadline = Instant::now() + Duration::from_secs(180);
+
+    loop {
+        match listener.accept() {
+            Ok((mut stream, _)) => {
+                let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+                let mut request = [0_u8; 16 * 1024];
+                let size = stream.read(&mut request).unwrap_or(0);
+                let first_line = String::from_utf8_lossy(&request[..size])
+                    .lines()
+                    .next()
+                    .unwrap_or_default()
+                    .to_string();
+                let path = first_line.split_whitespace().nth(1).unwrap_or_default();
+                let returned_state = query_parameter(path, "state")?;
+                let code = query_parameter(path, "code")?;
+                let error = query_parameter(path, "error")?;
+                let valid = returned_state.as_deref() == Some(expected_state) && code.is_some();
+                let body = if valid {
+                    "<!doctype html><meta charset=utf-8><title>Poneglyph</title><h1>Connexion terminee</h1><p>Vous pouvez fermer cette fenetre et revenir dans Poneglyph.</p>"
+                } else {
+                    "<!doctype html><meta charset=utf-8><title>Poneglyph</title><h1>Connexion refusee</h1><p>Revenez dans Poneglyph et recommencez.</p>"
+                };
+                let status = if valid { "200 OK" } else { "400 Bad Request" };
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(response.as_bytes());
+                if let Some(error) = error {
+                    return Err(format!("Connexion ChatGPT refusee: {error}"));
+                }
+                if returned_state.as_deref() != Some(expected_state) {
+                    return Err("Etat OAuth ChatGPT invalide.".to_string());
+                }
+                return code.ok_or_else(|| "Code OAuth ChatGPT manquant.".to_string());
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                if Instant::now() >= deadline {
+                    return Err("Connexion ChatGPT expiree. Reessayez.".to_string());
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Err(err) => return Err(format!("Erreur du callback OAuth: {err}")),
+        }
+    }
+}
+
+fn decode_base64_url(value: &str) -> Result<Vec<u8>, String> {
+    fn sextet(byte: u8) -> Option<u8> {
+        match byte {
+            b'A'..=b'Z' => Some(byte - b'A'),
+            b'a'..=b'z' => Some(byte - b'a' + 26),
+            b'0'..=b'9' => Some(byte - b'0' + 52),
+            b'-' => Some(62),
+            b'_' => Some(63),
+            _ => None,
+        }
+    }
+
+    let mut output = Vec::with_capacity(value.len() * 3 / 4);
+    let mut accumulator = 0_u32;
+    let mut bits = 0_u8;
+    for byte in value.bytes().filter(|byte| *byte != b'=') {
+        let value = sextet(byte).ok_or_else(|| "Jeton ChatGPT invalide.".to_string())? as u32;
+        accumulator = (accumulator << 6) | value;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            output.push(((accumulator >> bits) & 0xff) as u8);
+        }
+    }
+    Ok(output)
+}
+
+fn jwt_claims(token: &str) -> Result<serde_json::Value, String> {
+    let payload = token
+        .split('.')
+        .nth(1)
+        .ok_or_else(|| "Jeton ChatGPT invalide.".to_string())?;
+    serde_json::from_slice(&decode_base64_url(payload)?)
+        .map_err(|_| "Jeton ChatGPT invalide.".to_string())
+}
+
+fn find_string_claim(value: &serde_json::Value, keys: &[&str]) -> Option<String> {
+    match value {
+        serde_json::Value::Object(map) => {
+            for key in keys {
+                if let Some(value) = map.get(*key).and_then(serde_json::Value::as_str) {
+                    return Some(value.to_string());
+                }
+            }
+            map.values()
+                .find_map(|value| find_string_claim(value, keys))
+        }
+        serde_json::Value::Array(values) => values
+            .iter()
+            .find_map(|value| find_string_claim(value, keys)),
+        _ => None,
+    }
+}
+
+fn session_from_token_response(tokens: ChatGptTokenResponse) -> Result<ChatGptSession, String> {
+    let access_claims = jwt_claims(&tokens.access_token)?;
+    let account_id = find_string_claim(
+        &access_claims,
+        &[
+            "chatgpt_account_id",
+            "https://api.openai.com/auth.chatgpt_account_id",
+        ],
+    )
+    .ok_or_else(|| "Compte ChatGPT introuvable dans le jeton.".to_string())?;
+    let email = tokens
+        .id_token
+        .as_deref()
+        .and_then(|token| jwt_claims(token).ok())
+        .and_then(|claims| find_string_claim(&claims, &["email"]));
+    let expires_in = tokens.expires_in.unwrap_or(3600).max(60);
+    Ok(ChatGptSession {
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        account_id,
+        email,
+        expires_at: Instant::now() + Duration::from_secs(expires_in),
+    })
+}
+
+fn auth_status(session: Option<&ChatGptSession>) -> ChatGptAuthStatus {
+    ChatGptAuthStatus {
+        connected: session.is_some(),
+        email: session.and_then(|session| session.email.clone()),
+        account_id: session.map(|session| session.account_id.clone()),
+        model: CHATGPT_OCR_MODEL,
+    }
+}
+
+async fn refresh_chatgpt_session(state: &ChatGptState) -> Result<ChatGptSession, String> {
+    let current = state
+        .session
+        .lock()
+        .map_err(|_| "Session ChatGPT indisponible.".to_string())?
+        .clone()
+        .ok_or_else(|| "Connectez-vous a ChatGPT dans la configuration API.".to_string())?;
+    if current.expires_at > Instant::now() + Duration::from_secs(60) {
+        return Ok(current);
+    }
+    let refresh_token = current
+        .refresh_token
+        .as_deref()
+        .ok_or_else(|| "Session ChatGPT expiree. Reconnectez-vous.".to_string())?;
+    let response = state
+        .client
+        .post(CHATGPT_TOKEN_URL)
+        .json(&serde_json::json!({
+            "grant_type": "refresh_token",
+            "client_id": CHATGPT_CLIENT_ID,
+            "refresh_token": refresh_token,
+        }))
+        .send()
+        .await
+        .map_err(|_| "Impossible de renouveler la session ChatGPT.".to_string())?;
+    let status = response.status();
+    let text = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(format!(
+            "Session ChatGPT expiree ({status}). Reconnectez-vous."
+        ));
+    }
+    let mut tokens: ChatGptTokenResponse = serde_json::from_str(&text)
+        .map_err(|_| "Reponse de renouvellement ChatGPT invalide.".to_string())?;
+    if tokens.refresh_token.is_none() {
+        tokens.refresh_token = current.refresh_token;
+    }
+    let session = session_from_token_response(tokens)?;
+    let session = ChatGptSession {
+        email: session.email.or(current.email),
+        ..session
+    };
+    *state
+        .session
+        .lock()
+        .map_err(|_| "Session ChatGPT indisponible.".to_string())? = Some(session.clone());
+    Ok(session)
+}
+
+fn extract_response_text(value: &serde_json::Value) -> Option<String> {
+    if let Some(text) = value.get("output_text").and_then(serde_json::Value::as_str) {
+        return Some(text.to_string());
+    }
+    if let Some(text) = value.get("text").and_then(serde_json::Value::as_str) {
+        return Some(text.to_string());
+    }
+    value
+        .get("output")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|items| {
+            items.iter().find_map(|item| {
+                item.get("content")
+                    .and_then(serde_json::Value::as_array)
+                    .and_then(|parts| parts.iter().find_map(extract_response_text))
+            })
+        })
+}
+
+fn parse_codex_response(body: &str) -> Result<Vec<Bubble>, String> {
+    let mut output_text = serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .and_then(|value| extract_response_text(&value));
+
+    for line in body.lines() {
+        let Some(data) = line.strip_prefix("data: ") else {
+            continue;
+        };
+        if data == "[DONE]" {
+            continue;
+        }
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(data) else {
+            continue;
+        };
+        if event.get("type").and_then(serde_json::Value::as_str)
+            == Some("response.output_text.done")
+        {
+            output_text = event
+                .get("text")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_string);
+        }
+        if let Some(response) = event.get("response") {
+            output_text = extract_response_text(response).or(output_text);
+        }
+    }
+
+    let text = output_text.ok_or_else(|| "Le modele n'a renvoye aucun texte OCR.".to_string())?;
+    let trimmed = text.trim();
+    let without_prefix = trimmed
+        .strip_prefix("```json")
+        .or_else(|| trimmed.strip_prefix("```"))
+        .unwrap_or(trimmed);
+    let json_text = without_prefix
+        .strip_suffix("```")
+        .unwrap_or(without_prefix)
+        .trim();
+    let value: serde_json::Value = serde_json::from_str(json_text)
+        .map_err(|_| "GPT-5.6 Luna a renvoye un JSON OCR invalide.".to_string())?;
+    let bubbles: Vec<Bubble> = serde_json::from_value(
+        value
+            .get("bubbles")
+            .cloned()
+            .ok_or_else(|| "Le JSON OCR ne contient pas bubbles.".to_string())?,
+    )
+    .map_err(|_| "Le tableau bubbles est invalide.".to_string())?;
+    for bubble in &bubbles {
+        let [x1, y1, x2, y2] = bubble.bbox;
+        if bubble.content.trim().is_empty()
+            || !(0..=1000).contains(&x1)
+            || !(0..=1000).contains(&y1)
+            || !(0..=1000).contains(&x2)
+            || !(0..=1000).contains(&y2)
+            || x2 <= x1
+            || y2 <= y1
+        {
+            return Err("GPT-5.6 Luna a renvoye une bulle OCR invalide.".to_string());
+        }
+    }
+    Ok(bubbles)
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -1325,14 +1739,255 @@ async fn healthcheck_local_backend(
     Ok(health)
 }
 
+fn normalize_frontend_path(path: Option<String>) -> Result<String, String> {
+    let raw_path = path.unwrap_or_else(|| "/".to_string());
+    let trimmed = raw_path.trim();
+    if trimmed.contains("://") || trimmed.starts_with("//") || trimmed.contains('\\') {
+        return Err("Chemin de navigation invalide.".to_string());
+    }
+    if trimmed.is_empty() {
+        return Ok("/".to_string());
+    }
+    if trimmed.starts_with('/') {
+        Ok(trimmed.to_string())
+    } else {
+        Ok(format!("/{trimmed}"))
+    }
+}
+
+fn frontend_origin_for_target(target: &str) -> Result<&'static str, String> {
+    match target {
+        "production" => Ok(FRONTEND_PRODUCTION_ORIGIN),
+        "local" => Ok(FRONTEND_LOCAL_ORIGIN),
+        _ => Err("Cible frontend inconnue.".to_string()),
+    }
+}
+
+async fn ensure_frontend_origin_reachable(origin: &str) -> Result<(), String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(4))
+        .redirect(reqwest::redirect::Policy::limited(4))
+        .build()
+        .map_err(|err| err.to_string())?;
+    let response = client.get(origin).send().await.map_err(|err| {
+        if origin == FRONTEND_LOCAL_ORIGIN {
+            "localhost:3000 ne repond pas. Lancez d'abord npm run dev.".to_string()
+        } else {
+            format!("Impossible de joindre poneglyph.fr: {err}")
+        }
+    })?;
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        Err(format!("Frontend HTTP {}", response.status()))
+    }
+}
+
+async fn ensure_local_frontend_stack_reachable() -> Result<(), String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(4))
+        .redirect(reqwest::redirect::Policy::limited(4))
+        .build()
+        .map_err(|err| err.to_string())?;
+    let response = client
+        .get(FRONTEND_LOCAL_API_HEALTH_URL)
+        .header("Origin", FRONTEND_LOCAL_ORIGIN)
+        .send()
+        .await
+        .map_err(|_| {
+            "localhost:3001/api ne repond pas. Lancez aussi le backend: cd backend && npm run dev."
+                .to_string()
+        })?;
+    if !response.status().is_success() {
+        return Err(format!("API locale HTTP {}", response.status()));
+    }
+    let cors_origin = response
+        .headers()
+        .get("access-control-allow-origin")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+    if cors_origin == FRONTEND_LOCAL_ORIGIN || cors_origin == "*" {
+        Ok(())
+    } else {
+        Err("L'API locale ne permet pas localhost:3000. Ajoutez http://localhost:3000 a ALLOWED_ORIGINS."
+            .to_string())
+    }
+}
+
+#[tauri::command]
+async fn switch_frontend_origin(
+    target: String,
+    path: Option<String>,
+    app_handle: AppHandle,
+) -> Result<(), String> {
+    let origin = frontend_origin_for_target(&target)?;
+    ensure_frontend_origin_reachable(origin).await?;
+    if target == "local" {
+        ensure_local_frontend_stack_reachable().await?;
+    }
+    let target_path = normalize_frontend_path(path)?;
+    let target_url = Url::parse(&format!("{origin}{target_path}"))
+        .map_err(|err| format!("URL frontend invalide: {err}"))?;
+    let window = app_handle
+        .get_webview_window("main")
+        .ok_or_else(|| "Fenetre principale introuvable.".to_string())?;
+    window
+        .navigate(target_url)
+        .map_err(|err| format!("Navigation frontend impossible: {err}"))
+}
+
 #[tauri::command]
 async fn get_app_version() -> Result<String, String> {
     Ok(env!("CARGO_PKG_VERSION").to_string())
 }
 
+#[tauri::command(rename_all = "snake_case")]
+async fn chatgpt_login(
+    code_challenge: String,
+    code_verifier: String,
+    oauth_state: String,
+    state: State<'_, ChatGptState>,
+) -> Result<ChatGptAuthStatus, String> {
+    let valid_pkce = |value: &str, min: usize, max: usize| {
+        (min..=max).contains(&value.len())
+            && value.bytes().all(|byte| {
+                byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~')
+            })
+    };
+    if !valid_pkce(&code_verifier, 43, 128)
+        || !valid_pkce(&code_challenge, 43, 128)
+        || !valid_pkce(&oauth_state, 32, 128)
+    {
+        return Err("Parametres de connexion ChatGPT invalides.".to_string());
+    }
+
+    let listener = TcpListener::bind("127.0.0.1:1455")
+        .map_err(|_| "Le port de connexion ChatGPT (1455) est deja utilise.".to_string())?;
+    let auth_url = format!(
+        "https://auth.openai.com/oauth/authorize?response_type=code&client_id={}&redirect_uri={}&scope=openid%20profile%20email%20offline_access&code_challenge={}&code_challenge_method=S256&state={}&id_token_add_organizations=true&codex_cli_simplified_flow=true&originator=poneglyph_desktop",
+        url_encode_component(CHATGPT_CLIENT_ID),
+        url_encode_component(CHATGPT_REDIRECT_URI),
+        url_encode_component(&code_challenge),
+        url_encode_component(&oauth_state),
+    );
+    open_system_browser(&auth_url)?;
+    let listener_state = oauth_state.clone();
+    let callback = tauri::async_runtime::spawn_blocking(move || {
+        wait_for_oauth_callback(listener, &listener_state)
+    });
+    let code = callback
+        .await
+        .map_err(|_| "Callback OAuth interrompu.".to_string())??;
+
+    let response = state
+        .client
+        .post(CHATGPT_TOKEN_URL)
+        .json(&serde_json::json!({
+            "grant_type": "authorization_code",
+            "client_id": CHATGPT_CLIENT_ID,
+            "code": code,
+            "redirect_uri": CHATGPT_REDIRECT_URI,
+            "code_verifier": code_verifier,
+        }))
+        .send()
+        .await
+        .map_err(|_| "Echange OAuth ChatGPT impossible.".to_string())?;
+    let status = response.status();
+    let text = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(format!("Connexion ChatGPT impossible ({status})."));
+    }
+    let tokens: ChatGptTokenResponse =
+        serde_json::from_str(&text).map_err(|_| "Reponse OAuth ChatGPT invalide.".to_string())?;
+    let session = session_from_token_response(tokens)?;
+    let result = auth_status(Some(&session));
+    *state
+        .session
+        .lock()
+        .map_err(|_| "Session ChatGPT indisponible.".to_string())? = Some(session);
+    Ok(result)
+}
+
+#[tauri::command]
+async fn get_chatgpt_auth_status(
+    state: State<'_, ChatGptState>,
+) -> Result<ChatGptAuthStatus, String> {
+    let session = state
+        .session
+        .lock()
+        .map_err(|_| "Session ChatGPT indisponible.".to_string())?;
+    Ok(auth_status(session.as_ref()))
+}
+
+#[tauri::command]
+async fn chatgpt_logout(state: State<'_, ChatGptState>) -> Result<ChatGptAuthStatus, String> {
+    *state
+        .session
+        .lock()
+        .map_err(|_| "Session ChatGPT indisponible.".to_string())? = None;
+    Ok(auth_status(None))
+}
+
+#[tauri::command(rename_all = "snake_case")]
+async fn run_chatgpt_page_ocr(
+    image_bytes_base64: String,
+    mime_type: String,
+    state: State<'_, ChatGptState>,
+) -> Result<ChatGptOcrResponse, String> {
+    validate_ocr_image_payload(&image_bytes_base64)?;
+    if !matches!(
+        mime_type.as_str(),
+        "image/jpeg" | "image/png" | "image/webp"
+    ) {
+        return Err("Format d'image OCR non pris en charge.".to_string());
+    }
+    let session = refresh_chatgpt_session(&state).await?;
+    let started = Instant::now();
+    let response = state
+        .client
+        .post(CHATGPT_CODEX_RESPONSES_URL)
+        .bearer_auth(&session.access_token)
+        .header("ChatGPT-Account-Id", &session.account_id)
+        .header("Originator", "codex_cli_rs")
+        .header("OpenAI-Beta", "responses=experimental")
+        .json(&serde_json::json!({
+            "model": CHATGPT_OCR_MODEL,
+            "input": [{
+                "role": "user",
+                "content": [
+                    { "type": "input_text", "text": CHATGPT_OCR_PROMPT },
+                    { "type": "input_image", "image_url": format!("data:{mime_type};base64,{image_bytes_base64}") }
+                ]
+            }],
+            "stream": true,
+            "store": false,
+        }))
+        .send()
+        .await
+        .map_err(|_| "Appel OCR GPT-5.6 Luna impossible.".to_string())?;
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    if !status.is_success() {
+        if matches!(status.as_u16(), 401 | 403) {
+            *state
+                .session
+                .lock()
+                .map_err(|_| "Session ChatGPT indisponible.".to_string())? = None;
+            return Err("Session ChatGPT refusee. Reconnectez-vous.".to_string());
+        }
+        return Err(format!("Le service OCR GPT-5.6 Luna a repondu {status}."));
+    }
+    Ok(ChatGptOcrResponse {
+        bubbles: parse_codex_response(&body)?,
+        elapsed_ms: started.elapsed().as_millis() as u64,
+        model: CHATGPT_OCR_MODEL,
+    })
+}
+
 fn main() {
     let app = tauri::Builder::default()
         .manage(LocalBackendState::default())
+        .manage(ChatGptState::default())
         .setup(|app| {
             let state = app.state::<LocalBackendState>().inner().clone();
             let handle = app.handle().clone();
@@ -1362,7 +2017,12 @@ fn main() {
             run_local_surya_ocr,
             run_local_surya_bbox_ocr,
             healthcheck_local_backend,
-            get_app_version
+            switch_frontend_origin,
+            get_app_version,
+            chatgpt_login,
+            get_chatgpt_auth_status,
+            chatgpt_logout,
+            run_chatgpt_page_ocr
         ])
         .build(tauri::generate_context!())
         .expect("error while building Tauri application");
@@ -1377,8 +2037,9 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        decode_response_json, ensure_model_parent_directories, validate_ocr_image_payload,
-        MAX_OCR_IMAGE_BASE64_BYTES,
+        decode_response_json, ensure_model_parent_directories, frontend_origin_for_target,
+        jwt_claims, normalize_frontend_path, parse_codex_response, query_parameter,
+        validate_ocr_image_payload, MAX_OCR_IMAGE_BASE64_BYTES,
     };
     use reqwest::StatusCode;
     use serde_json::Value;
@@ -1390,10 +2051,60 @@ mod tests {
     }
 
     #[test]
+    fn frontend_switching_accepts_only_known_origins_and_relative_paths() {
+        assert_eq!(
+            frontend_origin_for_target("production").unwrap(),
+            "https://poneglyph.fr"
+        );
+        assert_eq!(
+            frontend_origin_for_target("local").unwrap(),
+            "http://localhost:3000"
+        );
+        assert!(frontend_origin_for_target("https://attacker.example").is_err());
+        assert_eq!(
+            normalize_frontend_path(Some("chapter/1".into())).unwrap(),
+            "/chapter/1"
+        );
+        assert!(normalize_frontend_path(Some("https://attacker.example".into())).is_err());
+        assert!(normalize_frontend_path(Some("//attacker.example".into())).is_err());
+    }
+
+    #[test]
     fn rejects_empty_and_oversized_ocr_payloads() {
         assert!(validate_ocr_image_payload("").is_err());
         let oversized = "A".repeat(MAX_OCR_IMAGE_BASE64_BYTES + 1);
         assert!(validate_ocr_image_payload(&oversized).is_err());
+    }
+
+    #[test]
+    fn parses_and_validates_chatgpt_ocr_json_from_sse() {
+        let body = concat!(
+            "event: response.output_text.done\n",
+            "data: {\"type\":\"response.output_text.done\",\"text\":\"{\\\"bubbles\\\":[{\\\"content\\\":\\\"Bonjour !\\\",\\\"bbox\\\":[10,20,300,180]}]}\"}\n\n",
+            "data: [DONE]\n"
+        );
+        let bubbles = parse_codex_response(body).expect("valid OCR SSE");
+        assert_eq!(bubbles.len(), 1);
+        assert_eq!(bubbles[0].content, "Bonjour !");
+        assert_eq!(bubbles[0].bbox, [10, 20, 300, 180]);
+    }
+
+    #[test]
+    fn rejects_out_of_bounds_chatgpt_boxes() {
+        let body =
+            r#"{"output_text":"{\"bubbles\":[{\"content\":\"Non\",\"bbox\":[0,0,1001,20]}]}"}"#;
+        assert!(parse_codex_response(body).is_err());
+    }
+
+    #[test]
+    fn decodes_oauth_callback_and_jwt_claims_without_extra_dependencies() {
+        assert_eq!(
+            query_parameter("/auth/callback?code=a%2Fb&state=test", "code").unwrap(),
+            Some("a/b".to_string())
+        );
+        let claims = jwt_claims("e30.eyJlbWFpbCI6InRlc3RAZXhhbXBsZS5jb20ifQ.signature")
+            .expect("JWT payload");
+        assert_eq!(claims["email"], "test@example.com");
     }
 
     #[test]

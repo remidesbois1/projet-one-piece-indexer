@@ -77,6 +77,9 @@ export default function AnnotateLeftSidebar({
     isSandbox = false,
     handleOneShot,
     isOneShotLoading,
+    handleChatGptOneShot,
+    isChatGptLoading = false,
+    chatGptDesktopAvailable = false,
     handleOneShotPoneglyph,
     isPoneglyphLoading,
     poneglyphRunMode = null,
@@ -292,7 +295,7 @@ export default function AnnotateLeftSidebar({
                             queueLength={queueLength}
                         />
 
-                        {role === 'Admin' && (handleOneShot || handleOneShotPoneglyph || handleOneShotLocalPoneglyph || handleOneShotLocalSuryaBbox) && (
+                        {role === 'Admin' && (handleOneShot || handleChatGptOneShot || handleOneShotPoneglyph || handleOneShotLocalPoneglyph || handleOneShotLocalSuryaBbox) && (
                             <div className="flex-none rounded-lg border border-white/12 bg-white/[0.055] p-3 shadow-sm">
                                 <div className="mb-3 flex items-center justify-between gap-2">
                                     <h3 className="truncate text-[10px] font-black uppercase tracking-widest text-slate-500">
@@ -444,6 +447,23 @@ export default function AnnotateLeftSidebar({
                                                 {isOneShotLoading ? "Gemini..." : "Gemini"}
                                             </span>
                                             {isOneShotLoading && (
+                                                <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                                            )}
+                                        </Button>
+                                    )}
+
+                                    {chatGptDesktopAvailable && handleChatGptOneShot && (
+                                        <Button
+                                            variant="outline"
+                                            onClick={handleChatGptOneShot}
+                                            disabled={isChatGptLoading || isSubmitting || isAutoDetecting}
+                                            className="h-9 w-full justify-start gap-2 rounded-md border-white/12 bg-white/[0.07] px-3 text-[11px] font-bold uppercase tracking-wide text-slate-200 shadow-none hover:bg-white/12"
+                                        >
+                                            <Sparkles size={14} className="text-sky-400" />
+                                            <span className="min-w-0 flex-1 truncate text-left">
+                                                {isChatGptLoading ? "GPT-5.6 Luna..." : "GPT-5.6 Luna"}
+                                            </span>
+                                            {isChatGptLoading && (
                                                 <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
                                             )}
                                         </Button>

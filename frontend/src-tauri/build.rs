@@ -17,7 +17,12 @@ fn main() {
         "run_local_surya_ocr",
         "run_local_surya_bbox_ocr",
         "healthcheck_local_backend",
+        "switch_frontend_origin",
         "get_app_version",
+        "chatgpt_login",
+        "get_chatgpt_auth_status",
+        "chatgpt_logout",
+        "run_chatgpt_page_ocr",
     ];
 
     tauri_build::try_build(

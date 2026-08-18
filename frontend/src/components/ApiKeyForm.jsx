@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
 
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,8 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
 
-import { KeyRound, ExternalLink, ShieldCheck, CheckCircle2, Trash2, ArrowRight } from "lucide-react";
+import { KeyRound, ExternalLink, ShieldCheck, CheckCircle2, Trash2, ArrowRight, LogIn, Loader2 } from "lucide-react";
+import { getChatGptStatus, loginChatGpt, logoutChatGpt, subscribeToChatGptAuth } from '@/lib/chatGptDesktop';
 
 const STORAGE_KEYS = {
     google: 'google_api_key',
@@ -132,7 +133,7 @@ function SingleKeySection({ label, storageKey, linkHref, linkLabel, placeholder,
     );
 }
 
-const ApiKeyForm = ({ onSave }) => {
+const ApiKeyForm = ({ onSave = () => {} }) => {
     const [googleKey, setGoogleKey] = useState(() => {
         if (typeof window === 'undefined') return null;
         return localStorage.getItem(STORAGE_KEYS.google) || null;
@@ -141,9 +142,48 @@ const ApiKeyForm = ({ onSave }) => {
         if (typeof window === 'undefined') return true;
         return !localStorage.getItem(STORAGE_KEYS.google);
     });
+    const [chatGptStatus, setChatGptStatus] = useState({ available: false, connected: false });
+    const [isChatGptPending, setIsChatGptPending] = useState(false);
+
+    useEffect(() => {
+        let cancelled = false;
+        getChatGptStatus()
+            .then(status => { if (!cancelled) setChatGptStatus(status); })
+            .catch(() => { if (!cancelled) setChatGptStatus({ available: false, connected: false }); });
+        const unsubscribe = subscribeToChatGptAuth(status => setChatGptStatus(previous => ({ ...previous, ...status })));
+        return () => {
+            cancelled = true;
+            unsubscribe();
+        };
+    }, []);
 
     const handleGoogleSave = (key) => {
         onSave(key);
+    };
+
+    const handleChatGptLogin = async () => {
+        setIsChatGptPending(true);
+        try {
+            const status = await loginChatGpt();
+            setChatGptStatus(status);
+            toast.success('Compte ChatGPT connecté.');
+        } catch (error) {
+            toast.error(error?.message || String(error));
+        } finally {
+            setIsChatGptPending(false);
+        }
+    };
+
+    const handleChatGptLogout = async () => {
+        setIsChatGptPending(true);
+        try {
+            setChatGptStatus(await logoutChatGpt());
+            toast.info('Compte ChatGPT déconnecté.');
+        } catch (error) {
+            toast.error(error?.message || String(error));
+        } finally {
+            setIsChatGptPending(false);
+        }
     };
 
     return (
@@ -172,6 +212,36 @@ const ApiKeyForm = ({ onSave }) => {
                 isEditing={isEditingGoogle}
                 setIsEditing={setIsEditingGoogle}
             />
+
+            {chatGptStatus.available && (
+                <div className="space-y-3 border-t border-slate-200 pt-5">
+                    <div className="flex items-center justify-between gap-3">
+                        <div>
+                            <Label className="text-sm font-bold text-slate-800">Compte ChatGPT</Label>
+                            <p className="mt-1 text-xs text-slate-500">Utilisé par GPT-5.6 Luna dans l’application desktop.</p>
+                        </div>
+                        {chatGptStatus.connected && (
+                            <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700">Connecté</span>
+                        )}
+                    </div>
+                    {chatGptStatus.connected ? (
+                        <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                            <div className="min-w-0">
+                                <p className="truncate text-sm font-semibold text-slate-700">{chatGptStatus.email || 'Compte ChatGPT'}</p>
+                                <p className="text-[11px] text-slate-500">La session reste uniquement en mémoire dans l’application.</p>
+                            </div>
+                            <Button type="button" variant="ghost" size="sm" disabled={isChatGptPending} onClick={handleChatGptLogout} className="shrink-0 text-red-600 hover:bg-red-50 hover:text-red-700">
+                                {isChatGptPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Déconnecter'}
+                            </Button>
+                        </div>
+                    ) : (
+                        <Button type="button" disabled={isChatGptPending} onClick={handleChatGptLogin} className="w-full gap-2 bg-slate-900 text-white hover:bg-slate-800">
+                            {isChatGptPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
+                            {isChatGptPending ? 'Connexion dans le navigateur…' : 'Se connecter avec ChatGPT'}
+                        </Button>
+                    )}
+                </div>
+            )}
         </div>
     );
 };
