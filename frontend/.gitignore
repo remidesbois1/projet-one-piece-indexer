@@ -17,6 +17,9 @@
 /.next/
 /out/
 
+# Generated from the installed onnxruntime-web package by sync:onnx.
+/public/onnx/
+
 # production
 /build
 

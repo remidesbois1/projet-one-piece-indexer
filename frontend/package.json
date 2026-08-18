@@ -6,12 +6,15 @@
     "node": ">=22.14.0"
   },
   "scripts": {
+    "predev": "npm run sync:onnx",
     "dev": "next dev",
+    "prebuild": "npm run sync:onnx",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "tauri": "tauri",
-    "test": "vitest run"
+    "test": "vitest run",
+    "sync:onnx": "node scripts/sync-onnx-assets.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -45,7 +48,7 @@
     "next": "16.1.4",
     "next-themes": "^0.4.6",
     "nextjs-toploader": "^3.9.17",
-    "onnxruntime-web": "^1.23.2",
+    "onnxruntime-web": "1.27.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "sharp": "^0.34.5",
