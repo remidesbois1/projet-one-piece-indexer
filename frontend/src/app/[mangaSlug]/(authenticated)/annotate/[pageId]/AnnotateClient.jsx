@@ -760,15 +760,15 @@ export default function AnnotatePage() {
             const h = imageRef.current.naturalHeight;
             const w = imageRef.current.naturalWidth;
             
-            const newBubblesConfig = result.data.reduce((acc, idx) => {
-                const [ymin, xmin, ymax, xmax] = idx.pos;
+            const newBubblesConfig = result.data.reduce((acc, bubble) => {
+                const [x1, y1, x2, y2] = bubble.bbox;
                 let geminiBox = {
                     id_page: parseInt(pageId, 10),
-                    x: Math.round((xmin / 1000) * w),
-                    y: Math.round((ymin / 1000) * h),
-                    w: Math.round(((xmax - xmin) / 1000) * w),
-                    h: Math.round(((ymax - ymin) / 1000) * h),
-                    texte_propose: idx.content
+                    x: Math.round((x1 / 1000) * w),
+                    y: Math.round((y1 / 1000) * h),
+                    w: Math.round(((x2 - x1) / 1000) * w),
+                    h: Math.round(((y2 - y1) / 1000) * h),
+                    texte_propose: bubble.content
                 };
 
                 if (detectionStatus === 'ready') {

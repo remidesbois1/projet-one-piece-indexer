@@ -29,6 +29,8 @@ from transformers import (
 SCRIPT_DIR = Path(__file__).resolve().parent
 DOCKER_SCRIPTS_DIR = SCRIPT_DIR.parent
 PROJECT_ROOT = DOCKER_SCRIPTS_DIR.parent
+sys.path.insert(0, str(DOCKER_SCRIPTS_DIR))
+from common_training.prompts import get_prompt
 
 load_dotenv(SCRIPT_DIR / ".env")
 load_dotenv(DOCKER_SCRIPTS_DIR / ".env")
@@ -51,11 +53,7 @@ VAL_FILE = DATASET_DIR / "val" / "metadata.jsonl"
 TEST_FILE = DATASET_DIR / "test" / "metadata.jsonl"
 SPLITS = ("train", "val", "test")
 
-USER_PROMPT = os.getenv(
-    "SURYA_BBOX_USER_PROMPT",
-    "Extrais le texte des bulles de cette page de manga dans l'ordre de lecture japonais, "
-    "avec leurs bbox normalisees entre 0 et 1000. Format strict: Texte [x1,y1,x2,y2].",
-)
+USER_PROMPT = get_prompt("ocr_page_bbox", "SURYA_BBOX_USER_PROMPT")
 BBOX_NORM_SCALE = int(os.getenv("SURYA_BBOX_NORM_SCALE", "1000"))
 MAX_NEW_TOKENS = int(os.getenv("SURYA_BBOX_MAX_NEW_TOKENS", "2048"))
 GEN_EVAL_MAX_SAMPLES = int(os.getenv("SURYA_BBOX_GEN_EVAL_MAX_SAMPLES", "48"))

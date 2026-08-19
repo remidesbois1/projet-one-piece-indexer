@@ -45,6 +45,9 @@ if hasattr(torch, "compile"):
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR.parent))
+from common_training.prompts import get_prompt
+
 BASE_PATH = Path(os.getenv("LIGHTON_DATASET_DIR", str(SCRIPT_DIR / "lighton_dataset")))
 TRAIN_FILE = BASE_PATH / "train" / "metadata.jsonl"
 VAL_FILE = BASE_PATH / "val" / "metadata.jsonl"
@@ -56,11 +59,7 @@ FINAL_DIR = OUTPUT_DIR / "final_lora_merged"
 CANDIDATE_DIR = OUTPUT_DIR / "candidate_lora_merged"
 PREVIOUS_DIR = OUTPUT_DIR / "previous_lora_merged"
 
-# Keep the current crop-OCR instruction, but use the exact same text everywhere.
-USER_PROMPT = os.getenv(
-    "LIGHTON_USER_PROMPT",
-    "\nTranscription OCR (uniquement le texte de la bulle, pas de suite) :",
-)
+USER_PROMPT = get_prompt("ocr_lighton_bubble", "LIGHTON_USER_PROMPT")
 
 SPLITS = ("train", "val", "test")
 MAX_NEW_TOKENS = int(os.getenv("LIGHTON_MAX_NEW_TOKENS", "128"))

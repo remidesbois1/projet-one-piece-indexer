@@ -27,6 +27,8 @@ import matplotlib.patches as mpatches
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 FINETUNE_DIR = SCRIPT_DIR.parent
+sys.path.insert(0, str(FINETUNE_DIR.parent.parent))
+from common_training.prompts import get_prompt
 load_dotenv(FINETUNE_DIR / ".env")
 OUTPUT_DIR = SCRIPT_DIR / "output"
 GRAPHS_DIR = OUTPUT_DIR / "graphs"
@@ -50,24 +52,7 @@ GEMMA_MAX_WORKERS = 2
 CACHE_LIGHTON = OUTPUT_DIR / "cache_lighton.json"
 CACHE_GEMMA = OUTPUT_DIR / "cache_gemma.json"
 
-GEMMA_PROMPT = """À partir de cette page de manga, extrait tout le texte de chaque bulle de dialogue dans le bon ordre de lecture japonais (en haut à droite -> en bas à gauche) avec leurs positions bbox.
-
-Format de sortie JSON :
-[
-  {
-    "text": "texte de la bulle",
-    "bbox": [x1, y1, x2, y2]
-  }
-]
-
-Règles :
-- Corrige la casse : "TRES BIEN" devient "Très bien"
-- Reste en français
-- Coordonnées bbox normalisées entre 0 et 1000
-- (x1, y1) = coin supérieur gauche, (x2, y2) = coin inférieur droit
-- x va de 0 (gauche) à 1000 (droite), y va de 0 (haut) à 1000 (bas)
-
-Réponds uniquement avec le JSON, pas d'explication."""
+GEMMA_PROMPT = get_prompt("ocr_page_bbox")
 
 
 def parse_bbox_output(text):

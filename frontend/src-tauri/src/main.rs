@@ -31,7 +31,6 @@ const CHATGPT_REDIRECT_URI: &str = "http://localhost:1455/auth/callback";
 const CHATGPT_TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
 const CHATGPT_CODEX_RESPONSES_URL: &str = "https://chatgpt.com/backend-api/codex/responses";
 const CHATGPT_OCR_MODEL: &str = "gpt-5.6-luna";
-const CHATGPT_OCR_PROMPT: &str = r#"Tu es un moteur OCR de page/crop de manga. Extrais uniquement les textes visibles dans les bulles lisibles, avec leur bbox. Renvoie un JSON strict: { "bubbles": [ { "content": "texte exact", "bbox": [x1, y1, x2, y2] } ] } Règles: - Coordonnées normalisées entre 0 et 1000 dans le repère de l'image fournie. - Ordre de lecture japonais: haut droite vers bas gauche. Dans chaque case les bulles sont de droites à gauche. - Garde le francais, ne traduis pas. - Corrige seulement les erreurs OCR evidentes de ponctuation/casse. - Les bbox doivent entourer parfaitement le texte dans les bulles, pas les bulles directement - Ignore les bulles vides ou illisibles. - N'ajoute aucun texte hors JSON. - Rétablis la casse naturelle (ALLEZ-Y ! -> Allez-y !)."#;
 
 #[derive(Clone)]
 struct ChatGptState {
@@ -1546,12 +1545,14 @@ fn validate_ocr_image_payload(image_bytes_base64: &str) -> Result<(), String> {
 async fn run_local_ocr(
     image_bytes_base64: String,
     model_key: Option<String>,
+    prompt: String,
     state: State<'_, LocalBackendState>,
     app_handle: AppHandle,
 ) -> Result<LocalOcrResponse, String> {
     #[derive(Serialize)]
     struct RequestBody<'a> {
         image_bytes_base64: &'a str,
+        prompt: &'a str,
     }
 
     validate_ocr_image_payload(&image_bytes_base64)?;
@@ -1564,6 +1565,7 @@ async fn run_local_ocr(
             &endpoint,
             &RequestBody {
                 image_bytes_base64: &image_bytes_base64,
+                prompt: &prompt,
             },
         )
         .await?;
@@ -1587,12 +1589,14 @@ async fn run_local_ocr(
 #[tauri::command(rename_all = "snake_case")]
 async fn run_local_text_ocr(
     image_bytes_base64: String,
+    prompt: String,
     state: State<'_, LocalBackendState>,
     app_handle: AppHandle,
 ) -> Result<LocalTextOcrResponse, String> {
     #[derive(Serialize)]
     struct RequestBody<'a> {
         image_bytes_base64: &'a str,
+        prompt: &'a str,
     }
 
     validate_ocr_image_payload(&image_bytes_base64)?;
@@ -1603,6 +1607,7 @@ async fn run_local_text_ocr(
             "/ocr/text",
             &RequestBody {
                 image_bytes_base64: &image_bytes_base64,
+                prompt: &prompt,
             },
         )
         .await?;
@@ -1626,12 +1631,14 @@ async fn run_local_text_ocr(
 #[tauri::command(rename_all = "snake_case")]
 async fn run_local_surya_ocr(
     image_bytes_base64: String,
+    prompt: String,
     state: State<'_, LocalBackendState>,
     app_handle: AppHandle,
 ) -> Result<LocalTextOcrResponse, String> {
     #[derive(Serialize)]
     struct RequestBody<'a> {
         image_bytes_base64: &'a str,
+        prompt: &'a str,
     }
 
     validate_ocr_image_payload(&image_bytes_base64)?;
@@ -1642,6 +1649,7 @@ async fn run_local_surya_ocr(
             "/ocr/text?model_key=surya",
             &RequestBody {
                 image_bytes_base64: &image_bytes_base64,
+                prompt: &prompt,
             },
         )
         .await?;
@@ -1665,12 +1673,14 @@ async fn run_local_surya_ocr(
 #[tauri::command(rename_all = "snake_case")]
 async fn run_local_surya_bbox_ocr(
     image_bytes_base64: String,
+    prompt: String,
     state: State<'_, LocalBackendState>,
     app_handle: AppHandle,
 ) -> Result<LocalOcrResponse, String> {
     #[derive(Serialize)]
     struct RequestBody<'a> {
         image_bytes_base64: &'a str,
+        prompt: &'a str,
     }
 
     validate_ocr_image_payload(&image_bytes_base64)?;
@@ -1681,6 +1691,7 @@ async fn run_local_surya_bbox_ocr(
             "/ocr?model_key=surya_bbox",
             &RequestBody {
                 image_bytes_base64: &image_bytes_base64,
+                prompt: &prompt,
             },
         )
         .await?;
@@ -1934,6 +1945,7 @@ fn chatgpt_ocr_request_body(
     model: &str,
     fast_mode: bool,
     reasoning_effort: &str,
+    prompt: &str,
 ) -> serde_json::Value {
     let mut body = serde_json::json!({
         "model": model,
@@ -1941,7 +1953,7 @@ fn chatgpt_ocr_request_body(
         "input": [{
             "role": "user",
             "content": [
-                { "type": "input_text", "text": CHATGPT_OCR_PROMPT },
+                { "type": "input_text", "text": prompt },
                 { "type": "input_image", "image_url": format!("data:{mime_type};base64,{image_bytes_base64}") }
             ]
         }],
@@ -1961,6 +1973,7 @@ async fn run_chatgpt_page_ocr(
     model: String,
     fast_mode: bool,
     reasoning_effort: String,
+    prompt: Option<String>,
     state: State<'_, ChatGptState>,
 ) -> Result<ChatGptOcrResponse, String> {
     validate_ocr_image_payload(&image_bytes_base64)?;
@@ -1986,6 +1999,10 @@ async fn run_chatgpt_page_ocr(
     ) {
         return Err("Niveau de raisonnement OpenAI invalide.".to_string());
     }
+    let prompt = prompt
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty() && value.len() <= 20000)
+        .ok_or_else(|| "Prompt OCR manquant ou invalide.".to_string())?;
     let session = refresh_chatgpt_session(&state).await?;
     let started = Instant::now();
     let response = state
@@ -2001,6 +2018,7 @@ async fn run_chatgpt_page_ocr(
             model,
             fast_mode,
             reasoning_effort,
+            &prompt,
         ))
         .send()
         .await
@@ -2092,11 +2110,30 @@ mod tests {
 
     #[test]
     fn maps_openai_service_tier_and_reasoning_effort() {
-        let fast = chatgpt_ocr_request_body("aGVsbG8=", "image/png", "gpt-5.6-terra", true, "high");
-        let standard =
-            chatgpt_ocr_request_body("aGVsbG8=", "image/png", "gpt-5.6-luna", false, "low");
-        let automatic =
-            chatgpt_ocr_request_body("aGVsbG8=", "image/png", "gpt-5.6-sol", false, "default");
+        let fast = chatgpt_ocr_request_body(
+            "aGVsbG8=",
+            "image/png",
+            "gpt-5.6-terra",
+            true,
+            "high",
+            "prompt",
+        );
+        let standard = chatgpt_ocr_request_body(
+            "aGVsbG8=",
+            "image/png",
+            "gpt-5.6-luna",
+            false,
+            "low",
+            "prompt",
+        );
+        let automatic = chatgpt_ocr_request_body(
+            "aGVsbG8=",
+            "image/png",
+            "gpt-5.6-sol",
+            false,
+            "default",
+            "prompt",
+        );
         assert_eq!(fast["model"], "gpt-5.6-terra");
         assert_eq!(fast["service_tier"], "priority");
         assert_eq!(fast["reasoning"]["effort"], "high");

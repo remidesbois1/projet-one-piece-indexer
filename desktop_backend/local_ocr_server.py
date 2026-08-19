@@ -20,6 +20,8 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from prompt_config import get_prompt
+
 
 BBOX_MODEL_KEY = "bbox"
 TEXT_MODEL_KEY = "base"
@@ -178,25 +180,9 @@ MODEL_CONFIGS = {
 TEXT_OCR_MODEL_KEYS = {TEXT_MODEL_KEY, SURYA_MODEL_KEY}
 BBOX_OCR_MODEL_KEYS = {BBOX_MODEL_KEY, SURYA_BBOX_MODEL_KEY}
 SURYA_MODEL_KEYS = {SURYA_MODEL_KEY, SURYA_BBOX_MODEL_KEY}
-TEXT_USER_PROMPT = os.getenv(
-    "LIGHTON_USER_PROMPT",
-    "\nTranscription OCR (uniquement le texte de la bulle, pas de suite) :",
-)
-SURYA_USER_PROMPT = os.getenv(
-    "PONEGLYPH_SURYA_USER_PROMPT",
-    os.getenv(
-        "SURYA_USER_PROMPT",
-        "Transcris exactement le texte visible dans cette bulle. Ne rajoute rien.",
-    ),
-)
-SURYA_BBOX_USER_PROMPT = os.getenv(
-    "PONEGLYPH_SURYA_BBOX_USER_PROMPT",
-    os.getenv(
-        "SURYA_BBOX_USER_PROMPT",
-        "Extrais le texte des bulles de cette page de manga dans l'ordre de lecture japonais, "
-        "avec leurs bbox normalisees entre 0 et 1000. Format strict: Texte [x1,y1,x2,y2].",
-    ),
-)
+TEXT_USER_PROMPT = get_prompt("ocr_lighton_bubble", "LIGHTON_USER_PROMPT")
+SURYA_USER_PROMPT = get_prompt("ocr_surya_bubble", "PONEGLYPH_SURYA_USER_PROMPT", "SURYA_USER_PROMPT")
+SURYA_BBOX_USER_PROMPT = get_prompt("ocr_page_bbox", "PONEGLYPH_SURYA_BBOX_USER_PROMPT", "SURYA_BBOX_USER_PROMPT")
 MAX_IMAGE_SIZE = (1540, 1540)
 MAX_IMAGE_BYTES = 25 * 1024 * 1024
 MAX_IMAGE_BASE64_CHARS = ((MAX_IMAGE_BYTES + 2) // 3) * 4
@@ -389,6 +375,7 @@ class OcrRequest(BaseModel):
         min_length=4,
         max_length=MAX_IMAGE_BASE64_CHARS,
     )
+    prompt: Optional[str] = Field(default=None, max_length=20000)
 
 
 def normalize_model_key(model_key: str) -> str:
@@ -1372,9 +1359,9 @@ def load_transformers_backend(
         state["compile_error"] = compile_error
 
 
-def messages_for_model(model_key: str):
+def messages_for_model(model_key: str, prompt_override: Optional[str] = None):
     if model_key in TEXT_OCR_MODEL_KEYS:
-        prompt = SURYA_USER_PROMPT if model_key == SURYA_MODEL_KEY else TEXT_USER_PROMPT
+        prompt = prompt_override or (SURYA_USER_PROMPT if model_key == SURYA_MODEL_KEY else TEXT_USER_PROMPT)
         return [
             {
                 "role": "user",
@@ -1391,7 +1378,7 @@ def messages_for_model(model_key: str):
                 "role": "user",
                 "content": [
                     {"type": "image"},
-                    {"type": "text", "text": SURYA_BBOX_USER_PROMPT},
+                    {"type": "text", "text": prompt_override or SURYA_BBOX_USER_PROMPT},
                 ],
             }
         ]
@@ -1907,7 +1894,7 @@ def ocr(request: OcrRequest, model_key: str = BBOX_MODEL_KEY):
             preprocess_start = time.perf_counter()
             image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
             image.thumbnail(MAX_IMAGE_SIZE, Image.Resampling.LANCZOS)
-            messages = messages_for_model(model_key)
+            messages = messages_for_model(model_key, request.prompt)
             preprocess_ms = int((time.perf_counter() - preprocess_start) * 1000)
 
             generate_start = time.perf_counter()
@@ -1954,7 +1941,7 @@ def text_ocr(request: OcrRequest, model_key: str = TEXT_MODEL_KEY):
 
             preprocess_start = time.perf_counter()
             image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-            messages = messages_for_model(model_key)
+            messages = messages_for_model(model_key, request.prompt)
             preprocess_ms = int((time.perf_counter() - preprocess_start) * 1000)
 
             generate_start = time.perf_counter()

@@ -71,13 +71,16 @@ TOKEN_CSV_PATH = RESULTS_DIR / "token_records.csv"
 WORD_CSV_PATH = RESULTS_DIR / "word_records.csv"
 REPORT_PATH = RESULTS_DIR / "REPORT.md"
 
+sys.path.insert(0, str(PROJECT_ROOT / "docker_scripts"))
+from common_training.prompts import get_prompt
+
 DEFAULT_MODEL_ID = "Remidesbois/LightonOCR-2-1b-poneglyph"
 ENGINE_NAME = "LightOnOCR-2"
 DEFAULT_BENCHMARK_URL = (
     "https://huggingface.co/Remidesbois/LightonOCR-2-1b-poneglyph/"
     "resolve/main/benchmark_test.json"
 )
-DEFAULT_PROMPT = "\nTranscription OCR (uniquement le texte de la bulle, pas de suite) :"
+DEFAULT_PROMPT = get_prompt("ocr_lighton_bubble", "LIGHTON_USER_PROMPT")
 DEFAULT_STATUS = "Validé"
 DEFAULT_SEED = 42
 

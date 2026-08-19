@@ -1,4 +1,5 @@
 import { AutoModel, Qwen2Tokenizer, env } from '@huggingface/transformers';
+import { getPrompt } from '../lib/promptConfig';
 
 env.allowRemoteModels = false;
 env.allowLocalModels = true;
@@ -6,7 +7,6 @@ env.useBrowserCache = true;
 
 const MODEL_PATH = 'models/f2llm-v2-160m-one-piece-retrieval';
 const MODEL_PUBLIC_PATH = '/models/f2llm-v2-160m-one-piece-retrieval';
-const QUERY_PROMPT = 'Instruct: Given a question, retrieve passages that can help answer the question.\nQuery: ';
 const EXPECTED_DIM = 640;
 
 let model = null;
@@ -112,7 +112,8 @@ async function ensureLoaded() {
 
 async function embedQuery(text) {
     await ensureLoaded();
-    const inputs = await tokenizer(`${QUERY_PROMPT}${text}`, {
+    const queryPrompt = await getPrompt('embedding_query_f2llm');
+    const inputs = await tokenizer(`${queryPrompt}${text}`, {
         padding: true,
         truncation: true,
         max_length: 512,

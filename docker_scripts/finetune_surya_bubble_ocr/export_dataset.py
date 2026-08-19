@@ -27,6 +27,9 @@ except ImportError:
 SCRIPT_DIR = Path(__file__).resolve().parent
 DOCKER_SCRIPTS_DIR = SCRIPT_DIR.parent
 PROJECT_ROOT = DOCKER_SCRIPTS_DIR.parent
+import sys
+sys.path.insert(0, str(DOCKER_SCRIPTS_DIR))
+from common_training.prompts import get_prompt
 
 load_dotenv(SCRIPT_DIR / ".env")
 load_dotenv(DOCKER_SCRIPTS_DIR / ".env")
@@ -51,10 +54,7 @@ DOWNLOAD_WORKERS = int(os.getenv("SURYA_DOWNLOAD_WORKERS", "16"))
 SUPABASE_PAGE_SIZE = int(os.getenv("SURYA_SUPABASE_PAGE_SIZE", "1000"))
 REQUEST_TIMEOUT_SECONDS = int(os.getenv("SURYA_REQUEST_TIMEOUT_SECONDS", "45"))
 CROP_PAD_PX = int(os.getenv("SURYA_CROP_PAD_PX", "0"))
-USER_PROMPT = os.getenv(
-    "SURYA_USER_PROMPT",
-    "Transcris exactement le texte visible dans cette bulle. Ne rajoute rien.",
-)
+USER_PROMPT = get_prompt("ocr_surya_bubble", "SURYA_USER_PROMPT")
 CLEAN_DATASET = os.getenv("SURYA_CLEAN_DATASET", "0").lower() not in {
     "0",
     "false",

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { getPrompt } from '@/lib/promptConfig';
 
 const INITIAL_MODEL_STATUS = {
     installed: false,
@@ -612,7 +613,7 @@ export function useTauriLocalOcr() {
         setLocalError(null);
         try {
             const image_bytes_base64 = await blobToBase64(blob);
-            const result = await invoke('run_local_ocr', { image_bytes_base64 });
+            const result = await invoke('run_local_ocr', { image_bytes_base64, prompt: await getPrompt('ocr_page_bbox') });
             await refreshLocalDiagnostics();
             return result;
         } catch (error) {
@@ -632,7 +633,7 @@ export function useTauriLocalOcr() {
         setLocalError(null);
         try {
             const image_bytes_base64 = await blobToBase64(blob);
-            const result = await invoke('run_local_text_ocr', { image_bytes_base64 });
+            const result = await invoke('run_local_text_ocr', { image_bytes_base64, prompt: await getPrompt('ocr_bubble') });
             await refreshLocalDiagnostics();
             return result;
         } catch (error) {
@@ -652,7 +653,7 @@ export function useTauriLocalOcr() {
         setLocalError(null);
         try {
             const image_bytes_base64 = await blobToBase64(blob);
-            const result = await invoke('run_local_surya_ocr', { image_bytes_base64 });
+            const result = await invoke('run_local_surya_ocr', { image_bytes_base64, prompt: await getPrompt('ocr_bubble') });
             await refreshLocalDiagnostics();
             return result;
         } catch (error) {
@@ -672,7 +673,11 @@ export function useTauriLocalOcr() {
         setLocalError(null);
         try {
             const image_bytes_base64 = await blobToBase64(blob);
-            const result = await invoke('run_local_ocr', { image_bytes_base64, ...SURYA_BBOX_MODEL_ARGS });
+            const result = await invoke('run_local_ocr', {
+                image_bytes_base64,
+                prompt: await getPrompt('ocr_page_bbox'),
+                ...SURYA_BBOX_MODEL_ARGS,
+            });
             await refreshLocalDiagnostics();
             return result;
         } catch (error) {

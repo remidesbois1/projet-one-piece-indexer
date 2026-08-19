@@ -194,6 +194,10 @@ export const getAiModels = () => apiClient.get('/admin/ai-models');
 export const updateAiModels = (models) => apiClient.put('/admin/ai-models', models);
 export const getPublicAiModels = () => apiClient.get('/admin/ai-models/public');
 
+export const getAdminPrompts = () => apiClient.get('/admin/prompts');
+export const updateAdminPrompts = (prompts) => apiClient.put('/admin/prompts', { prompts });
+export const getPublicPrompts = () => apiClient.get('/admin/prompts/public');
+
 export const getEmbeddingStats = (mangaSlug) => apiClient.get('/admin/ai-models/embedding-stats', { params: mangaSlug ? { manga: mangaSlug } : {} });
 export const triggerGeminiBackfill = (mangaSlug) => apiClient.post('/admin/ai-models/trigger-backfill', { manga: mangaSlug });
 export const triggerVoyageBackfill = (mangaSlug) => apiClient.post('/admin/ai-models/trigger-backfill-voyage', { manga: mangaSlug });

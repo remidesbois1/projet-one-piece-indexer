@@ -1,12 +1,13 @@
 import modal
 import os
+import sys
 import torch
 from fastapi import Request, HTTPException
 
-USER_PROMPT = os.getenv(
-    "LIGHTON_USER_PROMPT",
-    "\nTranscription OCR (uniquement le texte de la bulle, pas de suite) :",
-)
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from common_training.prompts import get_prompt
+
+USER_PROMPT = get_prompt("ocr_lighton_bubble", "LIGHTON_USER_PROMPT")
 
 image = (
     modal.Image.debian_slim(python_version="3.11")

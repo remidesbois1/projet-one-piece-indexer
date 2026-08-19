@@ -10,6 +10,10 @@ vi.mock('./aiModelConfig', () => ({
     }),
 }));
 
+vi.mock('./promptConfig', () => ({
+    getPrompt: vi.fn().mockResolvedValue('prompt-ocr-page'),
+}));
+
 vi.mock('@tauri-apps/api/core', () => ({
     invoke,
     isTauri: () => true,
@@ -46,20 +50,23 @@ describe('chatGptDesktop', () => {
             model: 'gpt-5.6-luna',
             fast_mode: false,
             reasoning_effort: 'low',
+            prompt: 'prompt-ocr-page',
         });
     });
 
-    it('can override the global OpenAI OCR settings for a request', async () => {
+    it('can override the global OpenAI OCR settings and prompt for a request', async () => {
         invoke.mockResolvedValue({ bubbles: [] });
         await runChatGptPageOcr(new Blob(['image'], { type: 'image/jpeg' }), {
             model: 'gpt-5.6-terra',
             fastMode: true,
             reasoningEffort: 'high',
+            prompt: 'prompt-personnalise',
         });
         expect(invoke).toHaveBeenCalledWith('run_chatgpt_page_ocr', expect.objectContaining({
             model: 'gpt-5.6-terra',
             fast_mode: true,
             reasoning_effort: 'high',
+            prompt: 'prompt-personnalise',
         }));
     });
 

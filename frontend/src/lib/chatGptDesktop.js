@@ -1,4 +1,5 @@
 import { getAiModelConfig } from './aiModelConfig';
+import { getPrompt } from './promptConfig';
 
 const CHATGPT_AUTH_EVENT = 'poneglyph:chatgpt-auth-changed';
 
@@ -72,12 +73,14 @@ export async function runChatGptPageOcr(imageBlob, options = {}) {
     const model = options.model || config.model_chatgpt_ocr;
     const fastMode = options.fastMode ?? config.chatgpt_fast_mode;
     const reasoningEffort = options.reasoningEffort || config.chatgpt_reasoning_effort;
+    const prompt = options.prompt || await getPrompt('ocr_page_bbox');
     return invokeDesktop('run_chatgpt_page_ocr', {
         image_bytes_base64: await blobToBase64(imageBlob),
         mime_type: imageBlob.type || 'image/jpeg',
         model,
         fast_mode: Boolean(fastMode),
         reasoning_effort: reasoningEffort,
+        prompt,
     });
 }
 

@@ -32,6 +32,9 @@ from transformers.trainer_utils import get_last_checkpoint
 SCRIPT_DIR = Path(__file__).resolve().parent
 DOCKER_SCRIPTS_DIR = SCRIPT_DIR.parent
 PROJECT_ROOT = DOCKER_SCRIPTS_DIR.parent
+import sys
+sys.path.insert(0, str(DOCKER_SCRIPTS_DIR))
+from common_training.prompts import get_prompt
 
 load_dotenv(SCRIPT_DIR / ".env")
 load_dotenv(DOCKER_SCRIPTS_DIR / ".env")
@@ -46,10 +49,7 @@ VAL_FILE = DATASET_DIR / "val" / "metadata.jsonl"
 TEST_FILE = DATASET_DIR / "test" / "metadata.jsonl"
 SPLITS = ("train", "val", "test")
 
-USER_PROMPT = os.getenv(
-    "SURYA_USER_PROMPT",
-    "Transcris exactement le texte visible dans cette bulle. Ne rajoute rien.",
-)
+USER_PROMPT = get_prompt("ocr_surya_bubble", "SURYA_USER_PROMPT")
 MAX_NEW_TOKENS = int(os.getenv("SURYA_MAX_NEW_TOKENS", "256"))
 GEN_EVAL_MAX_SAMPLES = int(os.getenv("SURYA_GEN_EVAL_MAX_SAMPLES", "256"))
 GEN_EVAL_BATCH_SIZE = int(os.getenv("SURYA_GEN_EVAL_BATCH", "8"))

@@ -33,7 +33,8 @@
       "../public/ms-icon-310x310.ico"
     ],
     "resources": {
-      "../../desktop_backend/": "desktop_backend/"
+      "../../desktop_backend/": "desktop_backend/",
+      "../../packages/shared/src/llm-prompts.json": "desktop_backend/llm-prompts.json"
     },
     "targets": ["nsis"],
     "windows": {

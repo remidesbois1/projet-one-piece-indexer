@@ -15,6 +15,14 @@ const { clearBubbleGeometryCache } = require('../utils/bubbleGeometry');
 const { generateGeminiEmbedding } = require('../utils/geminiClient');
 const { generateVoyageEmbedding } = require('../utils/voyageClient');
 const { generateF2llmEmbedding } = require('../utils/f2llmClient');
+const {
+  PROMPT_KEYS,
+  PROMPT_CONTENT_MAX_LENGTH,
+  getDefaultPrompt,
+  getPromptRegistry,
+  getPromptContents,
+  invalidatePromptCache,
+} = require('../utils/promptRegistry');
 const { buildPageEmbeddingText } = require('../utils/pageEmbeddingText');
 const { cancelModalCall, submitTrainingJob } = require('../utils/modalTrainingLauncher');
 const {
@@ -601,6 +609,81 @@ router.get('/ai-models/public', async (req, res) => {
     res.status(500).json({ error: "Erreur récupération des modèles IA." });
   }
 });
+
+router.get('/prompts', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+  try {
+    const registry = await getPromptRegistry();
+    const prompts = [...registry.values()]
+      .map(({ content, ...prompt }) => ({ ...prompt, content }));
+    res.json(prompts);
+  } catch (error) {
+    console.error("Erreur get prompts:", error);
+    res.status(500).json({ error: "Erreur récupération des prompts." });
+  }
+});
+
+router.put('/prompts', authMiddleware, roleCheck(['Admin']), async (req, res) => {
+  const { prompts } = req.body;
+
+  if (!prompts || typeof prompts !== 'object' || Array.isArray(prompts)) {
+    return res.status(400).json({ error: "Corps de requête invalide : { prompts: { [key]: content } } attendu." });
+  }
+
+  const entries = Object.entries(prompts)
+    .map(([key, content]) => ({ key, content: typeof content === 'string' ? content.trim() : '' }));
+
+  if (entries.length === 0) {
+    return res.status(400).json({ error: "Aucun prompt à mettre à jour." });
+  }
+
+  const invalid = entries.find(({ key, content }) => (
+    !PROMPT_KEYS.has(key)
+    || content.length === 0
+    || content.length > PROMPT_CONTENT_MAX_LENGTH
+  ));
+  if (invalid) {
+    return res.status(400).json({
+      error: `Prompt invalide : « ${invalid.key} » (clé inconnue ou contenu vide / > ${PROMPT_CONTENT_MAX_LENGTH} caractères).`,
+    });
+  }
+
+  try {
+    for (const { key, content } of entries) {
+      const fallback = getDefaultPrompt(key);
+      const query = content === fallback.content
+        ? supabaseAdmin.from('llm_prompts').delete().eq('key', key)
+        : supabaseAdmin.from('llm_prompts').upsert({
+          key,
+          label: fallback.label,
+          category: fallback.category,
+          description: fallback.description,
+          content,
+          updated_by: req.user?.id ?? null,
+        }, { onConflict: 'key' });
+      const { error } = await query;
+      if (error) throw error;
+    }
+
+    invalidatePromptCache();
+    const registry = await getPromptRegistry();
+    const updated = [...registry.values()]
+      .map(({ content, ...prompt }) => ({ ...prompt, content }));
+    res.json(updated);
+  } catch (error) {
+    console.error("Erreur update prompts:", error);
+    res.status(500).json({ error: "Erreur mise à jour des prompts." });
+  }
+});
+
+router.get('/prompts/public', async (req, res) => {
+  try {
+    res.json(await getPromptContents());
+  } catch (error) {
+    console.error("Erreur get public prompts:", error);
+    res.status(500).json({ error: "Erreur récupération des prompts." });
+  }
+});
+
 
 router.post('/upload/page', authMiddleware, roleCheck(['Admin']), uploadSinglePage, async (req, res) => {
   const { key } = req.body;

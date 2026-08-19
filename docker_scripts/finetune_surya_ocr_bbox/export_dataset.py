@@ -27,6 +27,9 @@ except ImportError:
 SCRIPT_DIR = Path(__file__).resolve().parent
 DOCKER_SCRIPTS_DIR = SCRIPT_DIR.parent
 PROJECT_ROOT = DOCKER_SCRIPTS_DIR.parent
+import sys
+sys.path.insert(0, str(DOCKER_SCRIPTS_DIR))
+from common_training.prompts import get_prompt
 
 load_dotenv(SCRIPT_DIR / ".env")
 load_dotenv(DOCKER_SCRIPTS_DIR / ".env")
@@ -64,11 +67,7 @@ REQUIRE_ORDER = os.getenv("SURYA_BBOX_REQUIRE_ORDER", "1").lower() not in {
     "off",
     "",
 }
-USER_PROMPT = os.getenv(
-    "SURYA_BBOX_USER_PROMPT",
-    "Extrais le texte des bulles de cette page de manga dans l'ordre de lecture japonais, "
-    "avec leurs bbox normalisees entre 0 et 1000. Format strict: Texte [x1,y1,x2,y2].",
-)
+USER_PROMPT = get_prompt("ocr_page_bbox", "SURYA_BBOX_USER_PROMPT")
 
 
 def require_env() -> None:

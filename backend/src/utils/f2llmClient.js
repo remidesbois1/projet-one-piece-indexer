@@ -1,8 +1,9 @@
 const fs = require('fs');
 const path = require('path');
+const { getDefaultPrompt, getPromptContent } = require('./promptRegistry');
 
 const DEFAULT_MODEL_DIR = path.resolve(__dirname, '../../models/f2llm-v2-160m-one-piece-retrieval');
-const QUERY_PROMPT = 'Instruct: Given a question, retrieve passages that can help answer the question.\nQuery: ';
+const QUERY_PROMPT_KEY = 'embedding_query_f2llm';
 const EXPECTED_DIM = 640;
 
 let loadPromise = null;
@@ -75,6 +76,14 @@ function lastTokenPool(lastHiddenState, attentionMask) {
   return embeddings;
 }
 
+async function resolveQueryPrompt() {
+  try {
+    return await getPromptContent(QUERY_PROMPT_KEY);
+  } catch {
+    return getDefaultPrompt(QUERY_PROMPT_KEY).content;
+  }
+}
+
 async function embedBatch(texts, inputType = 'document') {
   const cleanTexts = texts.map((text) => String(text || '').trim());
   if (cleanTexts.some((text) => !text)) {
@@ -82,9 +91,11 @@ async function embedBatch(texts, inputType = 'document') {
   }
 
   const { tokenizer, model } = await loadF2llm();
-  const modelTexts = inputType === 'query'
-    ? cleanTexts.map((text) => `${QUERY_PROMPT}${text}`)
-    : cleanTexts;
+  let modelTexts = cleanTexts;
+  if (inputType === 'query') {
+    const queryPrompt = await resolveQueryPrompt();
+    modelTexts = cleanTexts.map((text) => `${queryPrompt}${text}`);
+  }
 
   const inputs = tokenizer(modelTexts, {
     padding: true,
@@ -112,7 +123,6 @@ async function generateF2llmEmbedding(text, inputType = 'document') {
 
 module.exports = {
   EXPECTED_DIM,
-  QUERY_PROMPT,
   generateF2llmEmbedding,
   embedBatch,
 };

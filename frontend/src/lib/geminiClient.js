@@ -2,54 +2,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { cropImage } from "./utils";
 import { capitalizeOcrSentenceStarts } from './ocr-utils';
 import { getAiModelConfig } from './aiModelConfig';
-
-const ANALYSIS_PROMPT = "Tu es un expert en numérisation de manga. Ta tâche est de transcrire le texte présent dans cette bulle de dialogue.  Règles strictes : 1. Transcris EXACTEMENT le texte visible (OCR). 2. Corrige automatiquement les erreurs mineures d'OCR. 3. Rétablis la casse naturelle. 4. Ne traduis pas. Reste en Français. 5. Renvoie UNIQUEMENT le texte final.";
-
-const DESCRIPTION_PROMPT = "Analyse cette page de One Piece. Ton but est de générer un objet JSON optimisé pour la similarité cosinus. La description doit être dense, directe et centrée sur l'action principale pour maximiser les scores de correspondance. Schéma de sortie attendu : JSON { \"content\": \"Action principale. Détails de l'événement et contexte immédiat. Éléments de lore.\", \"metadata\": { \"arc\": \"Nom de l'arc\", \"characters\": [\"Liste des personnages\"] } } Règles de rédaction pour 'content' (Priorité Recherche) : Accroche Directe : Commence la première phrase par l'action ou l'événement exact (ex: \"Exécution de Gol D. Roger\" ou \"Combat entre Luffy et Kaido\"). C'est ce qui \"ancre\" le vecteur. Sujet-Verbe-Complément : Utilise des phrases simples et factuelles. Évite les métaphores ou les envolées lyriques. Mots-Clés de Haute Densité : Utilise les termes que les fans taperaient (ex: 'Haki des Rois', 'Fruit du Démon', 'Gear 5', 'Échafaud'). Suppression du Bruit : Ne décris PAS les conséquences à long terme (ex: \"cela change le monde\"), décris uniquement ce qui est visible sur la page. Zéro Technique : Aucun mot sur le dessin (hachures, angles, traits). Réponds uniquement en JSON.";
-
-const STRICT_JSON_SUFFIX = "La reponse doit etre un objet JSON brut et valide. Elle doit commencer par { et finir par }. N'ajoute aucun markdown, aucune puce, aucun commentaire, aucun libelle Input/Output.";
-
-const PAGE_OCR_BBOX_PROMPT = `Tu es un moteur OCR de page/crop de manga.
-Extrais uniquement les textes visibles dans les bulles, cartouches ou onomatopees lisibles, avec leur bbox.
-Renvoie un JSON strict:
-{
-  "bubbles": [
-    { "content": "texte exact", "bbox": [x1, y1, x2, y2] }
-  ]
-}
-Regles:
-- Coordonnees normalisees entre 0 et 1000 dans le repere de l'image fournie.
-- Ordre de lecture japonais: haut droite vers bas gauche.
-- Garde le francais, ne traduis pas.
-- Corrige seulement les erreurs OCR evidentes de ponctuation/casse.
-- Ignore les bulles vides ou illisibles.
-- N'ajoute aucun texte hors JSON.`;
-
-const VOLUME_SUMMARY_PROMPT = `Tu lis le sommaire d'un tome de manga afin de préparer son import.
-Extrais tous les chapitres présents dans ce sommaire, dans leur ordre.
-
-Le CBZ contient {pageCount} images. L'image fournie est l'image {summaryPage} (numérotation CBZ à partir de 1).
-Pour chaque chapitre, renvoie sa position de début dans le CBZ dans "start_page" (numérotation à partir de 1), pas seulement le numéro imprimé dans le sommaire. Déduis le décalage entre les numéros imprimés et le CBZ : le premier chapitre suit normalement le sommaire. Garde le numéro imprimé observé dans "printed_page" pour contrôle.
-
-Réponse JSON stricte :
-{
-  "chapters": [
-    {
-      "number": 1,
-      "title": "Titre exact du chapitre",
-      "start_page": 9,
-      "printed_page": 7
-    }
-  ]
-}
-
-Règles :
-- Corrige la casse des titres : un titre entièrement en majuscules devient une casse titre naturelle (ex. "PEARL" -> "Pearl", "JUNGLE BLOOD" -> "Jungle Blood", "MÊME PAS EN RÊVE !" -> "Même pas en rêve !").
-- Garde les sigles et codes alphanumériques intacts (ex. "MH5"). Ne traduis pas les titres.
-- "number" et "start_page" sont des entiers.
-- N'invente aucun chapitre, titre ou numéro.
-- Les "start_page" doivent être strictement croissants et compris entre 1 et {pageCount}.
-- Réponds uniquement avec le JSON.`;
+import { getPrompt } from './promptConfig';
 
 export function getGeminiGenerationConfig(config, overrides = {}) {
     const level = config?.gemini_thinking_level || 'default';
@@ -249,7 +202,7 @@ export async function analyzeVolumeSummary(imageBlob, { pageCount, summaryPage }
     };
 
     try {
-        const prompt = VOLUME_SUMMARY_PROMPT
+        const prompt = (await getPrompt('volume_summary'))
             .replaceAll('{pageCount}', String(pageCount))
             .replaceAll('{summaryPage}', String(summaryPage));
         const result = await model.generateContent([prompt, imagePart]);
@@ -290,7 +243,7 @@ export async function analyzeBubble(imageSource, coordinates, apiKey) {
     };
 
     try {
-        const result = await model.generateContent([ANALYSIS_PROMPT, imagePart]);
+        const result = await model.generateContent([await getPrompt('ocr_bubble'), imagePart]);
         const response = await result.response;
         const text = response.text();
         return { data: { texte_propose: text.trim() } };
@@ -334,7 +287,8 @@ export async function generatePageDescription(imageSource, apiKey) {
     };
 
     try {
-        const result = await model.generateContent([`${DESCRIPTION_PROMPT}\n\n${STRICT_JSON_SUFFIX}`, imagePart]);
+        const prompt = `${await getPrompt('page_description')}\n\n${await getPrompt('strict_json_suffix')}`;
+        const result = await model.generateContent([prompt, imagePart]);
         const response = await result.response;
         const text = response.text();
         return { data: parseModelJson(text, "Description Gemini") };
@@ -470,27 +424,19 @@ export async function generateOneShotBubbles(imageSource, apiKey) {
         },
     };
 
-    const prompt = `à partir de cette page, extrait tout le texte de chaque bulle dans le bon ordre de lecture japonais (en haut à droite -> en bas à gauche) Avec leurs position bbox. Dans un format json :
-[
-  {
-    "content": "texte",
-    "pos": [ymin, xmin, ymax, xmax]
-  }
-]
-- Corrige aussi la casse : "TRES BIEN, ..." devient : "Très bien, ..."
-Position normalisé à 1000 que tu va re-normaliser derrière selon la page.`;
-
     try {
+        const prompt = `${await getPrompt('ocr_page_bbox')}\n\n${await getPrompt('strict_json_suffix')}`;
         const result = await model.generateContent([prompt, imagePart]);
         const response = await result.response;
         const candidates = response.candidates;
+        let data;
         if (candidates?.[0]?.content?.parts) {
             const answerPart = candidates[0].content.parts.find(p => !p.thought && p.text);
-            if (answerPart) {
-                return { data: parseModelJson(answerPart.text, "One-shot Gemini"), model: config.model_ocr };
-            }
+            data = parseModelJson((answerPart || candidates[0].content.parts.find(p => p.text)).text, "One-shot Gemini");
+        } else {
+            data = parseModelJson(response.text(), "One-shot Gemini");
         }
-        return { data: parseModelJson(response.text(), "One-shot Gemini"), model: config.model_ocr };
+        return { data: normalizeGeneratedBubbles(data), model: config.model_ocr };
     } catch (error) {
         handleGeminiError(error);
         console.error("Gemini API One-Shot Error:", error);
@@ -518,7 +464,8 @@ export async function generatePageOcrBboxes(imageBlob, apiKey) {
     };
 
     try {
-        const result = await model.generateContent([`${PAGE_OCR_BBOX_PROMPT}\n\n${STRICT_JSON_SUFFIX}`, imagePart]);
+        const prompt = `${await getPrompt('ocr_page_bbox')}\n\n${await getPrompt('strict_json_suffix')}`;
+        const result = await model.generateContent([prompt, imagePart]);
         const response = await result.response;
         const data = parseModelJson(response.text(), "OCR recherche Gemini");
         return {
