@@ -17,6 +17,8 @@ test('embedding stats use a private lightweight RPC instead of transferring vect
   assert.match(sql, /p\.embedding_gemini is not null/i);
   assert.match(sql, /p\.embedding_f2llm is not null/i);
   assert.match(sql, /revoke all on function public\.get_ai_embedding_stats\(text\) from public, anon, authenticated/i);
-  assert.match(routeBlock, /supabaseAdmin\.rpc\('get_ai_embedding_stats'/);
+  assert.match(route, /supabaseAdmin[\s\S]*\.rpc\('get_ai_embedding_stats'/);
+  assert.match(route, /\.range\(offset, offset \+ EMBEDDING_STATS_PAGE_SIZE - 1\)/);
+  assert.match(route, /if \(batch\.length < EMBEDDING_STATS_PAGE_SIZE\) return rows/);
   assert.doesNotMatch(routeBlock, /\.select\([\s\S]*embedding_/);
 });

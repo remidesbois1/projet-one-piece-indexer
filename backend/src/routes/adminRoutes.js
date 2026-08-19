@@ -692,15 +692,31 @@ router.post('/tomes/batch-pages', authMiddleware, roleCheck(['Admin']), express.
   }
 });
 
+const EMBEDDING_STATS_PAGE_SIZE = 1000;
+const MAX_EMBEDDING_STATS_ROWS = 50000;
+
+async function getAllAiEmbeddingStats(mangaSlug) {
+  const rows = [];
+  for (let offset = 0; offset < MAX_EMBEDDING_STATS_ROWS; offset += EMBEDDING_STATS_PAGE_SIZE) {
+    const { data, error } = await supabaseAdmin
+      .rpc('get_ai_embedding_stats', { p_manga_slug: mangaSlug || null })
+      .range(offset, offset + EMBEDDING_STATS_PAGE_SIZE - 1);
+    if (error) throw error;
+
+    const batch = data || [];
+    rows.push(...batch);
+    if (batch.length < EMBEDDING_STATS_PAGE_SIZE) return rows;
+  }
+
+  throw new Error(`Le nombre de pages dépasse la limite de ${MAX_EMBEDDING_STATS_ROWS}.`);
+}
+
 router.get('/ai-models/embedding-stats', authMiddleware, roleCheck(['Admin']), async (req, res) => {
   try {
     const { manga } = req.query;
-    const { data, error } = await supabaseAdmin.rpc('get_ai_embedding_stats', {
-      p_manga_slug: manga || null,
-    });
-    if (error) throw error;
+    const data = await getAllAiEmbeddingStats(manga);
 
-    const stats = (data || []).map(page => ({
+    const stats = data.map(page => ({
       id: page.id,
       chapitre_id: page.chapitre_id,
       chapitre_numero: page.chapitre_numero,
