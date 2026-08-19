@@ -2,11 +2,14 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { getAiModels, updateAiModels, getAvailableAiModels, getEmbeddingStats, triggerGeminiBackfill, triggerVoyageBackfill, savePageData, generateVoyageEmbedding } from '@/lib/api';
-import { invalidateModelCache, generatePageDescription, generateGeminiEmbedding } from '@/lib/geminiClient';
+import { generatePageDescription, generateGeminiEmbedding } from '@/lib/geminiClient';
+import { cacheAiModelConfig } from '@/lib/aiModelConfig';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Loader2, Save, RotateCcw, Cpu, Eye, MessageSquareText, Sparkles, Search, Play, Square } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
+import { Loader2, Save, RotateCcw, Cpu, Eye, MessageSquareText, Sparkles, Search, Play, Square, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn, loadImage, getProxiedImageUrl } from '@/lib/utils';
 import ModelBenchmarkRegistry from '@/components/ModelBenchmarkRegistry';
@@ -27,6 +30,8 @@ const MODEL_ROLES = [
         tint: '#6ee7b7',
     },
 ];
+
+const OPENAI_OCR_MODELS = ['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol'];
 
 // The available-models catalog (Gemini's model list) changes rarely and is
 // expensive to fetch. Cache it in-memory for the lifetime of the page session
@@ -66,7 +71,7 @@ export default function AiModelManager({ mangaSlug }) {
         loadData();
     }, []);
 
-    const loadData = async () => {
+    async function loadData() {
         setLoading(true);
         setLoadingStats(true);
         try {
@@ -85,11 +90,13 @@ export default function AiModelManager({ mangaSlug }) {
             setLoading(false);
             setLoadingStats(false);
         }
-    };
+    }
 
     const hasChanges = models && draft && (
         models.model_ocr !== draft.model_ocr ||
-        models.model_description !== draft.model_description
+        models.model_description !== draft.model_description ||
+        models.model_chatgpt_ocr !== draft.model_chatgpt_ocr ||
+        models.chatgpt_fast_mode !== draft.chatgpt_fast_mode
     );
 
     const handleSave = async () => {
@@ -98,7 +105,7 @@ export default function AiModelManager({ mangaSlug }) {
             const res = await updateAiModels(draft);
             setModels(res.data);
             setDraft(res.data);
-            invalidateModelCache();
+            cacheAiModelConfig(res.data);
             toast.success("Modèles IA mis à jour avec succès !", {
                 description: "Appliqué à tous les utilisateurs dans les 5 prochaines minutes."
             });
@@ -261,7 +268,7 @@ export default function AiModelManager({ mangaSlug }) {
                         <Cpu className="h-4 w-4 text-[#8dbbff]" />
                     </div>
                     <div>
-                        <h2 className="font-semibold text-white">Modèles Gemini</h2>
+                        <h2 className="font-semibold text-white">Configuration IA</h2>
                         <p className="text-xs text-slate-400">Appliqué à tous les utilisateurs.</p>
                     </div>
                 </div>
@@ -338,6 +345,62 @@ export default function AiModelManager({ mangaSlug }) {
                         </div>
                     );
                 })}
+
+                <div className="rounded-2xl border border-sky-400/20 bg-[#071625]/70 p-5 backdrop-blur-md">
+                    <div className="mb-4 flex items-center gap-3">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-sky-400/30 bg-sky-400/10">
+                            <Zap className="h-4 w-4 text-sky-300" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                            <h3 className="font-semibold text-white">OCR OpenAI Desktop</h3>
+                            <p className="text-xs text-slate-400">Modèle full-page utilisé avec la connexion ChatGPT.</p>
+                        </div>
+                        <Badge className="max-w-[240px] truncate border border-white/10 bg-white/[0.06] font-mono text-xs text-slate-200">
+                            {draft.model_chatgpt_ocr}
+                        </Badge>
+                    </div>
+
+                    <div className="space-y-3">
+                        <Input
+                            list="openai-ocr-models"
+                            value={draft.model_chatgpt_ocr}
+                            onChange={event => setDraft(previous => ({ ...previous, model_chatgpt_ocr: event.target.value.trim() }))}
+                            placeholder="gpt-5.6-luna"
+                            className="border-white/12 bg-white/[0.055] font-mono text-slate-100 placeholder:text-slate-500"
+                        />
+                        <datalist id="openai-ocr-models">
+                            {OPENAI_OCR_MODELS.map(model => <option key={model} value={model} />)}
+                        </datalist>
+                        <div className="flex flex-wrap gap-2">
+                            {OPENAI_OCR_MODELS.map(model => (
+                                <button
+                                    key={model}
+                                    type="button"
+                                    onClick={() => setDraft(previous => ({ ...previous, model_chatgpt_ocr: model }))}
+                                    className={cn(
+                                        'rounded-lg border px-3 py-1.5 font-mono text-xs transition-colors',
+                                        draft.model_chatgpt_ocr === model
+                                            ? 'border-sky-400/60 bg-sky-400/15 text-sky-100'
+                                            : 'border-white/10 bg-white/[0.04] text-slate-400 hover:border-white/20 hover:text-slate-200'
+                                    )}
+                                >
+                                    {model}
+                                </button>
+                            ))}
+                        </div>
+                        <div className="flex items-center justify-between gap-4 rounded-xl border border-white/10 bg-white/[0.04] p-3.5">
+                            <div>
+                                <p className="text-sm font-medium text-slate-100">Fast mode global</p>
+                                <p className="mt-0.5 text-xs text-slate-400">Envoie les requêtes OpenAI sur le tier prioritaire.</p>
+                            </div>
+                            <Switch
+                                checked={draft.chatgpt_fast_mode}
+                                onCheckedChange={checked => setDraft(previous => ({ ...previous, chatgpt_fast_mode: checked }))}
+                                aria-label="Activer le Fast mode OpenAI global"
+                            />
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <ModelBenchmarkRegistry />

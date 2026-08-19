@@ -1,5 +1,6 @@
+import { getAiModelConfig } from './aiModelConfig';
+
 const CHATGPT_AUTH_EVENT = 'poneglyph:chatgpt-auth-changed';
-export const CHATGPT_FAST_MODE_STORAGE_KEY = 'poneglyph_chatgpt_fast_mode';
 
 async function resolveDesktopInvoke() {
     if (typeof window === 'undefined') return null;
@@ -65,21 +66,15 @@ export async function logoutChatGpt() {
     return { available: true, ...status };
 }
 
-export function getChatGptFastMode() {
-    if (typeof window === 'undefined') return false;
-    return window.localStorage.getItem(CHATGPT_FAST_MODE_STORAGE_KEY) === 'true';
-}
-
-export function setChatGptFastMode(enabled) {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem(CHATGPT_FAST_MODE_STORAGE_KEY, String(Boolean(enabled)));
-}
-
-export async function runChatGptPageOcr(imageBlob, { fastMode = getChatGptFastMode() } = {}) {
+export async function runChatGptPageOcr(imageBlob, options = {}) {
     if (!(imageBlob instanceof Blob)) throw new Error('Image OCR manquante.');
+    const config = await getAiModelConfig();
+    const model = options.model || config.model_chatgpt_ocr;
+    const fastMode = options.fastMode ?? config.chatgpt_fast_mode;
     return invokeDesktop('run_chatgpt_page_ocr', {
         image_bytes_base64: await blobToBase64(imageBlob),
         mime_type: imageBlob.type || 'image/jpeg',
+        model,
         fast_mode: Boolean(fastMode),
     });
 }

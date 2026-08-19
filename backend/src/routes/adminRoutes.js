@@ -492,11 +492,14 @@ router.post('/covers', authMiddleware, roleCheck(['Admin']), upload.single('cove
   }
 });
 
-const AI_MODEL_KEYS = ['model_ocr', 'model_description'];
+const AI_MODEL_KEYS = ['model_ocr', 'model_description', 'model_chatgpt_ocr', 'chatgpt_fast_mode'];
 const DEFAULT_MODELS = {
   model_ocr: 'gemini-2.5-flash-lite',
-  model_description: 'gemini-3-flash-preview'
+  model_description: 'gemini-3-flash-preview',
+  model_chatgpt_ocr: 'gpt-5.6-luna',
+  chatgpt_fast_mode: false,
 };
+const AI_MODEL_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,99}$/;
 
 let aiModelsCache = null;
 let aiModelsCacheTime = 0;
@@ -517,7 +520,7 @@ async function getAiModelsFromDb() {
 
   const models = { ...DEFAULT_MODELS };
   (data || []).forEach(row => {
-    models[row.key] = row.value;
+    models[row.key] = row.key === 'chatgpt_fast_mode' ? row.value === 'true' : row.value;
   });
 
   aiModelsCache = models;
@@ -536,12 +539,20 @@ router.get('/ai-models', authMiddleware, roleCheck(['Admin']), async (req, res) 
 });
 
 router.put('/ai-models', authMiddleware, roleCheck(['Admin']), async (req, res) => {
-  const { model_ocr, model_reranking, model_description } = req.body;
+  const { model_ocr, model_description, model_chatgpt_ocr, chatgpt_fast_mode } = req.body;
+
+  if (![model_ocr, model_description, model_chatgpt_ocr].every(value => typeof value === 'string' && AI_MODEL_ID_PATTERN.test(value.trim()))
+      || typeof chatgpt_fast_mode !== 'boolean') {
+    return res.status(400).json({ error: 'Configuration IA invalide.' });
+  }
 
   try {
-    const updates = [];
-    if (model_ocr) updates.push({ key: 'model_ocr', value: model_ocr });
-    if (model_description) updates.push({ key: 'model_description', value: model_description });
+    const updates = [
+      { key: 'model_ocr', value: model_ocr.trim() },
+      { key: 'model_description', value: model_description.trim() },
+      { key: 'model_chatgpt_ocr', value: model_chatgpt_ocr.trim() },
+      { key: 'chatgpt_fast_mode', value: String(chatgpt_fast_mode) },
+    ];
 
     for (const { key, value } of updates) {
       const { error } = await supabaseAdmin

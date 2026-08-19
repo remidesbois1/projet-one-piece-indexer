@@ -80,7 +80,7 @@ struct ChatGptAuthStatus {
 struct ChatGptOcrResponse {
     bubbles: Vec<Bubble>,
     elapsed_ms: u64,
-    model: &'static str,
+    model: String,
 }
 
 #[derive(Clone)]
@@ -1931,10 +1931,11 @@ async fn chatgpt_logout(state: State<'_, ChatGptState>) -> Result<ChatGptAuthSta
 fn chatgpt_ocr_request_body(
     image_bytes_base64: &str,
     mime_type: &str,
+    model: &str,
     fast_mode: bool,
 ) -> serde_json::Value {
     serde_json::json!({
-        "model": CHATGPT_OCR_MODEL,
+        "model": model,
         "service_tier": if fast_mode { "priority" } else { "default" },
         "reasoning": {
             "effort": "low"
@@ -1955,6 +1956,7 @@ fn chatgpt_ocr_request_body(
 async fn run_chatgpt_page_ocr(
     image_bytes_base64: String,
     mime_type: String,
+    model: String,
     fast_mode: bool,
     state: State<'_, ChatGptState>,
 ) -> Result<ChatGptOcrResponse, String> {
@@ -1964,6 +1966,15 @@ async fn run_chatgpt_page_ocr(
         "image/jpeg" | "image/png" | "image/webp"
     ) {
         return Err("Format d'image OCR non pris en charge.".to_string());
+    }
+    let model = model.trim();
+    if model.is_empty()
+        || model.len() > 100
+        || !model
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b':'))
+    {
+        return Err("Modele OCR OpenAI invalide.".to_string());
     }
     let session = refresh_chatgpt_session(&state).await?;
     let started = Instant::now();
@@ -1977,6 +1988,7 @@ async fn run_chatgpt_page_ocr(
         .json(&chatgpt_ocr_request_body(
             &image_bytes_base64,
             &mime_type,
+            model,
             fast_mode,
         ))
         .send()
@@ -1997,7 +2009,7 @@ async fn run_chatgpt_page_ocr(
     Ok(ChatGptOcrResponse {
         bubbles: parse_codex_response(&body)?,
         elapsed_ms: started.elapsed().as_millis() as u64,
-        model: CHATGPT_OCR_MODEL,
+        model: model.to_string(),
     })
 }
 
@@ -2068,9 +2080,10 @@ mod tests {
     }
 
     #[test]
-    fn maps_luna_fast_mode_to_priority_service_with_low_reasoning() {
-        let fast = chatgpt_ocr_request_body("aGVsbG8=", "image/png", true);
-        let standard = chatgpt_ocr_request_body("aGVsbG8=", "image/png", false);
+    fn maps_openai_fast_mode_to_priority_service_with_low_reasoning() {
+        let fast = chatgpt_ocr_request_body("aGVsbG8=", "image/png", "gpt-5.6-terra", true);
+        let standard = chatgpt_ocr_request_body("aGVsbG8=", "image/png", "gpt-5.6-luna", false);
+        assert_eq!(fast["model"], "gpt-5.6-terra");
         assert_eq!(fast["service_tier"], "priority");
         assert_eq!(fast["reasoning"]["effort"], "low");
         assert_eq!(standard["service_tier"], "default");

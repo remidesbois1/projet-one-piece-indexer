@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { cropImage } from "./utils";
 import { capitalizeOcrSentenceStarts } from './ocr-utils';
+import { getAiModelConfig } from './aiModelConfig';
 
 const ANALYSIS_PROMPT = "Tu es un expert en numérisation de manga. Ta tâche est de transcrire le texte présent dans cette bulle de dialogue.  Règles strictes : 1. Transcris EXACTEMENT le texte visible (OCR). 2. Corrige automatiquement les erreurs mineures d'OCR. 3. Rétablis la casse naturelle. 4. Ne traduis pas. Reste en Français. 5. Renvoie UNIQUEMENT le texte final.";
 
@@ -49,53 +50,6 @@ Règles :
 - N'invente aucun chapitre, titre ou numéro.
 - Les "start_page" doivent être strictement croissants et compris entre 1 et {pageCount}.
 - Réponds uniquement avec le JSON.`;
-
-const COOKIE_NAME = 'ai_models';
-const COOKIE_TTL = 5 * 60 * 1000;
-
-function getCachedModels() {
-    if (typeof document === 'undefined') return null;
-    const match = document.cookie.match(new RegExp(`(?:^|; )${COOKIE_NAME}=([^;]*)`));
-    if (!match) return null;
-    try {
-        const parsed = JSON.parse(decodeURIComponent(match[1]));
-        if (parsed._ts && (Date.now() - parsed._ts) < COOKIE_TTL) {
-            return parsed;
-        }
-        return null;
-    } catch { return null; }
-}
-
-function setCachedModels(models) {
-    if (typeof document === 'undefined') return;
-    const payload = { ...models, _ts: Date.now() };
-    document.cookie = `${COOKIE_NAME}=${encodeURIComponent(JSON.stringify(payload))}; path=/; max-age=${COOKIE_TTL / 1000}; SameSite=Lax`;
-}
-
-const DEFAULT_MODELS = {
-    model_ocr: 'gemini-2.5-flash-lite',
-    model_description: 'gemini-3-flash-preview'
-};
-
-export async function getAiModelConfig() {
-    const cached = getCachedModels();
-    if (cached) return cached;
-
-    try {
-        const { getPublicAiModels } = await import('./api');
-        const res = await getPublicAiModels();
-        const models = res.data;
-        setCachedModels(models);
-        return models;
-    } catch {
-        return DEFAULT_MODELS;
-    }
-}
-
-export function invalidateModelCache() {
-    if (typeof document === 'undefined') return;
-    document.cookie = `${COOKIE_NAME}=; path=/; max-age=0`;
-}
 
 async function blobToBase64(blob) {
     return new Promise((resolve, reject) => {

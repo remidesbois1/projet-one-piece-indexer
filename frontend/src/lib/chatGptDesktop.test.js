@@ -2,24 +2,27 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
 
+vi.mock('./aiModelConfig', () => ({
+    getAiModelConfig: vi.fn().mockResolvedValue({
+        model_chatgpt_ocr: 'gpt-5.6-luna',
+        chatgpt_fast_mode: false,
+    }),
+}));
+
 vi.mock('@tauri-apps/api/core', () => ({
     invoke,
     isTauri: () => true,
 }));
 
 import {
-    CHATGPT_FAST_MODE_STORAGE_KEY,
-    getChatGptFastMode,
     getChatGptStatus,
     logoutChatGpt,
     runChatGptPageOcr,
-    setChatGptFastMode,
 } from './chatGptDesktop';
 
 describe('chatGptDesktop', () => {
     beforeEach(() => {
         invoke.mockReset();
-        localStorage.clear();
     });
 
     it('reads the in-memory desktop authentication status', async () => {
@@ -39,19 +42,19 @@ describe('chatGptDesktop', () => {
         expect(invoke).toHaveBeenCalledWith('run_chatgpt_page_ocr', {
             image_bytes_base64: 'AQID',
             mime_type: 'image/png',
+            model: 'gpt-5.6-luna',
             fast_mode: false,
         });
     });
 
-    it('persists and sends the Luna latency preference', async () => {
+    it('can override the global OpenAI OCR settings for a request', async () => {
         invoke.mockResolvedValue({ bubbles: [] });
-        setChatGptFastMode(true);
-
-        expect(getChatGptFastMode()).toBe(true);
-        expect(localStorage.getItem(CHATGPT_FAST_MODE_STORAGE_KEY)).toBe('true');
-
-        await runChatGptPageOcr(new Blob(['image'], { type: 'image/jpeg' }));
+        await runChatGptPageOcr(new Blob(['image'], { type: 'image/jpeg' }), {
+            model: 'gpt-5.6-terra',
+            fastMode: true,
+        });
         expect(invoke).toHaveBeenCalledWith('run_chatgpt_page_ocr', expect.objectContaining({
+            model: 'gpt-5.6-terra',
             fast_mode: true,
         }));
     });
