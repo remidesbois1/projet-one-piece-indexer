@@ -695,46 +695,24 @@ router.post('/tomes/batch-pages', authMiddleware, roleCheck(['Admin']), express.
 router.get('/ai-models/embedding-stats', authMiddleware, roleCheck(['Admin']), async (req, res) => {
   try {
     const { manga } = req.query;
-
-    let query = supabaseAdmin
-      .from('pages')
-      .select(`
-        id, description, embedding_voyage, embedding_gemini, embedding_f2llm, id_chapitre, numero_page, statut, url_image,
-        chapitres!inner(
-          numero,
-          tomes!inner(
-            numero,
-            mangas!inner(slug)
-          )
-        )
-      `);
-
-    if (manga) {
-      query = query.eq('chapitres.tomes.mangas.slug', manga);
-    }
-
-    const { data, error } = await query;
+    const { data, error } = await supabaseAdmin.rpc('get_ai_embedding_stats', {
+      p_manga_slug: manga || null,
+    });
     if (error) throw error;
 
-    const stats = data.map(page => ({
+    const stats = (data || []).map(page => ({
       id: page.id,
-      chapitre_id: page.id_chapitre,
-      chapitre_numero: page.chapitres?.numero,
-      tome_numero: page.chapitres?.tomes?.numero,
-      numero: page.numero_page,
+      chapitre_id: page.chapitre_id,
+      chapitre_numero: page.chapitre_numero,
+      tome_numero: page.tome_numero,
+      numero: page.numero,
       url_image: getPageImagePath(page.id),
-      has_voyage: page.embedding_voyage !== null,
-      has_gemini: page.embedding_gemini !== null,
-      has_f2llm: page.embedding_f2llm !== null,
-      has_description: page.description !== null && page.description !== '',
-      statut: page.statut
+      description: page.description,
+      has_voyage: page.has_voyage,
+      has_gemini: page.has_gemini,
+      has_f2llm: page.has_f2llm,
+      has_description: page.has_description,
     }));
-
-    stats.sort((a, b) => {
-      if (a.tome_numero !== b.tome_numero) return (a.tome_numero || 0) - (b.tome_numero || 0);
-      if (a.chapitre_numero !== b.chapitre_numero) return (a.chapitre_numero || 0) - (b.chapitre_numero || 0);
-      return (a.numero || 0) - (b.numero || 0);
-    });
 
     res.json(stats);
   } catch (error) {

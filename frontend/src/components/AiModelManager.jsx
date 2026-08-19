@@ -92,20 +92,22 @@ export default function AiModelManager({ mangaSlug }) {
     async function loadData() {
         setLoading(true);
         setLoadingStats(true);
+        const statsPromise = getEmbeddingStats(mangaSlug)
+            .then(statsRes => setEmbeddingStats(statsRes.data))
+            .catch(() => setEmbeddingStats([]))
+            .finally(() => setLoadingStats(false));
+
         try {
-            const [settingsRes, statsRes] = await Promise.all([
-                getAiModels(),
-                getEmbeddingStats(mangaSlug).catch(() => ({ data: [] }))
-            ]);
+            const settingsRes = await getAiModels();
             setModels(settingsRes.data);
             setDraft(settingsRes.data);
-            setEmbeddingStats(statsRes.data);
         } catch (error) {
             toast.error("Erreur lors du chargement des modèles IA.");
         } finally {
             setLoading(false);
-            setLoadingStats(false);
         }
+
+        await statsPromise;
     }
 
     const hasChanges = models && draft && (
