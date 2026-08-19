@@ -193,7 +193,6 @@ export const submitSearchFeedback = (feedbackData) => apiClient.post('/search/fe
 export const getAiModels = () => apiClient.get('/admin/ai-models');
 export const updateAiModels = (models) => apiClient.put('/admin/ai-models', models);
 export const getPublicAiModels = () => apiClient.get('/admin/ai-models/public');
-export const getAvailableAiModels = () => apiClient.get('/admin/ai-models/available');
 
 export const getEmbeddingStats = (mangaSlug) => apiClient.get('/admin/ai-models/embedding-stats', { params: mangaSlug ? { manga: mangaSlug } : {} });
 export const triggerGeminiBackfill = (mangaSlug) => apiClient.post('/admin/ai-models/trigger-backfill', { manga: mangaSlug });

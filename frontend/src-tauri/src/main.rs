@@ -1933,13 +1933,11 @@ fn chatgpt_ocr_request_body(
     mime_type: &str,
     model: &str,
     fast_mode: bool,
+    reasoning_effort: &str,
 ) -> serde_json::Value {
-    serde_json::json!({
+    let mut body = serde_json::json!({
         "model": model,
         "service_tier": if fast_mode { "priority" } else { "default" },
-        "reasoning": {
-            "effort": "low"
-        },
         "input": [{
             "role": "user",
             "content": [
@@ -1949,7 +1947,11 @@ fn chatgpt_ocr_request_body(
         }],
         "stream": true,
         "store": false,
-    })
+    });
+    if reasoning_effort != "default" {
+        body["reasoning"] = serde_json::json!({ "effort": reasoning_effort });
+    }
+    body
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -1958,6 +1960,7 @@ async fn run_chatgpt_page_ocr(
     mime_type: String,
     model: String,
     fast_mode: bool,
+    reasoning_effort: String,
     state: State<'_, ChatGptState>,
 ) -> Result<ChatGptOcrResponse, String> {
     validate_ocr_image_payload(&image_bytes_base64)?;
@@ -1976,6 +1979,13 @@ async fn run_chatgpt_page_ocr(
     {
         return Err("Modele OCR OpenAI invalide.".to_string());
     }
+    let reasoning_effort = reasoning_effort.trim();
+    if !matches!(
+        reasoning_effort,
+        "default" | "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"
+    ) {
+        return Err("Niveau de raisonnement OpenAI invalide.".to_string());
+    }
     let session = refresh_chatgpt_session(&state).await?;
     let started = Instant::now();
     let response = state
@@ -1990,10 +2000,11 @@ async fn run_chatgpt_page_ocr(
             &mime_type,
             model,
             fast_mode,
+            reasoning_effort,
         ))
         .send()
         .await
-        .map_err(|_| "Appel OCR GPT-5.6 Luna impossible.".to_string())?;
+        .map_err(|_| format!("Appel OCR {model} impossible."))?;
     let status = response.status();
     let body = response.text().await.unwrap_or_default();
     if !status.is_success() {
@@ -2004,7 +2015,7 @@ async fn run_chatgpt_page_ocr(
                 .map_err(|_| "Session ChatGPT indisponible.".to_string())? = None;
             return Err("Session ChatGPT refusee. Reconnectez-vous.".to_string());
         }
-        return Err(format!("Le service OCR GPT-5.6 Luna a repondu {status}."));
+        return Err(format!("Le service OCR {model} a repondu {status}."));
     }
     Ok(ChatGptOcrResponse {
         bubbles: parse_codex_response(&body)?,
@@ -2080,14 +2091,18 @@ mod tests {
     }
 
     #[test]
-    fn maps_openai_fast_mode_to_priority_service_with_low_reasoning() {
-        let fast = chatgpt_ocr_request_body("aGVsbG8=", "image/png", "gpt-5.6-terra", true);
-        let standard = chatgpt_ocr_request_body("aGVsbG8=", "image/png", "gpt-5.6-luna", false);
+    fn maps_openai_service_tier_and_reasoning_effort() {
+        let fast = chatgpt_ocr_request_body("aGVsbG8=", "image/png", "gpt-5.6-terra", true, "high");
+        let standard =
+            chatgpt_ocr_request_body("aGVsbG8=", "image/png", "gpt-5.6-luna", false, "low");
+        let automatic =
+            chatgpt_ocr_request_body("aGVsbG8=", "image/png", "gpt-5.6-sol", false, "default");
         assert_eq!(fast["model"], "gpt-5.6-terra");
         assert_eq!(fast["service_tier"], "priority");
-        assert_eq!(fast["reasoning"]["effort"], "low");
+        assert_eq!(fast["reasoning"]["effort"], "high");
         assert_eq!(standard["service_tier"], "default");
         assert_eq!(standard["reasoning"]["effort"], "low");
+        assert!(automatic.get("reasoning").is_none());
     }
 
     #[test]

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import { getAiModels, updateAiModels, getAvailableAiModels, getEmbeddingStats, triggerGeminiBackfill, triggerVoyageBackfill, savePageData, generateVoyageEmbedding } from '@/lib/api';
+import { getAiModels, updateAiModels, getEmbeddingStats, triggerGeminiBackfill, triggerVoyageBackfill, savePageData, generateVoyageEmbedding } from '@/lib/api';
 import { generatePageDescription, generateGeminiEmbedding } from '@/lib/geminiClient';
 import { cacheAiModelConfig } from '@/lib/aiModelConfig';
 import { Button } from '@/components/ui/button';
@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
-import { Loader2, Save, RotateCcw, Cpu, Eye, MessageSquareText, Sparkles, Search, Play, Square, Zap } from 'lucide-react';
+import { Loader2, Save, RotateCcw, Cpu, Eye, MessageSquareText, Sparkles, Play, Square, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn, loadImage, getProxiedImageUrl } from '@/lib/utils';
 import ModelBenchmarkRegistry from '@/components/ModelBenchmarkRegistry';
@@ -32,36 +32,54 @@ const MODEL_ROLES = [
 ];
 
 const OPENAI_OCR_MODELS = ['gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol'];
+const GEMINI_MODELS = [
+    'gemini-3.7-flash',
+    'gemini-3.6-flash',
+    'gemini-3.5-flash',
+    'gemini-3.5-flash-lite',
+    'gemini-3.1-pro-preview',
+    'gemini-3-flash-preview',
+    'gemini-2.5-pro',
+    'gemini-2.5-flash',
+    'gemini-2.5-flash-lite',
+];
+const GEMINI_THINKING_LEVELS = ['default', 'none', 'minimal', 'low', 'medium', 'high'];
+const OPENAI_REASONING_EFFORTS = ['default', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
 
-// The available-models catalog (Gemini's model list) changes rarely and is
-// expensive to fetch. Cache it in-memory for the lifetime of the page session
-// so re-opening the IA tab doesn't re-query it every time.
-let availableModelsCache = null;
-let availableModelsPromise = null;
-function fetchAvailableModels() {
-    if (availableModelsCache) return Promise.resolve(availableModelsCache);
-    if (availableModelsPromise) return availableModelsPromise;
-    availableModelsPromise = getAvailableAiModels()
-        .then(res => {
-            availableModelsCache = res.data;
-            return res.data;
-        })
-        .finally(() => { availableModelsPromise = null; });
-    return availableModelsPromise;
+function ChoiceButtons({ value, options, onChange, accent = 'blue' }) {
+    const activeClasses = accent === 'sky'
+        ? 'border-sky-400/60 bg-sky-400/15 text-sky-100'
+        : 'border-[#8dbbff]/60 bg-[#3d86ff]/20 text-[#d8e7ff]';
+    return (
+        <div className="flex flex-wrap gap-2">
+            {options.map(option => (
+                <button
+                    key={option}
+                    type="button"
+                    onClick={() => onChange(option)}
+                    className={cn(
+                        'rounded-lg border px-3 py-1.5 font-mono text-xs transition-colors',
+                        value === option
+                            ? activeClasses
+                            : 'border-white/10 bg-white/[0.04] text-slate-400 hover:border-white/20 hover:text-slate-200'
+                    )}
+                >
+                    {option === 'default' ? 'automatique' : option}
+                </button>
+            ))}
+        </div>
+    );
 }
 
 export default function AiModelManager({ mangaSlug }) {
     const [models, setModels] = useState(null);
     const [draft, setDraft] = useState(null);
-    const [availableModels, setAvailableModels] = useState([]);
     const [embeddingStats, setEmbeddingStats] = useState(null);
     const [loading, setLoading] = useState(true);
     const [loadingStats, setLoadingStats] = useState(true);
     const [saving, setSaving] = useState(false);
     const [triggeringGeminiBackfill, setTriggeringGeminiBackfill] = useState(false);
     const [triggeringVoyageBackfill, setTriggeringVoyageBackfill] = useState(false);
-
-    const [searchQuery, setSearchQuery] = useState('');
 
     const [isBackfilling, setIsBackfilling] = useState(false);
     const [backfillProgress, setBackfillProgress] = useState({ current: 0, total: 0, log: [] });
@@ -75,14 +93,12 @@ export default function AiModelManager({ mangaSlug }) {
         setLoading(true);
         setLoadingStats(true);
         try {
-            const [settingsRes, available, statsRes] = await Promise.all([
+            const [settingsRes, statsRes] = await Promise.all([
                 getAiModels(),
-                fetchAvailableModels(),
                 getEmbeddingStats(mangaSlug).catch(() => ({ data: [] }))
             ]);
             setModels(settingsRes.data);
             setDraft(settingsRes.data);
-            setAvailableModels(available);
             setEmbeddingStats(statsRes.data);
         } catch (error) {
             toast.error("Erreur lors du chargement des modèles IA.");
@@ -96,6 +112,8 @@ export default function AiModelManager({ mangaSlug }) {
         models.model_ocr !== draft.model_ocr ||
         models.model_description !== draft.model_description ||
         models.model_chatgpt_ocr !== draft.model_chatgpt_ocr ||
+        models.gemini_thinking_level !== draft.gemini_thinking_level ||
+        models.chatgpt_reasoning_effort !== draft.chatgpt_reasoning_effort ||
         models.chatgpt_fast_mode !== draft.chatgpt_fast_mode
     );
 
@@ -237,10 +255,6 @@ export default function AiModelManager({ mangaSlug }) {
         loadData();
     };
 
-    const filteredModels = availableModels.filter(m =>
-        !searchQuery || m.id.toLowerCase().includes(searchQuery.toLowerCase()) || m.displayName?.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-
     if (loading) {
         return (
             <div className="flex items-center justify-center py-20">
@@ -285,25 +299,11 @@ export default function AiModelManager({ mangaSlug }) {
                 )}
             </div>
 
-            {availableModels.length > 10 && (
-                <div className="relative">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-                    <input
-                        type="text"
-                        placeholder="Filtrer les modèles..."
-                        value={searchQuery}
-                        onChange={e => setSearchQuery(e.target.value)}
-                        className="w-full rounded-xl border border-white/12 bg-white/[0.055] py-2.5 pl-9 pr-4 text-sm text-slate-100 placeholder:text-slate-500 focus:border-[#8dbbff]/50 focus:outline-none focus:ring-2 focus:ring-[#3d86ff]/25"
-                    />
-                </div>
-            )}
-
             {/* Role cards */}
             <div className="space-y-5">
                 {MODEL_ROLES.map(role => {
                     const Icon = role.icon;
                     const currentValue = draft[role.key];
-                    const modelsList = filteredModels.length > 0 ? filteredModels : availableModels;
                     return (
                         <div key={role.key} className="rounded-2xl border border-white/10 bg-[#071625]/70 p-5 backdrop-blur-md">
                             <div className="mb-4 flex items-center gap-3">
@@ -322,29 +322,38 @@ export default function AiModelManager({ mangaSlug }) {
                                 </Badge>
                             </div>
 
-                            <div className="flex max-h-[200px] flex-wrap gap-2 overflow-y-auto pr-1">
-                                {modelsList.map(m => {
-                                    const isActive = currentValue === m.id;
-                                    return (
-                                        <button
-                                            key={m.id}
-                                            onClick={() => setDraft(prev => ({ ...prev, [role.key]: m.id }))}
-                                            title={`${m.displayName || m.id}${m.description ? `\n${m.description}` : ''}`}
-                                            className={cn(
-                                                "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-medium transition-all",
-                                                isActive
-                                                    ? "border-transparent bg-[#3d86ff] text-white shadow-sm"
-                                                    : "border-white/12 bg-white/[0.055] text-slate-300 hover:border-[#8dbbff]/40 hover:text-white"
-                                            )}
-                                        >
-                                            {m.id}
-                                        </button>
-                                    );
-                                })}
+                            <div className="space-y-3">
+                                <Input
+                                    list={`gemini-models-${role.key}`}
+                                    value={currentValue}
+                                    onChange={event => setDraft(previous => ({ ...previous, [role.key]: event.target.value.trim() }))}
+                                    placeholder="gemini-2.5-flash-lite"
+                                    className="border-white/12 bg-white/[0.055] font-mono text-slate-100 placeholder:text-slate-500"
+                                />
+                                <datalist id={`gemini-models-${role.key}`}>
+                                    {GEMINI_MODELS.map(model => <option key={model} value={model} />)}
+                                </datalist>
+                                <ChoiceButtons
+                                    value={currentValue}
+                                    options={GEMINI_MODELS}
+                                    onChange={model => setDraft(previous => ({ ...previous, [role.key]: model }))}
+                                />
                             </div>
                         </div>
                     );
                 })}
+
+                <div className="rounded-2xl border border-[#8dbbff]/20 bg-[#071625]/70 p-5 backdrop-blur-md">
+                    <div className="mb-3">
+                        <h3 className="font-semibold text-white">Raisonnement Gemini</h3>
+                        <p className="mt-1 text-xs text-slate-400">Niveau global appliqué aux modèles Gemini. Les niveaux disponibles dépendent du modèle choisi.</p>
+                    </div>
+                    <ChoiceButtons
+                        value={draft.gemini_thinking_level}
+                        options={GEMINI_THINKING_LEVELS}
+                        onChange={level => setDraft(previous => ({ ...previous, gemini_thinking_level: level }))}
+                    />
+                </div>
 
                 <div className="rounded-2xl border border-sky-400/20 bg-[#071625]/70 p-5 backdrop-blur-md">
                     <div className="mb-4 flex items-center gap-3">
@@ -371,22 +380,21 @@ export default function AiModelManager({ mangaSlug }) {
                         <datalist id="openai-ocr-models">
                             {OPENAI_OCR_MODELS.map(model => <option key={model} value={model} />)}
                         </datalist>
-                        <div className="flex flex-wrap gap-2">
-                            {OPENAI_OCR_MODELS.map(model => (
-                                <button
-                                    key={model}
-                                    type="button"
-                                    onClick={() => setDraft(previous => ({ ...previous, model_chatgpt_ocr: model }))}
-                                    className={cn(
-                                        'rounded-lg border px-3 py-1.5 font-mono text-xs transition-colors',
-                                        draft.model_chatgpt_ocr === model
-                                            ? 'border-sky-400/60 bg-sky-400/15 text-sky-100'
-                                            : 'border-white/10 bg-white/[0.04] text-slate-400 hover:border-white/20 hover:text-slate-200'
-                                    )}
-                                >
-                                    {model}
-                                </button>
-                            ))}
+                        <ChoiceButtons
+                            value={draft.model_chatgpt_ocr}
+                            options={OPENAI_OCR_MODELS}
+                            onChange={model => setDraft(previous => ({ ...previous, model_chatgpt_ocr: model }))}
+                            accent="sky"
+                        />
+                        <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3.5">
+                            <p className="text-sm font-medium text-slate-100">Raisonnement OpenAI</p>
+                            <p className="mb-3 mt-0.5 text-xs text-slate-400">Effort global. Les niveaux disponibles dépendent du modèle choisi.</p>
+                            <ChoiceButtons
+                                value={draft.chatgpt_reasoning_effort}
+                                options={OPENAI_REASONING_EFFORTS}
+                                onChange={effort => setDraft(previous => ({ ...previous, chatgpt_reasoning_effort: effort }))}
+                                accent="sky"
+                            />
                         </div>
                         <div className="flex items-center justify-between gap-4 rounded-xl border border-white/10 bg-white/[0.04] p-3.5">
                             <div>

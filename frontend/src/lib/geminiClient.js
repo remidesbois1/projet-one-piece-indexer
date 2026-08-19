@@ -51,6 +51,16 @@ Règles :
 - Les "start_page" doivent être strictement croissants et compris entre 1 et {pageCount}.
 - Réponds uniquement avec le JSON.`;
 
+export function getGeminiGenerationConfig(config, overrides = {}) {
+    const level = config?.gemini_thinking_level || 'default';
+    if (level === 'default') return overrides;
+
+    const thinkingConfig = level === 'none'
+        ? { thinkingBudget: 0 }
+        : { thinkingLevel: level.toUpperCase() };
+    return { ...overrides, thinkingConfig };
+}
+
 async function blobToBase64(blob) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -228,7 +238,7 @@ export async function analyzeVolumeSummary(imageBlob, { pageCount, summaryPage }
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
         model: config.model_ocr,
-        generationConfig: { responseMimeType: "application/json" },
+        generationConfig: getGeminiGenerationConfig(config, { responseMimeType: "application/json" }),
     });
     const base64Data = await blobToBase64(imageBlob);
     const imagePart = {
@@ -265,7 +275,10 @@ export async function analyzeBubble(imageSource, coordinates, apiKey) {
 
     const config = await getAiModelConfig();
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: config.model_ocr });
+    const model = genAI.getGenerativeModel({
+        model: config.model_ocr,
+        generationConfig: getGeminiGenerationConfig(config),
+    });
 
     const base64Data = await blobToBase64(blob);
 
@@ -308,7 +321,7 @@ export async function generatePageDescription(imageSource, apiKey) {
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
         model: config.model_description,
-        generationConfig: { responseMimeType: "application/json" }
+        generationConfig: getGeminiGenerationConfig(config, { responseMimeType: "application/json" })
     });
 
     const base64Data = await blobToBase64(blob);
@@ -445,12 +458,7 @@ export async function generateOneShotBubbles(imageSource, apiKey) {
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
         model: config.model_ocr,
-        generationConfig: {
-            responseMimeType: "application/json"/*,
-            thinkingConfig: {
-                thinkingBudget: 800
-            }*/
-        }
+        generationConfig: getGeminiGenerationConfig(config, { responseMimeType: "application/json" })
     });
 
     const base64Data = await blobToBase64(blob);
@@ -498,7 +506,7 @@ export async function generatePageOcrBboxes(imageBlob, apiKey) {
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
         model: config.model_ocr,
-        generationConfig: { responseMimeType: "application/json" }
+        generationConfig: getGeminiGenerationConfig(config, { responseMimeType: "application/json" })
     });
 
     const base64Data = await blobToBase64(imageBlob);

@@ -6,6 +6,8 @@ export const DEFAULT_AI_MODEL_CONFIG = Object.freeze({
     model_ocr: 'gemini-2.5-flash-lite',
     model_description: 'gemini-3-flash-preview',
     model_chatgpt_ocr: 'gpt-5.6-luna',
+    gemini_thinking_level: 'default',
+    chatgpt_reasoning_effort: 'low',
     chatgpt_fast_mode: false,
 });
 

@@ -492,14 +492,25 @@ router.post('/covers', authMiddleware, roleCheck(['Admin']), upload.single('cove
   }
 });
 
-const AI_MODEL_KEYS = ['model_ocr', 'model_description', 'model_chatgpt_ocr', 'chatgpt_fast_mode'];
+const AI_MODEL_KEYS = [
+  'model_ocr',
+  'model_description',
+  'model_chatgpt_ocr',
+  'gemini_thinking_level',
+  'chatgpt_reasoning_effort',
+  'chatgpt_fast_mode',
+];
 const DEFAULT_MODELS = {
   model_ocr: 'gemini-2.5-flash-lite',
   model_description: 'gemini-3-flash-preview',
   model_chatgpt_ocr: 'gpt-5.6-luna',
+  gemini_thinking_level: 'default',
+  chatgpt_reasoning_effort: 'low',
   chatgpt_fast_mode: false,
 };
 const AI_MODEL_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,99}$/;
+const GEMINI_THINKING_LEVELS = new Set(['default', 'none', 'minimal', 'low', 'medium', 'high']);
+const OPENAI_REASONING_EFFORTS = new Set(['default', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
 
 let aiModelsCache = null;
 let aiModelsCacheTime = 0;
@@ -539,9 +550,18 @@ router.get('/ai-models', authMiddleware, roleCheck(['Admin']), async (req, res) 
 });
 
 router.put('/ai-models', authMiddleware, roleCheck(['Admin']), async (req, res) => {
-  const { model_ocr, model_description, model_chatgpt_ocr, chatgpt_fast_mode } = req.body;
+  const {
+    model_ocr,
+    model_description,
+    model_chatgpt_ocr,
+    gemini_thinking_level,
+    chatgpt_reasoning_effort,
+    chatgpt_fast_mode,
+  } = req.body;
 
   if (![model_ocr, model_description, model_chatgpt_ocr].every(value => typeof value === 'string' && AI_MODEL_ID_PATTERN.test(value.trim()))
+      || !GEMINI_THINKING_LEVELS.has(gemini_thinking_level)
+      || !OPENAI_REASONING_EFFORTS.has(chatgpt_reasoning_effort)
       || typeof chatgpt_fast_mode !== 'boolean') {
     return res.status(400).json({ error: 'Configuration IA invalide.' });
   }
@@ -551,6 +571,8 @@ router.put('/ai-models', authMiddleware, roleCheck(['Admin']), async (req, res) 
       { key: 'model_ocr', value: model_ocr.trim() },
       { key: 'model_description', value: model_description.trim() },
       { key: 'model_chatgpt_ocr', value: model_chatgpt_ocr.trim() },
+      { key: 'gemini_thinking_level', value: gemini_thinking_level },
+      { key: 'chatgpt_reasoning_effort', value: chatgpt_reasoning_effort },
       { key: 'chatgpt_fast_mode', value: String(chatgpt_fast_mode) },
     ];
 
@@ -579,48 +601,6 @@ router.get('/ai-models/public', async (req, res) => {
     res.status(500).json({ error: "Erreur récupération des modèles IA." });
   }
 });
-
-let availableModelsCache = null;
-let availableModelsCacheTime = 0;
-const AVAILABLE_CACHE_TTL = 60 * 60 * 1000;
-
-router.get('/ai-models/available', authMiddleware, roleCheck(['Admin']), async (req, res) => {
-  try {
-    const now = Date.now();
-    if (availableModelsCache && (now - availableModelsCacheTime) < AVAILABLE_CACHE_TTL) {
-      return res.json(availableModelsCache);
-    }
-
-    const apiKey = process.env.GOOGLE_API_KEY;
-    if (!apiKey) return res.status(500).json({ error: "GOOGLE_API_KEY non configurée sur le serveur." });
-
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}&pageSize=100`
-    );
-    if (!response.ok) throw new Error(`Google API error: ${response.status}`);
-
-    const data = await response.json();
-    const models = (data.models || [])
-      .filter(m => m.supportedGenerationMethods?.includes('generateContent'))
-      .map(m => ({
-        id: m.name.replace('models/', ''),
-        displayName: m.displayName,
-        description: m.description,
-        inputTokenLimit: m.inputTokenLimit,
-        outputTokenLimit: m.outputTokenLimit,
-      }))
-      .sort((a, b) => a.id.localeCompare(b.id));
-
-    availableModelsCache = models;
-    availableModelsCacheTime = now;
-    res.json(models);
-  } catch (error) {
-    console.error("Erreur list available models:", error);
-    res.status(500).json({ error: "Erreur récupération des modèles disponibles." });
-  }
-});
-
-
 
 router.post('/upload/page', authMiddleware, roleCheck(['Admin']), uploadSinglePage, async (req, res) => {
   const { key } = req.body;

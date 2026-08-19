@@ -5,6 +5,7 @@ const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock('./aiModelConfig', () => ({
     getAiModelConfig: vi.fn().mockResolvedValue({
         model_chatgpt_ocr: 'gpt-5.6-luna',
+        chatgpt_reasoning_effort: 'low',
         chatgpt_fast_mode: false,
     }),
 }));
@@ -44,6 +45,7 @@ describe('chatGptDesktop', () => {
             mime_type: 'image/png',
             model: 'gpt-5.6-luna',
             fast_mode: false,
+            reasoning_effort: 'low',
         });
     });
 
@@ -52,10 +54,12 @@ describe('chatGptDesktop', () => {
         await runChatGptPageOcr(new Blob(['image'], { type: 'image/jpeg' }), {
             model: 'gpt-5.6-terra',
             fastMode: true,
+            reasoningEffort: 'high',
         });
         expect(invoke).toHaveBeenCalledWith('run_chatgpt_page_ocr', expect.objectContaining({
             model: 'gpt-5.6-terra',
             fast_mode: true,
+            reasoning_effort: 'high',
         }));
     });
 
