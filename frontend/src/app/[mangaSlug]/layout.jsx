@@ -3,8 +3,8 @@ import React, { useState, useEffect } from 'react';
 import Header from '@/components/Header';
 import { MangaProvider } from "@/context/MangaContext";
 import { TauriLocalOcrProvider } from '@/context/TauriLocalOcrContext';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import ApiKeyForm from '@/components/ApiKeyForm';
+import { Dialog } from "@/components/ui/dialog";
+import AiAccessDialog from '@/components/AiAccessDialog';
 
 export default function MangaLayout({ children }) {
     const [showApiKeyModal, setShowApiKeyModal] = useState(false);
@@ -37,15 +37,7 @@ export default function MangaLayout({ children }) {
             </TauriLocalOcrProvider>
 
             <Dialog open={showApiKeyModal} onOpenChange={setShowApiKeyModal}>
-                <DialogContent className="sm:max-w-md">
-                    <DialogHeader>
-                        <DialogTitle>Configuration API</DialogTitle>
-                        <DialogDescription>
-                            Gérez votre clé API pour l&apos;ensemble de l&apos;application.
-                        </DialogDescription>
-                    </DialogHeader>
-                    <ApiKeyForm onSave={handleSaveApiKey} />
-                </DialogContent>
+                <AiAccessDialog onSave={handleSaveApiKey} />
             </Dialog>
         </MangaProvider>
     );

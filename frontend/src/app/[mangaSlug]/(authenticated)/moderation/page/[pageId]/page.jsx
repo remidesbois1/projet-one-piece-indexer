@@ -9,7 +9,7 @@ import { getProxiedImageUrl, cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
 import ValidationForm from '@/components/ValidationForm';
 import ModerationCommentModal from '@/components/ModerationCommentModal';
-import ApiKeyForm from '@/components/ApiKeyForm';
+import AiAccessDialog from '@/components/AiAccessDialog';
 import { toast } from "sonner";
 
 
@@ -630,13 +630,7 @@ export default function PageReview() {
 
 
             <Dialog open={showApiKeyModal} onOpenChange={setShowApiKeyModal}>
-                <DialogContent className="sm:max-w-md">
-                    <DialogHeader>
-                        <DialogTitle>Configuration API Gemini</DialogTitle>
-                        <DialogDescription>Requis pour l'IA (Vision & Description).</DialogDescription>
-                    </DialogHeader>
-                    <ApiKeyForm onSave={handleSaveApiKey} />
-                </DialogContent>
+                <AiAccessDialog onSave={handleSaveApiKey} />
             </Dialog>
 
             <ModerationCommentModal

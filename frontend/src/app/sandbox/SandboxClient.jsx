@@ -13,7 +13,7 @@ import { capitalizeOcrSentenceStarts } from '@/lib/ocr-utils';
 import { postOcrImage } from '@/lib/ocrProxyClient';
 import { getChatGptStatus, runChatGptPageOcr } from '@/lib/chatGptDesktop';
 import { reconcileOcrBubblesWithYolo } from '@/lib/ocrBboxFusion';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog } from "@/components/ui/dialog";
 import { ArrowLeft, Upload } from "lucide-react";
 import { toast } from "sonner";
 import AnnotateLeftSidebar from '@/components/AnnotateLeftSidebar';
@@ -22,7 +22,7 @@ import AnnotateAnnotationSidebar from '@/components/AnnotateAnnotationSidebar';
 import AnnotateEditorDialog from '@/components/AnnotateEditorDialog';
 import AnnotateMetadataModal from '@/components/AnnotateMetadataModal';
 import LocalOcrStatusIndicator from '@/components/LocalOcrStatusIndicator';
-import ApiKeyForm from '@/components/ApiKeyForm';
+import AiAccessDialog from '@/components/AiAccessDialog';
 
 const PONEGLYPH_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
@@ -740,13 +740,7 @@ export default function SandboxClient() {
             />
 
             <Dialog open={showApiKeyModal} onOpenChange={setShowApiKeyModal}>
-                <DialogContent className="sm:max-w-md">
-                    <DialogHeader>
-                        <DialogTitle>Configuration API Google Vision</DialogTitle>
-                        <DialogDescription>Requis uniquement pour les modèles Cloud et l&apos;Embedding.</DialogDescription>
-                    </DialogHeader>
-                    <ApiKeyForm onSave={handleSaveApiKey} />
-                </DialogContent>
+                <AiAccessDialog onSave={handleSaveApiKey} />
             </Dialog>
 
             <AnnotateMetadataModal

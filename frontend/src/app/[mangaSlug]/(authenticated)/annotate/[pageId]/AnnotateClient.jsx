@@ -5,7 +5,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { getPageById, getBubblesForPage, deleteBubble, submitPageForReview, updatePageStatus, reorderBubbles, savePageDescription, getMetadataSuggestions, getPages } from '@/lib/api';
 import { analyzeBubble, generatePageDescription, generateGeminiEmbedding, generateOneShotBubbles } from '@/lib/geminiClient';
-import ApiKeyForm from '@/components/ApiKeyForm';
+import AiAccessDialog from '@/components/AiAccessDialog';
 import { useAuth } from '@/context/AuthContext';
 import { useManga } from '@/context/MangaContext';
 import { arrayMove } from '@dnd-kit/sortable';
@@ -24,7 +24,7 @@ import { reconcileOcrBubblesWithYolo } from '@/lib/ocrBboxFusion';
 import { canCreateBubble, canEditBubble, canReorderBubbles } from '@/lib/bubblePermissions';
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog } from "@/components/ui/dialog";
 import { AlertCircle, ArrowLeft, Send, X, Shield, FileText, Loader2, RefreshCcw } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -1365,13 +1365,7 @@ export default function AnnotatePage() {
             />
 
             <Dialog open={showApiKeyModal} onOpenChange={setShowApiKeyModal}>
-                <DialogContent className="sm:max-w-md">
-                    <DialogHeader>
-                        <DialogTitle>Configuration API</DialogTitle>
-                        <DialogDescription>Gérez votre clé API.</DialogDescription>
-                    </DialogHeader>
-                    <ApiKeyForm onSave={handleSaveApiKey} />
-                </DialogContent>
+                <AiAccessDialog onSave={handleSaveApiKey} />
             </Dialog>
 
             {!isGuest && (
