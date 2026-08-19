@@ -8,6 +8,7 @@ import { useAnnotationOCR } from '@/hooks/useAnnotationOCR';
 import { useAnnotationDetection } from '@/hooks/useAnnotationDetection';
 import { useAnnotationMetadata } from '@/hooks/useAnnotationMetadata';
 import { useTauriLocalOcrContext } from '@/context/TauriLocalOcrContext';
+import { useAiModelConfig } from '@/hooks/useAiModelConfig';
 import { capitalizeOcrSentenceStarts } from '@/lib/ocr-utils';
 import { postOcrImage } from '@/lib/ocrProxyClient';
 import { getChatGptStatus, runChatGptPageOcr } from '@/lib/chatGptDesktop';
@@ -144,6 +145,7 @@ export default function SandboxClient() {
     const imageRef = useRef(null);
     const fileInputRef = useRef(null);
     const tauriLocalOcr = useTauriLocalOcrContext();
+    const aiModelConfig = useAiModelConfig();
 
     useEffect(() => {
         let cancelled = false;
@@ -477,10 +479,10 @@ export default function SandboxClient() {
         setIsChatGptLoading(true);
         try {
             const auth = await getChatGptStatus();
-            if (!auth.available) throw new Error("GPT-5.6 Luna est disponible uniquement dans l'application desktop.");
+            if (!auth.available) throw new Error(`${aiModelConfig.model_chatgpt_ocr} est disponible uniquement dans l'application desktop.`);
             if (!auth.connected) {
                 setShowApiKeyModal(true);
-                toast.info('Connectez votre compte ChatGPT pour utiliser GPT-5.6 Luna.');
+                toast.info(`Connectez votre compte ChatGPT pour utiliser ${aiModelConfig.model_chatgpt_ocr}.`);
                 return;
             }
             const yoloPromise = detectionStatus === 'ready'
@@ -494,7 +496,13 @@ export default function SandboxClient() {
                 : Promise.resolve(null);
             const imageBlob = await imageElementToJpegBlob(imageRef.current);
             if (!imageBlob) throw new Error("Impossible de convertir l'image.");
-            const [result, yoloBoxes] = await Promise.all([runChatGptPageOcr(imageBlob), yoloPromise]);
+            const [result, yoloBoxes] = await Promise.all([
+                runChatGptPageOcr(imageBlob, {
+                    model: aiModelConfig.model_chatgpt_ocr,
+                    fastMode: aiModelConfig.chatgpt_fast_mode,
+                }),
+                yoloPromise,
+            ]);
             if (!Array.isArray(result?.bubbles)) throw new Error('Format de réponse OCR invalide.');
             const imageWidth = imageRef.current.naturalWidth;
             const imageHeight = imageRef.current.naturalHeight;
@@ -516,10 +524,10 @@ export default function SandboxClient() {
             });
             if (!newBubbles.length) throw new Error('Aucune bulle exploitable détectée.');
             setExistingBubbles(previous => [...previous, ...newBubbles].sort((a, b) => (a.order || 0) - (b.order || 0)));
-            toast.success(`${newBubbles.length} bulles créées avec GPT-5.6 Luna.`);
+            toast.success(`${newBubbles.length} bulles créées avec ${result.model || aiModelConfig.model_chatgpt_ocr}.`);
         } catch (error) {
             console.error(error);
-            toast.error(error?.message || 'OCR GPT-5.6 Luna indisponible.');
+            toast.error(error?.message || `OCR ${aiModelConfig.model_chatgpt_ocr} indisponible.`);
         } finally {
             setIsChatGptLoading(false);
         }
@@ -622,6 +630,8 @@ export default function SandboxClient() {
                 handleChatGptOneShot={handleChatGptOneShot}
                 isChatGptLoading={isChatGptLoading}
                 chatGptDesktopAvailable={chatGptDesktopAvailable}
+                geminiFullPageModel={aiModelConfig.model_ocr}
+                chatGptFullPageModel={aiModelConfig.model_chatgpt_ocr}
                 isPoneglyphLoading={isPoneglyphLoading}
                 poneglyphRunMode={poneglyphRunMode}
                 handleOneShotLocalPoneglyph={handleOneShotLocalPoneglyph}

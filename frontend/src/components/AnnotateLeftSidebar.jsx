@@ -77,9 +77,11 @@ export default function AnnotateLeftSidebar({
     isSandbox = false,
     handleOneShot,
     isOneShotLoading,
+    geminiFullPageModel = 'gemini-2.5-flash-lite',
     handleChatGptOneShot,
     isChatGptLoading = false,
     chatGptDesktopAvailable = false,
+    chatGptFullPageModel = 'gpt-5.6-luna',
     handleOneShotPoneglyph,
     isPoneglyphLoading,
     poneglyphRunMode = null,
@@ -444,7 +446,7 @@ export default function AnnotateLeftSidebar({
                                         >
                                             <Sparkles size={14} className="text-slate-500" />
                                             <span className="min-w-0 flex-1 truncate text-left">
-                                                {isOneShotLoading ? "Gemini..." : "Gemini"}
+                                                {isOneShotLoading ? `Gemini · ${geminiFullPageModel}...` : `Gemini · ${geminiFullPageModel}`}
                                             </span>
                                             {isOneShotLoading && (
                                                 <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
@@ -461,7 +463,7 @@ export default function AnnotateLeftSidebar({
                                         >
                                             <Sparkles size={14} className="text-sky-400" />
                                             <span className="min-w-0 flex-1 truncate text-left">
-                                                {isChatGptLoading ? "GPT-5.6 Luna..." : "GPT-5.6 Luna"}
+                                                {isChatGptLoading ? `ChatGPT · ${chatGptFullPageModel}...` : `ChatGPT · ${chatGptFullPageModel}`}
                                             </span>
                                             {isChatGptLoading && (
                                                 <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />

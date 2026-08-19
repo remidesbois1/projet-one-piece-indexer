@@ -426,6 +426,7 @@ export async function generateGeminiImageEmbedding(imageBlob, apiKey) {
 
 export async function generateOneShotBubbles(imageSource, apiKey) {
     if (!apiKey) throw new Error("Clé API manquante");
+    const config = await getAiModelConfig();
 
     let blob;
     try {
@@ -443,7 +444,7 @@ export async function generateOneShotBubbles(imageSource, apiKey) {
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
-        model: "gemma-4-26b-a4b-it",
+        model: config.model_ocr,
         generationConfig: {
             responseMimeType: "application/json"/*,
             thinkingConfig: {
@@ -478,10 +479,10 @@ Position normalisé à 1000 que tu va re-normaliser derrière selon la page.`;
         if (candidates?.[0]?.content?.parts) {
             const answerPart = candidates[0].content.parts.find(p => !p.thought && p.text);
             if (answerPart) {
-                return { data: parseModelJson(answerPart.text, "One-shot Gemini") };
+                return { data: parseModelJson(answerPart.text, "One-shot Gemini"), model: config.model_ocr };
             }
         }
-        return { data: parseModelJson(response.text(), "One-shot Gemini") };
+        return { data: parseModelJson(response.text(), "One-shot Gemini"), model: config.model_ocr };
     } catch (error) {
         handleGeminiError(error);
         console.error("Gemini API One-Shot Error:", error);
