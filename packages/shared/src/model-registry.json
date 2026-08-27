@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-08-01",
+  "updated_at": "2026-08-27",
   "provenance_policy": "Published values must come from a pinned artifact and carry the dataset, split, date, hardware, model revision and evaluation protocol.",
   "models": {
     "ppocrv6-line": {
@@ -132,35 +132,35 @@
         }
       }
     },
-    "one-shot-panel-detector": {
-      "display_name": "YoloPiece Panel Detector",
+    "readernet-panel-detector": {
+      "display_name": "ReaderNet Panel Detector",
       "task": "panel-detection",
       "artifact": {
-        "repository": "Remidesbois/YoloPiece_OneShot_Models",
-        "revision": "c4d5393095fadacfedc49d81acb2a8ac29d23aad",
-        "url": "https://huggingface.co/Remidesbois/YoloPiece_OneShot_Models"
+        "repository": "Remidesbois/Poneglyph-ReaderNet",
+        "revision": "d97d4cd2903a7ebe49276a5269c4f3b7df608be7",
+        "url": "https://huggingface.co/Remidesbois/Poneglyph-ReaderNet"
       },
       "benchmark": {
         "status": "published",
-        "dataset": "Poneglyph panel annotation dataset",
-        "split": "test held-out by page",
-        "date": "2026-07-02",
-        "sample_count": 31,
-        "hardware": "CUDA device 0; exact GPU model not recorded in the artifact",
-        "protocol": "Ultralytics YOLO test-split evaluation at 800 px; confidence-ranked detections scored with standard mAP50 and mAP50-95.",
-        "source_url": "https://huggingface.co/Remidesbois/YoloPiece_OneShot_Models/blob/c4d5393095fadacfedc49d81acb2a8ac29d23aad/metrics/panel_detector_metrics.json",
+        "dataset": "Poneglyph weighted polygon panel dataset",
+        "split": "validation held out by page",
+        "date": "2026-08-21",
+        "sample_count": 257,
+        "hardware": "NVIDIA RTX PRO 6000 Blackwell Server Edition MIG 1g.24gb",
+        "protocol": "Ultralytics YOLO11n-seg validation at 1504 px with box and mask metrics over polygon panel annotations.",
+        "source_url": "https://huggingface.co/Remidesbois/Poneglyph-ReaderNet/blob/d97d4cd2903a7ebe49276a5269c4f3b7df608be7/metrics/panel_detector_metrics.json",
         "primary_metric": "map50",
         "metrics": {
           "map50": {
             "label": "mAP50",
-            "value": 0.9940366112707735,
+            "value": 0.994368670886076,
             "unit": "ratio",
             "lower_is_better": false,
             "display_precision": 2
           },
           "map50_95": {
             "label": "mAP50-95",
-            "value": 0.986110385292093,
+            "value": 0.983932290739107,
             "unit": "ratio",
             "lower_is_better": false,
             "display_precision": 2
@@ -168,42 +168,42 @@
         }
       }
     },
-    "one-shot-reading-order": {
-      "display_name": "YoloPiece One-Shot Reading Order",
+    "readernet-reading-order": {
+      "display_name": "Poneglyph ReaderNet",
       "task": "reading-order",
       "artifact": {
-        "repository": "Remidesbois/YoloPiece_OneShot_Models",
-        "revision": "c4d5393095fadacfedc49d81acb2a8ac29d23aad",
-        "url": "https://huggingface.co/Remidesbois/YoloPiece_OneShot_Models"
+        "repository": "Remidesbois/Poneglyph-ReaderNet",
+        "revision": "d97d4cd2903a7ebe49276a5269c4f3b7df608be7",
+        "url": "https://huggingface.co/Remidesbois/Poneglyph-ReaderNet"
       },
       "benchmark": {
         "status": "published",
-        "dataset": "Poneglyph panel and bubble reading-order annotations",
-        "split": "test held-out by page",
-        "date": "2026-07-02",
-        "sample_count": 31,
-        "hardware": "CPU offline scoring; exact processor not recorded in the artifact",
-        "protocol": "Global pairwise logistic reranker selected on validation only, reconstructed with Borda plus vertical repair, then evaluated once on the test pages.",
-        "source_url": "https://huggingface.co/Remidesbois/YoloPiece_OneShot_Models/blob/c4d5393095fadacfedc49d81acb2a8ac29d23aad/metrics/reading_order_benchmark.json",
-        "primary_metric": "page_exact_match",
+        "dataset": "Poneglyph polygon panels with bubbles from the shared YOLO26n detector",
+        "split": "validation held out by page",
+        "date": "2026-08-27",
+        "sample_count": 138,
+        "hardware": "CPU offline ONNX scoring",
+        "protocol": "Shared bubble detections and annotated panels; pairwise Borda ranking independently inside each panel, with no global bubble sorter.",
+        "source_url": "https://huggingface.co/Remidesbois/Poneglyph-ReaderNet/blob/d97d4cd2903a7ebe49276a5269c4f3b7df608be7/metrics/shared_detector_comparison.json",
+        "primary_metric": "exact_panel_match",
         "metrics": {
-          "page_exact_match": {
-            "label": "Exact page",
-            "value": 0.967741935483871,
+          "exact_panel_match": {
+            "label": "Exact panel",
+            "value": 0.9565217391304348,
             "unit": "ratio",
             "lower_is_better": false,
             "display_precision": 2
           },
           "bubble_position_accuracy": {
             "label": "Bubble position accuracy",
-            "value": 0.9931506849315068,
+            "value": 0.9661971830985916,
             "unit": "ratio",
             "lower_is_better": false,
             "display_precision": 2
           },
-          "global_pairwise_accuracy": {
-            "label": "Global pairwise accuracy",
-            "value": 0.9992862241256245,
+          "assignment_accuracy": {
+            "label": "Bubble assignment accuracy",
+            "value": 1.0,
             "unit": "ratio",
             "lower_is_better": false,
             "display_precision": 2

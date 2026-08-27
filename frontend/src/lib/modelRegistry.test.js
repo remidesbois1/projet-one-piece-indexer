@@ -29,7 +29,7 @@ describe('model registry', () => {
         expect(formatRegistryMetric('lighton-bubble')).toBe('CER 0,424 %');
         expect(formatRegistryMetric('surya-bubble')).toBe('CER 0,451 %');
         expect(formatRegistryMetric('ppocrv6-line')).toBe('CER 1,451 %');
-        expect(formatRegistryMetric('one-shot-reading-order')).toBe('Exact page 96,77 %');
+        expect(formatRegistryMetric('readernet-reading-order')).toBe('Exact panel 95,65 %');
         expect(formatRegistryMetric('gemini-flash-lite')).toBe('Benchmark comparable non publié');
     });
 

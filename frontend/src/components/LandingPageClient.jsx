@@ -251,17 +251,17 @@ const features = [
     },
     {
         icon: Boxes,
-        title: "Détection One-Shot - YOLO26",
+        title: "Détection ReaderNet - YOLO26 + YOLO11-seg",
         badge: "ONNX",
         description: "YOLO26n fine-tuné isole chaque zone de texte côté client via ONNX Runtime Web.",
-        details: ["Panel detector", formatRegistryMetric('one-shot-panel-detector'), "ONNX", "2.4M params"],
+        details: ["YOLO11n-seg panels", formatRegistryMetric('readernet-panel-detector'), "ONNX", "polygones"],
     },
     {
         icon: Layers,
-        title: "Tri One-Shot - ONNX",
+        title: "Tri ReaderNet - ONNX",
         badge: "v3",
         description: "Deux rankers ordonnent les cases puis les bulles dans le contexte, sans serveur et en Web Worker.",
-        details: ["global_bubble_order.onnx", "bubble_order.onnx", formatRegistryMetric('one-shot-reading-order'), "Web Worker"],
+        details: ["ordering.onnx fusionné", "tri intra-case", formatRegistryMetric('readernet-reading-order'), "Web Worker"],
     },
     {
         icon: Search,

@@ -31,7 +31,7 @@ import { Search, X, Loader2, Sparkles, BookOpen, MapPin, Quote, Filter, Check, C
 
 const RESULTS_PER_PAGE = 24;
 const OCR_RESULTS_LIMIT = 3;
-const OCR_SEARCH_PROVIDER = 'one-shot+ppocrv6';
+const OCR_SEARCH_PROVIDER = 'readernet+ppocrv6';
 
 const PONEGLYPH_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
@@ -392,17 +392,17 @@ export default function SearchPage() {
         })
         .filter(Boolean);
 
-    const ensureOneShotReady = async (request) => {
+    const ensureReaderNetReady = async (request) => {
         throwIfAborted(request.signal);
         if (detectionStatusRef.current === 'ready') return;
         searchLifecycleRef.current.commit(request.requestId, () => {
-            setOcrStatus("Chargement One-Shot...");
+            setOcrStatus("Chargement ReaderNet...");
         });
         loadDetectionModel();
         await waitForCondition(
             () => detectionStatusRef.current === 'ready',
             120000,
-            "Le pipeline One-Shot n'a pas pu etre charge.",
+            "Le pipeline ReaderNet n'a pas pu etre charge.",
             request.signal
         );
         throwIfAborted(request.signal);
@@ -484,14 +484,14 @@ export default function SearchPage() {
     const extractOcrBubblesFromImage = async (imageFile, request) => {
         if (!imageFile) throw new Error("Image manquante.");
 
-        await ensureOneShotReady(request);
+        await ensureReaderNetReady(request);
         searchLifecycleRef.current.commit(request.requestId, () => {
-            setOcrStatus("Detection One-Shot...");
+            setOcrStatus("Detection ReaderNet...");
         });
         const boxes = await detectBubbles(imageFile, { signal: request.signal });
         throwIfAborted(request.signal);
         if (!boxes?.length) {
-            throw new Error("Aucune bulle detectee par le pipeline One-Shot.");
+            throw new Error("Aucune bulle detectee par le pipeline ReaderNet.");
         }
 
         await ensurePpocrReady(request);
@@ -958,7 +958,7 @@ export default function SearchPage() {
                                         </div>
                                         <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs font-medium text-slate-400">
                                             <span className="text-yellow-300">
-                                                One-Shot + PP-OCRv6
+                                                ReaderNet + PP-OCRv6
                                             </span>
                                             {ocrProvider && (
                                                 <>
@@ -968,7 +968,7 @@ export default function SearchPage() {
                                             )}
                                         </div>
                                         <div className="mt-1 min-h-4 truncate text-xs text-slate-500">
-                                            {ocrStatus || "Detection One-Shot puis OCR PP-OCRv6"}
+                                            {ocrStatus || "Detection ReaderNet puis OCR PP-OCRv6"}
                                         </div>
                                     </div>
 
