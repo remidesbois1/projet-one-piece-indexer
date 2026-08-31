@@ -1,0 +1,11 @@
+*
+!docker_scripts
+!docker_scripts/common_training
+!docker_scripts/common_training/**
+!docker_scripts/train_polygon_panel
+!docker_scripts/train_polygon_panel/**
+!scripts
+!scripts/polygon_case_annotator
+!scripts/polygon_case_annotator/train_polygon.py
+!scripts/polygon_case_annotator/dataset
+!scripts/polygon_case_annotator/dataset/**

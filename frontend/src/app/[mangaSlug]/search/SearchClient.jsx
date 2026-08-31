@@ -53,7 +53,7 @@ function generateSlots(count, seed = 0) {
 }
 
 function PoneglyphHeaderGlyphs({ count = 15, color = "#2F7AAF" }) {
-    const [glyphs, setGlyphs] = useState(() => generateSlots(count, Math.random()));
+    const [glyphs, setGlyphs] = useState(() => generateSlots(count, 29));
 
     useEffect(() => {
         const timers = [];
@@ -201,7 +201,7 @@ const ResultImage = ({ url, pageId, coords, type }) => {
     );
 };
 
-export default function SearchPage() {
+export default function SearchPage({ initialQuery = '', initialMode = '' }) {
     const { mangaSlug } = useManga();
     const {
         detectBubbles,
@@ -222,11 +222,13 @@ export default function SearchPage() {
     };
 
     const savedState = getSavedState();
+    const landingQuery = initialQuery.trim();
+    const isLandingSemanticSearch = initialMode === 'semantic' && landingQuery.length >= 2;
     const savedOcrProvider = savedState.ocrProvider === OCR_SEARCH_PROVIDER ? savedState.ocrProvider : null;
-    const savedSearchMode = savedState.searchMode || (savedState.useSemantic ? 'semantic' : 'keyword');
+    const savedSearchMode = isLandingSemanticSearch ? 'semantic' : savedState.searchMode || (savedState.useSemantic ? 'semantic' : 'keyword');
     const canRestoreResults = savedSearchMode !== 'ocr' || Boolean(savedOcrProvider);
 
-    const [query, setQuery] = useState(savedState.query || '');
+    const [query, setQuery] = useState(landingQuery || savedState.query || '');
     const debouncedQuery = useDebounce(query, 400);
 
     const [results, setResults] = useState(canRestoreResults ? savedState.results || [] : []);
@@ -264,6 +266,7 @@ export default function SearchPage() {
     const inputRef = useRef(null);
     const fileInputRef = useRef(null);
     const isFirstRun = useRef(true);
+    const initialSemanticSearchRef = useRef(isLandingSemanticSearch);
     const detectionStatusRef = useRef(detectionStatus);
     const ocrModelStatusRef = useRef(ocrModelStatus);
     const activeOcrModelKeyRef = useRef(activeOcrModelKey);
@@ -358,7 +361,16 @@ export default function SearchPage() {
     }, [mangaSlug]);
 
     useEffect(() => {
-        if (useSemantic || useOcrSearch) return;
+        if (useSemantic) {
+            if (!mangaSlug) return;
+            if (initialSemanticSearchRef.current && debouncedQuery.trim().length >= 2) {
+                initialSemanticSearchRef.current = false;
+                setPage(1);
+                fetchResults(debouncedQuery, 1, true);
+            }
+            return;
+        }
+        if (useOcrSearch) return;
 
         if (isFirstRun.current) {
             isFirstRun.current = false;
@@ -376,7 +388,7 @@ export default function SearchPage() {
             setTotalCount(0);
             setHasMore(false);
         }
-    }, [debouncedQuery, useSemantic, useOcrSearch, selectedCharacters, selectedArc, selectedTome]);
+    }, [mangaSlug, debouncedQuery, useSemantic, useOcrSearch, selectedCharacters, selectedArc, selectedTome]);
 
     const getActiveFilters = () => ({
         characters: selectedCharacters,
@@ -664,7 +676,7 @@ export default function SearchPage() {
         }
     };
 
-    const fetchResults = async (searchTerm, pageToFetch, isNewSearch) => {
+    async function fetchResults(searchTerm, pageToFetch, isNewSearch) {
         activeLocalSearchRequestIdRef.current = null;
         const request = searchLifecycleRef.current.begin();
 
@@ -736,7 +748,7 @@ export default function SearchPage() {
                 searchLifecycleRef.current.finish(request.requestId);
             }
         }
-    };
+    }
 
     const loadMore = () => {
         const nextPage = page + 1;

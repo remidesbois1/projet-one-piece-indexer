@@ -1,0 +1,7 @@
+ultralytics>=8.3
+huggingface_hub>=0.27
+python-dotenv>=1.0
+opencv-python-headless>=4.10
+pyyaml>=6.0
+pandas>=2.2
+requests>=2.32

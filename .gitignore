@@ -23,4 +23,30 @@ desktop_backend/*.spec
 
 backend/models/
 frontend/public/models/
-scripts/
+scripts/*
+!scripts/
+!scripts/polygon_case_annotator/
+!scripts/polygon_case_annotator/**
+scripts/polygon_case_annotator/__pycache__/
+scripts/polygon_case_annotator/cache/
+scripts/polygon_case_annotator/dataset/
+scripts/polygon_case_annotator/models/
+scripts/polygon_case_annotator/runs/
+scripts/polygon_case_annotator/polygon_annotations.json
+scripts/polygon_case_annotator/*.pt
+
+# Archives & compressed files
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+docker_scripts/*.zip
+docker_scripts/**/*.zip
+
+# Heavy machine learning models and checkpoints
+*.pt
+*.pth
+*.onnx
+*.safetensors

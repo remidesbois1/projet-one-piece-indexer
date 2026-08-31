@@ -15,6 +15,10 @@ export async function generateMetadata({ params }) {
     };
 }
 
-export default function Page() {
-    return <SearchClient />;
+export default async function Page({ searchParams }) {
+    const params = await searchParams;
+    const initialQuery = typeof params?.q === 'string' ? params.q : '';
+    const initialMode = typeof params?.mode === 'string' ? params.mode : '';
+
+    return <SearchClient initialQuery={initialQuery} initialMode={initialMode} />;
 }

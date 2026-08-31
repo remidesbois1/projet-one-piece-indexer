@@ -1,0 +1,5 @@
+Pillow>=10.0
+ultralytics>=8.3
+boto3>=1.35
+onnxruntime>=1.18
+opencv-python>=4.10

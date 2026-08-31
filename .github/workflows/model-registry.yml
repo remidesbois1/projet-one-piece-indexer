@@ -11,7 +11,6 @@ on:
       - documentation/generated/**
       - frontend/src/lib/modelRegistry.js
       - frontend/src/lib/modelRegistry.test.js
-      - frontend/src/components/LandingPageClient.jsx
       - frontend/src/components/ModelBenchmarkRegistry.jsx
       - frontend/src/components/ModelBenchmarkRegistry.test.jsx
       - frontend/src/context/WorkerContext.jsx
@@ -29,7 +28,6 @@ on:
       - documentation/generated/**
       - frontend/src/lib/modelRegistry.js
       - frontend/src/lib/modelRegistry.test.js
-      - frontend/src/components/LandingPageClient.jsx
       - frontend/src/components/ModelBenchmarkRegistry.jsx
       - frontend/src/components/ModelBenchmarkRegistry.test.jsx
       - frontend/src/context/WorkerContext.jsx

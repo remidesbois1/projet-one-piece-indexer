@@ -1,27 +1,19 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { getMangaCoverThumbnailUrl } from "@/lib/utils";
-import { formatBenchmarkSampleCount, formatRegistryMetric, getModelRegistryEntry } from "@/lib/modelRegistry";
 import {
     ArrowRight,
     BookOpen,
-    Boxes,
-    Cpu,
     Github,
-    Heart,
     Info,
-    Layers,
     Mail,
     MessageCircle,
     PlayCircle,
-    ScanText,
     Search,
     ShieldCheck,
-    Sparkles,
-    Zap,
 } from "lucide-react";
 
 const PONEGLYPH_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -95,72 +87,7 @@ function PoneglyphGlyphs({ count = 18, seed = 0 }) {
     );
 }
 
-function useInView(ref) {
-    const [isInView, setIsInView] = useState(false);
-
-    useEffect(() => {
-        if (!ref.current) return;
-        const observer = new IntersectionObserver(
-            ([entry]) => {
-                if (entry.isIntersecting) setIsInView(true);
-            },
-            { threshold: 0.15 }
-        );
-        observer.observe(ref.current);
-        return () => observer.disconnect();
-    }, [ref]);
-
-    return isInView;
-}
-
-const GlassPanel = React.forwardRef(function GlassPanel({ children, className = "", style }, ref) {
-    return (
-        <div ref={ref} style={style} className={`rounded-lg border border-white/14 bg-[#071625]/72 shadow-[0_24px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl ${className}`}>
-            {children}
-        </div>
-    );
-});
-
-function FeatureCard({ icon: Icon, title, badge, description, details, delay }) {
-    const ref = useRef(null);
-    const isInView = useInView(ref);
-
-    return (
-        <GlassPanel
-            ref={ref}
-            className="group min-h-[220px] p-5 transition duration-300 hover:-translate-y-1 hover:border-[#6da7ff]/45 hover:bg-[#0a1d30]/86"
-            style={{
-                opacity: isInView ? 1 : 0,
-                transform: isInView ? "translateY(0)" : "translateY(24px)",
-                transition: `opacity 0.55s ${delay}ms, transform 0.55s ${delay}ms, border-color 0.25s, background-color 0.25s`,
-            }}
-        >
-            <div className="mb-4 flex items-start gap-4">
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-[#6da7ff]/28 bg-[#2f7aaf]/22 text-[#8dbbff] shadow-[0_0_28px_rgba(47,122,175,0.22)]">
-                    <Icon size={22} />
-                </div>
-                <div className="min-w-0">
-                    <h3 className="text-base font-semibold leading-snug text-white">{title}</h3>
-                    {badge && (
-                        <span className="mt-1.5 inline-flex rounded-md border border-[#8dbbff]/20 bg-[#8dbbff]/10 px-2 py-0.5 text-[11px] font-medium text-[#bdd6ff]">
-                            {badge}
-                        </span>
-                    )}
-                </div>
-            </div>
-            <p className="mb-4 text-sm leading-relaxed text-slate-300/86">{description}</p>
-            <div className="flex flex-wrap gap-2">
-                {details.map((detail) => (
-                    <span key={detail} className="rounded-md border border-white/10 bg-white/[0.055] px-2.5 py-1 text-[11px] font-medium text-slate-300">
-                        {detail}
-                    </span>
-                ))}
-            </div>
-        </GlassPanel>
-    );
-}
-
-function MangaCard({ manga, index }) {
+function MangaItem({ manga, index }) {
     const [isVisible, setIsVisible] = useState(false);
 
     useEffect(() => {
@@ -169,108 +96,48 @@ function MangaCard({ manga, index }) {
     }, [index]);
 
     return (
-        <Link href={`/${manga.slug}/dashboard`} className="group block">
-            <GlassPanel
-                className="grid min-h-[220px] grid-cols-[120px_1fr] overflow-hidden transition duration-300 hover:-translate-y-1 hover:border-[#6da7ff]/42 sm:grid-cols-[150px_1fr]"
-                style={{
-                    opacity: isVisible ? 1 : 0,
-                    transform: isVisible ? "translateY(0)" : "translateY(24px)",
-                    transition: "opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1), transform 0.5s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s",
-                }}
-            >
-                <div className="relative min-h-[220px] bg-[#0b1624]">
+        <Link
+            href={`/${manga.slug}/dashboard`}
+            className="grid gap-5 border-t border-white/10 py-7 transition-colors duration-200 hover:border-white/20 sm:grid-cols-[110px_1fr]"
+            style={{ opacity: isVisible ? 1 : 0 }}
+        >
+                <div className="relative aspect-[3/4] w-[110px] overflow-hidden bg-[#0b1624]">
                     {manga.cover_url ? (
                         <Image
                             src={getMangaCoverThumbnailUrl(manga.slug, 600)}
                             alt={`Couverture du manga ${manga.titre}`}
                             fill
-                            sizes="(max-width: 640px) 120px, 150px"
-                            className="object-cover transition duration-700 group-hover:scale-105"
+                            sizes="110px"
+                            className="object-cover"
                             unoptimized
                         />
                     ) : (
                         <div className="flex h-full items-center justify-center text-slate-500">
-                            <BookOpen size={40} />
+                            <BookOpen size={36} />
                         </div>
                     )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#06101b]/60 to-transparent" />
                 </div>
-                <div className="flex min-w-0 flex-col p-5">
-                    <span className="mb-4 w-fit rounded-md border border-white/13 bg-white/[0.065] px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-300">
-                        Disponible
-                    </span>
-                    <h3 className="text-xl font-semibold text-white">{manga.titre}</h3>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                        {manga.total_chapitres && (
-                            <span className="rounded-md border border-white/10 bg-white/[0.055] px-2 py-1 text-[11px] text-slate-300">
-                                {manga.total_chapitres} chapitres
-                            </span>
-                        )}
-                        {manga.total_tomes && (
-                            <span className="rounded-md border border-white/10 bg-white/[0.055] px-2 py-1 text-[11px] text-slate-300">
-                                {manga.total_tomes} tomes
-                            </span>
-                        )}
-                    </div>
-                    <p className="mt-4 line-clamp-3 text-sm leading-relaxed text-slate-300/82">
+                <div className="flex min-w-0 flex-col justify-center">
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Disponible</span>
+                    <h3 className="mt-2 text-2xl font-semibold text-white">{manga.titre}</h3>
+                    {(manga.total_chapitres || manga.total_tomes) && (
+                        <p className="mt-2 text-xs text-slate-400">
+                            {[
+                                manga.total_chapitres ? `${manga.total_chapitres} chapitres` : null,
+                                manga.total_tomes ? `${manga.total_tomes} tomes` : null,
+                            ].filter(Boolean).join(" · ")}
+                        </p>
+                    )}
+                    <p className="mt-3 line-clamp-3 max-w-2xl text-sm leading-relaxed text-slate-300/82">
                         {manga.description || "Un index communautaire pour retrouver les pages, les scènes et les dialogues marquants."}
                     </p>
-                    <div className="mt-auto flex items-center gap-2 pt-5 text-sm font-semibold text-[#8dbbff]">
-                        Explorer <ArrowRight size={15} className="transition group-hover:translate-x-1" />
+                    <div className="mt-4 flex items-center gap-2 text-sm font-semibold text-[#8dbbff]">
+                        Explorer <ArrowRight size={15} />
                     </div>
                 </div>
-            </GlassPanel>
         </Link>
     );
 }
-
-const ppocrBenchmark = getModelRegistryEntry('ppocrv6-line').benchmark;
-const suryaBenchmark = getModelRegistryEntry('surya-bubble').benchmark;
-
-const features = [
-    {
-        icon: ScanText,
-        title: "OCR Local - PP-OCRv6 Ligne",
-        badge: "ONNX",
-        description: "Detecteur YOLO26n et recognizer PP-OCRv6 specialises pour transcrire les lignes de bulles en local navigateur.",
-        details: ["PP-OCRv6", "YOLO lignes", "~83 Mo", "WebGPU", formatRegistryMetric('ppocrv6-line'), `${formatBenchmarkSampleCount(ppocrBenchmark.sample_count)} bulles test`],
-    },
-    {
-        icon: Zap,
-        title: "OCR Poneglyph & Surya + Modèle Local",
-        badge: "Multi-Desktop",
-        description: "Modèles spécialisés pour les pages complètes et les bulles isolées, disponibles sur Modal GPU ou en local via l'application desktop.",
-        details: [formatRegistryMetric('lighton-bubble'), formatRegistryMetric('surya-bubble'), `${formatBenchmarkSampleCount(suryaBenchmark.sample_count)} bulles test`, "GPU local / Modal"],
-    },
-    {
-        icon: Cpu,
-        title: "Application Desktop - Tauri v2",
-        badge: "Windows",
-        description: "Shell Rust, backend Python local et modèles téléchargeables pour lancer l'OCR GPU sur 127.0.0.1.",
-        details: ["Rust / Tauri v2", "FastAPI local", "4 modèles locaux", "CUDA / ROC / CPU"],
-    },
-    {
-        icon: Boxes,
-        title: "Détection ReaderNet - YOLO26 + YOLO11-seg",
-        badge: "ONNX",
-        description: "YOLO26n fine-tuné isole chaque zone de texte côté client via ONNX Runtime Web.",
-        details: ["YOLO11n-seg panels", formatRegistryMetric('readernet-panel-detector'), "ONNX", "polygones"],
-    },
-    {
-        icon: Layers,
-        title: "Tri ReaderNet - ONNX",
-        badge: "v3",
-        description: "Deux rankers ordonnent les cases puis les bulles dans le contexte, sans serveur et en Web Worker.",
-        details: ["ordering.onnx fusionné", "tri intra-case", formatRegistryMetric('readernet-reading-order'), "Web Worker"],
-    },
-    {
-        icon: Search,
-        title: "Recherche Sémantique & Indexation",
-        badge: "pgvector",
-        description: "Architecture hybride avec embeddings, consensus scoring et stockage vectoriel pour retrouver une scène depuis une description.",
-        details: ["voyage-4-large", "gemini-embedding", "pgvector"],
-    },
-];
 
 export default function LandingPageClient({ mangas = [] }) {
     const visibleMangas = Array.isArray(mangas) ? mangas.slice(0, 3) : [];
@@ -286,8 +153,7 @@ export default function LandingPageClient({ mangas = [] }) {
                     <nav className="hidden items-center gap-8 text-sm font-medium text-slate-300 md:flex">
                         <a href="#features" className="transition hover:text-white">Fonctionnalités</a>
                         <a href="#mangas" className="transition hover:text-white">Mangas</a>
-                        <Link href="/sandbox" className="flex items-center gap-2 rounded-full border border-[#6da7ff]/30 bg-[#6da7ff]/10 px-3 py-1.5 text-[#bdd6ff] transition hover:bg-[#6da7ff]/18">
-                            <Cpu size={14} />
+                        <Link href="/sandbox" className="rounded-full border border-[#6da7ff]/30 bg-[#6da7ff]/10 px-3 py-1.5 text-[#bdd6ff] transition hover:bg-[#6da7ff]/18">
                             Sandbox
                         </Link>
                         <a href="#about" className="transition hover:text-white">À propos</a>
@@ -306,31 +172,54 @@ export default function LandingPageClient({ mangas = [] }) {
                 />
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_45%_25%,rgba(61,134,255,0.14),transparent_33%),linear-gradient(90deg,rgba(3,10,19,0.2),rgba(3,10,19,0.28)_38%,rgba(3,10,19,0.78)_78%),linear-gradient(180deg,rgba(3,10,19,0.14),#030a13_96%)]" />
                 <PoneglyphGlyphs count={18} seed={7} />
-                <div className="relative mx-auto max-w-7xl px-5 pb-16 pt-14 sm:px-8 md:pt-20 lg:pb-20">
-                    <div className="mx-auto max-w-4xl text-center">
-                        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/12 bg-[#071625]/62 px-4 py-1.5 text-xs font-medium text-slate-300 backdrop-blur-md">
-                            <Heart size={14} className="text-[#6da7ff]" fill="currentColor" />
-                            Projet communautaire & open-source
-                        </div>
-                        <h1 className="text-[clamp(2.7rem,8vw,5.65rem)] font-black leading-[0.96] tracking-tight text-white">
-                            Retrouvez
-                            <br />
-                            <span className="bg-gradient-to-b from-white via-[#8dbbff] to-[#3d86ff] bg-clip-text text-transparent drop-shadow-[0_0_22px_rgba(61,134,255,0.35)]">
-                                instantanément
-                            </span>
-                            <br />
-                            la page que vous cherchez
+                <div className="relative mx-auto max-w-7xl px-5 pb-16 pt-14 sm:px-8 md:pt-20 lg:pb-24">
+                    <div className="mx-auto max-w-5xl text-center">
+                        <h1 className="text-[clamp(2.7rem,7.4vw,5.45rem)] font-black leading-[0.97] tracking-[-0.045em] text-white">
+                            Une scène en tête ?
                         </h1>
+
                         <p className="mx-auto mt-7 max-w-2xl text-base leading-relaxed text-slate-200/86 sm:text-lg">
-                            Une citation ? Un combat ? Un moment émouvant ? Décrivez ce que vous cherchez et trouvez la bonne page, sans avoir à feuilleter des dizaines de tomes.
+                            Décrivez simplement ce dont vous vous souvenez : une réplique, un combat, un personnage ou même une émotion. Poneglyph retrouve les pages qui correspondent, sans connaître le tome ni le chapitre.
                         </p>
-                        <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
+
+                        <form action="/one-piece/search" method="get" className="mx-auto mt-9 max-w-3xl rounded-2xl border border-[#3d86ff]/25 bg-[#071625]/92 p-2 shadow-[0_24px_80px_rgba(0,0,0,0.38),0_0_45px_rgba(61,134,255,0.08)] backdrop-blur-xl">
+                            <input type="hidden" name="mode" value="semantic" />
+                            <div className="flex min-h-14 items-center gap-3 rounded-xl border border-[#3d86ff]/25 bg-[#071625] px-4 text-left transition focus-within:border-[#6da7ff]/55 focus-within:shadow-[0_0_0_3px_rgba(61,134,255,0.12)]">
+                                <Search size={19} className="shrink-0 text-[#6da7ff]" />
+                                <input
+                                    name="q"
+                                    required
+                                    minLength={2}
+                                    aria-label="Rechercher dans One Piece"
+                                    placeholder="Décrivez une scène, une réplique, un personnage..."
+                                    className="min-w-0 flex-1 !border-0 !bg-[#071625] text-sm text-white outline-none placeholder:text-slate-500 sm:text-base"
+                                />
+                                <button type="submit" className="hidden shrink-0 items-center gap-2 rounded-lg bg-[#3d86ff] px-4 py-2 text-xs font-semibold text-white shadow-[0_8px_24px_rgba(61,134,255,0.28)] transition hover:bg-[#2f73dc] sm:inline-flex">
+                                    Rechercher <ArrowRight size={14} />
+                                </button>
+                            </div>
+                            <div className="flex flex-wrap items-center justify-center gap-2 px-2 pb-1 pt-3 text-xs text-slate-400">
+                                <span className="mr-1 text-slate-500">Essayez avec :</span>
+                                {[
+                                    'Luffy rencontre Zoro attaché à un poteau',
+                                    'le combat entre Zoro et Mihawk',
+                                    'Nami demande de l’aide à Luffy',
+                                    'Sanji nourrit Gin au Baratie',
+                                ].map((label) => (
+                                    <a key={label} href={`/one-piece/search?mode=semantic&q=${encodeURIComponent(label)}`} className="rounded-full border border-white/10 bg-white/[0.035] px-3 py-1.5 text-slate-300 transition hover:border-[#6da7ff]/45 hover:bg-[#3d86ff]/15 hover:text-white">
+                                        {label}
+                                    </a>
+                                ))}
+                            </div>
+                        </form>
+
+                        <div className="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
                             <a href="#mangas" className="inline-flex h-12 items-center justify-center gap-3 rounded-lg border border-[#8dbbff]/35 bg-[#3d86ff] px-7 text-sm font-semibold text-white shadow-[0_16px_40px_rgba(61,134,255,0.35)] transition hover:-translate-y-0.5 hover:bg-[#2f73dc]">
-                                Explorer les mangas <ArrowRight size={16} />
+                                Explorer la bibliothèque <ArrowRight size={16} />
                             </a>
                             <a href="#features" className="inline-flex h-12 items-center justify-center gap-3 rounded-lg border border-white/16 bg-[#071625]/58 px-7 text-sm font-semibold text-slate-200 backdrop-blur-md transition hover:-translate-y-0.5 hover:border-white/28 hover:bg-white/8">
                                 <PlayCircle size={16} />
-                                Découvrir le projet
+                                Voir comment ça marche
                             </a>
                         </div>
                     </div>
@@ -347,35 +236,26 @@ export default function LandingPageClient({ mangas = [] }) {
                 />
                 <div className="absolute inset-0 bg-[linear-gradient(180deg,#030a13_0%,rgba(3,10,19,0.86)_22%,rgba(3,10,19,0.92)_100%)]" />
                 <div className="relative mx-auto max-w-7xl px-5 sm:px-8">
-                    <div className="mx-auto mb-10 max-w-3xl text-center">
-                        <div className="mb-3 inline-flex items-center gap-2 text-[#9fc5ff]">
-                            <Sparkles size={17} fill="currentColor" />
-                        </div>
+                    <div className="mx-auto max-w-3xl text-center">
                         <h2 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">Architecture & Technologies</h2>
-                        <p className="mt-3 text-sm leading-relaxed text-slate-300 sm:text-base">
-                            Une infrastructure hybride WebGPU, modèles locaux et desktop Tauri pour des recherches rapides, précises et respectueuses de la confidentialité.
+                        <p className="mx-auto mt-4 max-w-2xl text-sm leading-relaxed text-slate-300 sm:text-base">
+                            Une partie de l&apos;OCR, de la détection et du tri s&apos;exécute directement dans le navigateur avec WebGPU et Transformers.js. Les modèles plus lourds tournent sur GPU local ou dans le cloud, avec Tauri pour l&apos;application desktop. Les pages et leurs contenus sont ensuite indexés pour permettre une recherche rapide en langage naturel.
                         </p>
-                    </div>
-                    <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
-                        {features.map((feature, i) => (
-                            <FeatureCard key={feature.title} {...feature} delay={i * 70} />
-                        ))}
-                    </div>
-
-                    <GlassPanel className="mt-6 grid gap-6 p-5 md:grid-cols-[1fr_auto] md:items-center md:p-7">
-                        <div className="min-w-0">
-                            <span className="mb-3 inline-flex rounded-md border border-[#8dbbff]/25 bg-[#8dbbff]/12 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-[#bdd6ff]">
-                                Démonstration technique
-                            </span>
-                            <h3 className="text-2xl font-bold text-white">Testez l&apos;annotation en local</h3>
-                            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-300">
-                                La Sandbox permet d&apos;uploader vos propres images et de tester la détection de bulles, la transcription OCR et l&apos;inférence WebGPU sans compte ni installation.
-                            </p>
+                        <div className="mt-5 flex flex-wrap items-center justify-center gap-x-3 gap-y-2 text-xs text-slate-400">
+                            <span>WebGPU</span>
+                            <span aria-hidden="true">·</span>
+                            <span>ONNX</span>
+                            <span aria-hidden="true">·</span>
+                            <span>Tauri</span>
+                            <span aria-hidden="true">·</span>
+                            <span>GPU local / cloud</span>
+                            <span aria-hidden="true">·</span>
+                            <span>pgvector</span>
                         </div>
-                        <Link href="/sandbox" className="inline-flex h-12 items-center justify-center gap-3 rounded-lg border border-[#8dbbff]/35 bg-[#3d86ff] px-7 text-sm font-semibold text-white shadow-[0_16px_40px_rgba(61,134,255,0.3)] transition hover:-translate-y-0.5 hover:bg-[#2f73dc]">
-                            Ouvrir la Sandbox <ArrowRight size={16} />
+                        <Link href="/sandbox" className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-[#8dbbff] transition-colors hover:text-[#bdd6ff]">
+                            Tester la Sandbox <ArrowRight size={15} />
                         </Link>
-                    </GlassPanel>
+                    </div>
                 </div>
             </section>
 
@@ -398,32 +278,31 @@ export default function LandingPageClient({ mangas = [] }) {
                     </div>
 
                     {visibleMangas.length === 0 ? (
-                        <GlassPanel className="mx-auto max-w-xl p-10 text-center text-slate-300">
+                        <div className="mx-auto max-w-xl border-y border-white/10 py-10 text-center text-slate-300">
                             Aucun manga disponible.
-                        </GlassPanel>
+                        </div>
                     ) : (
-                        <div className="grid gap-5 lg:grid-cols-2">
+                        <div className="mx-auto max-w-4xl">
                             {visibleMangas.map((manga, i) => (
-                                <MangaCard key={manga.id || manga.slug} manga={manga} index={i} />
+                                <MangaItem key={manga.id || manga.slug} manga={manga} index={i} />
                             ))}
-                            <GlassPanel className="flex min-h-[220px] flex-col items-center justify-center border-dashed border-white/22 p-8 text-center">
-                                <BookOpen className="mb-4 text-slate-400" size={42} />
-                                <h3 className="text-xl font-semibold text-white">Bientôt plus...</h3>
-                                <p className="mt-2 max-w-xs text-sm leading-relaxed text-slate-300">
-                                    D&apos;autres mangas seront ajoutés prochainement.
-                                </p>
-                            </GlassPanel>
+                            <div className="flex items-start gap-4 border-t border-white/10 py-7 text-left">
+                                <BookOpen className="mt-0.5 shrink-0 text-slate-400" size={28} />
+                                <div>
+                                    <h3 className="text-lg font-semibold text-white">Bientôt plus...</h3>
+                                    <p className="mt-1 max-w-xl text-sm leading-relaxed text-slate-300">
+                                        D&apos;autres mangas seront ajoutés prochainement.
+                                    </p>
+                                </div>
+                            </div>
                         </div>
                     )}
                 </div>
             </section>
 
             <section id="about" className="relative px-5 py-8 sm:px-8 sm:py-12">
-                <GlassPanel className="mx-auto grid max-w-6xl gap-6 overflow-hidden p-6 md:grid-cols-[1fr_0.9fr] md:p-8">
+                <div className="mx-auto grid max-w-6xl gap-8 border-y border-white/10 py-8 md:grid-cols-[1fr_0.9fr]">
                     <div className="flex gap-5">
-                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-[#8dbbff]/35 bg-[#3d86ff]/20 text-[#bdd6ff] shadow-[0_0_30px_rgba(61,134,255,0.35)]">
-                            <Heart size={20} fill="currentColor" />
-                        </div>
                         <div>
                             <h2 className="text-3xl font-bold tracking-tight text-white">Un projet communautaire</h2>
                             <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-300 sm:text-base">
@@ -431,7 +310,7 @@ export default function LandingPageClient({ mangas = [] }) {
                             </p>
                         </div>
                     </div>
-                    <div className="rounded-lg border border-white/12 bg-white/[0.055] p-4">
+                    <div className="border-l border-white/10 pl-5 md:self-center">
                         <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-200">
                             <Info size={16} className="text-[#8dbbff]" />
                             Démonstration technique
@@ -440,7 +319,7 @@ export default function LandingPageClient({ mangas = [] }) {
                             Ce projet est une démonstration éducative et de recherche. Les dégradations volontaires d&apos;images publiques protègent l&apos;expérience originale et toutes les images restent la propriété de leurs ayants droit respectifs.
                         </p>
                     </div>
-                </GlassPanel>
+                </div>
             </section>
 
             <footer className="border-t border-white/8 bg-[#02070d] px-5 py-10 sm:px-8">
