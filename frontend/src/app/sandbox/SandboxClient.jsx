@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { arrayMove } from '@dnd-kit/sortable';
 import { useAnnotationInteractions } from '@/hooks/useAnnotationInteractions';
 import { useAnnotationOCR } from '@/hooks/useAnnotationOCR';
@@ -14,7 +15,16 @@ import { postOcrImage } from '@/lib/ocrProxyClient';
 import { getChatGptStatus, runChatGptPageOcr } from '@/lib/chatGptDesktop';
 import { reconcileOcrBubblesWithYolo } from '@/lib/ocrBboxFusion';
 import { Dialog } from "@/components/ui/dialog";
-import { ArrowLeft, Upload } from "lucide-react";
+import {
+    ArrowLeft,
+    ArrowRight,
+    BookOpen,
+    Check,
+    ExternalLink,
+    FileImage,
+    Upload,
+    X,
+} from "lucide-react";
 import { toast } from "sonner";
 import AnnotateLeftSidebar from '@/components/AnnotateLeftSidebar';
 import AnnotateCanvas from '@/components/AnnotateCanvas';
@@ -25,6 +35,18 @@ import LocalOcrStatusIndicator from '@/components/LocalOcrStatusIndicator';
 import AiAccessDialog from '@/components/AiAccessDialog';
 
 const PONEGLYPH_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const GLENAT_BOOK_URL = 'https://www.glenat.com/glenat-manga/one-piece-edition-originale-tome-01-9782723488525/';
+const SANDBOX_GUIDE_STORAGE_KEY = 'poneglyph-sandbox-guide-seen';
+// Sandbox annotations belong to the current local session and remain editable.
+const canEditSandboxBubble = () => true;
+
+const GLENAT_DEMO_PAGES = [18, 22, 24, 48].map((pageNumber) => {
+    return {
+        id: `glenat-${pageNumber}`,
+        pageNumber,
+        imageUrl: `/api/sandbox/glenat-page?page=${pageNumber}`,
+    };
+});
 
 function generateSlots(count, seed = 12345) {
     const slots = [];
@@ -102,6 +124,206 @@ function PoneglyphBackground({ count = 20, seed = 0 }) {
     );
 }
 
+function SandboxGuide({ open, stepIndex, onStepChange, onClose, targets, isMobile = false }) {
+    const desktopEditorSteps = [
+            {
+                target: 'editorSidebar',
+                eyebrow: '01 · Piloter l’analyse',
+                title: 'Le panneau de contrôle',
+                description: 'Choisissez un moteur OCR, chargez les modèles locaux et lancez la détection automatique ou une analyse complète de la page.',
+            },
+            {
+                target: 'canvas',
+                eyebrow: '02 · Annoter',
+                title: 'Dessinez directement sur la page',
+                description: 'Tracez un rectangle autour d’une bulle pour la reconnaître. Maintenez Maj pour déplacer ou redimensionner une annotation existante.',
+            },
+            {
+                target: 'annotations',
+                eyebrow: '03 · Vérifier',
+                title: 'La liste de résultats',
+                description: 'Retrouvez toutes les bulles détectées, réordonnez-les par glisser-déposer, copiez leur texte ou ouvrez-les pour les corriger.',
+            },
+            {
+                target: 'editorToolbar',
+                eyebrow: '04 · À tout moment',
+                title: 'Le guide reste accessible',
+                description: 'Besoin d’un rappel ? Le bouton Guide en haut à droite relance cette présentation quand vous le souhaitez.',
+            },
+        ];
+    const mobileEditorSteps = [
+        {
+            target: 'editorToolbar',
+            eyebrow: '01 · Repérer l’écran',
+            title: 'Votre page est prête',
+            description: 'Cette barre rappelle la source et le format de la page. Sur ordinateur, le panneau de contrôle permet aussi de choisir un moteur et de lancer les analyses.',
+        },
+        {
+            target: 'canvas',
+            eyebrow: '02 · Annoter',
+            title: 'Dessinez directement sur la page',
+            description: 'Tracez un rectangle autour d’une bulle pour la reconnaître. Le canvas s’adapte automatiquement à la taille de votre écran.',
+        },
+        {
+            target: 'annotations',
+            eyebrow: '03 · Vérifier',
+            title: 'La liste de résultats',
+            description: 'Retrouvez toutes les bulles détectées et ouvrez-les pour corriger leur texte. Faites défiler l’écran pour passer du canvas à la liste.',
+        },
+        {
+            target: 'editorToolbar',
+            eyebrow: '04 · À tout moment',
+            title: 'Le guide reste accessible',
+            description: 'Besoin d’un rappel ? Le bouton Guide en haut à droite relance cette présentation quand vous le souhaitez.',
+        },
+    ];
+    const steps = isMobile ? mobileEditorSteps : desktopEditorSteps;
+
+    const [targetRect, setTargetRect] = React.useState(null);
+    const step = steps[Math.min(stepIndex, steps.length - 1)];
+
+    React.useEffect(() => {
+        if (!open) return undefined;
+
+        const updateTargetRect = () => {
+            const element = targets?.[step.target]?.current;
+            if (!element) {
+                setTargetRect(null);
+                return;
+            }
+
+            const bounds = element.getBoundingClientRect();
+            setTargetRect({
+                top: bounds.top,
+                left: bounds.left,
+                width: bounds.width,
+                height: bounds.height,
+                bottom: bounds.bottom,
+                right: bounds.right,
+            });
+        };
+
+        const targetElement = targets?.[step.target]?.current;
+        targetElement?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+        updateTargetRect();
+        const frame = window.requestAnimationFrame(updateTargetRect);
+        window.addEventListener('resize', updateTargetRect);
+        window.addEventListener('scroll', updateTargetRect, true);
+
+        return () => {
+            window.cancelAnimationFrame(frame);
+            window.removeEventListener('resize', updateTargetRect);
+            window.removeEventListener('scroll', updateTargetRect, true);
+        };
+    }, [open, step.target, targets]);
+
+    React.useEffect(() => {
+        if (!open) return undefined;
+
+        const handleKeyDown = (event) => {
+            if (event.key === 'Escape') onClose();
+            if (event.key === 'ArrowRight' && stepIndex < steps.length - 1) onStepChange(stepIndex + 1);
+            if (event.key === 'ArrowLeft' && stepIndex > 0) onStepChange(stepIndex - 1);
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [open, onClose, onStepChange, stepIndex, steps.length]);
+
+    if (!open) return null;
+
+    const viewportWidth = typeof window === 'undefined' ? 1024 : window.innerWidth;
+    const viewportHeight = typeof window === 'undefined' ? 768 : window.innerHeight;
+    const tooltipWidth = Math.min(380, viewportWidth - 32);
+    const tooltipHeight = Math.min(360, viewportHeight - 32);
+    const tooltipLeft = targetRect
+        ? Math.max(16, Math.min(targetRect.left, viewportWidth - tooltipWidth - 16))
+        : Math.max(16, (viewportWidth - tooltipWidth) / 2);
+    const desiredTooltipTop = targetRect ? targetRect.bottom + 18 : (viewportHeight - tooltipHeight) / 2;
+    const tooltipTop = Math.max(16, Math.min(desiredTooltipTop, viewportHeight - tooltipHeight - 16));
+    const isLastStep = stepIndex === steps.length - 1;
+
+    return (
+        <>
+            <div className="fixed inset-0 z-[80] bg-[#010610]/78 backdrop-blur-[1px]" aria-hidden="true" />
+            {targetRect && (
+                <div
+                    className="pointer-events-none fixed z-[81] rounded-2xl border-2 border-[#8dbbff] shadow-[0_0_0_9999px_rgba(1,6,16,0.78),0_0_28px_rgba(61,134,255,0.45)] transition-all duration-300"
+                    style={{
+                        top: `${Math.max(8, targetRect.top - 8)}px`,
+                        left: `${Math.max(8, targetRect.left - 8)}px`,
+                        width: `${targetRect.width + 16}px`,
+                        height: `${targetRect.height + 16}px`,
+                    }}
+                />
+            )}
+            <section
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="sandbox-guide-title"
+                className="fixed z-[82] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-2xl border border-[#8dbbff]/35 bg-[#071625]/[.98] p-5 text-slate-100 shadow-[0_24px_80px_rgba(0,0,0,.55)] backdrop-blur-xl transition-all duration-300 sm:p-6"
+                style={{ top: `${tooltipTop}px`, left: `${tooltipLeft}px`, width: `${tooltipWidth}px`, maxHeight: `calc(100vh - 32px)` }}
+            >
+                <div className="mb-5 flex items-start justify-between gap-4">
+                    <div>
+                        <p className="mb-1 text-[10px] font-black uppercase tracking-[.18em] text-[#8dbbff]">Guide du sandbox</p>
+                        <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-500">{step.eyebrow}</p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        aria-label="Fermer le guide"
+                        className="rounded-lg p-1.5 text-slate-400 transition hover:bg-white/10 hover:text-white"
+                    >
+                        <X size={16} />
+                    </button>
+                </div>
+
+                <h2 id="sandbox-guide-title" className="text-xl font-black tracking-tight text-white">{step.title}</h2>
+                <p className="mt-3 text-sm leading-relaxed text-slate-300">{step.description}</p>
+
+                <div className="mt-6 flex items-center gap-1.5" aria-label={`Étape ${stepIndex + 1} sur ${steps.length}`}>
+                    {steps.map((item, index) => (
+                        <span
+                            key={`${item.target}-${index}`}
+                            className={`h-1.5 flex-1 rounded-full transition-colors ${index <= stepIndex ? 'bg-[#8dbbff]' : 'bg-white/10'}`}
+                        />
+                    ))}
+                </div>
+
+                <div className="mt-5 flex items-center justify-between gap-3">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="text-xs font-bold text-slate-400 transition hover:text-white"
+                    >
+                        Passer le guide
+                    </button>
+                    <div className="flex items-center gap-2">
+                        {stepIndex > 0 && (
+                            <button
+                                type="button"
+                                onClick={() => onStepChange(stepIndex - 1)}
+                                className="rounded-xl border border-white/12 px-3 py-2 text-xs font-bold text-slate-300 transition hover:bg-white/10 hover:text-white"
+                            >
+                                Retour
+                            </button>
+                        )}
+                        <button
+                            type="button"
+                            onClick={() => isLastStep ? onClose() : onStepChange(stepIndex + 1)}
+                            className="inline-flex items-center gap-2 rounded-xl bg-[#3d86ff] px-3.5 py-2 text-xs font-black text-white shadow-[0_8px_24px_rgba(61,134,255,.28)] transition hover:bg-[#5795ff]"
+                        >
+                            {isLastStep ? 'C’est parti' : 'Suivant'}
+                            {isLastStep ? <Check size={14} /> : <ArrowRight size={14} />}
+                        </button>
+                    </div>
+                </div>
+            </section>
+        </>
+    );
+}
+
 function imageElementToJpegBlob(img) {
     return new Promise((resolve) => {
         const canvas = document.createElement('canvas');
@@ -140,12 +362,26 @@ export default function SandboxClient() {
     const [isChatGptLoading, setIsChatGptLoading] = useState(false);
     const [chatGptDesktopAvailable, setChatGptDesktopAvailable] = useState(false);
     const [poneglyphRunMode, setPoneglyphRunMode] = useState(null);
+    const [isGuideOpen, setIsGuideOpen] = useState(false);
+    const [guideStep, setGuideStep] = useState(0);
+    const [sampleLoadState, setSampleLoadState] = useState({});
 
     const containerRef = useRef(null);
     const imageRef = useRef(null);
     const fileInputRef = useRef(null);
+    const editorToolbarRef = useRef(null);
+    const editorSidebarRef = useRef(null);
+    const editorCanvasRef = useRef(null);
+    const annotationSidebarRef = useRef(null);
     const tauriLocalOcr = useTauriLocalOcrContext();
     const aiModelConfig = useAiModelConfig();
+
+    const guideTargets = {
+        editorToolbar: editorToolbarRef,
+        editorSidebar: editorSidebarRef,
+        canvas: editorCanvasRef,
+        annotations: annotationSidebarRef,
+    };
 
     useEffect(() => {
         let cancelled = false;
@@ -164,22 +400,83 @@ export default function SandboxClient() {
         return () => window.removeEventListener('resize', checkMobile);
     }, []);
 
+    useEffect(() => {
+        if (!page || window.localStorage.getItem(SANDBOX_GUIDE_STORAGE_KEY) === 'true') return undefined;
+
+        const timer = window.setTimeout(() => {
+            setGuideStep(0);
+            setIsGuideOpen(true);
+        }, 450);
+
+        return () => window.clearTimeout(timer);
+    }, [page]);
+
+    useEffect(() => () => {
+        if (imageUrl?.startsWith('blob:')) URL.revokeObjectURL(imageUrl);
+    }, [imageUrl]);
+
+    const closeGuide = () => {
+        setIsGuideOpen(false);
+        window.localStorage.setItem(SANDBOX_GUIDE_STORAGE_KEY, 'true');
+    };
+
+    const openGuide = () => {
+        setGuideStep(0);
+        setIsGuideOpen(true);
+    };
+
+    const setSandboxImageUrl = (nextUrl) => {
+        setImageUrl((previousUrl) => {
+            if (previousUrl?.startsWith('blob:')) URL.revokeObjectURL(previousUrl);
+            return nextUrl;
+        });
+    };
+
     const handleImageUpload = (file) => {
         if (!file || !file.type.startsWith('image/')) {
             toast.error("Veuillez sélectionner une image valide.");
             return;
         }
         const url = URL.createObjectURL(file);
-        setImageUrl(url);
+        setSandboxImageUrl(url);
         setPage({
-            id: 'sandbox-page',
+            id: 'sandbox-upload',
             url_image: url,
             statut: 'not_started',
             numero_page: 0,
-            description: null
+            description: null,
+            source_label: 'Image importée',
+            source_url: null,
         });
         setExistingBubbles([]);
-        toast.success("Image chargée ! Prêt pour l&apos;annotation.");
+        setRectangle(null);
+        setPendingAnnotation(null);
+        setDebugImageUrl(null);
+        setImageDimensions(null);
+        setOcrSource(null);
+        setIsGuideOpen(false);
+        toast.success("Image chargée ! Prêt pour l’annotation.");
+    };
+
+    const handleGlenatPageSelect = (demoPage) => {
+        setSandboxImageUrl(demoPage.imageUrl);
+        setPage({
+            id: `sandbox-${demoPage.id}`,
+            url_image: demoPage.imageUrl,
+            statut: 'not_started',
+            numero_page: demoPage.pageNumber,
+            description: null,
+            source_label: 'Glénat · liseuse',
+            source_url: GLENAT_BOOK_URL,
+        });
+        setExistingBubbles([]);
+        setRectangle(null);
+        setPendingAnnotation(null);
+        setDebugImageUrl(null);
+        setImageDimensions(null);
+        setOcrSource(null);
+        setIsGuideOpen(false);
+        toast.success('Extrait sélectionné. Prêt pour l’annotation.');
     };
 
     const onDrop = (e) => {
@@ -226,7 +523,7 @@ export default function SandboxClient() {
         handleMouseUp, handleInteractionStart
     } = useAnnotationInteractions({
         containerRef, imageRef, imageDimensions, existingBubbles, setExistingBubbles,
-        pendingAnnotation, setPendingAnnotation, setRectangle, canEdit: true, isMobile,
+        pendingAnnotation, setPendingAnnotation, setRectangle, canEdit: true, canEditBubble: canEditSandboxBubble, isMobile,
         pageStatus: 'not_started', isSubmitting, showApiKeyModal, showDescModal,
         onUpdateGeometry: (targetId, geometry) => {
             setExistingBubbles(prev => prev.map(b => b.id === targetId ? { ...b, ...geometry } : b));
@@ -535,188 +832,252 @@ export default function SandboxClient() {
 
     if (!page) {
         return (
-            <div className="poneglyph-app relative flex min-h-screen flex-col items-center justify-center overflow-hidden p-6"
+            <div className="poneglyph-app relative min-h-screen overflow-y-auto"
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={onDrop}>
-                <div className="absolute left-4 top-4 z-20">
-                    <LocalOcrStatusIndicator />
-                </div>
-
                 <PoneglyphBackground count={32} seed={123} />
 
-                <div className="max-w-md w-full space-y-12 relative z-10">
-                    <div className="text-center space-y-4">
-                        <h1 className="poneglyph-title text-balance text-4xl font-extrabold leading-none">
-                            Sandbox annotation
-                        </h1>
-                        <p className="poneglyph-muted text-balance mx-auto max-w-[380px] text-sm leading-relaxed">
-                            Expérimentez l&apos;annotation du projet directement dans votre navigateur.
-                            Cette interface utilise <a href="https://huggingface.co/Remidesbois/Poneglyph-ReaderNet" target="_blank" rel="noopener noreferrer" className="font-bold text-slate-700 hover:text-[#2F7AAF] underline decoration-slate-200">Poneglyph ReaderNet</a> pour la détection et l&apos;ordre intra-case,
-                            <a href="https://huggingface.co/Remidesbois/pp-ocrv6-one-piece-bubble-line-rec" target="_blank" rel="noopener noreferrer" className="font-bold text-slate-700 hover:text-[#2F7AAF] underline decoration-slate-200"> PP-OCRv6 Ligne</a> pour la reconnaissance.
-                            Dans l&apos;app desktop, elle peut aussi lancer Poneglyph en mode local via Tauri.
-                        </p>
+                <header className="relative z-10 mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-5 sm:px-6 lg:px-8">
+                    <Link href="/" className="inline-flex items-center gap-2 text-[11px] font-black uppercase tracking-[.18em] text-slate-400 transition hover:text-white">
+                        <span className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/12 bg-white/[.07] text-[#8dbbff]">
+                            <ArrowLeft size={14} />
+                        </span>
+                        Poneglyph
+                    </Link>
+                    <div className="flex items-center gap-2">
+                        <LocalOcrStatusIndicator />
                     </div>
+                </header>
 
-                    <div
-                        className="poneglyph-panel group relative cursor-pointer rounded-3xl border-2 border-dashed border-white/16 p-14 text-center transition hover:border-[#8dbbff]/55 hover:bg-[#0a1d30]/86"
-                        onClick={() => fileInputRef.current.click()}
-                    >
-                        <input
-                            type="file"
-                            className="hidden"
-                            ref={fileInputRef}
-                            accept="image/*"
-                            onChange={(e) => handleImageUpload(e.target.files[0])}
-                        />
-                        <div className="flex flex-col items-center gap-5">
-                            <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-white/12 bg-white/8 text-[#8dbbff] shadow-sm transition-colors group-hover:bg-[#3d86ff]/18 group-hover:text-white">
-                                <Upload size={24} />
+                <main className="relative z-10 mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pb-10 sm:px-6 lg:gap-8 lg:px-8 lg:pb-14">
+                    <section className="poneglyph-panel rounded-[2rem] p-5 sm:p-7">
+                        <div className="mb-5 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+                            <div>
+                                <div className="flex items-center gap-2">
+                                    <h2 className="text-xl font-black tracking-tight text-white sm:text-2xl">Pages de démonstration</h2>
+                                </div>
+                                <p className="mt-1.5 text-xs text-slate-400">Des extraits chargés depuis la liseuse Glénat.</p>
                             </div>
-                            <div className="space-y-1">
-                                <p className="font-bold text-white transition-colors group-hover:text-[#8dbbff]">
-                                    Charger une planche
-                                </p>
-                                <p className="text-[11px] text-slate-400 font-medium">Glissez-déposez ou cliquez ici</p>
+                            <a href={GLENAT_BOOK_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-[11px] font-bold text-slate-400 underline decoration-white/20 underline-offset-4 transition hover:text-[#bcd6ff]">
+                                Voir sur Glénat <ExternalLink size={12} />
+                            </a>
+                        </div>
+
+                        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                            {GLENAT_DEMO_PAGES.map((demoPage, demoIndex) => {
+                                const imageState = sampleLoadState[demoPage.id];
+
+                                return (
+                                    <article key={demoPage.id} className="group rounded-2xl border border-white/10 bg-[#04101d]/70 p-2 transition duration-200 hover:-translate-y-1 hover:border-[#8dbbff]/45 hover:bg-[#091d31] hover:shadow-[0_18px_42px_rgba(0,0,0,.28)]">
+                                        <button
+                                            type="button"
+                                            onClick={() => handleGlenatPageSelect(demoPage)}
+                                            aria-label={`Choisir l’extrait ${demoIndex + 1} de démonstration`}
+                                            className="block w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#8dbbff] focus-visible:ring-offset-2 focus-visible:ring-offset-[#071625]"
+                                        >
+                                            <div className="relative aspect-[.68/1] overflow-hidden rounded-xl border border-white/10 bg-[#020812]">
+                                                {imageState !== 'loaded' && (
+                                                    <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-white/[.05] via-[#0b2741] to-white/[.03]" aria-hidden="true" />
+                                                )}
+                                                <Image
+                                                    src={demoPage.imageUrl}
+                                                    alt="Extrait de démonstration Glénat"
+                                                    fill
+                                                    unoptimized
+                                                    sizes="(min-width: 1280px) 25vw, (min-width: 640px) 50vw, 100vw"
+                                                    loading="lazy"
+                                                    className={`h-full w-full object-cover object-top transition duration-500 group-hover:scale-[1.03] ${imageState === 'error' ? 'opacity-0' : 'opacity-100'}`}
+                                                    onLoad={() => setSampleLoadState((previous) => ({ ...previous, [demoPage.id]: 'loaded' }))}
+                                                    onError={() => setSampleLoadState((previous) => ({ ...previous, [demoPage.id]: 'error' }))}
+                                                />
+                                                {imageState === 'error' && (
+                                                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-4 text-center text-xs text-slate-400">
+                                                        <FileImage size={20} className="text-slate-500" />
+                                                        Aperçu indisponible
+                                                    </div>
+                                                )}
+                                                <span className="absolute bottom-2 right-2 rounded-full bg-[#020812]/80 px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider text-white opacity-0 backdrop-blur-sm transition group-hover:opacity-100">Ouvrir</span>
+                                            </div>
+                                        </button>
+                                    </article>
+                                );
+                            })}
+                        </div>
+                    </section>
+
+                    <section className="poneglyph-panel-soft flex flex-col gap-5 rounded-[2rem] border-dashed p-5 sm:flex-row sm:items-center sm:justify-between sm:p-7">
+                        <div className="flex items-start gap-4">
+                            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-[#8dbbff]/20 bg-[#3d86ff]/10 text-[#8dbbff]"><Upload size={19} /></div>
+                            <div>
+                                <h2 className="text-base font-black text-white">Vous préférez travailler sur votre propre planche ?</h2>
+                                <p className="mt-1.5 max-w-xl text-xs leading-relaxed text-slate-400">Importez un fichier JPG, PNG ou WebP. Le fichier reste local à cette session et n’est pas envoyé tant que vous ne lancez pas un service d’analyse.</p>
                             </div>
                         </div>
-                    </div>
+                        <div className="shrink-0">
+                            <input
+                                type="file"
+                                className="hidden"
+                                ref={fileInputRef}
+                                accept="image/*"
+                                onChange={(event) => {
+                                    handleImageUpload(event.target.files?.[0]);
+                                    event.target.value = '';
+                                }}
+                            />
+                            <button type="button" onClick={() => fileInputRef.current?.click()} className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[#8dbbff]/30 bg-[#3d86ff]/12 px-4 py-2.5 text-xs font-black text-[#dbeafe] transition hover:border-[#8dbbff]/60 hover:bg-[#3d86ff]/22 sm:w-auto">
+                                Importer une image <ArrowRight size={14} />
+                            </button>
+                        </div>
+                    </section>
 
-                    <div className="flex justify-center pt-4">
-                        <Link href="/" className="inline-flex items-center gap-1.5 rounded-full border border-white/12 bg-white/8 px-4 py-2 text-[11px] font-bold uppercase tracking-widest text-slate-400 transition-all hover:bg-white/12 hover:text-white">
-                            <ArrowLeft size={12} />
-                            Retour Accueil
-                        </Link>
-                    </div>
-                </div>
+                </main>
             </div>
         );
     }
 
     return (
         <div className="poneglyph-app relative flex h-screen flex-col overflow-hidden lg:flex-row">
-            <AnnotateLeftSidebar
-                fromSearch={false}
-                mangaSlug=""
-                page={page}
-                chapterPages={[]}
-                navContext={{ prev: null, next: null }}
-                goToPrev={() => { }}
-                goToNext={() => { }}
-                isGuest={false}
-                role="Admin"
-                isSandbox={true}
-                preferLocalOCR={preferLocalOCR}
-                toggleOcrPreference={toggleOcrPreference}
-                activeModelKey={activeModelKey}
-                switchModel={switchModel}
-                modelStatus={modelStatus}
-                loadModel={loadModel}
-                downloadProgress={downloadProgress}
-                geminiKey={null}
-                selectedOcrModelKeys={selectedOcrModelKeys}
-                toggleOcrModel={toggleOcrModel}
-                detectionStatus={detectionStatus}
-                loadDetectionModel={loadDetectionModel}
-                detectionProgress={detectionProgress}
-                downloadStats={downloadStats}
-                handleExecuteDetection={handleExecuteDetection}
-                isSubmitting={isSubmitting}
-                isAutoDetecting={isAutoDetecting}
-                queueLength={queueLength}
-                setShowDescModal={() => { }}
-                setShowApiKeyModal={setShowApiKeyModal}
-                handleSubmitPage={() => { }}
-                handleOneShotPoneglyph={handleOneShotPoneglyph}
-                handleChatGptOneShot={handleChatGptOneShot}
-                isChatGptLoading={isChatGptLoading}
-                chatGptDesktopAvailable={chatGptDesktopAvailable}
-                geminiFullPageModel={aiModelConfig.model_ocr}
-                chatGptFullPageModel={aiModelConfig.model_chatgpt_ocr}
-                isPoneglyphLoading={isPoneglyphLoading}
-                poneglyphRunMode={poneglyphRunMode}
-                handleOneShotLocalPoneglyph={handleOneShotLocalPoneglyph}
-                handleOneShotLocalSuryaBbox={handleOneShotLocalSuryaBbox}
-                isTauri={tauriLocalOcr.isTauri}
-                localModelStatus={tauriLocalOcr.localModelStatus}
-                localTextModelStatus={tauriLocalOcr.localTextModelStatus}
-                localSuryaModelStatus={tauriLocalOcr.localSuryaModelStatus}
-                localSuryaBBoxModelStatus={tauriLocalOcr.localSuryaBBoxModelStatus}
-                isDownloadingLocalModel={tauriLocalOcr.isDownloadingLocalModel}
-                isDownloadingLocalTextModel={tauriLocalOcr.isDownloadingLocalTextModel}
-                isDownloadingLocalSuryaModel={tauriLocalOcr.isDownloadingLocalSuryaModel}
-                isDownloadingLocalSuryaBBoxModel={tauriLocalOcr.isDownloadingLocalSuryaBBoxModel}
-                localDownloadState={tauriLocalOcr.localDownloadState}
-                localTextDownloadState={tauriLocalOcr.localTextDownloadState}
-                localSuryaDownloadState={tauriLocalOcr.localSuryaDownloadState}
-                localSuryaBBoxDownloadState={tauriLocalOcr.localSuryaBBoxDownloadState}
-                localDownloadProgress={tauriLocalOcr.localDownloadProgress}
-                localTextDownloadProgress={tauriLocalOcr.localTextDownloadProgress}
-                localSuryaDownloadProgress={tauriLocalOcr.localSuryaDownloadProgress}
-                localSuryaBBoxDownloadProgress={tauriLocalOcr.localSuryaBBoxDownloadProgress}
-                localConnectionState={tauriLocalOcr.localConnectionState}
-                isLoadingLocalModel={tauriLocalOcr.isLoadingLocalModel}
-                isLoadingLocalTextModel={tauriLocalOcr.isLoadingLocalTextModel}
-                isLoadingLocalSuryaModel={tauriLocalOcr.isLoadingLocalSuryaModel}
-                isLoadingLocalSuryaBBoxModel={tauriLocalOcr.isLoadingLocalSuryaBBoxModel}
-                isLocalInferencing={tauriLocalOcr.isLocalInferencing}
-                isLocalSuryaBBoxInferencing={tauriLocalOcr.isLocalSuryaBBoxInferencing}
-                canRunLocalOcr={tauriLocalOcr.canRunLocalOcr}
-                canRunLocalTextOcr={tauriLocalOcr.canRunLocalTextOcr}
-                canRunLocalSuryaOcr={tauriLocalOcr.canRunLocalSuryaOcr}
-                canRunLocalSuryaBBoxOcr={tauriLocalOcr.canRunLocalSuryaBBoxOcr}
-                downloadLocalModel={tauriLocalOcr.downloadLocalModel}
-                downloadLocalTextModel={tauriLocalOcr.downloadLocalTextModel}
-                downloadLocalSuryaModel={tauriLocalOcr.downloadLocalSuryaModel}
-                downloadLocalSuryaBBoxModel={tauriLocalOcr.downloadLocalSuryaBBoxModel}
-                loadLocalModel={tauriLocalOcr.loadLocalModel}
-                loadLocalTextModel={tauriLocalOcr.loadLocalTextModel}
-                loadLocalSuryaModel={tauriLocalOcr.loadLocalSuryaModel}
-                loadLocalSuryaBBoxModel={tauriLocalOcr.loadLocalSuryaBBoxModel}
-            />
+            <div ref={editorSidebarRef} className="min-h-0 shrink-0">
+                <AnnotateLeftSidebar
+                    fromSearch={false}
+                    mangaSlug=""
+                    page={page}
+                    chapterPages={[]}
+                    navContext={{ prev: null, next: null }}
+                    goToPrev={() => { }}
+                    goToNext={() => { }}
+                    isGuest={false}
+                    role="Admin"
+                    isSandbox={true}
+                    preferLocalOCR={preferLocalOCR}
+                    toggleOcrPreference={toggleOcrPreference}
+                    activeModelKey={activeModelKey}
+                    switchModel={switchModel}
+                    modelStatus={modelStatus}
+                    loadModel={loadModel}
+                    downloadProgress={downloadProgress}
+                    geminiKey={null}
+                    selectedOcrModelKeys={selectedOcrModelKeys}
+                    toggleOcrModel={toggleOcrModel}
+                    detectionStatus={detectionStatus}
+                    loadDetectionModel={loadDetectionModel}
+                    detectionProgress={detectionProgress}
+                    downloadStats={downloadStats}
+                    handleExecuteDetection={handleExecuteDetection}
+                    isSubmitting={isSubmitting}
+                    isAutoDetecting={isAutoDetecting}
+                    queueLength={queueLength}
+                    setShowDescModal={() => { }}
+                    setShowApiKeyModal={setShowApiKeyModal}
+                    handleSubmitPage={() => { }}
+                    handleOneShotPoneglyph={handleOneShotPoneglyph}
+                    handleChatGptOneShot={handleChatGptOneShot}
+                    isChatGptLoading={isChatGptLoading}
+                    chatGptDesktopAvailable={chatGptDesktopAvailable}
+                    geminiFullPageModel={aiModelConfig.model_ocr}
+                    chatGptFullPageModel={aiModelConfig.model_chatgpt_ocr}
+                    isPoneglyphLoading={isPoneglyphLoading}
+                    poneglyphRunMode={poneglyphRunMode}
+                    handleOneShotLocalPoneglyph={handleOneShotLocalPoneglyph}
+                    handleOneShotLocalSuryaBbox={handleOneShotLocalSuryaBbox}
+                    isTauri={tauriLocalOcr.isTauri}
+                    localModelStatus={tauriLocalOcr.localModelStatus}
+                    localTextModelStatus={tauriLocalOcr.localTextModelStatus}
+                    localSuryaModelStatus={tauriLocalOcr.localSuryaModelStatus}
+                    localSuryaBBoxModelStatus={tauriLocalOcr.localSuryaBBoxModelStatus}
+                    isDownloadingLocalModel={tauriLocalOcr.isDownloadingLocalModel}
+                    isDownloadingLocalTextModel={tauriLocalOcr.isDownloadingLocalTextModel}
+                    isDownloadingLocalSuryaModel={tauriLocalOcr.isDownloadingLocalSuryaModel}
+                    isDownloadingLocalSuryaBBoxModel={tauriLocalOcr.isDownloadingLocalSuryaBBoxModel}
+                    localDownloadState={tauriLocalOcr.localDownloadState}
+                    localTextDownloadState={tauriLocalOcr.localTextDownloadState}
+                    localSuryaDownloadState={tauriLocalOcr.localSuryaDownloadState}
+                    localSuryaBBoxDownloadState={tauriLocalOcr.localSuryaBBoxDownloadState}
+                    localDownloadProgress={tauriLocalOcr.localDownloadProgress}
+                    localTextDownloadProgress={tauriLocalOcr.localTextDownloadProgress}
+                    localSuryaDownloadProgress={tauriLocalOcr.localSuryaDownloadProgress}
+                    localSuryaBBoxDownloadProgress={tauriLocalOcr.localSuryaBBoxDownloadProgress}
+                    localConnectionState={tauriLocalOcr.localConnectionState}
+                    isLoadingLocalModel={tauriLocalOcr.isLoadingLocalModel}
+                    isLoadingLocalTextModel={tauriLocalOcr.isLoadingLocalTextModel}
+                    isLoadingLocalSuryaModel={tauriLocalOcr.isLoadingLocalSuryaModel}
+                    isLoadingLocalSuryaBBoxModel={tauriLocalOcr.isLoadingLocalSuryaBBoxModel}
+                    isLocalInferencing={tauriLocalOcr.isLocalInferencing}
+                    isLocalSuryaBBoxInferencing={tauriLocalOcr.isLocalSuryaBBoxInferencing}
+                    canRunLocalOcr={tauriLocalOcr.canRunLocalOcr}
+                    canRunLocalTextOcr={tauriLocalOcr.canRunLocalTextOcr}
+                    canRunLocalSuryaOcr={tauriLocalOcr.canRunLocalSuryaOcr}
+                    canRunLocalSuryaBBoxOcr={tauriLocalOcr.canRunLocalSuryaBBoxOcr}
+                    downloadLocalModel={tauriLocalOcr.downloadLocalModel}
+                    downloadLocalTextModel={tauriLocalOcr.downloadLocalTextModel}
+                    downloadLocalSuryaModel={tauriLocalOcr.downloadLocalSuryaModel}
+                    downloadLocalSuryaBBoxModel={tauriLocalOcr.downloadLocalSuryaBBoxModel}
+                    loadLocalModel={tauriLocalOcr.loadLocalModel}
+                    loadLocalTextModel={tauriLocalOcr.loadLocalTextModel}
+                    loadLocalSuryaModel={tauriLocalOcr.loadLocalSuryaModel}
+                    loadLocalSuryaBBoxModel={tauriLocalOcr.loadLocalSuryaBBoxModel}
+                />
+            </div>
 
             <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-[#030a13]">
                 <div className="absolute left-3 top-3 z-30">
                     <LocalOcrStatusIndicator />
                 </div>
 
+                <div ref={editorToolbarRef} className="absolute right-3 top-3 z-30 flex items-center gap-2">
+                    <div className="hidden items-center gap-2 rounded-full border border-white/10 bg-[#06111e]/88 px-3 py-2 text-[10px] font-bold text-slate-300 shadow-lg backdrop-blur-sm sm:flex">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                        {page.source_label || 'Image importée'}
+                    </div>
+                    <button type="button" onClick={openGuide} className="inline-flex items-center gap-1.5 rounded-full border border-[#8dbbff]/25 bg-[#06111e]/90 px-3 py-2 text-[10px] font-black uppercase tracking-wider text-[#bcd6ff] shadow-lg backdrop-blur-sm transition hover:border-[#8dbbff]/55 hover:bg-[#3d86ff]/20 hover:text-white">
+                        <BookOpen size={13} /> Guide
+                    </button>
+                </div>
 
                 <div className="flex flex-col lg:flex-row flex-1 overflow-hidden min-h-0">
-                    <AnnotateCanvas
-                        canEdit={true}
-                        imageDimensions={imageDimensions}
-                        setImageDimensions={setImageDimensions}
-                        containerRef={containerRef}
-                        imageRef={imageRef}
-                        handleMouseDown={handleMouseDown}
-                        handleMouseMove={handleMouseMove}
-                        handleMouseUp={handleMouseUp}
-                        imageUrl={imageUrl}
-                        isSubmitting={isSubmitting}
-                        loadingText={loadingText}
-                        rectangle={rectangle}
-                        pendingAnnotation={pendingAnnotation}
-                        isAutoDetecting={isAutoDetecting}
-                        isShiftPressed={isShiftPressed}
-                        handleInteractionStart={handleInteractionStart}
-                        setIsModalOpen={setIsModalOpen}
-                        isDrawing={isDrawing}
-                        startPoint={startPoint}
-                        endPoint={endPoint}
-                        existingBubbles={existingBubbles}
-                        setHoveredBubble={setHoveredBubble}
-                        hoveredBubble={hoveredBubble}
-                        mousePos={mousePos}
-                        handleEditBubble={handleEditBubble}
-                    />
+                    <div ref={editorCanvasRef} className="flex min-h-0 min-w-0 flex-1">
+                        <AnnotateCanvas
+                            canEdit={true}
+                            imageDimensions={imageDimensions}
+                            setImageDimensions={setImageDimensions}
+                            containerRef={containerRef}
+                            imageRef={imageRef}
+                            handleMouseDown={handleMouseDown}
+                            handleMouseMove={handleMouseMove}
+                            handleMouseUp={handleMouseUp}
+                            imageUrl={imageUrl}
+                            isSubmitting={isSubmitting}
+                            loadingText={loadingText}
+                            rectangle={rectangle}
+                            pendingAnnotation={pendingAnnotation}
+                            isAutoDetecting={isAutoDetecting}
+                            isShiftPressed={isShiftPressed}
+                            handleInteractionStart={handleInteractionStart}
+                            setIsModalOpen={setIsModalOpen}
+                            isDrawing={isDrawing}
+                            startPoint={startPoint}
+                            endPoint={endPoint}
+                            existingBubbles={existingBubbles}
+                            setHoveredBubble={setHoveredBubble}
+                            hoveredBubble={hoveredBubble}
+                            mousePos={mousePos}
+                            handleEditBubble={handleEditBubble}
+                        />
+                    </div>
 
-                    <AnnotateAnnotationSidebar
-                        existingBubbles={existingBubbles}
-                        handleDragEnd={handleDragEnd}
-                        user={{ id: 'sandbox-user', role: 'Admin' }}
-                        handleEditBubble={handleEditBubble}
-                        handleDeleteBubble={handleDeleteBubble}
-                        canEdit={true}
-                    />
+                    <div ref={annotationSidebarRef} className="min-h-0 w-full shrink-0 lg:w-[380px]">
+                        <AnnotateAnnotationSidebar
+                            existingBubbles={existingBubbles}
+                            handleDragEnd={handleDragEnd}
+                            user={{ id: 'sandbox-user', role: 'Admin' }}
+                            handleEditBubble={handleEditBubble}
+                            handleDeleteBubble={handleDeleteBubble}
+                            canEdit={true}
+                            canEditBubble={canEditSandboxBubble}
+                            canReorder={true}
+                            role="Admin"
+                        />
+                    </div>
                 </div>
             </div>
 
@@ -760,6 +1121,15 @@ export default function SandboxClient() {
                 jsonInput={jsonInput}
                 handleJsonChange={handleJsonChange}
                 jsonError={jsonError}
+            />
+
+            <SandboxGuide
+                open={isGuideOpen}
+                stepIndex={guideStep}
+                onStepChange={setGuideStep}
+                onClose={closeGuide}
+                targets={guideTargets}
+                isMobile={isMobile}
             />
         </div>
     );
