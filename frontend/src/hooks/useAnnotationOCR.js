@@ -23,7 +23,7 @@ export function useAnnotationOCR({
     setShowApiKeyModal,
     isSandbox = false
 }) {
-    const { worker, modelStatus, loadModel, switchModel, downloadProgress, runOcr, activeModelKey } = useWorker();
+    const { workers, modelStates, modelStatus, loadModel, switchModel, downloadProgress, runOcr, activeModelKey } = useWorker();
     const tauriLocalOcr = useTauriLocalOcrContext();
     const [preferLocalOCR, setPreferLocalOCR] = useState(isSandbox);
     const [geminiKey, setGeminiKey] = useState(null);
@@ -87,7 +87,7 @@ export function useAnnotationOCR({
     }), []);
 
     useEffect(() => {
-        if (!worker) return;
+        const loadedWorkers = Object.values(workers || {});
         const handleMessage = (event) => {
             const { status, text, error, url, requestId } = event.data;
             if (status === 'debug_image') setDebugImageUrl(url);
@@ -104,9 +104,9 @@ export function useAnnotationOCR({
                 waiter.reject(new Error(error || 'Erreur OCR locale'));
             }
         };
-        worker.addEventListener('message', handleMessage);
-        return () => worker.removeEventListener('message', handleMessage);
-    }, [worker, setDebugImageUrl]);
+        for (const worker of loadedWorkers) worker.addEventListener('message', handleMessage);
+        return () => { for (const worker of loadedWorkers) worker.removeEventListener('message', handleMessage); };
+    }, [workers, setDebugImageUrl]);
 
     const runModel = useCallback(async (modelData, areaToCrop, requestId) => {
         if (!isSelectableOcrModel(modelData, isSandbox)) {
@@ -131,18 +131,23 @@ export function useAnnotationOCR({
         }
 
         if (modelData.runtime === 'onnx') {
-            if (activeModelKey !== modelData.key || modelStatus !== 'ready') {
+            if (modelStates?.[modelData.key]?.status !== 'ready') {
                 throw new Error(`${modelData.label} n'est pas chargé.`);
             }
             const workerRequestId = `${requestId}:${modelData.key}:${Date.now()}`;
-            const result = waitForWorkerResult(workerRequestId);
             const bitmap = await cropImageBitmap(imageRef.current, areaToCrop);
-            await runOcr(bitmap, workerRequestId);
+            const result = waitForWorkerResult(workerRequestId);
+            try { await runOcr(bitmap, workerRequestId, modelData.key); }
+            catch (error) {
+                bitmap.close();
+                workerWaiters.current.get(workerRequestId)?.reject(error);
+                workerWaiters.current.delete(workerRequestId);
+            }
             return result;
         }
 
         throw new Error(`Le moteur ${modelData.label} n'est pas compatible avec la comparaison OCR.`);
-    }, [activeModelKey, getTauriTextRuntime, imageRef, isSandbox, modelStatus, runOcr, waitForWorkerResult]);
+    }, [modelStates, getTauriTextRuntime, imageRef, isSandbox, runOcr, waitForWorkerResult]);
 
     const executeSelectedOcr = useCallback((areaToCrop, requestId) => {
         if (inFlightRequests.current.has(requestId)) return inFlightRequests.current.get(requestId);

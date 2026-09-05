@@ -9,6 +9,16 @@ export const useWorker = () => useContext(WorkerContext);
 const DEFAULT_OCR_MODEL_KEY = 'ppocrv6Line';
 
 export const OCR_MODELS = {
+    falconWebgpu: {
+        key: 'falconWebgpu',
+        label: 'Falcon-OCR',
+        description: 'Bulles entières · WebGPU dans le navigateur',
+        cer: 'ONNX · précision mixte',
+        benchmark: 'Modèle final entraîné sur toutes les bulles ; pas de test indépendant',
+        size: '~618 Mo',
+        type: 'local',
+        runtime: 'onnx'
+    },
     ppocrv6Line: {
         key: 'ppocrv6Line',
         label: 'PP-OCRv6',
@@ -62,11 +72,9 @@ export const OCR_MODELS = {
 };
 
 export const WorkerProvider = ({ children }) => {
-    const workerRef = useRef(null);
-    const [workerInstance, setWorkerInstance] = useState(null);
-    const [modelStatus, setModelStatus] = useState('idle');
-    const [downloadProgress, setDownloadProgress] = useState(0);
-    const [currentFile, setCurrentFile] = useState("");
+    const entries = useRef(new Map());
+    const [workers, setWorkers] = useState({});
+    const [modelStates, setModelStates] = useState({});
     const [activeModelKey, setActiveModelKey] = useState(() => {
         if (typeof window !== 'undefined') {
             const storedKey = localStorage.getItem('ocrModelKey');
@@ -75,96 +83,66 @@ export const WorkerProvider = ({ children }) => {
         return DEFAULT_OCR_MODEL_KEY;
     });
 
-    useEffect(() => {
-        if (!workerRef.current && typeof window !== 'undefined') {
-            workerRef.current = new Worker(new URL('../workers/ocr.worker.js', import.meta.url), {
-                type: 'module'
-            });
-            setWorkerInstance(workerRef.current);
-
-            workerRef.current.addEventListener('message', (e) => {
-                const { status, progress, file, error, modelKey } = e.data;
-
-                if (status === 'download_progress') {
-                    setModelStatus('loading');
-                    setDownloadProgress(Math.round(progress || 0));
-                    setCurrentFile(file || "");
-                }
-                if (status === 'ready') {
-                    setModelStatus('ready');
-                    if (modelKey) setActiveModelKey(modelKey);
-                }
-                if (status === 'error' && (modelStatus === 'loading' || modelStatus === 'switching')) {
-                    setModelStatus('error');
-                    console.error("Erreur chargement modèle:", error);
-                }
-            });
-        }
-
-        return () => {
-        };
+    useEffect(() => () => {
+        for (const entry of entries.current.values()) entry.worker.terminate();
+        entries.current.clear();
     }, []);
 
     const loadModel = useCallback((modelKey) => {
         const key = modelKey || activeModelKey;
-        const modelData = OCR_MODELS[key];
-
-        if (modelData?.type === 'api' || modelData?.runtime === 'tauri') {
-            setModelStatus('ready');
-            return;
+        if (OCR_MODELS[key]?.runtime !== 'onnx') return;
+        let entry = entries.current.get(key);
+        if (entry?.status === 'loading' || entry?.status === 'ready') return;
+        if (!entry) {
+            const worker = key === 'falconWebgpu'
+                ? new Worker(new URL('../workers/falcon.worker.js', import.meta.url), { type: 'module' })
+                : new Worker(new URL('../workers/ocr.worker.js', import.meta.url), { type: 'module' });
+            entry = { worker, status: 'idle' };
+            entries.current.set(key, entry);
+            const update = (state) => {
+                entry.status = state.status;
+                setModelStates(previous => ({ ...previous, [key]: { ...previous[key], ...state } }));
+            };
+            worker.addEventListener('message', ({ data }) => {
+                if (data.status === 'download_progress') update({ status: 'loading', progress: Math.round(data.progress || 0), file: data.file || '' });
+                if (data.status === 'ready') update({ status: 'ready', progress: 100 });
+                if (data.status === 'error' && !data.requestId) update({ status: 'error', error: data.error });
+            });
+            worker.addEventListener('error', (event) => update({ status: 'error', error: event.message }));
+            setWorkers(previous => ({ ...previous, [key]: worker }));
         }
+        entry.status = 'loading';
+        setModelStates(previous => ({ ...previous, [key]: { status: 'loading', progress: 0 } }));
+        entry.worker.postMessage({ type: 'init', modelKey: key });
+    }, [activeModelKey]);
 
-        if (workerRef.current && (modelStatus === 'idle' || modelStatus === 'error' || key !== activeModelKey)) {
-            setModelStatus('loading');
-            setDownloadProgress(0);
-            workerRef.current.postMessage({ type: 'init', modelKey: key });
-        }
-    }, [activeModelKey, modelStatus]);
+    const switchModel = useCallback((key) => {
+        if (!OCR_MODELS[key]) return;
+        localStorage.setItem('ocrModelKey', key);
+        setActiveModelKey(key);
+    }, []);
 
-    const switchModel = useCallback((newKey) => {
-        if (newKey === activeModelKey && modelStatus === 'ready') return;
-        localStorage.setItem('ocrModelKey', newKey);
-        setActiveModelKey(newKey);
-
-        const modelData = OCR_MODELS[newKey];
-        if (modelData?.type === 'api') {
-            setModelStatus('ready');
-            return;
-        }
-
-        if (modelData?.runtime === 'tauri') {
-            setModelStatus('idle');
-            setDownloadProgress(0);
-            return;
-        }
-
-        setModelStatus('idle');
-        setDownloadProgress(0);
-    }, [activeModelKey, modelStatus]);
-
-    const runOcr = useCallback(async (imageInput, requestId = null) => {
-        if (workerRef.current && modelStatus === 'ready') {
-            const isBitmap = typeof ImageBitmap !== 'undefined' && imageInput instanceof ImageBitmap;
-            const payload = isBitmap
-                ? { type: 'run', imageBitmap: imageInput, requestId }
-                : { type: 'run', imageBlob: imageInput, requestId };
-            workerRef.current.postMessage(payload, isBitmap ? [imageInput] : []);
-        }
-    }, [modelStatus]);
+    const runOcr = useCallback(async (imageInput, requestId = null, modelKey = activeModelKey) => {
+        const entry = entries.current.get(modelKey);
+        if (entry?.status !== 'ready') throw new Error(`${OCR_MODELS[modelKey]?.label || modelKey} n'est pas chargé.`);
+        const isBitmap = typeof ImageBitmap !== 'undefined' && imageInput instanceof ImageBitmap;
+        const payload = isBitmap
+            ? { type: 'run', imageBitmap: imageInput, requestId }
+            : { type: 'run', imageBlob: imageInput, requestId };
+        entry.worker.postMessage(payload, isBitmap ? [imageInput] : []);
+    }, [activeModelKey]);
 
     const value = useMemo(() => ({
-        worker: workerInstance,
-        modelStatus,
+        workers,
+        modelStates,
+        worker: workers[activeModelKey] || null,
+        modelStatus: modelStates[activeModelKey]?.status || (OCR_MODELS[activeModelKey]?.type === 'api' ? 'ready' : 'idle'),
+        downloadProgress: modelStates[activeModelKey]?.progress || 0,
         loadModel,
         switchModel,
-        downloadProgress,
         runOcr,
         activeModelKey,
-    }), [workerInstance, modelStatus, loadModel, switchModel, downloadProgress, runOcr, activeModelKey]);
+    }), [workers, modelStates, loadModel, switchModel, runOcr, activeModelKey]);
 
-    return (
-        <WorkerContext.Provider value={value}>
-            {children}
-        </WorkerContext.Provider>
-    );
+    return <WorkerContext.Provider value={value}>{children}</WorkerContext.Provider>;
 };

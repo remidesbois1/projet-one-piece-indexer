@@ -1,0 +1,7 @@
+onnx==1.22.0
+onnxruntime==1.29.0
+numpy==2.5.2
+safetensors==0.8.0
+tokenizers==0.22.2
+huggingface-hub==1.30.0
+python-dotenv==1.2.3

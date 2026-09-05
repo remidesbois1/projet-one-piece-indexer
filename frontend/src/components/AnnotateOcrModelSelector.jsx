@@ -1,7 +1,7 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Cpu, Download, Loader2 } from 'lucide-react';
-import { OCR_MODELS } from '@/context/WorkerContext';
+import { OCR_MODELS, useWorker } from '@/context/WorkerContext';
 import { isSelectableOcrModel } from '@/lib/ocrModelAvailability';
 
 const COMPARISON_MODELS = Object.values(OCR_MODELS).filter(
@@ -9,11 +9,8 @@ const COMPARISON_MODELS = Object.values(OCR_MODELS).filter(
 );
 
 export default function AnnotateOcrModelSelector({
-    activeModelKey,
     switchModel,
-    modelStatus,
     loadModel,
-    downloadProgress,
     selectedOcrModelKeys = [],
     toggleOcrModel,
     isSandbox = false,
@@ -33,6 +30,7 @@ export default function AnnotateOcrModelSelector({
     loadLocalTextModel,
     loadLocalSuryaModel,
 }) {
+    const { modelStates } = useWorker();
     const getTauriControls = (model) => {
         const isSurya = model.localModelKey === 'surya';
         return {
@@ -122,15 +120,14 @@ export default function AnnotateOcrModelSelector({
         }
 
         if (model.runtime === 'onnx') {
-            const isReady =
-                activeModelKey === model.key && modelStatus === 'ready';
-            const isLoading =
-                activeModelKey === model.key && modelStatus === 'loading';
+            const state = modelStates?.[model.key];
+            const isReady = state?.status === 'ready';
+            const isLoading = state?.status === 'loading';
             if (isLoading)
                 return (
                     <span className="flex items-center gap-1 text-xs font-medium text-sky-300">
                         <Loader2 size={11} className="animate-spin" />{' '}
-                        {Math.round(downloadProgress || 0)}%
+                        {Math.round(state?.progress || 0)}%
                     </span>
                 );
             if (isReady) return null;
@@ -139,6 +136,7 @@ export default function AnnotateOcrModelSelector({
                     type="button"
                     size="sm"
                     variant="outline"
+                    aria-label={`Charger ${model.label}`}
                     onClick={() => {
                         switchModel(model.key);
                         loadModel(model.key);
