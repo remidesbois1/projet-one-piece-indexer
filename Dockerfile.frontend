@@ -9,8 +9,9 @@ WORKDIR /app
 # Install dependencies based on the preferred package manager
 COPY package.json package-lock.json ./
 COPY frontend/package.json ./frontend/
+COPY backend/package.json ./backend/
 COPY packages/shared/package.json ./packages/shared/
-RUN rm -f package-lock.json && npm install
+RUN npm ci --workspace=frontend --workspace=@poneglyph/shared --include-workspace-root --no-audit --no-fund
 
 # Rebuild the source code only when needed
 FROM base AS builder
@@ -21,7 +22,6 @@ COPY . .
 # Next.js telemetry
 ENV NEXT_TELEMETRY_DISABLED=1
 
-RUN rm -f package-lock.json
 RUN npm run build --workspace=frontend
 
 # Production image, copy all the files and run next
