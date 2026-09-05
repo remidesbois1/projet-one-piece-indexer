@@ -1,0 +1,9 @@
+*
+!*.py
+!*.ps1
+!*.bat
+!requirements.txt
+!Dockerfile
+!README.md
+!THIRD_PARTY_NOTICES.md
+!.dockerignore
