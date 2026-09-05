@@ -1,10 +1,11 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
-import { Check, CloudLightning, Cpu, Download, Loader2 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Cpu, Download, Loader2 } from 'lucide-react';
 import { OCR_MODELS } from '@/context/WorkerContext';
 
-const COMPARISON_MODELS = Object.values(OCR_MODELS).filter(model => model.key !== 'gemini');
+const COMPARISON_MODELS = Object.values(OCR_MODELS).filter(
+    (model) => model.key !== 'gemini'
+);
 
 export default function AnnotateOcrModelSelector({
     activeModelKey,
@@ -14,7 +15,6 @@ export default function AnnotateOcrModelSelector({
     downloadProgress,
     selectedOcrModelKeys = [],
     toggleOcrModel,
-    geminiKey,
     isTauri = false,
     localTextModelStatus = null,
     localSuryaModelStatus = null,
@@ -29,81 +29,166 @@ export default function AnnotateOcrModelSelector({
     downloadLocalTextModel,
     downloadLocalSuryaModel,
     loadLocalTextModel,
-    loadLocalSuryaModel
+    loadLocalSuryaModel,
 }) {
     const getTauriControls = (model) => {
         const isSurya = model.localModelKey === 'surya';
         return {
             status: isSurya ? localSuryaModelStatus : localTextModelStatus,
-            downloading: isSurya ? isDownloadingLocalSuryaModel : isDownloadingLocalTextModel,
-            loading: isSurya ? isLoadingLocalSuryaModel : isLoadingLocalTextModel,
-            downloadState: isSurya ? localSuryaDownloadState : localTextDownloadState,
-            downloadProgress: isSurya ? localSuryaDownloadProgress : localTextDownloadProgress,
-            download: isSurya ? downloadLocalSuryaModel : downloadLocalTextModel,
-            load: isSurya ? loadLocalSuryaModel : loadLocalTextModel
+            downloading: isSurya
+                ? isDownloadingLocalSuryaModel
+                : isDownloadingLocalTextModel,
+            loading: isSurya
+                ? isLoadingLocalSuryaModel
+                : isLoadingLocalTextModel,
+            downloadState: isSurya
+                ? localSuryaDownloadState
+                : localTextDownloadState,
+            downloadProgress: isSurya
+                ? localSuryaDownloadProgress
+                : localTextDownloadProgress,
+            download: isSurya
+                ? downloadLocalSuryaModel
+                : downloadLocalTextModel,
+            load: isSurya ? loadLocalSuryaModel : loadLocalTextModel,
         };
     };
 
     const renderModelAction = (model) => {
         if (model.runtime === 'tauri') {
             const controls = getTauriControls(model);
-            const isDownloading = Boolean(controls.downloading || controls.downloadState?.active);
-            const isLoading = Boolean(controls.loading || controls.status?.loading);
-            const progress = Number.isFinite(controls.downloadProgress) ? Math.round(controls.downloadProgress) : null;
+            const isDownloading = Boolean(
+                controls.downloading || controls.downloadState?.active
+            );
+            const isLoading = Boolean(
+                controls.loading || controls.status?.loading
+            );
+            const progress = Number.isFinite(controls.downloadProgress)
+                ? Math.round(controls.downloadProgress)
+                : null;
 
-            if (!isTauri) return <span className="text-[9px] font-semibold text-slate-500">App desktop requise</span>;
-            if (isDownloading || isLoading) return <span className="flex items-center gap-1 text-[9px] font-bold text-sky-300"><Loader2 size={11} className="animate-spin" /> {isDownloading ? `Téléchargement${progress !== null ? ` ${progress}%` : ''}` : 'Chargement...'}</span>;
-            if (!controls.status?.installed) return <Button type="button" size="sm" variant="outline" onClick={controls.download} className="h-7 border-white/15 bg-white/[0.07] px-2 text-[9px] font-bold text-slate-100 hover:bg-white/12"><Download size={11} className="mr-1" /> Télécharger</Button>;
-            if (!controls.status?.ready) return <Button type="button" size="sm" variant="outline" onClick={controls.load} className="h-7 border-white/15 bg-white/[0.07] px-2 text-[9px] font-bold text-slate-100 hover:bg-white/12"><Cpu size={11} className="mr-1" /> Charger</Button>;
-            return <span className="text-[9px] font-bold text-emerald-400">Prêt</span>;
+            if (!isTauri)
+                return (
+                    <span className="text-xs font-semibold text-slate-500">
+                        App desktop requise
+                    </span>
+                );
+            if (isDownloading || isLoading)
+                return (
+                    <span className="flex items-center gap-1 text-xs font-medium text-sky-300">
+                        <Loader2 size={11} className="animate-spin" />{' '}
+                        {isDownloading
+                            ? `Téléchargement${progress !== null ? ` ${progress}%` : ''}`
+                            : 'Chargement...'}
+                    </span>
+                );
+            if (controls.status?.error && controls.status?.installed)
+                return (
+                    <span role="status" className="text-xs text-amber-300">
+                        {controls.status.error}
+                    </span>
+                );
+            if (!controls.status?.installed)
+                return (
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={controls.download}
+                        aria-label={`Télécharger ${model.label}`}
+                        disabled={!controls.download}
+                        className="h-8 border-white/15 bg-white/[0.07] px-2 text-xs font-medium text-slate-100 hover:bg-white/12"
+                    >
+                        <Download size={11} className="mr-1" /> Télécharger
+                    </Button>
+                );
+            if (!controls.status?.ready)
+                return (
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={controls.load}
+                        aria-label={`Charger ${model.label}`}
+                        disabled={!controls.load}
+                        className="h-8 border-white/15 bg-white/[0.07] px-2 text-xs font-medium text-slate-100 hover:bg-white/12"
+                    >
+                        <Cpu size={11} className="mr-1" /> Charger
+                    </Button>
+                );
+            return null;
         }
 
         if (model.runtime === 'onnx') {
-            const isReady = activeModelKey === model.key && modelStatus === 'ready';
-            const isLoading = activeModelKey === model.key && modelStatus === 'loading';
-            if (isLoading) return <span className="flex items-center gap-1 text-[9px] font-bold text-sky-300"><Loader2 size={11} className="animate-spin" /> {Math.round(downloadProgress)}%</span>;
-            if (isReady) return <span className="text-[9px] font-bold text-emerald-400">Prêt</span>;
-            return <Button type="button" size="sm" variant="outline" onClick={() => { switchModel(model.key); loadModel(model.key); }} className="h-7 border-white/15 bg-white/[0.07] px-2 text-[9px] font-bold text-slate-100 hover:bg-white/12"><Download size={11} className="mr-1" /> Charger</Button>;
+            const isReady =
+                activeModelKey === model.key && modelStatus === 'ready';
+            const isLoading =
+                activeModelKey === model.key && modelStatus === 'loading';
+            if (isLoading)
+                return (
+                    <span className="flex items-center gap-1 text-xs font-medium text-sky-300">
+                        <Loader2 size={11} className="animate-spin" />{' '}
+                        {Math.round(downloadProgress || 0)}%
+                    </span>
+                );
+            if (isReady) return null;
+            return (
+                <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                        switchModel(model.key);
+                        loadModel(model.key);
+                    }}
+                    className="h-8 border-white/15 bg-white/[0.07] px-2 text-xs font-medium text-slate-100 hover:bg-white/12"
+                >
+                    <Download size={11} className="mr-1" /> Charger
+                </Button>
+            );
         }
 
-        return <span className="text-[9px] font-bold text-indigo-300">Prêt</span>;
+        return null;
     };
 
     return (
-        <div className="flex flex-none flex-col gap-3 rounded-xl border border-white/12 bg-white/[0.055] p-3 shadow-sm">
-            <div>
-                <h3 className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Modèles OCR</h3>
-                <p className="mt-1 text-[9px] font-medium leading-relaxed text-slate-500">Cochez les modèles à comparer. Le téléchargement et le chargement se font directement sur chaque modèle.</p>
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-                {COMPARISON_MODELS.map((model) => {
-                    const checked = selectedOcrModelKeys.includes(model.key);
-                    const desktopOnly = model.runtime === 'tauri' && !isTauri;
-                    return (
-                        <div key={model.key} className={cn(
-                            'rounded-lg border p-2 transition-colors',
-                            checked ? 'border-[#8dbbff]/42 bg-[#3d86ff]/14' : 'border-white/12 bg-white/[0.055]',
-                            desktopOnly && 'opacity-55'
-                        )}>
-                            <div className="flex items-center gap-2">
-                                <button type="button" onClick={() => toggleOcrModel(model.key)} className="flex min-w-0 flex-1 items-center gap-2 text-left" title={model.description}>
-                                    <span className={cn('flex h-4 w-4 shrink-0 items-center justify-center rounded border', checked ? 'border-sky-300 bg-sky-500 text-white' : 'border-white/25 bg-white/[0.04] text-transparent')}><Check size={11} strokeWidth={3} /></span>
-                                    {model.runtime === 'tauri' || model.runtime === 'onnx' ? <Cpu size={12} className="shrink-0 text-[#8dbbff]" /> : <CloudLightning size={12} className="shrink-0 text-indigo-400" />}
-                                    <span className="min-w-0 flex-1">
-                                        <span className="block truncate text-[10px] font-bold text-slate-200">{model.label}</span>
-                                        <span className="block text-[8px] font-semibold text-slate-400">{model.runtime === 'tauri' ? 'Local desktop' : model.type === 'api' ? 'Modal GPU' : 'Navigateur'} · {model.size}</span>
-                                        <span className="block truncate text-[8px] font-medium text-sky-300/80" title={model.benchmark}>{model.cer}</span>
+        <div className="divide-y divide-white/[0.06]">
+            {COMPARISON_MODELS.filter(
+                (model) => isTauri || model.runtime !== 'tauri'
+            ).map((model) => {
+                const checked = selectedOcrModelKeys.includes(model.key);
+                const action = renderModelAction(model);
+                return (
+                    <div key={model.key} className="py-2">
+                        <label className="flex min-h-8 cursor-pointer items-center gap-3 rounded-sm text-[13px] text-slate-300 hover:text-white">
+                            <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleOcrModel(model.key)}
+                                className="h-4 w-4 shrink-0 cursor-pointer [color-scheme:dark] accent-sky-400 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sky-400"
+                            />
+                            <span className="flex-1">{model.label}</span>
+                            <span className="text-xs text-slate-400">
+                                {model.runtime === 'tauri'
+                                    ? 'Local'
+                                    : model.runtime === 'onnx'
+                                      ? 'Navigateur'
+                                      : 'En ligne'}
+                            </span>
+                        </label>
+                        {checked && action && (
+                            <div className="ml-7 mt-1 flex flex-wrap items-center justify-between gap-2 pb-1">
+                                {model.type === 'local' && (
+                                    <span className="text-xs text-slate-500">
+                                        {model.size}
                                     </span>
-                                </button>
-                                <div className="shrink-0">{renderModelAction(model)}</div>
+                                )}
+                                {action}
                             </div>
-                        </div>
-                    );
-                })}
-            </div>
-
-            <div className="border-t border-white/10 pt-3 text-[9px] text-slate-500"><span className="font-bold text-slate-400">Gemini</span> reste disponible à la demande {geminiKey ? 'avec votre clé API.' : 'après configuration de votre clé API.'}</div>
+                        )}
+                    </div>
+                );
+            })}
         </div>
     );
 }

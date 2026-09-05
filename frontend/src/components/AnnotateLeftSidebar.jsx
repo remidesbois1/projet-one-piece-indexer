@@ -1,26 +1,25 @@
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from '@/components/ui/button';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import {
     ArrowLeft,
     ChevronLeft,
     ChevronRight,
     FileText,
-    AlignLeft,
-    MapPin,
-    Users,
-    Send,
     Settings2,
-    Sparkles,
-    Cpu,
-    CloudLightning,
-    Download
-} from "lucide-react";
+    ScanText,
+    Download,
+    Loader2,
+} from 'lucide-react';
 import AnnotateOcrModelSelector from './AnnotateOcrModelSelector';
 import AnnotateBubbleScanner from './AnnotateBubbleScanner';
-import { cn } from '@/lib/utils';
 import { canDownloadMissingLocalModel } from './localModelRecovery';
 
 const PAGE_STATUSES = [
@@ -30,15 +29,15 @@ const PAGE_STATUSES = [
     { value: 'completed', label: 'Validée' },
 ];
 
-const PONEGLYPH_BBOX_LABEL = "Poneglyph-BBox";
-const SURYA_BBOX_LABEL = "Surya-BBox";
-
 export function formatPageStatus(status, isGuest = false) {
-    if (typeof status === 'string' && status.trim()) {
-        return status.replace(/_/g, ' ');
-    }
-
-    return isGuest ? 'lecture publique' : 'statut inconnu';
+    return (
+        PAGE_STATUSES.find((item) => item.value === status)?.label ||
+        (typeof status === 'string' && status.trim()
+            ? status.replace(/_/g, ' ')
+            : isGuest
+              ? 'lecture publique'
+              : 'Statut inconnu')
+    );
 }
 
 export default function AnnotateLeftSidebar({
@@ -84,7 +83,6 @@ export default function AnnotateLeftSidebar({
     chatGptFullPageModel = 'gpt-5.6-luna',
     handleOneShotPoneglyph,
     isPoneglyphLoading,
-    poneglyphRunMode = null,
     handleOneShotLocalPoneglyph,
     handleOneShotLocalSuryaBbox,
     isTauri = false,
@@ -122,434 +120,490 @@ export default function AnnotateLeftSidebar({
     loadLocalModel,
     loadLocalTextModel,
     loadLocalSuryaModel,
-    loadLocalSuryaBBoxModel
+    loadLocalSuryaBBoxModel,
 }) {
+    const [selectedEngine, setSelectedEngine] = useState('');
     const isStaff = role === 'Admin' || role === 'Modo';
-    const isAdmin = role === 'Admin';
-    const hasPageStatus = typeof page?.statut === 'string' && page.statut.length > 0;
-    const canInlineEditStatus = isAdmin && hasPageStatus && handlePageStatusChange && !isSandbox;
-    const isExtractionRunning = isOneShotLoading || isPoneglyphLoading || isLocalInferencing || isLocalSuryaBBoxInferencing;
-    const localConnectionUnavailable = ['offline', 'reconnecting', 'unavailable'].includes(localConnectionState?.status);
-    const localConnectionLabel = localConnectionState?.status === 'reconnecting'
-        ? "Serveur local en reconnexion"
-        : localConnectionState?.status === 'unavailable'
-            ? "Serveur local indisponible"
-            : "Serveur local hors ligne";
-    const localDisabledReason = !isTauri
-        ? "App desktop non detectee"
-        : localConnectionUnavailable
-            ? localConnectionLabel
-        : isDownloadingLocalModel || localDownloadState?.active
-            ? `Telechargement du modele ${PONEGLYPH_BBOX_LABEL}`
-            : !localModelStatus?.installed
-                ? `Modele ${PONEGLYPH_BBOX_LABEL} non telecharge`
-                : !localModelStatus?.ready
-                    ? `Modele ${PONEGLYPH_BBOX_LABEL} non charge`
-                    : null;
-    const suryaBBoxDownloadActive = Boolean(isDownloadingLocalSuryaBBoxModel || localSuryaBBoxDownloadState?.active);
-    const suryaBBoxDownloadPercent = Number.isFinite(localSuryaBBoxDownloadProgress) ? Math.round(localSuryaBBoxDownloadProgress) : null;
-    const suryaBBoxDisabledReason = !isTauri
-        ? "App desktop non detectee"
-        : localConnectionUnavailable
-            ? localConnectionLabel
-            : suryaBBoxDownloadActive
-                ? `Telechargement du modele ${SURYA_BBOX_LABEL}`
-                : localSuryaBBoxModelStatus?.error
-                    ? localSuryaBBoxModelStatus.error
-                : !localSuryaBBoxModelStatus?.installed
-                    ? `Modele ${SURYA_BBOX_LABEL} non telecharge`
-                    : !localSuryaBBoxModelStatus?.ready
-                        ? `Modele ${SURYA_BBOX_LABEL} non charge`
-                        : null;
-    const poneglyphDownloadActive = Boolean(isDownloadingLocalModel || localDownloadState?.active);
-    const poneglyphDownloadPercent = Number.isFinite(localDownloadProgress) ? Math.round(localDownloadProgress) : null;
-    const poneglyphIsLoading = Boolean(isLoadingLocalModel || localModelStatus?.loading);
-    const canDownloadPoneglyph = isTauri
-        && handleOneShotLocalPoneglyph
-        && canDownloadMissingLocalModel(localModelStatus, poneglyphDownloadActive);
-    const canLoadPoneglyph = isTauri && handleOneShotLocalPoneglyph && localModelStatus?.installed && !localModelStatus?.ready && !poneglyphIsLoading && !poneglyphDownloadActive && !localModelStatus?.error;
-    const poneglyphAction = canRunLocalOcr ? 'run' : canLoadPoneglyph ? 'load' : canDownloadPoneglyph ? 'download' : null;
+    const canInlineEditStatus =
+        role === 'Admin' &&
+        page?.statut &&
+        handlePageStatusChange &&
+        !isSandbox;
+    const connectionUnavailable = [
+        'offline',
+        'reconnecting',
+        'unavailable',
+    ].includes(localConnectionState?.status);
+    const busy = Boolean(
+        isSubmitting ||
+            isAutoDetecting ||
+            isOneShotLoading ||
+            isChatGptLoading ||
+            isPoneglyphLoading ||
+            isLocalInferencing ||
+            isLocalSuryaBBoxInferencing
+    );
 
-    const suryaBBoxIsLoading = Boolean(isLoadingLocalSuryaBBoxModel || localSuryaBBoxModelStatus?.loading);
-    const canDownloadSuryaBBox = isTauri
-        && handleOneShotLocalSuryaBbox
-        && canDownloadMissingLocalModel(localSuryaBBoxModelStatus, suryaBBoxDownloadActive);
-    const canLoadSuryaBBox = isTauri && handleOneShotLocalSuryaBbox && !localSuryaBBoxModelStatus?.error && localSuryaBBoxModelStatus?.installed && !localSuryaBBoxModelStatus?.ready && !suryaBBoxIsLoading && !suryaBBoxDownloadActive;
-    const suryaBBoxAction = canRunLocalSuryaBBoxOcr ? 'run' : canLoadSuryaBBox ? 'load' : canDownloadSuryaBBox ? 'download' : null;
+    const localEngine = ({
+        key,
+        label,
+        handler,
+        status,
+        downloading,
+        downloadState,
+        progress,
+        loading,
+        canRun,
+        download,
+        load,
+    }) => {
+        const isDownloading = Boolean(downloading || downloadState?.active);
+        const isLoading = Boolean(loading || status?.loading);
+        const action = canRun
+            ? 'run'
+            : canDownloadMissingLocalModel(status, isDownloading)
+              ? 'download'
+              : status?.installed && !status.ready && !status.error
+                ? 'load'
+                : null;
+        return {
+            key,
+            label,
+            available: isTauri && Boolean(handler),
+            action,
+            handler:
+                action === 'run'
+                    ? handler
+                    : action === 'download'
+                      ? download
+                      : load,
+            preparing: isDownloading || isLoading,
+            progress:
+                isDownloading && Number.isFinite(progress)
+                    ? Math.max(0, Math.min(100, Math.round(progress)))
+                    : null,
+            message: isDownloading
+                ? 'Téléchargement du modèle…'
+                : isLoading
+                  ? 'Chargement du modèle…'
+                  : connectionUnavailable
+                    ? localConnectionState?.status === 'reconnecting'
+                        ? 'Reconnexion au serveur local…'
+                        : 'Serveur local indisponible.'
+                    : status?.error ||
+                      (!action ? 'Modèle indisponible.' : null),
+            disabled:
+                connectionUnavailable || isDownloading || isLoading || !action,
+        };
+    };
+    const engines = [
+        localEngine({
+            key: 'poneglyph-local',
+            label: 'Poneglyph-BBox · local',
+            handler: handleOneShotLocalPoneglyph,
+            status: localModelStatus,
+            downloading: isDownloadingLocalModel,
+            downloadState: localDownloadState,
+            progress: localDownloadProgress,
+            loading: isLoadingLocalModel,
+            canRun: canRunLocalOcr,
+            download: downloadLocalModel,
+            load: loadLocalModel,
+        }),
+        localEngine({
+            key: 'surya-local',
+            label: 'Surya-BBox · local',
+            handler: handleOneShotLocalSuryaBbox,
+            status: localSuryaBBoxModelStatus,
+            downloading: isDownloadingLocalSuryaBBoxModel,
+            downloadState: localSuryaBBoxDownloadState,
+            progress: localSuryaBBoxDownloadProgress,
+            loading: isLoadingLocalSuryaBBoxModel,
+            canRun: canRunLocalSuryaBBoxOcr,
+            download: downloadLocalSuryaBBoxModel,
+            load: loadLocalSuryaBBoxModel,
+        }),
+        {
+            key: 'poneglyph',
+            label: 'Poneglyph-BBox · en ligne',
+            available: Boolean(handleOneShotPoneglyph),
+            handler: handleOneShotPoneglyph,
+        },
+        {
+            key: 'gemini',
+            label: 'Gemini',
+            model: geminiFullPageModel,
+            available: Boolean(handleOneShot),
+            handler: handleOneShot,
+        },
+        {
+            key: 'chatgpt',
+            label: 'ChatGPT',
+            model: chatGptFullPageModel,
+            available: chatGptDesktopAvailable && Boolean(handleChatGptOneShot),
+            handler: handleChatGptOneShot,
+        },
+    ].filter((engine) => engine.available);
+    const engine =
+        engines.find((item) => item.key === selectedEngine) || engines[0];
+    const running =
+        isOneShotLoading ||
+        isChatGptLoading ||
+        isPoneglyphLoading ||
+        isLocalInferencing ||
+        isLocalSuryaBBoxInferencing;
+    const actionLabel = running
+        ? 'Lecture en cours…'
+        : engine?.preparing
+          ? 'Préparation en cours…'
+          : engine?.action === 'download'
+            ? 'Télécharger le modèle'
+            : engine?.action === 'load'
+              ? 'Charger le modèle'
+              : 'Lire la page entière';
 
     return (
-        <div className="relative z-40 hidden h-full w-[280px] shrink-0 flex-col border-r border-white/10 bg-[#06111e] text-slate-100 shadow-sm lg:flex">
-            <div className="z-10 flex-none space-y-3 border-b border-white/10 p-4">
+        <aside
+            aria-label="Outils d’annotation"
+            className="relative z-40 hidden h-full w-[288px] shrink-0 flex-col border-r border-white/10 bg-[#0b1420] text-sm text-slate-200 lg:flex"
+        >
+            <header className="shrink-0 border-b border-white/10 p-4">
                 <Link
-                    href={!mangaSlug ? "/" : (fromSearch ? `/${mangaSlug}/search` : `/${mangaSlug}/dashboard`)}
-                    className="inline-flex items-center text-[11px] font-bold text-slate-400 hover:text-slate-700 uppercase tracking-wider transition-colors"
+                    href={
+                        !mangaSlug
+                            ? '/'
+                            : fromSearch
+                              ? `/${mangaSlug}/search`
+                              : `/${mangaSlug}/dashboard`
+                    }
+                    className="mb-5 inline-flex items-center gap-2 rounded-sm text-xs text-slate-400 transition-colors hover:text-white focus-visible:outline-2 focus-visible:outline-sky-400"
                 >
-                    <ArrowLeft size={12} className="mr-2" />
-                    {!mangaSlug ? "Retour Accueil" : (fromSearch ? "Retour Recherche" : "Retour Dashboard")}
+                    <ArrowLeft size={14} />
+                    {!mangaSlug
+                        ? 'Accueil'
+                        : fromSearch
+                          ? 'Recherche'
+                          : 'Tableau de bord'}
                 </Link>
-
-                <div className="flex items-center justify-between">
-                    <div>
-                        <div className="flex items-baseline gap-1.5">
-                            <h2 className="text-xl font-black tracking-tight text-white">
-                                {page.chapitres ? `Ch.${page.chapitres.numero}` : "Mode Local"}
-                            </h2>
-                            {page.chapitres?.tomes && (
-                                <span className="text-xs font-bold text-slate-400">Vol.{page.chapitres.tomes.numero}</span>
-                            )}
-                        </div>
-                        <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mt-0.5">
-                            {chapterPages.length > 0 ? `Page ${page.numero_page} sur ${chapterPages.length}` : "Page de test"}
-                        </div>
-                    </div>
-                    {canInlineEditStatus ? (
-                        <Select value={page.statut} onValueChange={handlePageStatusChange} disabled={isUpdatingPageStatus}>
-                            <SelectTrigger
-                                aria-label="Etat de la page"
-                                className="h-7 w-[130px] rounded-full border-white/12 bg-white/[0.07] px-2 text-[10px] font-bold uppercase tracking-wide text-slate-200"
-                            >
-                                <SelectValue placeholder="Etat" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {PAGE_STATUSES.map(status => (
-                                    <SelectItem key={status.value} value={status.value}>
-                                        {status.label}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    ) : (
-                        <Badge variant="secondary" className="border border-white/12 bg-white/[0.07] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-200">
-                            {formatPageStatus(page?.statut, isGuest)}
-                        </Badge>
+                <h2 className="text-base font-semibold text-white">
+                    {page.chapitres
+                        ? `Chapitre ${page.chapitres.numero}`
+                        : 'Page de test'}
+                    {page.chapitres?.tomes && (
+                        <span className="ml-2 text-xs font-normal text-slate-400">
+                            Tome {page.chapitres.tomes.numero}
+                        </span>
                     )}
-                </div>
-
-                {!isGuest && !isSandbox && (
-                    <div className="flex items-center gap-2">
+                </h2>
+                <div className="mt-3 flex items-center justify-between gap-2">
+                    {!isGuest && !isSandbox && (
                         <Button
-                            variant="outline"
-                            size="sm"
+                            variant="ghost"
+                            size="icon"
+                            aria-label="Page précédente"
                             disabled={!navContext.prev}
                             onClick={goToPrev}
-                            className="h-8 flex-1 rounded-md border-white/12 bg-white/[0.07] text-[11px] font-bold text-slate-200 shadow-none hover:bg-white/12"
+                            className="text-slate-300 hover:bg-white/10 hover:text-white"
                         >
-                            <ChevronLeft size={14} className="mr-1" /> Préc
+                            <ChevronLeft />
                         </Button>
-                        <div className="min-w-0 flex-1 text-center text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                            {chapterPages.length > 0 ? `Page ${page.numero_page}/${chapterPages.length}` : "Page test"}
-                        </div>
+                    )}
+                    <span className="flex-1 text-center text-sm tabular-nums text-slate-200">
+                        Page {page.numero_page || 1}
+                        {chapterPages.length > 0 && (
+                            <span className="text-slate-400">
+                                {' '}
+                                / {chapterPages.length}
+                            </span>
+                        )}
+                    </span>
+                    {!isGuest && !isSandbox && (
                         <Button
-                            variant="outline"
-                            size="sm"
+                            variant="ghost"
+                            size="icon"
+                            aria-label="Page suivante"
                             disabled={!navContext.next}
                             onClick={goToNext}
-                            className="h-8 flex-1 rounded-md border-white/12 bg-white/[0.07] text-[11px] font-bold text-slate-200 shadow-none hover:bg-white/12"
+                            className="text-slate-300 hover:bg-white/10 hover:text-white"
                         >
-                            Suiv <ChevronRight size={14} className="ml-1" />
+                            <ChevronRight />
                         </Button>
+                    )}
+                </div>
+                {!isSandbox && (
+                    <div className="mt-3 flex items-center justify-between gap-3 border-t border-white/[0.06] pt-3">
+                        <span className="text-xs text-slate-400">Statut</span>
+                        {canInlineEditStatus ? (
+                            <Select
+                                value={page.statut}
+                                onValueChange={handlePageStatusChange}
+                                disabled={isUpdatingPageStatus}
+                            >
+                                <SelectTrigger
+                                    aria-label="État de la page"
+                                    className="h-8 w-auto gap-3 border-white/10 bg-transparent text-xs text-slate-200 shadow-none"
+                                >
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {PAGE_STATUSES.map((status) => (
+                                        <SelectItem
+                                            key={status.value}
+                                            value={status.value}
+                                        >
+                                            {status.label}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        ) : (
+                            <span className="text-xs text-slate-300">
+                                {formatPageStatus(page?.statut, isGuest)}
+                            </span>
+                        )}
                     </div>
                 )}
-            </div>
+            </header>
 
-            <div className="flex flex-1 flex-col gap-3 overflow-y-auto bg-[#030a13]/38 p-4">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
                 {!isGuest && isStaff && (
                     <>
-                        <AnnotateOcrModelSelector
-                            preferLocalOCR={preferLocalOCR}
-                            toggleOcrPreference={toggleOcrPreference}
-                            activeModelKey={activeModelKey}
-                            switchModel={switchModel}
-                            modelStatus={modelStatus}
-                            loadModel={loadModel}
-                            downloadProgress={downloadProgress}
-                            geminiKey={geminiKey}
-                            selectedOcrModelKeys={selectedOcrModelKeys}
-                            toggleOcrModel={toggleOcrModel}
-                            isSandbox={isSandbox}
-                            isTauri={isTauri}
-                            localTextModelStatus={localTextModelStatus}
-                            localSuryaModelStatus={localSuryaModelStatus}
-                            isDownloadingLocalTextModel={isDownloadingLocalTextModel}
-                            isDownloadingLocalSuryaModel={isDownloadingLocalSuryaModel}
-                            localTextDownloadState={localTextDownloadState}
-                            localSuryaDownloadState={localSuryaDownloadState}
-                            localTextDownloadProgress={localTextDownloadProgress}
-                            localSuryaDownloadProgress={localSuryaDownloadProgress}
-                            isLoadingLocalTextModel={isLoadingLocalTextModel}
-                            isLoadingLocalSuryaModel={isLoadingLocalSuryaModel}
-                            canRunLocalTextOcr={canRunLocalTextOcr}
-                            canRunLocalSuryaOcr={canRunLocalSuryaOcr}
-                            downloadLocalTextModel={downloadLocalTextModel}
-                            downloadLocalSuryaModel={downloadLocalSuryaModel}
-                            loadLocalTextModel={loadLocalTextModel}
-                            loadLocalSuryaModel={loadLocalSuryaModel}
-                        />
-
-                        <AnnotateBubbleScanner
-                            detectionStatus={detectionStatus}
-                            loadDetectionModel={loadDetectionModel}
-                            detectionProgress={detectionProgress}
-                            downloadStats={downloadStats}
-                            handleExecuteDetection={handleExecuteDetection}
-                            isSubmitting={isSubmitting}
-                            isAutoDetecting={isAutoDetecting}
-                            queueLength={queueLength}
-                        />
-
-                        {role === 'Admin' && (handleOneShot || handleChatGptOneShot || handleOneShotPoneglyph || handleOneShotLocalPoneglyph || handleOneShotLocalSuryaBbox) && (
-                            <div className="flex-none rounded-lg border border-white/12 bg-white/[0.055] p-3 shadow-sm">
-                                <div className="mb-3 flex items-center justify-between gap-2">
-                                    <h3 className="truncate text-[10px] font-black uppercase tracking-widest text-slate-500">
-                                        Extraction intégrale
-                                    </h3>
-                                    <span className="rounded-full border border-white/12 bg-white/[0.07] px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-300">
-                                        {isExtractionRunning ? "En cours" : "Prêt"}
-                                    </span>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <div className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wide text-slate-400">
-                                        <Cpu size={10} /> Local
+                        {role === 'Admin' && engine && (
+                            <section
+                                aria-labelledby="page-ocr-heading"
+                                className="border-b border-white/10 p-4"
+                            >
+                                <h3
+                                    id="page-ocr-heading"
+                                    className="mb-3 font-medium text-white"
+                                >
+                                    Page entière
+                                </h3>
+                                <Select
+                                    value={engine.key}
+                                    onValueChange={setSelectedEngine}
+                                    disabled={Boolean(running)}
+                                >
+                                    <SelectTrigger
+                                        aria-label="Moteur pour la page entière"
+                                        className="h-10 w-full border-white/15 bg-transparent text-[13px] shadow-none"
+                                    >
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {engines.map((item) => (
+                                            <SelectItem
+                                                key={item.key}
+                                                value={item.key}
+                                            >
+                                                {item.label}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                {engine.model && (
+                                    <p className="mt-2 break-words text-xs text-slate-400">
+                                        {engine.model}
+                                    </p>
+                                )}
+                                <Button
+                                    onClick={engine.handler}
+                                    disabled={
+                                        busy ||
+                                        engine.disabled ||
+                                        !engine.handler
+                                    }
+                                    className="mt-3 h-10 w-full bg-[#dbe5ef] text-[13px] font-medium text-[#0b1420] shadow-none hover:bg-[#f1f5f9]"
+                                >
+                                    {running || engine.preparing ? (
+                                        <Loader2 className="animate-spin" />
+                                    ) : engine.action === 'download' ? (
+                                        <Download />
+                                    ) : (
+                                        <ScanText />
+                                    )}
+                                    {actionLabel}
+                                </Button>
+                                {engine.message && (
+                                    <div
+                                        role="status"
+                                        className="mt-3 text-xs leading-relaxed text-slate-400"
+                                    >
+                                        {engine.message}
+                                        {engine.progress !== null &&
+                                            engine.progress !== undefined && (
+                                                <>
+                                                    <span className="ml-1 tabular-nums">
+                                                        {engine.progress}%
+                                                    </span>
+                                                    <progress
+                                                        aria-label="Téléchargement du modèle"
+                                                        value={engine.progress}
+                                                        max={100}
+                                                        className="mt-2 h-1 w-full accent-sky-400"
+                                                    />
+                                                </>
+                                            )}
                                     </div>
-                                    {handleOneShotLocalPoneglyph && (
-                                        <Button
-                                            onClick={
-                                                poneglyphAction === 'run' ? handleOneShotLocalPoneglyph
-                                                : poneglyphAction === 'load' ? loadLocalModel
-                                                : poneglyphAction === 'download' ? downloadLocalModel
-                                                : undefined
-                                            }
-                                            disabled={!poneglyphAction || isPoneglyphLoading || isLocalInferencing || isSubmitting || isAutoDetecting}
-                                            title={
-                                                poneglyphAction === 'load' ? `Charger ${PONEGLYPH_BBOX_LABEL} en VRAM`
-                                                : poneglyphAction === 'download' ? `Telecharger ${PONEGLYPH_BBOX_LABEL}`
-                                                : localDisabledReason || `Lancer ${PONEGLYPH_BBOX_LABEL} en local`
-                                            }
-                                            className={cn(
-                                                "h-9 w-full justify-start gap-2 rounded-md px-3 text-[11px] font-bold uppercase tracking-wide shadow-none",
-                                                poneglyphAction === 'run'
-                                                    ? "bg-slate-900 text-white hover:bg-slate-800"
-                                                    : poneglyphAction
-                                                        ? "border border-white/12 bg-white/[0.08] text-slate-200 hover:bg-white/12"
-                                                        : "border border-white/10 bg-white/[0.045] text-slate-500"
-                                            )}
-                                        >
-                                            {poneglyphAction === 'download' ? <Download size={14} /> : <Cpu size={14} />}
-                                            <span className="min-w-0 flex-1 truncate text-left">
-                                                {poneglyphRunMode === 'local' || isLocalInferencing
-                                                    ? `${PONEGLYPH_BBOX_LABEL} - Local...`
-                                                    : poneglyphAction === 'load'
-                                                        ? poneglyphIsLoading ? `Chargement ${PONEGLYPH_BBOX_LABEL}...` : `Charger ${PONEGLYPH_BBOX_LABEL}`
-                                                        : poneglyphAction === 'download'
-                                                            ? poneglyphDownloadActive ? `Telechargement ${PONEGLYPH_BBOX_LABEL}...` : `Telecharger ${PONEGLYPH_BBOX_LABEL}`
-                                                            : `${PONEGLYPH_BBOX_LABEL} - Local`}
-                                            </span>
-                                            {(poneglyphRunMode === 'local' || isLocalInferencing || poneglyphIsLoading) && (
-                                                <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                                            )}
-                                        </Button>
-                                    )}
-
-                                    {handleOneShotLocalPoneglyph && (poneglyphDownloadActive || poneglyphIsLoading) && (
-                                        <div className="rounded-md border border-white/12 bg-white/[0.06] px-2 py-1.5">
-                                            <div className="mb-1 flex justify-between text-[9px] font-bold text-slate-400">
-                                                <span>{poneglyphDownloadActive ? "Telechargement" : "Chargement"} {PONEGLYPH_BBOX_LABEL}...</span>
-                                                {poneglyphDownloadPercent !== null && <span>{poneglyphDownloadPercent}%</span>}
-                                            </div>
-                                            <div className="h-1 w-full overflow-hidden rounded-full bg-white/12">
-                                                <div className="h-full bg-slate-500 transition-all duration-300" style={{ width: `${poneglyphDownloadPercent ?? 40}%` }} />
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {handleOneShotLocalSuryaBbox && (
-                                        <Button
-                                            onClick={
-                                                suryaBBoxAction === 'run' ? handleOneShotLocalSuryaBbox
-                                                : suryaBBoxAction === 'load' ? loadLocalSuryaBBoxModel
-                                                : suryaBBoxAction === 'download' ? downloadLocalSuryaBBoxModel
-                                                : undefined
-                                            }
-                                            disabled={!suryaBBoxAction || isPoneglyphLoading || isLocalSuryaBBoxInferencing || isSubmitting || isAutoDetecting}
-                                            title={
-                                                suryaBBoxAction === 'load' ? `Charger ${SURYA_BBOX_LABEL} en VRAM`
-                                                : suryaBBoxAction === 'download' ? `Telecharger ${SURYA_BBOX_LABEL}`
-                                                : suryaBBoxDisabledReason || `Lancer ${SURYA_BBOX_LABEL} en local`
-                                            }
-                                            className={cn(
-                                                "h-9 w-full justify-start gap-2 rounded-md px-3 text-[11px] font-bold uppercase tracking-wide shadow-none",
-                                                suryaBBoxAction === 'run'
-                                                    ? "bg-emerald-700 text-white hover:bg-emerald-800"
-                                                    : suryaBBoxAction
-                                                        ? "border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
-                                                        : "border border-white/10 bg-white/[0.045] text-slate-500"
-                                            )}
-                                        >
-                                            {suryaBBoxAction === 'download' ? <Download size={14} /> : <Cpu size={14} />}
-                                            <span className="min-w-0 flex-1 truncate text-left">
-                                                {poneglyphRunMode === 'surya-bbox-local' || isLocalSuryaBBoxInferencing
-                                                    ? `${SURYA_BBOX_LABEL} - Local...`
-                                                    : suryaBBoxAction === 'load'
-                                                        ? suryaBBoxIsLoading ? `Chargement ${SURYA_BBOX_LABEL}...` : `Charger ${SURYA_BBOX_LABEL}`
-                                                        : suryaBBoxAction === 'download'
-                                                            ? suryaBBoxDownloadActive ? `Telechargement ${SURYA_BBOX_LABEL}...` : `Telecharger ${SURYA_BBOX_LABEL}`
-                                                            : `${SURYA_BBOX_LABEL} - Local`}
-                                            </span>
-                                            {(poneglyphRunMode === 'surya-bbox-local' || isLocalSuryaBBoxInferencing || suryaBBoxIsLoading) && (
-                                                <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                                            )}
-                                        </Button>
-                                    )}
-
-                                    {handleOneShotLocalSuryaBbox && (suryaBBoxDownloadActive || suryaBBoxIsLoading) && (
-                                        <div className="rounded-md border border-emerald-100 bg-emerald-50 px-2 py-1.5">
-                                            <div className="mb-1 flex justify-between text-[9px] font-bold text-emerald-800">
-                                                <span>{suryaBBoxDownloadActive ? "Telechargement" : "Chargement"} {SURYA_BBOX_LABEL}...</span>
-                                                {suryaBBoxDownloadPercent !== null && <span>{suryaBBoxDownloadPercent}%</span>}
-                                            </div>
-                                            <div className="h-1 w-full overflow-hidden rounded-full bg-emerald-100">
-                                                <div className="h-full bg-emerald-600 transition-all duration-300" style={{ width: `${suryaBBoxDownloadPercent ?? 40}%` }} />
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-
-                                <div className="space-y-2 border-t border-white/10 pt-2">
-                                    <div className="flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-wide text-slate-400">
-                                        <CloudLightning size={10} /> En ligne
-                                    </div>
-
-                                    {handleOneShotPoneglyph && (
-                                        <Button
-                                            variant="outline"
-                                            onClick={handleOneShotPoneglyph}
-                                            disabled={isPoneglyphLoading || isSubmitting || isAutoDetecting}
-                                            className="h-9 w-full justify-start gap-2 rounded-md border-white/12 bg-white/[0.07] px-3 text-[11px] font-bold uppercase tracking-wide text-slate-200 shadow-none hover:bg-white/12"
-                                        >
-                                            <CloudLightning size={14} className="text-slate-500" />
-                                            <span className="min-w-0 flex-1 truncate text-left">
-                                                {poneglyphRunMode === 'modal' ? `${PONEGLYPH_BBOX_LABEL} - Modal...` : `${PONEGLYPH_BBOX_LABEL} - Modal`}
-                                            </span>
-                                            {poneglyphRunMode === 'modal' && (
-                                                <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                                            )}
-                                        </Button>
-                                    )}
-
-                                    {handleOneShot && (
-                                        <Button
-                                            variant="outline"
-                                            onClick={handleOneShot}
-                                            disabled={isOneShotLoading || isSubmitting || isAutoDetecting}
-                                            className="h-9 w-full justify-start gap-2 rounded-md border-white/12 bg-white/[0.07] px-3 text-[11px] font-bold uppercase tracking-wide text-slate-200 shadow-none hover:bg-white/12"
-                                        >
-                                            <Sparkles size={14} className="text-slate-500" />
-                                            <span className="min-w-0 flex-1 truncate text-left">
-                                                {isOneShotLoading ? `Gemini · ${geminiFullPageModel}...` : `Gemini · ${geminiFullPageModel}`}
-                                            </span>
-                                            {isOneShotLoading && (
-                                                <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                                            )}
-                                        </Button>
-                                    )}
-
-                                    {chatGptDesktopAvailable && handleChatGptOneShot && (
-                                        <Button
-                                            variant="outline"
-                                            onClick={handleChatGptOneShot}
-                                            disabled={isChatGptLoading || isSubmitting || isAutoDetecting}
-                                            className="h-9 w-full justify-start gap-2 rounded-md border-white/12 bg-white/[0.07] px-3 text-[11px] font-bold uppercase tracking-wide text-slate-200 shadow-none hover:bg-white/12"
-                                        >
-                                            <Sparkles size={14} className="text-sky-400" />
-                                            <span className="min-w-0 flex-1 truncate text-left">
-                                                {isChatGptLoading ? `ChatGPT · ${chatGptFullPageModel}...` : `ChatGPT · ${chatGptFullPageModel}`}
-                                            </span>
-                                            {isChatGptLoading && (
-                                                <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                                            )}
-                                        </Button>
-                                    )}
-                                </div>
-                            </div>
+                                )}
+                            </section>
                         )}
+
+                        <section
+                            aria-labelledby="bubble-ocr-heading"
+                            className="p-4"
+                        >
+                            <h3
+                                id="bubble-ocr-heading"
+                                className="mb-3 font-medium text-white"
+                            >
+                                Bulles
+                            </h3>
+                            <AnnotateBubbleScanner
+                                detectionStatus={detectionStatus}
+                                loadDetectionModel={loadDetectionModel}
+                                detectionProgress={detectionProgress}
+                                downloadStats={downloadStats}
+                                handleExecuteDetection={handleExecuteDetection}
+                                isSubmitting={busy && !isAutoDetecting}
+                                isAutoDetecting={isAutoDetecting}
+                                queueLength={queueLength}
+                            />
+                            <details className="group mt-4" open>
+                                <summary className="flex cursor-pointer list-none items-center justify-between rounded-sm py-2 text-xs text-slate-400 hover:text-white focus-visible:outline-2 focus-visible:outline-sky-400 [&::-webkit-details-marker]:hidden">
+                                    Moteurs de transcription
+                                    <ChevronRight
+                                        size={14}
+                                        className="transition-transform group-open:rotate-90"
+                                    />
+                                </summary>
+                                <AnnotateOcrModelSelector
+                                    preferLocalOCR={preferLocalOCR}
+                                    toggleOcrPreference={toggleOcrPreference}
+                                    activeModelKey={activeModelKey}
+                                    switchModel={switchModel}
+                                    modelStatus={modelStatus}
+                                    loadModel={loadModel}
+                                    downloadProgress={downloadProgress}
+                                    geminiKey={geminiKey}
+                                    selectedOcrModelKeys={selectedOcrModelKeys}
+                                    toggleOcrModel={toggleOcrModel}
+                                    isSandbox={isSandbox}
+                                    isTauri={isTauri}
+                                    localTextModelStatus={localTextModelStatus}
+                                    localSuryaModelStatus={
+                                        localSuryaModelStatus
+                                    }
+                                    isDownloadingLocalTextModel={
+                                        isDownloadingLocalTextModel
+                                    }
+                                    isDownloadingLocalSuryaModel={
+                                        isDownloadingLocalSuryaModel
+                                    }
+                                    localTextDownloadState={
+                                        localTextDownloadState
+                                    }
+                                    localSuryaDownloadState={
+                                        localSuryaDownloadState
+                                    }
+                                    localTextDownloadProgress={
+                                        localTextDownloadProgress
+                                    }
+                                    localSuryaDownloadProgress={
+                                        localSuryaDownloadProgress
+                                    }
+                                    isLoadingLocalTextModel={
+                                        isLoadingLocalTextModel
+                                    }
+                                    isLoadingLocalSuryaModel={
+                                        isLoadingLocalSuryaModel
+                                    }
+                                    canRunLocalTextOcr={canRunLocalTextOcr}
+                                    canRunLocalSuryaOcr={canRunLocalSuryaOcr}
+                                    downloadLocalTextModel={
+                                        downloadLocalTextModel
+                                    }
+                                    downloadLocalSuryaModel={
+                                        downloadLocalSuryaModel
+                                    }
+                                    loadLocalTextModel={loadLocalTextModel}
+                                    loadLocalSuryaModel={loadLocalSuryaModel}
+                                />
+                            </details>
+                        </section>
                     </>
                 )}
-
-                {role === 'User' && !isSandbox && (
-                    <div className="flex max-h-[500px] flex-none flex-col gap-5 overflow-y-auto rounded-xl border border-white/12 bg-white/[0.055] p-4 shadow-sm">
-                        <div className="flex items-center gap-2 pb-2 border-b border-slate-50">
-                            <div className="bg-indigo-50 p-1.5 rounded-lg border border-indigo-100/50">
-                                <FileText size={14} className="text-indigo-600" />
-                            </div>
-                            <h3 className="text-[11px] font-bold uppercase tracking-widest text-slate-100">Métadonnées Page</h3>
-                        </div>
-
-                        <div className="space-y-5">
-                            <div className="space-y-2">
-                                <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-tight">
-                                    <AlignLeft size={10} /> Description Sémantique
-                                </div>
-                                <div className="rounded-lg border border-white/12 bg-white/[0.06] p-3 text-[11px] leading-relaxed text-slate-300 italic">
-                                    {page.description_semantique?.content || "Aucune description rattachée à cette page."}
-                                </div>
-                            </div>
-
-                            <div className="space-y-4">
-                                <div className="space-y-2">
-                                    <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-tight">
-                                        <MapPin size={10} /> Arc Narratif
-                                    </div>
-                                    <div className="flex">
-                                        <Badge variant="outline" className="text-[10px] font-bold text-indigo-700 bg-indigo-50/30 border-indigo-100 px-2 py-0.5">
-                                            {page.description_semantique?.arc || "Inconnu"}
-                                        </Badge>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-tight">
-                                        <Users size={10} /> Personnages
-                                    </div>
-                                    <div className="flex flex-wrap gap-1.5">
-                                        {page.description_semantique?.characters?.length > 0 ? (
-                                            page.description_semantique.characters.map((char, idx) => (
-                                                <Badge key={idx} variant="secondary" className="border border-white/12 bg-white/[0.07] px-2 py-0.5 text-[10px] font-medium text-slate-200">
-                                                    {char}
-                                                </Badge>
-                                            ))
-                                        ) : (
-                                            <span className="rounded bg-white/[0.06] px-2 py-1 text-[10px] text-slate-400 italic">Aucun personnage listé</span>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                {role === 'User' && !isGuest && !isSandbox && (
+                    <section className="p-4 text-sm leading-relaxed text-slate-300">
+                        <h3 className="mb-3 font-medium text-white">
+                            Description
+                        </h3>
+                        <p>
+                            {page.description_semantique?.content ||
+                                'Aucune description.'}
+                        </p>
+                        {page.description_semantique?.arc && (
+                            <p className="mt-4">
+                                <span className="text-slate-400">Arc : </span>
+                                {page.description_semantique.arc}
+                            </p>
+                        )}
+                        {page.description_semantique?.characters?.length >
+                            0 && (
+                            <p className="mt-2">
+                                <span className="text-slate-400">
+                                    Personnages :{' '}
+                                </span>
+                                {page.description_semantique.characters.join(
+                                    ', '
+                                )}
+                            </p>
+                        )}
+                    </section>
                 )}
             </div>
 
-            {!isGuest && isStaff && !isSandbox && (
-                <div className="z-10 flex flex-none flex-col gap-2.5 border-t border-white/10 bg-[#06111e] p-4">
-                    <div className="grid grid-cols-2 gap-2">
-                        <Button variant="outline" size="sm" className="h-8 w-full border-white/12 bg-white/[0.07] text-[11px] font-bold text-slate-200 hover:bg-white/12 hover:text-white" onClick={() => setShowDescModal(true)}>
-                            <FileText size={12} className="mr-1.5" /> Meta
+            {!isGuest && isStaff && (
+                <footer className="shrink-0 border-t border-white/10 p-3">
+                    {!isSandbox && (
+                        <Button
+                            variant="ghost"
+                            onClick={() => setShowDescModal(true)}
+                            className="h-10 w-full justify-start text-[13px] text-slate-300 hover:bg-white/5 hover:text-white"
+                        >
+                            <FileText />
+                            Métadonnées
+                            <ChevronRight className="ml-auto text-slate-500" />
                         </Button>
-                        <Button variant="outline" size="sm" className="h-8 w-full border-white/12 bg-white/[0.07] text-[11px] font-bold text-slate-200 hover:bg-white/12 hover:text-white" onClick={() => setShowApiKeyModal(true)}>
-                            <Settings2 size={12} className="mr-1.5" /> Clé API
-                        </Button>
-                    </div>
-
+                    )}
                     <Button
-                        variant="default"
-                        className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white text-[11px] uppercase tracking-wider font-bold shadow-md"
-                        disabled={page.statut === 'pending_review' || page.statut === 'completed'}
-                        onClick={handleSubmitPage}
+                        variant="ghost"
+                        onClick={() => setShowApiKeyModal(true)}
+                        className="h-10 w-full justify-start text-[13px] text-slate-300 hover:bg-white/5 hover:text-white"
                     >
-                        <Send size={12} className="mr-1.5" /> Validation Finale
+                        <Settings2 />
+                        Réglages API
+                        <ChevronRight className="ml-auto text-slate-500" />
                     </Button>
-                </div>
+                    {!isSandbox && (
+                        <Button
+                            onClick={handleSubmitPage}
+                            disabled={
+                                busy ||
+                                page.statut === 'pending_review' ||
+                                page.statut === 'completed'
+                            }
+                            className="mt-3 h-10 w-full border border-white/20 bg-transparent text-[13px] font-medium text-slate-200 shadow-none hover:bg-white/10"
+                        >
+                            {page.statut === 'completed'
+                                ? 'Page validée'
+                                : page.statut === 'pending_review'
+                                  ? 'En attente de validation'
+                                  : 'Envoyer en validation'}
+                        </Button>
+                    )}
+                </footer>
             )}
-        </div>
+        </aside>
     );
 }
