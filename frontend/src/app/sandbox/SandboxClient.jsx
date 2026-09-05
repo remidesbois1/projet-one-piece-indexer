@@ -11,7 +11,6 @@ import { useAnnotationMetadata } from '@/hooks/useAnnotationMetadata';
 import { useTauriLocalOcrContext } from '@/context/TauriLocalOcrContext';
 import { useAiModelConfig } from '@/hooks/useAiModelConfig';
 import { capitalizeOcrSentenceStarts } from '@/lib/ocr-utils';
-import { postOcrImage } from '@/lib/ocrProxyClient';
 import { getChatGptStatus, runChatGptPageOcr } from '@/lib/chatGptDesktop';
 import { reconcileOcrBubblesWithYolo } from '@/lib/ocrBboxFusion';
 import { Dialog } from "@/components/ui/dialog";
@@ -335,15 +334,6 @@ function imageElementToJpegBlob(img) {
     });
 }
 
-async function runModalPoneglyph(imageBlob) {
-    const response = await postOcrImage('/api/poneglyph_one_shot', imageBlob, {
-        allowAnonymous: true,
-    });
-
-    if (!response.ok) throw new Error("Erreur API Poneglyph-BBox");
-    return response.json();
-}
-
 export default function SandboxClient() {
     const [page, setPage] = useState(null);
     const [existingBubbles, setExistingBubbles] = useState([]);
@@ -605,22 +595,21 @@ export default function SandboxClient() {
         }
     };
 
-    const handleOneShotPoneglyph = async ({ preferLocal = false, localEngine = 'lighton' } = {}) => {
+    const handleLocalBBoxOcr = async (localEngine = 'poneglyph') => {
         if (!imageRef.current) return;
 
-        const isSuryaBBoxLocal = preferLocal && localEngine === 'surya_bbox';
-        const runMode = preferLocal ? (isSuryaBBoxLocal ? 'surya-bbox-local' : 'local') : 'modal';
+        const isSuryaBBoxLocal = localEngine === 'surya_bbox';
+        const runMode = isSuryaBBoxLocal ? 'surya-bbox-local' : 'local';
         const modelLabel = isSuryaBBoxLocal ? 'Surya-BBox' : 'Poneglyph-BBox';
-        const inferenceModeLabel = preferLocal ? 'Local' : 'Modal';
-        const serviceLabel = `${modelLabel} - ${inferenceModeLabel}`;
+        const serviceLabel = `${modelLabel} - Local`;
         setIsPoneglyphLoading(true);
         setPoneglyphRunMode(runMode);
 
         try {
-            if (preferLocal && isSuryaBBoxLocal && !tauriLocalOcr.canRunLocalSuryaBBoxOcr) {
+            if (isSuryaBBoxLocal && !tauriLocalOcr.canRunLocalSuryaBBoxOcr) {
                 throw new Error("Le modele Surya-BBox doit etre charge avant de lancer l'inference locale.");
             }
-            if (preferLocal && !isSuryaBBoxLocal && !tauriLocalOcr.canRunLocalOcr) {
+            if (!isSuryaBBoxLocal && !tauriLocalOcr.canRunLocalOcr) {
                 throw new Error("Le modele Poneglyph-BBox doit etre charge avant de lancer l'inference locale.");
             }
 
@@ -638,18 +627,16 @@ export default function SandboxClient() {
             const imageBlob = await imageElementToJpegBlob(imageRef.current);
             if (!imageBlob) throw new Error("Impossible de convertir l'image.");
 
-            const extractionPromise = preferLocal
-                ? (isSuryaBBoxLocal
-                    ? tauriLocalOcr.runLocalSuryaBBoxOcrBlob(imageBlob)
-                    : tauriLocalOcr.runLocalOcrBlob(imageBlob))
-                : runModalPoneglyph(imageBlob);
+            const extractionPromise = isSuryaBBoxLocal
+                ? tauriLocalOcr.runLocalSuryaBBoxOcrBlob(imageBlob)
+                : tauriLocalOcr.runLocalOcrBlob(imageBlob);
 
             const [apiResponse, yoloBoxes] = await Promise.all([
                 extractionPromise,
                 yoloPromise
             ]);
 
-            if (preferLocal && apiResponse?.elapsed_ms) {
+            if (apiResponse?.elapsed_ms) {
                 toast.success(`${modelLabel} - Local termine en ${apiResponse.elapsed_ms} ms.`);
             }
 
@@ -743,7 +730,7 @@ export default function SandboxClient() {
             return;
         }
 
-        return handleOneShotPoneglyph({ preferLocal: true });
+        return handleLocalBBoxOcr();
     };
 
     const handleOneShotLocalSuryaBbox = () => {
@@ -768,7 +755,7 @@ export default function SandboxClient() {
             return;
         }
 
-        return handleOneShotPoneglyph({ preferLocal: true, localEngine: 'surya_bbox' });
+        return handleLocalBBoxOcr('surya_bbox');
     };
 
     const handleChatGptOneShot = async () => {
@@ -970,7 +957,6 @@ export default function SandboxClient() {
                     setShowDescModal={() => { }}
                     setShowApiKeyModal={setShowApiKeyModal}
                     handleSubmitPage={() => { }}
-                    handleOneShotPoneglyph={handleOneShotPoneglyph}
                     handleChatGptOneShot={handleChatGptOneShot}
                     isChatGptLoading={isChatGptLoading}
                     chatGptDesktopAvailable={chatGptDesktopAvailable}

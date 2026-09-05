@@ -2,6 +2,7 @@ import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Cpu, Download, Loader2 } from 'lucide-react';
 import { OCR_MODELS } from '@/context/WorkerContext';
+import { isSelectableOcrModel } from '@/lib/ocrModelAvailability';
 
 const COMPARISON_MODELS = Object.values(OCR_MODELS).filter(
     (model) => model.key !== 'gemini'
@@ -15,6 +16,7 @@ export default function AnnotateOcrModelSelector({
     downloadProgress,
     selectedOcrModelKeys = [],
     toggleOcrModel,
+    isSandbox = false,
     isTauri = false,
     localTextModelStatus = null,
     localSuryaModelStatus = null,
@@ -154,7 +156,7 @@ export default function AnnotateOcrModelSelector({
     return (
         <div className="divide-y divide-white/[0.06]">
             {COMPARISON_MODELS.filter(
-                (model) => isTauri || model.runtime !== 'tauri'
+                (model) => isSelectableOcrModel(model, isSandbox) && (isTauri || model.runtime !== 'tauri')
             ).map((model) => {
                 const checked = selectedOcrModelKeys.includes(model.key);
                 const action = renderModelAction(model);

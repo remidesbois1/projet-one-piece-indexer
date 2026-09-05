@@ -7,7 +7,7 @@ export const POST = createModalOcrHandler({
     id: 'poneglyph_one_shot',
     urlEnv: 'MODAL_PONEGLYPH_BBOX_URL',
     quotaCost: 5,
-    allowAnonymous: true,
+    allowAnonymous: false,
     timeoutMs: 180_000,
     responseKind: 'bubbles',
 });

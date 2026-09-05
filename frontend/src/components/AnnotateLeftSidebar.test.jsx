@@ -13,6 +13,17 @@ const editorProps = {
 };
 
 describe('AnnotateLeftSidebar', () => {
+    it('excludes Modal engines in the sandbox while retaining local OCR', () => {
+        render(<AnnotateLeftSidebar {...editorProps} isSandbox isTauri
+            handleOneShotPoneglyph={vi.fn()} handleOneShotLocalPoneglyph={vi.fn()}
+            handleOneShotLocalSuryaBbox={vi.fn()} />);
+        expect(screen.queryByText('Poneglyph-BBox · en ligne')).not.toBeInTheDocument();
+        expect(screen.queryByRole('checkbox', { name: /LightOn OCR/ })).not.toBeInTheDocument();
+        expect(screen.getByRole('combobox', { name: 'Moteur pour la page entière' })).toHaveTextContent('Poneglyph-BBox · local');
+        expect(screen.getByRole('checkbox', { name: /PP-OCRv6/ })).toBeInTheDocument();
+        expect(screen.getByRole('checkbox', { name: /Surya/ })).toBeInTheDocument();
+    });
+
     it('renders the public reader when private workflow metadata is absent', () => {
         render(
             <AnnotateLeftSidebar

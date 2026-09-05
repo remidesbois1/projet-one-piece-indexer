@@ -65,11 +65,6 @@ export async function postOcrImage(endpoint, imageBlob, options = {}) {
     if (!(imageBlob instanceof Blob) || !ALLOWED_IMAGE_TYPES.has(imageBlob.type)) {
         throw new OcrClientError('OCR_INVALID_IMAGE', 'Image invalide.');
     }
-    const allowAnonymous = options.allowAnonymous === true;
-    if (allowAnonymous && endpoint !== '/api/poneglyph_one_shot') {
-        throw new OcrClientError('OCR_ANONYMOUS_NOT_ALLOWED', 'Authentification requise.');
-    }
-
     const authClient = options.authClient || supabase;
     let sessionResult;
     try {
@@ -86,7 +81,7 @@ export async function postOcrImage(endpoint, imageBlob, options = {}) {
         throw new OcrClientError('OCR_AUTH_UNAVAILABLE', 'Impossible de vérifier la session.');
     }
     const token = sessionResult.data.session?.access_token;
-    if (!token && !allowAnonymous) {
+    if (!token) {
         throw new OcrClientError('OCR_AUTH_REQUIRED', 'Connectez-vous pour utiliser ce service OCR.');
     }
 

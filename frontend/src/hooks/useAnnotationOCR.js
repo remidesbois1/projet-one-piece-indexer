@@ -1,17 +1,14 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useWorker, OCR_MODELS } from '@/context/WorkerContext';
 import { useTauriLocalOcrContext } from '@/context/TauriLocalOcrContext';
 import { analyzeBubble } from '@/lib/geminiClient';
 import { capitalizeOcrSentenceStarts } from '@/lib/ocr-utils';
 import { postOcrImage } from '@/lib/ocrProxyClient';
+import { isSelectableOcrModel } from '@/lib/ocrModelAvailability';
 import { cropImage, cropImageBitmap } from '@/lib/utils';
 import { toast } from 'sonner';
-
-const SELECTABLE_OCR_MODEL_KEYS = Object.values(OCR_MODELS)
-    .filter(model => model.key !== 'gemini')
-    .map(model => model.key);
 
 export function useAnnotationOCR({
     imageRef,
@@ -31,11 +28,15 @@ export function useAnnotationOCR({
     const [preferLocalOCR, setPreferLocalOCR] = useState(isSandbox);
     const [geminiKey, setGeminiKey] = useState(null);
     const [ocrResults, setOcrResults] = useState({});
+    const selectableModelKeys = useMemo(() => Object.values(OCR_MODELS)
+        .filter(model => isSelectableOcrModel(model, isSandbox))
+        .map(model => model.key), [isSandbox]);
+    const selectionStorageKey = isSandbox ? 'sandboxSelectedOcrModelKeys' : 'selectedOcrModelKeys';
     const [selectedOcrModelKeys, setSelectedOcrModelKeys] = useState(() => {
         if (typeof window === 'undefined') return ['ppocrv6Line'];
         try {
-            const saved = JSON.parse(localStorage.getItem('selectedOcrModelKeys'));
-            const valid = Array.isArray(saved) ? saved.filter(key => SELECTABLE_OCR_MODEL_KEYS.includes(key)) : [];
+            const saved = JSON.parse(localStorage.getItem(selectionStorageKey) ?? localStorage.getItem('selectedOcrModelKeys'));
+            const valid = Array.isArray(saved) ? saved.filter(key => selectableModelKeys.includes(key)) : [];
             return valid.length ? valid : ['ppocrv6Line'];
         } catch {
             return ['ppocrv6Line'];
@@ -60,15 +61,15 @@ export function useAnnotationOCR({
     }, [preferLocalOCR]);
 
     const toggleOcrModel = useCallback((modelKey) => {
-        if (!SELECTABLE_OCR_MODEL_KEYS.includes(modelKey)) return;
+        if (!selectableModelKeys.includes(modelKey)) return;
         setSelectedOcrModelKeys(previous => {
             const next = previous.includes(modelKey)
                 ? previous.filter(key => key !== modelKey)
                 : [...previous, modelKey];
-            localStorage.setItem('selectedOcrModelKeys', JSON.stringify(next));
+            localStorage.setItem(selectionStorageKey, JSON.stringify(next));
             return next;
         });
-    }, []);
+    }, [selectableModelKeys, selectionStorageKey]);
 
     const getTauriTextRuntime = useCallback((modelData) => {
         const isSurya = modelData?.localModelKey === 'surya';
@@ -108,6 +109,9 @@ export function useAnnotationOCR({
     }, [worker, setDebugImageUrl]);
 
     const runModel = useCallback(async (modelData, areaToCrop, requestId) => {
+        if (!isSelectableOcrModel(modelData, isSandbox)) {
+            throw new Error('Ce moteur OCR n’est pas disponible dans la sandbox.');
+        }
         if (modelData.key === 'lighton') {
             const blob = await cropImage(imageRef.current, areaToCrop);
             const response = await postOcrImage('/api/local_lighton', blob);
@@ -138,7 +142,7 @@ export function useAnnotationOCR({
         }
 
         throw new Error(`Le moteur ${modelData.label} n'est pas compatible avec la comparaison OCR.`);
-    }, [activeModelKey, getTauriTextRuntime, imageRef, modelStatus, runOcr, waitForWorkerResult]);
+    }, [activeModelKey, getTauriTextRuntime, imageRef, isSandbox, modelStatus, runOcr, waitForWorkerResult]);
 
     const executeSelectedOcr = useCallback((areaToCrop, requestId) => {
         if (inFlightRequests.current.has(requestId)) return inFlightRequests.current.get(requestId);

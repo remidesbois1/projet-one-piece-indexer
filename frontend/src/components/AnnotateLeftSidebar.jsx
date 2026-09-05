@@ -226,7 +226,7 @@ export default function AnnotateLeftSidebar({
         {
             key: 'poneglyph',
             label: 'Poneglyph-BBox · en ligne',
-            available: Boolean(handleOneShotPoneglyph),
+            available: !isSandbox && Boolean(handleOneShotPoneglyph),
             handler: handleOneShotPoneglyph,
         },
         {
