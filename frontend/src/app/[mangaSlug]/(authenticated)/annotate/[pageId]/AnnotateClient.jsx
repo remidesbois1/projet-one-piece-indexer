@@ -691,7 +691,10 @@ export default function AnnotatePage() {
                 const response = await submitPageForReview(targetPageId);
                 commitPageUpdate(targetPageId, response.data);
                 toast.success("Page soumise pour validation !");
-            } catch (error) { toast.error("Erreur soumission."); }
+            } catch (error) {
+                const reason = error?.response?.data?.error;
+                toast.error(typeof reason === 'string' ? reason : "Erreur soumission.");
+            }
         }
     };
 
