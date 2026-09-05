@@ -33,6 +33,7 @@ import AnnotateCanvas from '@/components/AnnotateCanvas';
 import AnnotateAnnotationSidebar from '@/components/AnnotateAnnotationSidebar';
 import AnnotateEditorDialog from '@/components/AnnotateEditorDialog';
 import AnnotateMetadataModal from '@/components/AnnotateMetadataModal';
+import SubmitPageDialog from '@/components/SubmitPageDialog';
 
 const PAGE_STATUSES = [
     { value: 'not_started', label: 'Non commencée' },
@@ -158,6 +159,7 @@ export default function AnnotatePage() {
     const [imageRetryGeneration, setImageRetryGeneration] = useState(0);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isUpdatingPageStatus, setIsUpdatingPageStatus] = useState(false);
+    const [reviewPage, setReviewPage] = useState(null);
     const [loadingText, setLoadingText] = useState("Analyse en cours...");
     const [pendingAnnotation, setPendingAnnotation] = useState(null);
     const [isOneShotLoading, setIsOneShotLoading] = useState(false);
@@ -562,6 +564,7 @@ export default function AnnotatePage() {
 
     useEffect(() => {
         const handleKeyDown = (e) => {
+            if (reviewPage) return;
             if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
                 if (e.key === 'Escape') {
                     if (pendingAnnotation) setPendingAnnotation(null);
@@ -585,7 +588,7 @@ export default function AnnotatePage() {
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [navContext, navigateToPage, pendingAnnotation, showDescModal, showApiKeyModal, mangaSlug, isDrawing, isGuest]);
+    }, [navContext, navigateToPage, pendingAnnotation, showDescModal, showApiKeyModal, mangaSlug, isDrawing, isGuest, reviewPage]);
 
     const goToPrev = useCallback(() => navContext.prev && navigateToPage(navContext.prev.id), [navContext.prev, navigateToPage]);
     const goToNext = useCallback(() => navContext.next && navigateToPage(navContext.next.id), [navContext.next, navigateToPage]);
@@ -683,19 +686,15 @@ export default function AnnotatePage() {
         }
     }, []);
 
-    const handleSubmitPage = async () => {
-        if (isGuest || isMobile) return;
-        if (window.confirm("Envoyer pour validation ?")) {
-            const targetPageId = pageId;
-            try {
-                const response = await submitPageForReview(targetPageId);
-                commitPageUpdate(targetPageId, response.data);
-                toast.success("Page soumise pour validation !");
-            } catch (error) {
-                const reason = error?.response?.data?.error;
-                toast.error(typeof reason === 'string' ? reason : "Erreur soumission.");
-            }
-        }
+    const handleSubmitPage = () => {
+        if (isGuest || isMobile || !page) return;
+        setReviewPage({ id: pageId, number: page.numero_page });
+    };
+
+    const confirmSubmitPage = async () => {
+        const response = await submitPageForReview(reviewPage.id);
+        commitPageUpdate(reviewPage.id, response.data);
+        toast.success("Page soumise pour validation !");
     };
 
     const handlePageStatusChange = async (statut) => {
@@ -1349,6 +1348,11 @@ export default function AnnotatePage() {
                 </div>
             </div>
 
+            {reviewPage && <SubmitPageDialog
+                pageNumber={reviewPage.number}
+                onClose={() => setReviewPage(null)}
+                onConfirm={confirmSubmitPage}
+            />}
             <AnnotateEditorDialog
                 isOpen={isModalOpen}
                 setIsModalOpen={setIsModalOpen}
