@@ -27,6 +27,11 @@ présent. Sinon, et en production, il charge les fichiers publiés sur Hugging F
 définir `NEXT_PUBLIC_FALCON_MODEL_BASE` dans `frontend/.env.local`, puis redémarrer
 Next.js. Cette variable est prise en compte au build et accepte une URL de dossier
 ONNX ou `/models/falcon-ocr` pour l’export local.
+Les poids sont téléchargés par blocs HTTP de 4 Mio, avec quatre requêtes en
+parallèle. Chaque bloc terminé est conservé dans le cache du navigateur lorsque
+son quota le permet : un rechargement reprend les blocs manquants. Les requêtes
+interrompues sont retentées et le SHA-256 complet est vérifié avant de charger le
+modèle. Un serveur qui ignore `Range` reste pris en charge par un transfert simple.
 Les cinq images de contrôle sont des fichiers de développement locaux : elles
 ne sont pas nécessaires pour utiliser son propre fichier et ne sont pas publiées.
 

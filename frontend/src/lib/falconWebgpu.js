@@ -1,27 +1,10 @@
 import * as ort from 'onnxruntime-web/webgpu';
 import { PreTrainedTokenizer } from '@huggingface/transformers';
 import { prepareImage, rotaryPositions } from './falconPreprocessing';
+import { downloadModel } from './modelDownload';
 
 export const FALCON_MODEL_BASE = process.env.NEXT_PUBLIC_FALCON_MODEL_BASE ||
     'https://huggingface.co/Remidesbois/Falcon-OCR-Poneglyph/resolve/abd33103ab9fef627d89ef430e1ecb1c15fb7194/onnx';
-
-async function download(url, progress, totalHint = 0) {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`Téléchargement ${response.status} : ${url}`);
-    const total = Number(response.headers.get('content-length')) || totalHint;
-    if (!response.body) return new Uint8Array(await response.arrayBuffer());
-    const chunks = []; let loaded = 0;
-    const reader = response.body.getReader();
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value); loaded += value.length;
-        progress?.(Math.min(99, 100 * loaded / (total || loaded)));
-    }
-    const bytes = new Uint8Array(loaded); let offset = 0;
-    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
-    return bytes;
-}
 
 export class FalconWebGPU {
     async load(onProgress = () => {}) {
@@ -47,8 +30,11 @@ export class FalconWebGPU {
             getJson('browser_manifest.json'), getJson('tokenizer.json'), getJson('tokenizer_config.json')]);
         this.manifest = manifest;
         this.tokenizer = new PreTrainedTokenizer(tokenizer, tokenizerConfig);
-        const graph = await download(`${base}/decoder.onnx`);
-        const data = await download(`${base}/decoder.onnx.data`, progress => onProgress({ file: 'Poids Falcon ONNX', progress }), manifest.files['decoder.onnx.data'].bytes);
+        const graph = await downloadModel(`${base}/decoder.onnx`, manifest.files['decoder.onnx']);
+        const data = await downloadModel(`${base}/decoder.onnx.data`, {
+            ...manifest.files['decoder.onnx.data'],
+            onProgress: progress => onProgress({ file: 'Poids Falcon ONNX', progress }),
+        });
         onProgress({ file: 'Initialisation WebGPU', progress: 99 });
         this.session = await ort.InferenceSession.create(graph, {
             executionProviders: ['webgpu'],
